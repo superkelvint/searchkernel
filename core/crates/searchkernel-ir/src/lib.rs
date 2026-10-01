@@ -25,7 +25,6 @@ pub mod session;
 pub mod snapshot;
 pub mod wire;
 
-
 pub use api_to_ir::control_plane::{
     already_exists_error, index_in_use_error, lifecycle_failure, not_found_error, path_failure,
     stale_index_handle_error, validate_index_target, LifecycleFailure, LifecycleFailureCode,

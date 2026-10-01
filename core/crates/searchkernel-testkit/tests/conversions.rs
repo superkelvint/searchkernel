@@ -55,7 +55,8 @@ fn context() -> IndexContext {
         },
     );
     builder.finish(definition, None);
-    wire_ir::index_context_from_api(root::<api::IndexDefinition>(builder.finished_data()).unwrap()).unwrap()
+    wire_ir::index_context_from_api(root::<api::IndexDefinition>(builder.finished_data()).unwrap())
+        .unwrap()
 }
 
 fn string_type<'a>(

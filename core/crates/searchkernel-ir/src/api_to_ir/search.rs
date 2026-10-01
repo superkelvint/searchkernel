@@ -13,7 +13,10 @@ impl IndexContext {
     pub(crate) fn search_to_ir(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
         resolve_search(self, decode_search_input(self, request)?)
     }
-    pub(crate) fn analyze_to_ir(&self, request: api::AnalyzeRequest<'_>) -> Result<AnalyzeRequestIr> {
+    pub(crate) fn analyze_to_ir(
+        &self,
+        request: api::AnalyzeRequest<'_>,
+    ) -> Result<AnalyzeRequestIr> {
         let target = match request.target_type() {
             api::AnalyzeTarget::Analyzer => request
                 .target_as_analyzer()

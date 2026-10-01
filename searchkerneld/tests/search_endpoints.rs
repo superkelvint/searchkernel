@@ -80,7 +80,9 @@ fn context() -> Arc<IndexContext> {
 
     let definition =
         root::<api::IndexDefinition<'_>>(builder.finished_data()).expect("valid index definition");
-    Arc::new(searchkernel_ir::wire::v1::index_context_from_api(definition).expect("valid index context"))
+    Arc::new(
+        searchkernel_ir::wire::v1::index_context_from_api(definition).expect("valid index context"),
+    )
 }
 
 async fn wait_for_execution_capacity(

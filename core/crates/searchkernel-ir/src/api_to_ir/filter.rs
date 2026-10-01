@@ -77,7 +77,10 @@ impl IndexContext {
     pub(crate) fn filter_to_ir(&self, filter: api::FilterExpr<'_>) -> Result<FilterIr> {
         self.filter_to_ir_at(filter, "filter")
     }
-    pub(crate) fn comparison_to_ir(&self, comparison: api::FilterComparison<'_>) -> Result<ComparisonIr> {
+    pub(crate) fn comparison_to_ir(
+        &self,
+        comparison: api::FilterComparison<'_>,
+    ) -> Result<ComparisonIr> {
         self.comparison_to_ir_at(comparison, "comparison")
     }
     pub(crate) fn range_to_ir(&self, range: api::FilterRange<'_>) -> Result<RangeIr> {

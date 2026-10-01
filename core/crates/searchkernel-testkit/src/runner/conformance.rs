@@ -274,8 +274,7 @@ fn execute(
             let fields = if input.get("selection").is_some_and(|value| !value.is_null()) {
                 let root = flatbuffers::root::<api::SearchFieldSelection>(&bytes)
                     .map_err(|error| error.to_string())?;
-                wire_ir::search_fields_to_ir(&context, root)
-                    .map_err(ExecError::Portable)?
+                wire_ir::search_fields_to_ir(&context, root).map_err(ExecError::Portable)?
             } else {
                 context.definition().default_search_fields().to_vec()
             };
@@ -289,11 +288,9 @@ fn execute(
             {
                 let root = flatbuffers::root::<api::FieldProjection>(&bytes)
                     .map_err(|error| error.to_string())?;
-                wire_ir::projection_to_ir(&context, Some(root))
-                    .map_err(ExecError::Portable)?
+                wire_ir::projection_to_ir(&context, Some(root)).map_err(ExecError::Portable)?
             } else {
-                wire_ir::projection_to_ir(&context, None)
-                    .map_err(ExecError::Portable)?
+                wire_ir::projection_to_ir(&context, None).map_err(ExecError::Portable)?
             };
             ok(projection_json(&projection))
         }
@@ -305,11 +302,9 @@ fn execute(
             {
                 let root = flatbuffers::root::<api::HighlightRequest>(&bytes)
                     .map_err(|error| error.to_string())?;
-                wire_ir::highlighting_to_ir(&context, Some(root))
-                    .map_err(ExecError::Portable)?
+                wire_ir::highlighting_to_ir(&context, Some(root)).map_err(ExecError::Portable)?
             } else {
-                wire_ir::highlighting_to_ir(&context, None)
-                    .map_err(ExecError::Portable)?
+                wire_ir::highlighting_to_ir(&context, None).map_err(ExecError::Portable)?
             };
             ok(highlighting_json(&highlighting))
         }
@@ -398,7 +393,8 @@ fn execute(
             let context = context.ok_or("operation requires index fixture")?;
             let root = flatbuffers::root::<api::SearchRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
-            let mut output = search_json(&wire_ir::search_to_ir(&context, root).map_err(ExecError::Portable)?);
+            let mut output =
+                search_json(&wire_ir::search_to_ir(&context, root).map_err(ExecError::Portable)?);
             if let Some(items) = input.get("facets").and_then(JsonValue::as_array) {
                 let parsed = items
                     .iter()

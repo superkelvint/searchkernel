@@ -125,7 +125,8 @@ fn public_rust_typed_query_errors_match_independent_portable_requests() {
         let builder = index.search("typed").typed_query(query);
         let rust_error = builder.execute::<serde_json::Value>().unwrap_err();
         let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-        let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
+        let portable_error =
+            searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
         assert_eq!(
             rust_error.code(),
             crate::ErrorCode::InvalidArgument,
@@ -360,7 +361,8 @@ fn public_and_portable_advanced_query_errors_converge_in_the_ir() {
         let rust_error = builder.execute::<serde_json::Value>().unwrap_err();
         let bytes = portable_typed_request(portable_query, inputs);
         let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-        let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
+        let portable_error =
+            searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
 
         let portable_code = match portable_error.code {
             searchkernel_ir::ErrorCode::InvalidArgument => crate::ErrorCode::InvalidArgument,
@@ -564,7 +566,8 @@ fn blank_text_is_rejected_identically_and_match_all_remains_explicit() {
             .unwrap_err();
         let bytes = portable_text_request(Some(text));
         let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-        let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
+        let portable_error =
+            searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
         assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
         assert_eq!(
             portable_error.code,
@@ -576,7 +579,8 @@ fn blank_text_is_rejected_identically_and_match_all_remains_explicit() {
 
     let bytes = portable_text_request(None);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let missing_text_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
+    let missing_text_error =
+        searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
     assert_eq!(
         missing_text_error.code,
         searchkernel_ir::ErrorCode::InvalidArgument

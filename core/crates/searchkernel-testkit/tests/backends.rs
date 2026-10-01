@@ -79,8 +79,7 @@ fn insert() -> InsertRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    wire_ir::insert_to_ir(&context(), root::<api::InsertRequest>(&bytes).unwrap())
-        .unwrap()
+    wire_ir::insert_to_ir(&context(), root::<api::InsertRequest>(&bytes).unwrap()).unwrap()
 }
 
 fn upsert() -> UpsertRequestIr {
@@ -102,8 +101,7 @@ fn upsert() -> UpsertRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    wire_ir::upsert_to_ir(&context(), root::<api::UpsertRequest>(&bytes).unwrap())
-        .unwrap()
+    wire_ir::upsert_to_ir(&context(), root::<api::UpsertRequest>(&bytes).unwrap()).unwrap()
 }
 
 fn patch() -> PatchRequestIr {
@@ -128,8 +126,7 @@ fn patch() -> PatchRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    wire_ir::patch_to_ir(&context(), root::<api::PatchRequest>(&bytes).unwrap())
-        .unwrap()
+    wire_ir::patch_to_ir(&context(), root::<api::PatchRequest>(&bytes).unwrap()).unwrap()
 }
 
 fn update() -> UpdateRequestIr {
@@ -158,8 +155,7 @@ fn update() -> UpdateRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    wire_ir::update_to_ir(&context(), root::<api::UpdateRequest>(&bytes).unwrap())
-        .unwrap()
+    wire_ir::update_to_ir(&context(), root::<api::UpdateRequest>(&bytes).unwrap()).unwrap()
 }
 
 fn delete() -> DeleteRequestIr {
@@ -174,8 +170,7 @@ fn delete() -> DeleteRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    wire_ir::delete_to_ir(&context(), root::<api::DeleteRequest>(&bytes).unwrap())
-        .unwrap()
+    wire_ir::delete_to_ir(&context(), root::<api::DeleteRequest>(&bytes).unwrap()).unwrap()
 }
 
 fn get() -> GetRequestIr {
@@ -190,8 +185,7 @@ fn get() -> GetRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    wire_ir::get_to_ir(&context(), root::<api::GetRequest>(&bytes).unwrap())
-        .unwrap()
+    wire_ir::get_to_ir(&context(), root::<api::GetRequest>(&bytes).unwrap()).unwrap()
 }
 
 fn search() -> SearchRequestIr {
@@ -213,8 +207,7 @@ fn search() -> SearchRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    wire_ir::search_to_ir(&context(), root::<api::SearchRequest>(&bytes).unwrap())
-        .unwrap()
+    wire_ir::search_to_ir(&context(), root::<api::SearchRequest>(&bytes).unwrap()).unwrap()
 }
 
 fn analyze() -> AnalyzeRequestIr {
@@ -240,8 +233,7 @@ fn analyze() -> AnalyzeRequestIr {
     );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
-    wire_ir::analyze_to_ir(&context(), root::<api::AnalyzeRequest>(&bytes).unwrap())
-        .unwrap()
+    wire_ir::analyze_to_ir(&context(), root::<api::AnalyzeRequest>(&bytes).unwrap()).unwrap()
 }
 
 #[test]
@@ -368,8 +360,7 @@ fn scripted_backend_reports_request_mismatch_and_unused_entries() {
         );
         builder.finish(request, None);
         let bytes = builder.finished_data().to_vec();
-        wire_ir::patch_to_ir(&context(), root::<api::PatchRequest>(&bytes).unwrap())
-            .unwrap()
+        wire_ir::patch_to_ir(&context(), root::<api::PatchRequest>(&bytes).unwrap()).unwrap()
     };
     assert!(matches!(
         backend.call_patch(different),
