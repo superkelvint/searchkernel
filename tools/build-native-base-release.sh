@@ -52,15 +52,36 @@ DEPS_INPUT=${VESPA_DEPS:-}
 }
 VESPA_INPUT=$(cd -- "$VESPA_INPUT" && pwd -P)
 DEPS_INPUT=$(cd -- "$DEPS_INPUT" && pwd -P)
-[[ "$(git -C "$VESPA_INPUT" rev-parse HEAD)" == "$PINNED_VESPA_COMMIT" ]] || {
-    echo "configured Vespa commit does not match pinned $PINNED_VESPA_COMMIT" >&2
-    exit 1
+if [[ -f "$VESPA_INPUT/.searchkernel-vespa-artifact.json" ]]; then
+    "$PYTHON_BIN" - "$VESPA_INPUT/.searchkernel-vespa-artifact.json" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
+import json
+import sys
+
+path, build_env, target, commit = sys.argv[1:]
+with open(path, encoding="utf-8") as stream:
+    marker = json.load(stream)
+expected = {
+    "build_environment": build_env,
+    "native_target": target,
+    "vespa_commit": commit,
 }
-git -C "$VESPA_INPUT" diff --quiet --ignore-submodules -- &&
-git -C "$VESPA_INPUT" diff --cached --quiet --ignore-submodules -- || {
-    echo "configured Vespa producer checkout is dirty" >&2
-    exit 1
-}
+for key, value in expected.items():
+    if marker.get(key) != value:
+        raise SystemExit(
+            f"configured Vespa producer {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
+        )
+PY
+else
+    [[ "$(git -C "$VESPA_INPUT" rev-parse HEAD)" == "$PINNED_VESPA_COMMIT" ]] || {
+        echo "configured Vespa commit does not match pinned $PINNED_VESPA_COMMIT" >&2
+        exit 1
+    }
+    git -C "$VESPA_INPUT" diff --quiet --ignore-submodules -- &&
+    git -C "$VESPA_INPUT" diff --cached --quiet --ignore-submodules -- || {
+        echo "configured Vespa producer checkout is dirty" >&2
+        exit 1
+    }
+fi
 
 MARKER=$VESPA_INPUT/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir
 [[ -f "$MARKER/link.txt" && -f "$MARKER/flags.make" ]] || {
@@ -79,7 +100,19 @@ cleanup() {
 }
 trap cleanup EXIT
 PRODUCER_CACHE=$TMP/native-cache
-mkdir -p "$PRODUCER_CACHE"
+DISABLE_PUBLISHED_BASE=1
+CANONICAL_CACHE=/opt/searchkernel/native-sdk-cache
+CANONICAL_VESPA="$CANONICAL_CACHE/$BUILD_ENV/$TARGET/toolchains/$PINNED_VESPA_COMMIT/upstream/vespa"
+CANONICAL_DEPS="$CANONICAL_CACHE/$BUILD_ENV/$TARGET/toolchains/$PINNED_VESPA_COMMIT/vespa-deps"
+CANONICAL_BASE="$CANONICAL_CACHE/$BUILD_ENV/$TARGET/objects/$PINNED_VESPA_COMMIT"
+if [[ "$VESPA_INPUT" == "$CANONICAL_VESPA" &&
+      "$DEPS_INPUT" == "$CANONICAL_DEPS" &&
+      -s "$CANONICAL_BASE/lib/libvespalib.so" ]]; then
+    PRODUCER_CACHE=$CANONICAL_CACHE
+    DISABLE_PUBLISHED_BASE=0
+else
+    mkdir -p "$PRODUCER_CACHE"
+fi
 
 env -u SK_NATIVE_SDK -u SK_NATIVE_BASE_ARTIFACT_URL \
     -u SK_NATIVE_BASE_ARTIFACT_GENERATION -u SK_NATIVE_BASE_SDK \
@@ -93,7 +126,7 @@ env -u SK_NATIVE_SDK -u SK_NATIVE_BASE_ARTIFACT_URL \
     -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u LD_LIBRARY_PATH -u LD_PRELOAD \
     SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
     SK_NATIVE_TARGET="$TARGET" \
-    SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
+    SK_NATIVE_DISABLE_PUBLISHED_BASE="$DISABLE_PUBLISHED_BASE" \
     SK_NATIVE_CACHE_DIR="$PRODUCER_CACHE" \
     SK_NATIVE_BASE_GENERATION="$ARTIFACT_GENERATION" \
     VESPA_ROOT="$VESPA_INPUT" VESPA_DEPS="$DEPS_INPUT" \
