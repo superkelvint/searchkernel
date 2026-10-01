@@ -1602,6 +1602,7 @@ fn v2_result_direct_hit_and_nonfinite_value_variants_are_encoded() {
         .expect("direct hit root");
     assert_eq!(hit.id(), Some("direct-hit"));
     let fields = hit.fields().expect("hit fields");
+    assert_eq!(fields.len(), 7);
     assert_eq!(
         fields
             .get(0)
@@ -1641,15 +1642,25 @@ fn v2_result_direct_hit_and_nonfinite_value_variants_are_encoded() {
             .kind(),
         api::NonFiniteFloatKind::NaN
     );
+    assert_eq!(
+        fields
+            .get(4)
+            .value()
+            .unwrap()
+            .kind_as_non_finite_float_value()
+            .unwrap()
+            .kind(),
+        api::NonFiniteFloatKind::NegativeInfinity
+    );
     assert!(fields
-        .get(4)
+        .get(5)
         .value()
         .unwrap()
         .kind_as_value_object()
         .is_some());
     assert_eq!(
         fields
-            .get(5)
+            .get(6)
             .value()
             .unwrap()
             .kind_as_tensor_value()
