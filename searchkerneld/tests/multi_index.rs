@@ -366,7 +366,7 @@ fn ir_portable_error_semantics(
     error: searchkernel_ir::PortableError,
 ) -> (api::ErrorCode, String, Option<String>, String, String) {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let error = searchkernel_ir::error_offset(&mut builder, &error);
+    let error = searchkernel_ir::wire::v1::error_offset(&mut builder, &error);
     builder.finish(error, None);
     let error = root::<api::Error<'_>>(builder.finished_data()).expect("canonical IR error");
     let details = error.details().expect("canonical IR error details");
@@ -383,8 +383,8 @@ fn ir_portable_error_semantics(
 
 fn resolved_ir_request_error(request: &[u8]) -> searchkernel_ir::PortableError {
     let envelope = root::<wire::RequestEnvelope<'_>>(request).expect("request envelope");
-    match searchkernel_ir::resolve_control_plane_request(envelope) {
-        Err(searchkernel_ir::ControlPlaneResolutionError::Semantic(error)) => error,
+    match searchkernel_ir::wire::v1::resolve_control_plane_request(envelope) {
+        Err(searchkernel_ir::wire::v1::ControlPlaneResolutionError::Semantic(error)) => error,
         result => panic!("expected canonical IR semantic error, got {result:?}"),
     }
 }
