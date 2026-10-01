@@ -131,6 +131,23 @@ native SDK/runtime provisioning, and environment recovery. The exact-SHA remote
 verification protocol for local-capable and remote-only agents is documented in
 `docs/agent-workflow.md`.
 
+A remote-only agent with authorized GitHub pull-request comment access can run
+canonical checks without a local Search Kernel environment or
+`repository_dispatch` access. Post exactly one top-level PR comment whose
+entire body is one of:
+
+```text
+/searchkernel-verify ci <exact-40-character-sha>
+/searchkernel-verify test <scope> <exact-40-character-sha>
+/searchkernel-verify verify <lane> <exact-40-character-sha>
+```
+
+Use a pushed exact SHA and a registered target from `build/targets.json`. Do
+not add prose to the command comment. Treat the resulting exact-SHA workflow
+evidence as the test result, and rerun required checks after every new head
+commit. See `docs/agent-workflow.md` for authorization, evidence, and failure
+handling.
+
 Use the repository's `./dev` interface and the target vocabulary in
 `build/targets.json`; do not create a second command matrix in code, CI, or
 documentation.
