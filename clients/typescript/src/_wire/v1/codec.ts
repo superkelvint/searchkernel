@@ -17,6 +17,7 @@ import { UpsertRequestT } from "./generated/flatbuffers/search-kernel/wire/upser
 import { CreateIndexRequestT } from "./generated/flatbuffers/search-kernel/wire/create-index-request.js";
 import { OpenIndexRequestT } from "./generated/flatbuffers/search-kernel/wire/open-index-request.js";
 import { FilterRequest, FilterRequestT } from "./generated/flatbuffers/search-kernel/wire/filter-request.js";
+import type { FilterClauseT as WireFilterClauseT } from "./generated/flatbuffers/search-kernel/wire/filter-clause.js";
 import * as Wire from "./generated/flatbuffers/search-kernel/wire.js";
 import * as Semantic from "../../semantic.js";
 import { SemanticTable, isSemanticTable } from "../../semantic.js";
@@ -78,7 +79,7 @@ function toGenerated(value: any): any {
   if (value instanceof Uint8Array) return value;
   if (isSemanticTable(value)) {
     if (value._schemaName === "FilterRequest" && (value as any)._textualOnly === true) {
-      return new TextualFilterRequest((value as any).textual.map(toGenerated));
+      return new TextualFilterRequest((value as any).textual.map(toGenerated) as WireFilterClauseT[]);
     }
     const constructor = (Wire as any)[`${value._schemaName}T`];
     if (typeof constructor !== "function") throw new ProtocolError(`unsupported semantic table ${value._schemaName}`);
