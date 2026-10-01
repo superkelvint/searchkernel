@@ -65,12 +65,16 @@ def _convert_enum_to_wire(spec: str, value: Any) -> Any:
         if not isinstance(value, (list, tuple)):
             raise TypeError(f"semantic enum vector {spec} must be a sequence")
         enum_name = spec[:-2]
-        return [
-            _semantic_enum_to_wire(item)
-            if isinstance(item, SemanticEnumValue)
-            else item
-            for item in value
-        ]
+        converted = []
+        for item in value:
+            if not isinstance(item, SemanticEnumValue):
+                raise TypeError(f"semantic enum vector {spec} requires SemanticEnumValue items")
+            if item.enum_name != enum_name:
+                raise TypeError(
+                    f"semantic enum mismatch: expected {enum_name}, got {item.enum_name}"
+                )
+            converted.append(_semantic_enum_to_wire(item))
+        return converted
     if value is None:
         return None
     if not isinstance(value, SemanticEnumValue):

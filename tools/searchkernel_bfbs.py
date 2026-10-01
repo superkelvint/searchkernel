@@ -121,21 +121,24 @@ class ReflectedSchema:
         enum = self._enum(enum_index)
         if not enum.IsUnion():
             raise ValueError(f"expected union enum, got {self.short_name(enum)}")
-        types: list[str] = []
+        types: set[str] = set()
         for i in range(enum.ValuesLength()):
             member = enum.Values(i)
-            union_type = member.UnionType()
-            base = union_type.BaseType()
-            if base == self.base.None_:
+            member_name = _decode(member.Name())
+            if member_name == "NONE":
                 continue
+            union_type = member.UnionType()
+            if union_type is None:
+                raise ValueError(
+                    f"union arm has no payload type: {self.short_name(enum)}.{member_name}"
+                )
+            base = union_type.BaseType()
             if base != self.base.Obj:
                 raise ValueError(
-                    f"unsupported union member {self.short_name(enum)}.{_decode(member.Name())}: base type {base}"
+                    f"unsupported union member {self.short_name(enum)}.{member_name}: base type {base}"
                 )
-            item = self._object_type(union_type.Index())
-            if item not in types:
-                types.append(item)
-        return "|".join(types + ["null"])
+            types.add(self._object_type(union_type.Index()))
+        return "|".join(sorted(types) + ["null"])
 
     def _scalar_type(self, base: int, index: int, *, vector_element: bool = False) -> str:
         if index >= 0 and base not in (self.base.Obj, self.base.Union):
