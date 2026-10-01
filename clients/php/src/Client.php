@@ -14,6 +14,7 @@ namespace SearchKernel;
 final class Client
 {
     private bool $closed = false;
+    private ?string $indexGeneration = null;
 
     public function __construct(
         private readonly Transport $transport,
@@ -38,10 +39,30 @@ final class Client
             throw new TransportException('Search Kernel client is closed');
         }
         [$requestType, $responseType] = Protocol::operation($operation);
-        $response = $this->transport->execute(
-            Protocol::envelope($requestType, $payload, $this->target),
+        $lifecycle = in_array(
+            $operation,
+            ['create_index', 'open_index', 'delete_index'],
+            true,
         );
-        return Protocol::expectPayload($response, $responseType);
+        $response = $this->transport->execute(
+            Protocol::envelope(
+                $requestType,
+                $payload,
+                $this->target,
+                $lifecycle ? null : $this->indexGeneration,
+            ),
+        );
+        $result = Protocol::expectPayload($response, $responseType);
+        if ($operation === 'create_index' || $operation === 'open_index') {
+            $generation = $response['index_generation'] ?? null;
+            if (!is_string($generation) || $generation === '') {
+                throw new ProtocolException(
+                    $responseType . ' is missing canonical index generation',
+                );
+            }
+            $this->indexGeneration = $generation;
+        }
+        return $result;
     }
 
     /** @param array<string,mixed> $payload @return array<string,mixed> */
