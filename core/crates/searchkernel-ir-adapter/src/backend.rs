@@ -222,7 +222,7 @@ fn facet_result_node(
     Ok(searchkernel_ir::ResultNode::Group(
         searchkernel_ir::ResultGroup {
             id: Some(facet.field.clone()),
-            label: Some(facet.field),
+            label: Some(facet.name),
             value: None,
             fields: std::collections::BTreeMap::new(),
             children: groups,

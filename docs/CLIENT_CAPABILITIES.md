@@ -175,7 +175,7 @@ has real-runtime evidence.
   - php / http / ergonomic / builder — [clients/php/tests/run.php](../clients/php/tests/run.php#L1329)
   - python / shared / ergonomic / builder — [clients/python/tests/test_flatbuffers_objects.py](../clients/python/tests/test_flatbuffers_objects.py#L756)
   - ruby / http / ergonomic / builder — [clients/ruby/test/facade.rb](../clients/ruby/test/facade.rb#L307)
-  - rust / native / ergonomic / builder — [core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs](../core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs#L385)
+  - rust / native / ergonomic / builder — [core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs](../core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs#L402)
   - typescript / shared / ergonomic / builder — [clients/typescript/tests/facade.test.ts](../clients/typescript/tests/facade.test.ts#L204)
 
 ### Nearest-neighbor vector search (query.nearest_neighbor)
