@@ -508,9 +508,6 @@ if [ "$BASE_ONLY" = 1 ]; then
     LINKER_ALIASES+=(--source-root "vespa-deps=$VESPA_DEPS")
     LINKER_ALIASES+=(--source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR")
     LINKER_ALIASES+=(--source-root "system=/usr")
-    if [ -n "$AWS_LIB_DIR" ]; then
-        LINKER_ALIASES+=(--source-root "vespa-aws=$AWS_LIB_DIR")
-    fi
     "$PYTHON_BIN" "$ROOT/tools/copy-native-base-link-shared-libraries.py" \
         "$LINK_FILE" "$SDK/lib" --cxx "$CXX" "${LINKER_ALIASES[@]}"
 elif [ "$VESPA_LIBRARY_ROOT" = "$VESPA_ROOT" ]; then
