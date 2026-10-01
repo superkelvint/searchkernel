@@ -35,8 +35,15 @@ class IndexTarget(object):
             return self._tab.String(o + self._tab.Pos)
         return None
 
+    # IndexTarget
+    def Generation(self) -> Optional[str]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
+        if o != 0:
+            return self._tab.String(o + self._tab.Pos)
+        return None
+
 def IndexTargetStart(builder: flatbuffers.Builder):
-    builder.StartObject(1)
+    builder.StartObject(2)
 
 def Start(builder: flatbuffers.Builder):
     IndexTargetStart(builder)
@@ -46,6 +53,12 @@ def IndexTargetAddName(builder: flatbuffers.Builder, name: int):
 
 def AddName(builder: flatbuffers.Builder, name: int):
     IndexTargetAddName(builder, name)
+
+def IndexTargetAddGeneration(builder: flatbuffers.Builder, generation: int):
+    builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(generation), 0)
+
+def AddGeneration(builder: flatbuffers.Builder, generation: int):
+    IndexTargetAddGeneration(builder, generation)
 
 def IndexTargetEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
@@ -60,8 +73,10 @@ class IndexTargetT(object):
     def __init__(
         self,
         name = None,
+        generation = None,
     ):
         self.name = name  # type: Optional[str]
+        self.generation = generation  # type: Optional[str]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -87,13 +102,20 @@ class IndexTargetT(object):
         self.name = indexTarget.Name()
         if self.name is not None:
             self.name = self.name.decode('utf-8')
+        self.generation = indexTarget.Generation()
+        if self.generation is not None:
+            self.generation = self.generation.decode('utf-8')
 
     # IndexTargetT
     def Pack(self, builder):
         if self.name is not None:
             name = builder.CreateString(self.name)
+        if self.generation is not None:
+            generation = builder.CreateString(self.generation)
         IndexTargetStart(builder)
         if self.name is not None:
             IndexTargetAddName(builder, name)
+        if self.generation is not None:
+            IndexTargetAddGeneration(builder, generation)
         indexTarget = IndexTargetEnd(builder)
         return indexTarget
