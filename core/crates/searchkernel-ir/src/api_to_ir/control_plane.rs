@@ -81,6 +81,7 @@ pub enum ControlPlaneRequest<'a> {
     },
     Route {
         target: &'a str,
+        expected_generation: Option<&'a str>,
     },
 }
 
@@ -121,7 +122,10 @@ pub fn resolve_control_plane_request<'a>(
             Ok(ControlPlaneRequest::Delete { target })
         }
         wire::RequestPayload::NONE => Err(ControlPlaneResolutionError::InvalidEnvelope),
-        _ => Ok(ControlPlaneRequest::Route { target }),
+        _ => Ok(ControlPlaneRequest::Route {
+            target,
+            expected_generation: envelope.expected_index_generation(),
+        }),
     }
 }
 
