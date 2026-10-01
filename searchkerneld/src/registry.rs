@@ -1,7 +1,7 @@
 use flatbuffers::root;
 use searchkernel::{Error as IndexError, ErrorCode as IndexErrorCode, Index};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
-use searchkernel_ir::{wire::v1 as wire_ir, PortableError};
+use searchkernel_ir::{wire::v1::{self as wire_ir, ControlPlaneRequest}, PortableError};
 use searchkernel_protocol::{
     protocol::v1::{self as wire, PROTOCOL_VERSION},
     wire::v1 as api,
