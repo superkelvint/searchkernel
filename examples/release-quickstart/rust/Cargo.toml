@@ -6,5 +6,4 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-searchkernel = { path = "../core/crates/searchkernel", features = ["native"] }
 serde_json = "1"
