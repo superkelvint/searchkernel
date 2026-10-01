@@ -103,16 +103,32 @@ def fields_from_corpus():
     return fields
 
 
-def corpus_document(source):
-    fields = E2E_CORPUS["schema"]["fields"]
-    return {
-        name: corpus_value(fields.get(name, {}), item)
-        for name, item in source.items()
-    }
-
-
 def corpus_field_value(name, item):
-    return corpus_value(E2E_CORPUS["schema"]["fields"].get(name, {}), item)
+    field_spec = E2E_CORPUS["schema"]["fields"].get(name, {})
+    value = corpus_value(field_spec, item)
+    field_type = field_spec.get("type")
+    if field_type == "int64" and isinstance(value, (int, str)) and not isinstance(value, bool):
+        return int(value)
+    if isinstance(field_type, str) and field_type.startswith("tensor<") and isinstance(value, (list, tuple)):
+        return embedding(*value)
+    return value
+
+
+def corpus_document(source):
+    return {name: corpus_field_value(name, item) for name, item in source.items()}
+
+
+def shared_filter_bindings(source, bindings):
+    converted = {}
+    for name, item in bindings.items():
+        field_match = re.search(
+            rf"([A-Za-z_][\w.]*)\s*(?:(?:<=|>=|=|<|>)\s*|IN\s*\(\s*):{re.escape(name)}\b",
+            source,
+            flags=re.IGNORECASE,
+        )
+        converted[name] = corpus_field_value(field_match.group(1), item) if field_match else item
+    return converted
+
 
 
 def rank_profiles_from_corpus():
@@ -418,14 +434,14 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     stemming_spec = intents["stemming"]
     stemming = index.search(stemming_spec["query"]).limit(stemming_spec["limit"]).execute()
     binding_spec = intents["text_filter_binding"]
-    text_binding = index.search(binding_spec["query"]).filter(binding_spec["filter"], binding_spec["bindings"]).sort(binding_spec["sort"][0]["field"], binding_spec["sort"][0]["direction"]).limit(binding_spec["limit"]).execute()
+    text_binding = index.search(binding_spec["query"]).filter(binding_spec["filter"], shared_filter_bindings(binding_spec["filter"], binding_spec["bindings"])).sort(binding_spec["sort"][0]["field"], binding_spec["sort"][0]["direction"]).limit(binding_spec["limit"]).execute()
     repeated_spec = intents["repeated_filters"]
     repeated_builder = index.search(repeated_spec["query"])
     for filter_spec in repeated_spec["filters"]:
-        repeated_builder = repeated_builder.filter(filter_spec["source"], filter_spec["bindings"])
+        repeated_builder = repeated_builder.filter(filter_spec["source"], shared_filter_bindings(filter_spec["source"], filter_spec["bindings"]))
     repeated_filters = repeated_builder.sort(repeated_spec["sort"][0]["field"], repeated_spec["sort"][0]["direction"]).limit(repeated_spec["limit"]).execute()
     boolean_spec = intents["boolean_filter_grammar"]
-    boolean_filter = (index.search(boolean_spec["query"]).filter(boolean_spec["filter"], boolean_spec["bindings"])
+    boolean_filter = (index.search(boolean_spec["query"]).filter(boolean_spec["filter"], shared_filter_bindings(boolean_spec["filter"], boolean_spec["bindings"]))
                       .sort(boolean_spec["sort"][0]["field"], boolean_spec["sort"][0]["direction"]).limit(boolean_spec["limit"]).execute())
     projection_spec = intents["sorting_projection"]
     projection = index.search(projection_spec["query"]).sort(projection_spec["sort"][0]["field"], projection_spec["sort"][0]["direction"]).fields(*projection_spec["projection"]).limit(projection_spec["limit"]).execute()
@@ -435,7 +451,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     nested_spec = intents["nested_grouping"]
     if nested_spec["kind"] != "browse":
         raise ValueError("nested_grouping requires browse intent")
-    nested = index.browse().filter(nested_spec["filter"]["source"], nested_spec["filter"]["bindings"]).group(
+    nested = index.browse().filter(nested_spec["filter"]["source"], shared_filter_bindings(nested_spec["filter"]["source"], nested_spec["filter"]["bindings"])).group(
         Group.by(nested_spec["group_by"]).limit(nested_spec["limit"]).output(*(aggregation_output(output) for output in nested_spec["outputs"])).subgroup(
             Group.by(nested_spec["nested"]["group_by"]).limit(nested_spec["nested"]["limit"]).output(*(aggregation_output(output) for output in nested_spec["nested"]["outputs"]))
         )
@@ -470,7 +486,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     degraded_spec = intents["coverage_degradation"]
     if degraded_spec["kind"] != "browse":
         raise ValueError("coverage_degradation requires browse intent")
-    degraded = index.browse().filter(degraded_spec["filter"]["source"], degraded_spec["filter"]["bindings"]).sort(degraded_spec["sort"][0]["field"], degraded_spec["sort"][0]["direction"])
+    degraded = index.browse().filter(degraded_spec["filter"]["source"], shared_filter_bindings(degraded_spec["filter"]["source"], degraded_spec["filter"]["bindings"])).sort(degraded_spec["sort"][0]["field"], degraded_spec["sort"][0]["direction"])
     for key, value in degraded_spec["rank_properties"].items(): degraded = degraded.rank_property(key, value)
     degraded = degraded.limit(degraded_spec["limit"]).execute()
     yql_spec = intents["yql"]
@@ -624,12 +640,7 @@ with Index.create(
 
     heading("2. INSERT DOCUMENTS")
 
-    documents = []
-    for source in E2E_CORPUS["documents"]:
-        document = corpus_document(source)
-        if "embedding" in document:
-            document["embedding"] = embedding(*document["embedding"])
-        documents.append(document)
+    documents = [corpus_document(source) for source in E2E_CORPUS["documents"]]
 
     for document in documents:
         index.insert(document)
@@ -637,9 +648,7 @@ with Index.create(
 
     probe_spec = E2E_CORPUS["coverage_probes"]
     for probe in range(probe_spec["count"]):
-        document = corpus_document(probe_spec["document"])
-        document["_id"] = f"degraded-{probe}"
-        document["embedding"] = embedding(*document["embedding"])
+        document = corpus_document({**probe_spec["document"], "_id": f"degraded-{probe}"})
         index.insert(document)
     print(f"inserted {probe_spec['count']} deterministic coverage probe documents")
 
@@ -1591,7 +1600,7 @@ with Index.create(
     upsert_spec = PARITY_INTENTS["upsert_replacement"]
     replacement = dict(upsert_spec["replacement"])
     vector_document_id = replacement.pop("vector_document_id")
-    index.upsert(corpus_document({"_id": upsert_spec["document_id"], **replacement, "embedding": embedding(*corpus_vector(vector_document_id))}))
+    index.upsert(corpus_document({"_id": upsert_spec["document_id"], **replacement, "embedding": corpus_vector(vector_document_id)}))
 
     doc = index.get(upsert_spec["document_id"])
     print(doc)

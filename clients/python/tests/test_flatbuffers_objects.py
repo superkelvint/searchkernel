@@ -77,6 +77,16 @@ from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNodeKind import Res
 from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultGroup import ResultGroupT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNode import ResultNodeT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHitsRelation import TotalHitsRelation  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.RelevanceSortTarget import RelevanceSortTargetT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.RankFeatureSortTarget import RankFeatureSortTargetT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MissingPolicy import MissingPolicyT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MissingPolicyKind import MissingPolicyKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MissingLast import MissingLastT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchField import SearchFieldT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchFieldSelection import SearchFieldSelectionT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.OptionalUInt64 import OptionalUInt64T  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.QueryModel import QueryModelT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchKernelTextQuery import SearchKernelTextQueryT  # noqa: E402
 
 
 _SNAPSHOT_BINARY = None
@@ -248,6 +258,73 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                     _canonical_snapshot(index.client.request),
                     _canonical_snapshot(canonical),
                 )
+
+    # SKC: search.search_fields/basic kinds=ergonomic runtime=shared
+    # SKC: search.sort_missing_placement/basic kinds=ergonomic runtime=shared
+    def test_search_builder_executable_union_converges_on_shared_ir(self):
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return _empty_search_result()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        request = (
+            SearchBuilder(index, "wireless")
+            .search_fields("title")
+            .sort("price", "asc", missing="last")
+            .sort_relevance("desc")
+            .sort_feature("freshness", "asc")
+            .timeout(500)
+            .language("en")
+            ._request()
+        )
+        canonical = SearchRequestT(
+            query=QuerySourceT(
+                sourceType=QuerySourceKind.SearchKernelTextQuery,
+                source=SearchKernelTextQueryT(text="wireless"),
+            ),
+            searchFields=SearchFieldSelectionT(fields=[SearchFieldT(field="title")]),
+            sort=[
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.FieldSortTarget,
+                        target=FieldSortTargetT(field="price"),
+                    ),
+                    direction=SortDirection.Asc,
+                    missing=MissingPolicyT(
+                        policyType=MissingPolicyKind.MissingLast,
+                        policy=MissingLastT(),
+                    ),
+                ),
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.RelevanceSortTarget,
+                        target=RelevanceSortTargetT(),
+                    ),
+                    direction=SortDirection.Desc,
+                ),
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.RankFeatureSortTarget,
+                        target=RankFeatureSortTargetT(feature="freshness"),
+                    ),
+                    direction=SortDirection.Asc,
+                ),
+            ],
+            timeoutMs=OptionalUInt64T(value=500),
+            queryModel=QueryModelT(language="en"),
+        )
+        self.assertEqual(
+            _canonical_snapshot(request),
+            _canonical_snapshot(canonical),
+        )
 
     def test_nested_grouping_uses_structural_all_scope(self):
         request = Group.by("category").output(agg.count()).subgroup(
