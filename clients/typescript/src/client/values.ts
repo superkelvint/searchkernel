@@ -1,24 +1,24 @@
-import { BoolValueT } from "../generated/flatbuffers/search-kernel/v2/bool-value.js";
-import { BytesValueT } from "../generated/flatbuffers/search-kernel/v2/bytes-value.js";
-import { DenseTensorValuesT } from "../generated/flatbuffers/search-kernel/v2/dense-tensor-values.js";
-import { Float64ValueT } from "../generated/flatbuffers/search-kernel/v2/float64-value.js";
-import { Int64ValueT } from "../generated/flatbuffers/search-kernel/v2/int64-value.js";
-import { MixedTensorBlocksT } from "../generated/flatbuffers/search-kernel/v2/mixed-tensor-blocks.js";
-import { NonFiniteFloatKind } from "../generated/flatbuffers/search-kernel/v2/non-finite-float-kind.js";
-import { NonFiniteFloatValueT } from "../generated/flatbuffers/search-kernel/v2/non-finite-float-value.js";
-import { NullValue } from "../generated/flatbuffers/search-kernel/v2/null-value.js";
-import { NullValueValueT } from "../generated/flatbuffers/search-kernel/v2/null-value-value.js";
-import { SparseTensorCellsT } from "../generated/flatbuffers/search-kernel/v2/sparse-tensor-cells.js";
-import { StringValueT } from "../generated/flatbuffers/search-kernel/v2/string-value.js";
-import { TensorAddressEntryT } from "../generated/flatbuffers/search-kernel/v2/tensor-address-entry.js";
-import { TensorPayloadKind } from "../generated/flatbuffers/search-kernel/v2/tensor-payload-kind.js";
-import { TensorValueT } from "../generated/flatbuffers/search-kernel/v2/tensor-value.js";
-import { UInt64ValueT } from "../generated/flatbuffers/search-kernel/v2/uint64-value.js";
-import { ValueEntryT } from "../generated/flatbuffers/search-kernel/v2/value-entry.js";
-import { ValueKind } from "../generated/flatbuffers/search-kernel/v2/value-kind.js";
-import { ValueListT } from "../generated/flatbuffers/search-kernel/v2/value-list.js";
-import { ValueObjectT } from "../generated/flatbuffers/search-kernel/v2/value-object.js";
-import { ValueT } from "../generated/flatbuffers/search-kernel/v2/value.js";
+import { BoolValueT } from "../semantic.js";
+import { BytesValueT } from "../semantic.js";
+import { DenseTensorValuesT } from "../semantic.js";
+import { Float64ValueT } from "../semantic.js";
+import { Int64ValueT } from "../semantic.js";
+import { MixedTensorBlocksT } from "../semantic.js";
+import { NonFiniteFloatKind } from "../semantic.js";
+import { NonFiniteFloatValueT } from "../semantic.js";
+import { NullValue } from "../semantic.js";
+import { NullValueValueT } from "../semantic.js";
+import { SparseTensorCellsT } from "../semantic.js";
+import { StringValueT } from "../semantic.js";
+import { TensorAddressEntryT } from "../semantic.js";
+import { TensorPayloadKind } from "../semantic.js";
+import { TensorValueT } from "../semantic.js";
+import { UInt64ValueT } from "../semantic.js";
+import { ValueEntryT } from "../semantic.js";
+import { ValueKind } from "../semantic.js";
+import { ValueListT } from "../semantic.js";
+import { ValueObjectT } from "../semantic.js";
+import { ValueT } from "../semantic.js";
 import { comparePortableKeys } from "../internal/scalars.js";
 
 export type Int64 = bigint | string | number;
@@ -135,7 +135,7 @@ export function float64(input: number): ValueT {
   return new ValueT(ValueKind.Float64Value, new Float64ValueT(input));
 }
 
-/** Converts ergonomic values to generated V2 `ValueT` objects. */
+/** Converts ergonomic values to the private wire value model. */
 export function value(input: ValueInput): ValueT {
   if (input instanceof ValueT) return input;
   if (input === null) {
@@ -228,7 +228,7 @@ export function decodeValueEntries(
   return decoded;
 }
 
-/** Losslessly converts generated V2 values into JavaScript values. */
+/** Losslessly converts decoded values into JavaScript values. */
 export function fromValue(input: ValueT | null): unknown {
   if (!input) return null;
 

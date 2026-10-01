@@ -116,7 +116,7 @@ fn run_portable(
         .map_err(|error| format!("portable dispatch failed: {error:?}"))?;
     let printed = response_flatbuffer_to_json(&response)?;
     let response: Json = serde_json::from_slice(&printed)?;
-    if response["payload_type"] != "SearchKernel_V2_Error" {
+    if response["payload_type"] != "SearchKernel_Wire_Error" {
         return Err("negative portable request unexpectedly succeeded".into());
     }
     let detail = response["payload"]["details"][0]["code"]

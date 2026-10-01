@@ -1,24 +1,24 @@
 include "searchkernel.fbs";
 
-namespace SearchKernel.Protocol.V2;
+namespace SearchKernel.Protocol;
 
 // #848 establishes this request union as the forward-compatibility baseline.
 // Future variants append here; existing discriminator values must not be
 // reordered or reused.
 union RequestPayload {
-  SearchKernel.V2.InsertRequest,
-  SearchKernel.V2.UpsertRequest,
-  SearchKernel.V2.PatchRequest,
-  SearchKernel.V2.DeleteRequest,
-  SearchKernel.V2.GetRequest,
-  SearchKernel.V2.SearchRequest,
-  SearchKernel.V2.AnalyzeRequest,
-  SearchKernel.V2.DescribeRequest,
-  SearchKernel.V2.InspectQueryRequest,
-  SearchKernel.V2.UpdateRequest,
-  SearchKernel.V2.CreateIndexRequest,
-  SearchKernel.V2.OpenIndexRequest,
-  SearchKernel.V2.DeleteIndexRequest
+  SearchKernel.Wire.InsertRequest,
+  SearchKernel.Wire.UpsertRequest,
+  SearchKernel.Wire.PatchRequest,
+  SearchKernel.Wire.DeleteRequest,
+  SearchKernel.Wire.GetRequest,
+  SearchKernel.Wire.SearchRequest,
+  SearchKernel.Wire.AnalyzeRequest,
+  SearchKernel.Wire.DescribeRequest,
+  SearchKernel.Wire.InspectQueryRequest,
+  SearchKernel.Wire.UpdateRequest,
+  SearchKernel.Wire.CreateIndexRequest,
+  SearchKernel.Wire.OpenIndexRequest,
+  SearchKernel.Wire.DeleteIndexRequest
 }
 
 table RequestEnvelope {
@@ -33,7 +33,7 @@ table RequestEnvelope {
   //
   // #848 establishes this field at the current slot as the forward-compatibility
   // baseline; future fields append rather than shifting existing slots.
-  target:SearchKernel.V2.IndexTarget;
+  target:SearchKernel.Wire.IndexTarget;
 }
 
 root_type RequestEnvelope;

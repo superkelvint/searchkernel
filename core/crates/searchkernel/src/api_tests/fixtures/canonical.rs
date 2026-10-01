@@ -1,6 +1,6 @@
 use super::super::support::*;
 use super::super::*;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 
 macro_rules! fixture_field {
     (

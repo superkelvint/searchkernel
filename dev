@@ -667,8 +667,8 @@ regen_protocol() {
     bash "$ROOT/tools/generate-flatbuffers-bfbs.sh"
     bash "$ROOT/tools/generate-searchkernel-rpc.sh"
     bash "$ROOT/tools/generate-python-flatbuffers.sh"
-    bash "$ROOT/tools/generate-python-grpc.sh"
     "$NPM" run generate --prefix "$ROOT/clients/typescript"
+    bash "$ROOT/tools/generate-python-grpc.sh"
 }
 
 regen_result_fixtures() {

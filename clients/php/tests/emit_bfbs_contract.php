@@ -53,8 +53,8 @@ final class CaptureTransport implements Transport
         $payload = is_array($request['payload'] ?? null) ? $request['payload'] : [];
 
         [$resultType, $resultPayload] = match ($type) {
-            'SearchKernel_V2_PatchRequest' => ['PatchResult', ['id' => $payload['id'] ?? '']],
-            'SearchKernel_V2_UpdateRequest' => ['UpdateResult', ['id' => $payload['id'] ?? '']],
+            'SearchKernel_Wire_PatchRequest' => ['PatchResult', ['id' => $payload['id'] ?? '']],
+            'SearchKernel_Wire_UpdateRequest' => ['UpdateResult', ['id' => $payload['id'] ?? '']],
             default => throw new RuntimeException('unexpected capture request: ' . var_export($type, true)),
         };
 

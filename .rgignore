@@ -9,7 +9,7 @@
 target/
 
 # Generated FlatBuffers / protocol output
-clients/python/searchkernel/_wire_generated/
+clients/python/searchkernel/_wire/v1/generated/
 **/*.bfbs
 
 # Generated gRPC output, if present

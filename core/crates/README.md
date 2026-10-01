@@ -3,7 +3,7 @@
 The Rust workspace is split by responsibility. The crates currently live here:
 
 - `searchkernel` — the product-facing fluent API.
-- `searchkernel-dispatch` — transport-independent canonical V2 request dispatch.
+- `searchkernel-dispatch` — transport-independent canonical request dispatch.
 - `searchkernel-ir` — validation, defaults, and the owned intermediate
   representation.
 - `searchkernel-ir-adapter` — the integration boundary between IR and Vespa.

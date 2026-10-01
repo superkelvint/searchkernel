@@ -16,22 +16,22 @@ import {
 import { q } from "../src/ergonomic/query.js";
 import { paritySafe } from "../examples/parity-json.js";
 import { Keyword, RankProfile, TensorField, Text } from "../src/ergonomic/schema.js";
-import { DocumentT } from "../src/generated/flatbuffers/search-kernel/v2/document.js";
-import { ErrorCode } from "../src/generated/flatbuffers/search-kernel/v2/error-code.js";
-import { ErrorT } from "../src/generated/flatbuffers/search-kernel/v2/error.js";
-import { GroupingOperationKind } from "../src/generated/flatbuffers/search-kernel/v2/grouping-operation-kind.js";
-import { GroupingExpressionKind } from "../src/generated/flatbuffers/search-kernel/v2/grouping-expression-kind.js";
-import { GroupingSourceKind } from "../src/generated/flatbuffers/search-kernel/v2/grouping-source-kind.js";
-import { InsertResultT } from "../src/generated/flatbuffers/search-kernel/v2/insert-result.js";
-import { SearchRequestT } from "../src/generated/flatbuffers/search-kernel/v2/search-request.js";
-import { RequestEnvelope } from "../src/generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
-import { SearchRequest } from "../src/generated/flatbuffers/search-kernel/v2/search-request.js";
-import { QuerySourceKind } from "../src/generated/flatbuffers/search-kernel/v2/query-source-kind.js";
-import { QueryExprKind } from "../src/generated/flatbuffers/search-kernel/v2/query-expr-kind.js";
-import { ValueKind } from "../src/generated/flatbuffers/search-kernel/v2/value-kind.js";
+import { DocumentT } from "../src/semantic.js";
+import { ErrorCode } from "../src/semantic.js";
+import { ErrorT } from "../src/semantic.js";
+import { GroupingOperationKind } from "../src/semantic.js";
+import { GroupingExpressionKind } from "../src/semantic.js";
+import { GroupingSourceKind } from "../src/semantic.js";
+import { InsertResultT } from "../src/semantic.js";
+import { SearchRequestT } from "../src/semantic.js";
+import { RequestEnvelope } from "../src/_wire/v1/generated/flatbuffers/search-kernel/protocol/request-envelope.js";
+import { SearchRequest } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/search-request.js";
+import { QuerySourceKind } from "../src/semantic.js";
+import { QueryExprKind } from "../src/semantic.js";
+import { ValueKind } from "../src/semantic.js";
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
 import { ByteBuffer } from "flatbuffers";
-import { packObject, packRequest } from "../src/protocol/envelope.js";
+import { packObject, packRequest } from "../src/_wire/v1/codec.js";
 
 let semanticSnapshotBinary: string | undefined;
 

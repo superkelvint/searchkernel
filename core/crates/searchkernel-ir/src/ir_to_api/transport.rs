@@ -1,5 +1,5 @@
 use super::*;
-use searchkernel_protocol::{protocol::v2 as wire, PROTOCOL_VERSION};
+use searchkernel_protocol::{protocol::v1::{self as wire, PROTOCOL_VERSION}};
 use std::collections::BTreeMap;
 
 fn finish_request(
@@ -122,7 +122,7 @@ pub fn encode_insert_request(request: &ir::InsertRequestIr) -> Result<Vec<u8>, P
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_InsertRequest,
+        wire::RequestPayload::SearchKernel_Wire_InsertRequest,
         request.as_union_value(),
     ))
 }
@@ -142,7 +142,7 @@ pub fn encode_upsert_request(request: &ir::UpsertRequestIr) -> Result<Vec<u8>, P
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_UpsertRequest,
+        wire::RequestPayload::SearchKernel_Wire_UpsertRequest,
         request.as_union_value(),
     ))
 }
@@ -193,7 +193,7 @@ pub fn encode_patch_request(request: &ir::PatchRequestIr) -> Result<Vec<u8>, Por
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_PatchRequest,
+        wire::RequestPayload::SearchKernel_Wire_PatchRequest,
         request.as_union_value(),
     ))
 }
@@ -294,7 +294,7 @@ pub fn encode_update_request(request: &ir::UpdateRequestIr) -> Result<Vec<u8>, P
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_UpdateRequest,
+        wire::RequestPayload::SearchKernel_Wire_UpdateRequest,
         request.as_union_value(),
     ))
 }
@@ -314,7 +314,7 @@ pub fn encode_delete_request(request: &ir::DeleteRequestIr) -> Result<Vec<u8>, P
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_DeleteRequest,
+        wire::RequestPayload::SearchKernel_Wire_DeleteRequest,
         request.as_union_value(),
     ))
 }
@@ -347,7 +347,7 @@ pub fn encode_get_request(request: &ir::GetRequestIr) -> Result<Vec<u8>, Portabl
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_GetRequest,
+        wire::RequestPayload::SearchKernel_Wire_GetRequest,
         request.as_union_value(),
     ))
 }
@@ -357,7 +357,7 @@ pub fn encode_search_request(request: &ir::SearchRequestIr) -> Result<Vec<u8>, P
     let request = super::search::search_request_offset(&mut builder, request);
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_SearchRequest,
+        wire::RequestPayload::SearchKernel_Wire_SearchRequest,
         request.as_union_value(),
     ))
 }
@@ -388,7 +388,7 @@ pub fn encode_analyze_request(request: &ir::AnalyzeRequestIr) -> Result<Vec<u8>,
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_AnalyzeRequest,
+        wire::RequestPayload::SearchKernel_Wire_AnalyzeRequest,
         request.as_union_value(),
     ))
 }
@@ -398,7 +398,7 @@ pub fn encode_describe_request() -> Vec<u8> {
     let request = api::DescribeRequest::create(&mut builder, &api::DescribeRequestArgs {});
     finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+        wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
         request.as_union_value(),
     )
 }

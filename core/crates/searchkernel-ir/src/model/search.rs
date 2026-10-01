@@ -8,7 +8,7 @@ pub struct SearchRequestIr {
     pub(crate) search_fields: Vec<SearchFieldIr>,
     pub(crate) filter: Option<FilterIr>,
     pub(crate) sort: Vec<SortIr>,
-    /// V2's canonical aggregation mechanism.
+    /// the canonical aggregation mechanism.
     pub(crate) grouping: Vec<GroupingRequestIr>,
     pub(crate) ranking_request: RankingRequestIr,
     pub(crate) inputs: std::collections::BTreeMap<String, QueryInputIr>,

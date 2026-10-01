@@ -99,7 +99,7 @@ fn index_context() -> IndexContext {
     builder.finish(definition, None);
     let definition =
         searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(builder.finished_data())
-            .expect("valid V2 index definition");
+            .expect("valid index definition");
     IndexContext::from_api(definition).expect("valid index context")
 }
 
@@ -763,7 +763,7 @@ fn v2_index_definition_and_text_search_convert_to_ir() {
     builder.finish(request, None);
     let request =
         searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
-            .expect("valid V2 search request");
+            .expect("valid search request");
     let converted = context.search_to_ir(request).expect("search converts");
     assert_eq!(converted.query(), &QueryIr::Text("headphones".to_owned()));
     assert_eq!(converted.limit(), 7);
@@ -851,7 +851,7 @@ fn v2_structured_filter_sort_and_ranking_convert_to_ir() {
     builder.finish(request, None);
     let request =
         searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
-            .expect("valid V2 search request");
+            .expect("valid search request");
     let converted = context.search_to_ir(request).expect("search converts");
     assert!(converted.filter().is_some());
     assert_eq!(converted.sort().len(), 1);
@@ -988,7 +988,7 @@ fn v2_request_controls_and_structured_grouping_are_preserved_in_ir() {
     builder.finish(request, None);
     let request =
         searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
-            .expect("valid V2 search request");
+            .expect("valid search request");
 
     let converted = context.search_to_ir(request).expect("all controls resolve");
     assert!(matches!(converted.query(), QueryIr::Yql { .. }));
@@ -1122,9 +1122,9 @@ fn v2_search_result_encoding_uses_result_tree_and_relevance() {
         )]))),
         metadata: BTreeMap::from([("request_id".to_owned(), Value::String("req-1".to_owned()))]),
     };
-    let bytes = search_result_to_api(&result).expect("valid V2 search result");
+    let bytes = search_result_to_api(&result).expect("valid search result");
     let encoded = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes)
-        .expect("valid V2 search result");
+        .expect("valid search result");
     let root = encoded.root().expect("result root");
     let group = root.node_as_result_group().expect("result group root");
     assert_eq!(group.id(), Some("root"));
@@ -1737,7 +1737,7 @@ fn v2_error_encoding_remains_portable() {
     let error = PortableError::new(ErrorCode::InvalidArgument, "bad request");
     let bytes = error_to_api(&error);
     let encoded =
-        searchkernel_ir::__flatbuffers::root::<api::Error>(&bytes).expect("valid V2 error");
+        searchkernel_ir::__flatbuffers::root::<api::Error>(&bytes).expect("valid error");
     assert_eq!(encoded.code(), api::ErrorCode::InvalidArgument);
     assert_eq!(encoded.message(), Some("bad request"));
 }

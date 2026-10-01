@@ -662,7 +662,7 @@ pub(super) fn field_definition_offset<'a>(
     let name = builder.create_string(field.name.as_str());
     let data_type = data_type_offset(builder, &field.data_type);
     // An indexing script owns the field's resolved capabilities in the
-    // canonical V2 form.  Long-tail properties and nested struct-field
+    // canonical wire form.  Long-tail properties and nested struct-field
     // configuration are independent metadata and must not force inferred
     // capability booleans back into the wire representation.
     let script_only = field.indexing_script.is_some();

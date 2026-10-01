@@ -1,7 +1,7 @@
 //! Portable multi-index target and lifecycle semantics.
 
 use crate::{ErrorCode, ErrorDetail, PortableError};
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api};
+use searchkernel_protocol::{protocol::v1 as wire, wire::v1 as api};
 use std::collections::BTreeMap;
 
 pub const MAX_INDEX_TARGET_LEN: usize = 128;
@@ -96,24 +96,24 @@ pub fn resolve_control_plane_request<'a>(
     let target =
         resolve_index_target(envelope.target()).map_err(ControlPlaneResolutionError::Semantic)?;
     match envelope.payload_type() {
-        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
             let payload = envelope
-                .payload_as_search_kernel_v2_create_index_request()
+                .payload_as_search_kernel_wire_create_index_request()
                 .ok_or(ControlPlaneResolutionError::InvalidEnvelope)?;
             let definition = payload
                 .definition()
                 .ok_or_else(|| ControlPlaneResolutionError::Semantic(missing_definition_error()))?;
             Ok(ControlPlaneRequest::Create { target, definition })
         }
-        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest => {
             envelope
-                .payload_as_search_kernel_v2_open_index_request()
+                .payload_as_search_kernel_wire_open_index_request()
                 .ok_or(ControlPlaneResolutionError::InvalidEnvelope)?;
             Ok(ControlPlaneRequest::Open { target })
         }
-        wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
+        wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest => {
             envelope
-                .payload_as_search_kernel_v2_delete_index_request()
+                .payload_as_search_kernel_wire_delete_index_request()
                 .ok_or(ControlPlaneResolutionError::InvalidEnvelope)?;
             Ok(ControlPlaneRequest::Delete { target })
         }
@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn request_resolution_owns_presence_and_lifecycle_meaning() {
-        use searchkernel_protocol::protocol::v2 as wire;
+        use searchkernel_protocol::protocol::v1 as wire;
 
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let open =
@@ -451,8 +451,8 @@ mod tests {
         let open_envelope = wire::RequestEnvelope::create(
             &mut builder,
             &wire::RequestEnvelopeArgs {
-                protocol_version: searchkernel_protocol::PROTOCOL_VERSION,
-                payload_type: wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+                protocol_version: searchkernel_protocol::protocol::v1::PROTOCOL_VERSION,
+                payload_type: wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
                 payload: Some(open.as_union_value()),
                 ..Default::default()
             },
@@ -483,9 +483,9 @@ mod tests {
         let create_envelope = wire::RequestEnvelope::create(
             &mut builder,
             &wire::RequestEnvelopeArgs {
-                protocol_version: searchkernel_protocol::PROTOCOL_VERSION,
+                protocol_version: searchkernel_protocol::protocol::v1::PROTOCOL_VERSION,
                 target: Some(target),
-                payload_type: wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+                payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
                 payload: Some(create.as_union_value()),
             },
         );

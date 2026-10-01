@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::*;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The deliberately small schema intent accepted by the ergonomic Rust

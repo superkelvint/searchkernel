@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::*;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 
 pub(crate) fn grouping_to_input(
     values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::GroupingRequest<'_>>>>,

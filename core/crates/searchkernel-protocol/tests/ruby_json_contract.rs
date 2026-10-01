@@ -78,7 +78,7 @@ fn ruby_emitted_standard_json_matches_canonical_bfbs() {
 
         let input: serde_json::Value = serde_json::from_slice(json)
             .unwrap_or_else(|error| panic!("{name}: emitted invalid JSON: {error}"));
-        assert_eq!(input["protocol_version"], 2, "{name}: protocol version");
+        assert_eq!(input["protocol_version"], 1, "{name}: protocol version");
         let input_type = input["payload_type"]
             .as_str()
             .unwrap_or_else(|| panic!("{name}: payload_type missing"))
@@ -206,11 +206,11 @@ fn ruby_rejects_adversarial_values_after_bfbs_printing() {
     let cases: &[(&str, &[u8])] = &[
         (
             "duplicate nested object key",
-            br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind_type":"ValueObject","kind":{"fields":[{"key":"x","value":{"kind_type":"Int64Value","kind":{"value":1}}},{"key":"x","value":{"kind_type":"Int64Value","kind":{"value":2}}}]}}}]}}}"#,
+            br#"{"protocol_version":1,"payload_type":"SearchKernel_Wire_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind_type":"ValueObject","kind":{"fields":[{"key":"x","value":{"kind_type":"Int64Value","kind":{"value":1}}},{"key":"x","value":{"kind_type":"Int64Value","kind":{"value":2}}}]}}}]}}}"#,
         ),
         (
             "missing Value discriminator",
-            br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind":{"value":1}}}]}}}"#,
+            br#"{"protocol_version":1,"payload_type":"SearchKernel_Wire_GetResult","payload":{"document":{"id":"id:bad","fields":[{"key":"bad","value":{"kind":{"value":1}}}]}}}"#,
         ),
     ];
 
@@ -227,7 +227,7 @@ fn ruby_rejects_adversarial_values_after_bfbs_printing() {
     // Scalar fields use FlatBuffers defaults. An Int64Value table with its
     // scalar omitted therefore means canonical zero, not a missing payload.
     // Verify the BFBS printer and Ruby decoder agree on that default.
-    let canonical_default = br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_GetResult","payload":{"document":{"id":"id:default","fields":[{"key":"zero","value":{"kind_type":"Int64Value","kind":{}}}]}}}"#;
+    let canonical_default = br#"{"protocol_version":1,"payload_type":"SearchKernel_Wire_GetResult","payload":{"document":{"id":"id:default","fields":[{"key":"zero","value":{"kind_type":"Int64Value","kind":{}}}]}}}"#;
     let buffer = response_json_to_flatbuffer(canonical_default)
         .expect("canonical Int64Value default must parse");
     let printed =

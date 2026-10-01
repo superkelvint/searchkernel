@@ -112,9 +112,9 @@ class BehavioralLanesRequiredTests(unittest.TestCase):
 
     def test_language_owned_generated_artifacts_stay_in_owner_lane(self) -> None:
         cases = {
-            "clients/python/searchkernel/_wire_generated/request.py": {"python"},
+            "clients/python/searchkernel/_wire/v1/generated/SearchKernel/Wire/document.py": {"python"},
             "clients/python/searchkernel/rpc/searchkernel_pb2.py": {"python"},
-            "clients/typescript/src/generated/searchkernel.ts": {"typescript"},
+            "clients/typescript/src/_wire/v1/generated/flatbuffers/search-kernel/wire/document.ts": {"typescript"},
             "tools/generate-python-grpc.sh": {"python"},
             "tools/check-python-grpc.sh": {"python"},
             "tools/generate-typescript-grpc-web.sh": {"typescript"},

@@ -2,7 +2,7 @@ use flatbuffers::root;
 use searchkernel::{Error as IndexError, ErrorCode as IndexErrorCode, Index};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
 use searchkernel_ir::{ControlPlaneRequest, PortableError};
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+use searchkernel_protocol::{protocol::v1::{self as wire, PROTOCOL_VERSION}, wire::v1 as api};
 use std::{
     collections::BTreeMap,
     fmt,
@@ -264,7 +264,7 @@ impl IndexRegistry {
             .insert(target.to_owned(), entry);
         Ok(encode_lifecycle_result(
             context.definition(),
-            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
         ))
     }
 
@@ -282,7 +282,7 @@ impl IndexRegistry {
                 let (context, _) = entry.index.clone().into_session_parts();
                 return Ok(encode_lifecycle_result(
                     context.definition(),
-                    wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+                    wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
                 ));
             }
         }
@@ -312,7 +312,7 @@ impl IndexRegistry {
             .insert(target.to_owned(), entry);
         Ok(encode_lifecycle_result(
             context.definition(),
-            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
         ))
     }
 
@@ -447,12 +447,12 @@ fn encode_lifecycle_result(
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
     let payload = match payload_type {
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult => api::CreateIndexResult::create(
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => api::CreateIndexResult::create(
             &mut builder,
             &api::CreateIndexResultArgs { index: Some(index) },
         )
         .as_union_value(),
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => api::OpenIndexResult::create(
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult => api::OpenIndexResult::create(
             &mut builder,
             &api::OpenIndexResultArgs { index: Some(index) },
         )
@@ -469,7 +469,7 @@ fn encode_delete_index_result() -> Vec<u8> {
             .as_union_value();
     encode_response(
         &mut builder,
-        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
         payload,
     )
 }
@@ -479,7 +479,7 @@ fn encode_error(error: PortableError) -> Vec<u8> {
     let payload = searchkernel_ir::error_offset(&mut builder, &error).as_union_value();
     encode_response(
         &mut builder,
-        wire::ResponsePayload::SearchKernel_V2_Error,
+        wire::ResponsePayload::SearchKernel_Wire_Error,
         payload,
     )
 }

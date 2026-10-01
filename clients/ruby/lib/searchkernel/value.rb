@@ -6,7 +6,7 @@ module SearchKernel
   # Standard FlatBuffers JSON representation of the canonical Value union.
   # Ruby integers are arbitrary precision; the wire range is checked explicitly.
   module Value
-    PREFIX = "SearchKernel_V2_"
+    PREFIX = "SearchKernel_Wire_"
     INT64 = (-2**63)..(2**63 - 1)
     UINT64 = 0..(2**64 - 1)
     KINDS = %w[NullValueValue BoolValue Int64Value UInt64Value Float64Value NonFiniteFloatValue StringValue BytesValue ValueList ValueObject TensorValue].freeze

@@ -1,149 +1,150 @@
-"""Idiomatic Python builders lowered directly to generated V2 objects."""
+"""Idiomatic Python builders for the Search Kernel portable API."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping
+from ._semantic import is_semantic_table, table_type
 
-from SearchKernel.V2.AggregationKind import AggregationKind
-from SearchKernel.V2.AvgAggregation import AvgAggregationT
-from SearchKernel.V2.CountAggregation import CountAggregationT
-from SearchKernel.V2.FieldDefinition import FieldDefinitionT
-from SearchKernel.V2.DataType import DataTypeT
-from SearchKernel.V2.DataTypeKind import DataTypeKind
-from SearchKernel.V2.TensorDataType import TensorDataTypeT
-from SearchKernel.V2.ArrayDataType import ArrayDataTypeT
-from SearchKernel.V2.StructDataType import StructDataTypeT
-from SearchKernel.V2.StructFieldDefinition import StructFieldDefinitionT
-from SearchKernel.V2.PositionDataType import PositionDataTypeT
-from SearchKernel.V2.RankPhaseDefinition import RankPhaseDefinitionT
-from SearchKernel.V2.RankProfileDefinition import RankProfileDefinitionT
-from SearchKernel.V2.RankProfileInput import RankProfileInputT
-from SearchKernel.V2.GroupingBinaryOperator import GroupingBinaryOperator
-from SearchKernel.V2.FilterClause import FilterClauseT
-from SearchKernel.V2.FilterRequest import FilterRequestT
-from SearchKernel.V2.GroupingAggregationExpression import GroupingAggregationExpressionT
-from SearchKernel.V2.GroupingAliasOperation import GroupingAliasOperationT
-from SearchKernel.V2.GroupingAliasReference import GroupingAliasReferenceT
-from SearchKernel.V2.GroupingAllOperation import GroupingAllOperationT
-from SearchKernel.V2.GroupingAttributeExpression import GroupingAttributeExpressionT
-from SearchKernel.V2.GroupingBinaryExpression import GroupingBinaryExpressionT
-from SearchKernel.V2.GroupingEachOperation import GroupingEachOperationT
-from SearchKernel.V2.GroupingExpression import GroupingExpressionT
-from SearchKernel.V2.GroupingExpressionKind import GroupingExpressionKind
-from SearchKernel.V2.GroupingFilterAnd import GroupingFilterAndT
-from SearchKernel.V2.GroupingFilterExpr import GroupingFilterExprT
-from SearchKernel.V2.GroupingFilterExprKind import GroupingFilterExprKind
-from SearchKernel.V2.GroupingFilterIsTrue import GroupingFilterIsTrueT
-from SearchKernel.V2.GroupingFilterNot import GroupingFilterNotT
-from SearchKernel.V2.GroupingFilterOr import GroupingFilterOrT
-from SearchKernel.V2.GroupingFilterRegex import GroupingFilterRegexT
-from SearchKernel.V2.GroupingFunctionExpression import GroupingFunctionExpressionT
-from SearchKernel.V2.GroupingGroupOperation import GroupingGroupOperationT
-from SearchKernel.V2.GroupingKeepOperation import GroupingKeepOperationT
-from SearchKernel.V2.GroupingLiteralExpression import GroupingLiteralExpressionT
-from SearchKernel.V2.GroupingMaxKind import GroupingMaxKind
-from SearchKernel.V2.GroupingMaxOperation import GroupingMaxOperationT
-from SearchKernel.V2.GroupingOperation import GroupingOperationT
-from SearchKernel.V2.GroupingOperationKind import GroupingOperationKind
-from SearchKernel.V2.GroupingOrderExpr import GroupingOrderExprT
-from SearchKernel.V2.GroupingOrderOperation import GroupingOrderOperationT
-from SearchKernel.V2.GroupingOutput import GroupingOutputT
-from SearchKernel.V2.GroupingOutputOperation import GroupingOutputOperationT
-from SearchKernel.V2.GroupingPrecisionOperation import GroupingPrecisionOperationT
-from SearchKernel.V2.GroupingRequest import GroupingRequestT
-from SearchKernel.V2.GroupingSourceKind import GroupingSourceKind
-from SearchKernel.V2.GroupingSourceKind import GroupingSourceKind as GroupingSourceTags
-from SearchKernel.V2.GroupingUnaryExpression import GroupingUnaryExpressionT
-from SearchKernel.V2.GroupingUnaryOperator import GroupingUnaryOperator
-from SearchKernel.V2.FiniteGroupingMax import FiniteGroupingMaxT
-from SearchKernel.V2.StructuredGroupingSource import StructuredGroupingSourceT
-from SearchKernel.V2.PresentationRequest import PresentationRequestT
-from SearchKernel.V2.FieldProjection import FieldProjectionT
-from SearchKernel.V2.HighlightRequest import HighlightRequestT
-from SearchKernel.V2.QueryAnd import QueryAndT
-from SearchKernel.V2.QueryContains import QueryContainsT
-from SearchKernel.V2.QueryExpr import QueryExprT
-from SearchKernel.V2.QueryExprKind import QueryExprKind
-from SearchKernel.V2.QueryFuzzy import QueryFuzzyT
-from SearchKernel.V2.QueryGeoBoundingBox import QueryGeoBoundingBoxT
-from SearchKernel.V2.QueryGeoLocation import QueryGeoLocationT
-from SearchKernel.V2.QueryMatches import QueryMatchesT
-from SearchKernel.V2.QueryFieldRef import QueryFieldRefT
-from SearchKernel.V2.QueryNear import QueryNearT
-from SearchKernel.V2.QueryNearestNeighbor import QueryNearestNeighborT
-from SearchKernel.V2.QueryNot import QueryNotT
-from SearchKernel.V2.QueryONear import QueryONearT
-from SearchKernel.V2.QueryOr import QueryOrT
-from SearchKernel.V2.QueryPhrase import QueryPhraseT
-from SearchKernel.V2.QueryRank import QueryRankT
-from SearchKernel.V2.QuerySameElement import QuerySameElementT
-from SearchKernel.V2.QueryInput import QueryInputT
-from SearchKernel.V2.QueryInputKind import QueryInputKind
-from SearchKernel.V2.LiteralQueryInput import LiteralQueryInputT
-from SearchKernel.V2.ExpressionQueryInput import ExpressionQueryInputT
-from SearchKernel.V2.MatchingMode import MatchingMode
-from SearchKernel.V2.PrimitiveDataTypeKind import PrimitiveDataTypeKind
-from SearchKernel.V2.QuerySource import QuerySourceT
-from SearchKernel.V2.QuerySourceKind import QuerySourceKind
-from SearchKernel.V2.SearchField import SearchFieldT
-from SearchKernel.V2.SearchFieldSelection import SearchFieldSelectionT
-from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT
-from SearchKernel.V2.MatchAllQuery import MatchAllQueryT
-from SearchKernel.V2.YqlQuery import YqlQueryT
-from SearchKernel.V2.TypedQuery import TypedQueryT
-from SearchKernel.V2.QueryWand import QueryWandT
-from SearchKernel.V2.QueryComparison import QueryComparisonT
-from SearchKernel.V2.ComparisonOp import ComparisonOp
-from SearchKernel.V2.QueryRange import QueryRangeT
-from SearchKernel.V2.QueryIn import QueryInT
-from SearchKernel.V2.RangeBound import RangeBoundT
-from SearchKernel.V2.RangeBoundKind import RangeBoundKind
-from SearchKernel.V2.FiniteRangeBound import FiniteRangeBoundT
-from SearchKernel.V2.QueryWeightedSet import QueryWeightedSetT
-from SearchKernel.V2.QueryDotProduct import QueryDotProductT
-from SearchKernel.V2.WeightedQueryItem import WeightedQueryItemT
-from SearchKernel.V2.OptionalBool import OptionalBoolT
-from SearchKernel.V2.QueryWeakAnd import QueryWeakAndT
-from SearchKernel.V2.WeightedQueryItem import WeightedQueryItemT
-from SearchKernel.V2.RankingRequest import RankingRequestT
-from SearchKernel.V2.RelevanceKind import RelevanceKind
-from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT
-from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT
-from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT
-from SearchKernel.V2.SearchRequest import SearchRequestT
-from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T
-from SearchKernel.V2.SortDirection import SortDirection
-from SearchKernel.V2.SortExpr import SortExprT
-from SearchKernel.V2.SortTarget import SortTargetT
-from SearchKernel.V2.SortTargetKind import SortTargetKind
-from SearchKernel.V2.FieldSortTarget import FieldSortTargetT
-from SearchKernel.V2.StringEntry import StringEntryT
-from SearchKernel.V2.ValueEntry import ValueEntryT
-from SearchKernel.V2.Value import ValueT
-from SearchKernel.V2.SetField import SetFieldT
-from SearchKernel.V2.UnsetField import UnsetFieldT
-from SearchKernel.V2.PatchOperation import PatchOperationT
-from SearchKernel.V2.PatchOperationKind import PatchOperationKind
-from SearchKernel.V2.PatchRequest import PatchRequestT
-from SearchKernel.V2.ArithmeticUpdate import ArithmeticUpdateT
-from SearchKernel.V2.ArithmeticUpdateOperator import ArithmeticUpdateOperator
-from SearchKernel.V2.AssignUpdate import AssignUpdateT
-from SearchKernel.V2.ClearUpdate import ClearUpdateT
-from SearchKernel.V2.FieldPath import FieldPathT
-from SearchKernel.V2.OptionalBool import OptionalBoolT
-from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T
-from SearchKernel.V2.AttributeConfig import AttributeConfigT
-from SearchKernel.V2.DistanceMetric import DistanceMetric
-from SearchKernel.V2.HnswIndexConfig import HnswIndexConfigT
-from SearchKernel.V2.IndexConfig import IndexConfigT
-from SearchKernel.V2.UpdateOperation import UpdateOperationT
-from SearchKernel.V2.UpdateOperationKind import UpdateOperationKind
-from SearchKernel.V2.UpdateRequest import UpdateRequestT
-from SearchKernel.V2.ResultNodeKind import ResultNodeKind
-from SearchKernel.V2.ValueKind import ValueKind
-from SearchKernel.V2.Hit import HitT
-from SearchKernel.V2.ResultGroup import ResultGroupT
+from ._semantic import AggregationKind
+from ._semantic import AvgAggregationT
+from ._semantic import CountAggregationT
+from ._semantic import FieldDefinitionT
+from ._semantic import DataTypeT
+from ._semantic import DataTypeKind
+from ._semantic import TensorDataTypeT
+from ._semantic import ArrayDataTypeT
+from ._semantic import StructDataTypeT
+from ._semantic import StructFieldDefinitionT
+from ._semantic import PositionDataTypeT
+from ._semantic import RankPhaseDefinitionT
+from ._semantic import RankProfileDefinitionT
+from ._semantic import RankProfileInputT
+from ._semantic import GroupingBinaryOperator
+from ._semantic import FilterClauseT
+from ._semantic import FilterRequestT
+from ._semantic import GroupingAggregationExpressionT
+from ._semantic import GroupingAliasOperationT
+from ._semantic import GroupingAliasReferenceT
+from ._semantic import GroupingAllOperationT
+from ._semantic import GroupingAttributeExpressionT
+from ._semantic import GroupingBinaryExpressionT
+from ._semantic import GroupingEachOperationT
+from ._semantic import GroupingExpressionT
+from ._semantic import GroupingExpressionKind
+from ._semantic import GroupingFilterAndT
+from ._semantic import GroupingFilterExprT
+from ._semantic import GroupingFilterExprKind
+from ._semantic import GroupingFilterIsTrueT
+from ._semantic import GroupingFilterNotT
+from ._semantic import GroupingFilterOrT
+from ._semantic import GroupingFilterRegexT
+from ._semantic import GroupingFunctionExpressionT
+from ._semantic import GroupingGroupOperationT
+from ._semantic import GroupingKeepOperationT
+from ._semantic import GroupingLiteralExpressionT
+from ._semantic import GroupingMaxKind
+from ._semantic import GroupingMaxOperationT
+from ._semantic import GroupingOperationT
+from ._semantic import GroupingOperationKind
+from ._semantic import GroupingOrderExprT
+from ._semantic import GroupingOrderOperationT
+from ._semantic import GroupingOutputT
+from ._semantic import GroupingOutputOperationT
+from ._semantic import GroupingPrecisionOperationT
+from ._semantic import GroupingRequestT
+from ._semantic import GroupingSourceKind
+from ._semantic import GroupingSourceKind as GroupingSourceTags
+from ._semantic import GroupingUnaryExpressionT
+from ._semantic import GroupingUnaryOperator
+from ._semantic import FiniteGroupingMaxT
+from ._semantic import StructuredGroupingSourceT
+from ._semantic import PresentationRequestT
+from ._semantic import FieldProjectionT
+from ._semantic import HighlightRequestT
+from ._semantic import QueryAndT
+from ._semantic import QueryContainsT
+from ._semantic import QueryExprT
+from ._semantic import QueryExprKind
+from ._semantic import QueryFuzzyT
+from ._semantic import QueryGeoBoundingBoxT
+from ._semantic import QueryGeoLocationT
+from ._semantic import QueryMatchesT
+from ._semantic import QueryFieldRefT
+from ._semantic import QueryNearT
+from ._semantic import QueryNearestNeighborT
+from ._semantic import QueryNotT
+from ._semantic import QueryONearT
+from ._semantic import QueryOrT
+from ._semantic import QueryPhraseT
+from ._semantic import QueryRankT
+from ._semantic import QuerySameElementT
+from ._semantic import QueryInputT
+from ._semantic import QueryInputKind
+from ._semantic import LiteralQueryInputT
+from ._semantic import ExpressionQueryInputT
+from ._semantic import MatchingMode
+from ._semantic import PrimitiveDataTypeKind
+from ._semantic import QuerySourceT
+from ._semantic import QuerySourceKind
+from ._semantic import SearchFieldT
+from ._semantic import SearchFieldSelectionT
+from ._semantic import SearchKernelTextQueryT
+from ._semantic import MatchAllQueryT
+from ._semantic import YqlQueryT
+from ._semantic import TypedQueryT
+from ._semantic import QueryWandT
+from ._semantic import QueryComparisonT
+from ._semantic import ComparisonOp
+from ._semantic import QueryRangeT
+from ._semantic import QueryInT
+from ._semantic import RangeBoundT
+from ._semantic import RangeBoundKind
+from ._semantic import FiniteRangeBoundT
+from ._semantic import QueryWeightedSetT
+from ._semantic import QueryDotProductT
+from ._semantic import WeightedQueryItemT
+from ._semantic import OptionalBoolT
+from ._semantic import QueryWeakAndT
+from ._semantic import WeightedQueryItemT
+from ._semantic import RankingRequestT
+from ._semantic import RelevanceKind
+from ._semantic import FiniteRelevanceT
+from ._semantic import PositiveInfinityRelevanceT
+from ._semantic import NegativeInfinityRelevanceT
+from ._semantic import SearchRequestT
+from ._semantic import OptionalUInt32T
+from ._semantic import SortDirection
+from ._semantic import SortExprT
+from ._semantic import SortTargetT
+from ._semantic import SortTargetKind
+from ._semantic import FieldSortTargetT
+from ._semantic import StringEntryT
+from ._semantic import ValueEntryT
+from ._semantic import ValueT
+from ._semantic import SetFieldT
+from ._semantic import UnsetFieldT
+from ._semantic import PatchOperationT
+from ._semantic import PatchOperationKind
+from ._semantic import PatchRequestT
+from ._semantic import ArithmeticUpdateT
+from ._semantic import ArithmeticUpdateOperator
+from ._semantic import AssignUpdateT
+from ._semantic import ClearUpdateT
+from ._semantic import FieldPathT
+from ._semantic import OptionalBoolT
+from ._semantic import OptionalUInt32T
+from ._semantic import AttributeConfigT
+from ._semantic import DistanceMetric
+from ._semantic import HnswIndexConfigT
+from ._semantic import IndexConfigT
+from ._semantic import UpdateOperationT
+from ._semantic import UpdateOperationKind
+from ._semantic import UpdateRequestT
+from ._semantic import ResultNodeKind
+from ._semantic import ValueKind
+from ._semantic import HitT
+from ._semantic import ResultGroupT
 
 from .client import Tensor, _decode_value_entries, _python_value, value
 from .scalars import check_uint32
@@ -177,19 +178,15 @@ class _FieldSpec:
             "float64": PrimitiveDataTypeKind.Float64,
             "bool": PrimitiveDataTypeKind.Bool,
         }[self.kind]
-        optional = lambda setting: None if setting is None else __import__(
-            "SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]
-        ).OptionalBoolT(value=setting)
+        optional = lambda setting: None if setting is None else table_type("OptionalBool")(value=setting)
         return FieldDefinitionT(
             name=name,
-            dataType=DataTypeT(kindType=DataTypeKind.PrimitiveDataType, kind=__import__(
-                "SearchKernel.V2.PrimitiveDataType", fromlist=["PrimitiveDataTypeT"]
-            ).PrimitiveDataTypeT(kind=primitive)),
+            dataType=DataTypeT(kindType=DataTypeKind.PrimitiveDataType, kind=table_type("PrimitiveDataType")(kind=primitive)),
             stored=optional(self.stored), searchable=optional(self.searchable),
             filterable=optional(self.filterable), sortable=optional(self.sortable),
             facetable=optional(self.facetable),
             matching=(
-                __import__("SearchKernel.V2.MatchingConfig", fromlist=["MatchingConfigT"]).MatchingConfigT(
+                table_type("MatchingConfig")(
                     mode={
                         "unspecified": MatchingMode.Unspecified,
                         "text": MatchingMode.Text,
@@ -253,9 +250,7 @@ class TensorField(_FieldSpec):
     def definition(self, name: str) -> FieldDefinitionT:
         if not isinstance(self.type_spec, str) or not self.type_spec.strip():
             raise ValueError("tensor type spec must be a non-empty string")
-        optional = lambda setting: None if setting is None else __import__(
-            "SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]
-        ).OptionalBoolT(value=setting)
+        optional = lambda setting: None if setting is None else table_type("OptionalBool")(value=setting)
         metric = None
         if self.distance_metric is not None:
             metric = {
@@ -298,11 +293,11 @@ class PositionField(_FieldSpec):
         return FieldDefinitionT(
             name=name,
             dataType=DataTypeT(kindType=DataTypeKind.PositionDataType, kind=PositionDataTypeT()),
-            stored=None if self.stored is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.stored),
-            searchable=None if self.searchable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.searchable),
-            filterable=None if self.filterable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.filterable),
-            sortable=None if self.sortable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.sortable),
-            facetable=None if self.facetable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.facetable),
+            stored=None if self.stored is None else table_type("OptionalBool")(value=self.stored),
+            searchable=None if self.searchable is None else table_type("OptionalBool")(value=self.searchable),
+            filterable=None if self.filterable is None else table_type("OptionalBool")(value=self.filterable),
+            sortable=None if self.sortable is None else table_type("OptionalBool")(value=self.sortable),
+            facetable=None if self.facetable is None else table_type("OptionalBool")(value=self.facetable),
         )
 
 
@@ -339,11 +334,11 @@ class ArrayField(_FieldSpec):
         return FieldDefinitionT(
             name=name,
             dataType=DataTypeT(kindType=DataTypeKind.ArrayDataType, kind=ArrayDataTypeT(elementType=element)),
-            stored=None if self.stored is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.stored),
-            searchable=None if self.searchable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.searchable),
-            filterable=None if self.filterable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.filterable),
-            sortable=None if self.sortable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.sortable),
-            facetable=None if self.facetable is None else __import__("SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]).OptionalBoolT(value=self.facetable),
+            stored=None if self.stored is None else table_type("OptionalBool")(value=self.stored),
+            searchable=None if self.searchable is None else table_type("OptionalBool")(value=self.searchable),
+            filterable=None if self.filterable is None else table_type("OptionalBool")(value=self.filterable),
+            sortable=None if self.sortable is None else table_type("OptionalBool")(value=self.sortable),
+            facetable=None if self.facetable is None else table_type("OptionalBool")(value=self.facetable),
         )
 
 
@@ -478,11 +473,11 @@ class _GroupingNamespace:
         return _GroupingExpr(_expr_union(GroupingExpressionKind.GroupingAliasReference, GroupingAliasReferenceT(name=name)))
 
     def member(self, base: Any, name: str) -> _GroupingExpr:
-        from SearchKernel.V2.GroupingMemberExpression import GroupingMemberExpressionT
+        GroupingMemberExpressionT = table_type("GroupingMemberExpression")
         return _GroupingExpr(_expr_union(GroupingExpressionKind.GroupingMemberExpression, GroupingMemberExpressionT(base=_as_expr(base).model, member=name)))
 
     def lookup(self, base: Any, key: Any) -> _GroupingExpr:
-        from SearchKernel.V2.GroupingMapLookupExpression import GroupingMapLookupExpressionT
+        GroupingMapLookupExpressionT = table_type("GroupingMapLookupExpression")
         return _GroupingExpr(_expr_union(GroupingExpressionKind.GroupingMapLookupExpression, GroupingMapLookupExpressionT(base=_as_expr(base).model, key=_as_expr(key).model)))
 
 
@@ -493,12 +488,12 @@ class _AggregationNamespace:
     def _make(self, kind: str, field: str | None = None, summary: str | None = None) -> _GroupingExpr:
         payloads = {
             "count": (AggregationKind.CountAggregation, CountAggregationT()),
-            "sum": (AggregationKind.SumAggregation, __import__("SearchKernel.V2.SumAggregation", fromlist=["SumAggregationT"]).SumAggregationT(expression=g.field(field).model)),
+            "sum": (AggregationKind.SumAggregation, table_type("SumAggregation")(expression=g.field(field).model)),
             "avg": (AggregationKind.AvgAggregation, AvgAggregationT(expression=g.field(field).model)),
-            "min": (AggregationKind.MinAggregation, __import__("SearchKernel.V2.MinAggregation", fromlist=["MinAggregationT"]).MinAggregationT(expression=g.field(field).model)),
-            "max": (AggregationKind.MaxAggregation, __import__("SearchKernel.V2.MaxAggregation", fromlist=["MaxAggregationT"]).MaxAggregationT(expression=g.field(field).model)),
-            "stddev": (AggregationKind.StdDevAggregation, __import__("SearchKernel.V2.StdDevAggregation", fromlist=["StdDevAggregationT"]).StdDevAggregationT(expression=g.field(field).model)),
-            "summary": (AggregationKind.SummaryAggregation, __import__("SearchKernel.V2.SummaryAggregation", fromlist=["SummaryAggregationT"]).SummaryAggregationT(summary=summary)),
+            "min": (AggregationKind.MinAggregation, table_type("MinAggregation")(expression=g.field(field).model)),
+            "max": (AggregationKind.MaxAggregation, table_type("MaxAggregation")(expression=g.field(field).model)),
+            "stddev": (AggregationKind.StdDevAggregation, table_type("StdDevAggregation")(expression=g.field(field).model)),
+            "summary": (AggregationKind.SummaryAggregation, table_type("SummaryAggregation")(summary=summary)),
         }
         tag, payload = payloads[kind]
         return _GroupingExpr(_expr_union(GroupingExpressionKind.GroupingAggregationExpression, GroupingAggregationExpressionT(aggregationType=tag, aggregation=payload)))
@@ -544,7 +539,7 @@ class _QueryNamespace:
 
     @staticmethod
     def _expression(source: QuerySourceT) -> QueryExprT:
-        if isinstance(source, QueryExprT):
+        if is_semantic_table(source, "QueryExpr"):
             return source
         if source.sourceType != QuerySourceKind.TypedQuery or source.source is None:
             raise TypeError("typed query clauses must come from q helpers")
@@ -556,8 +551,8 @@ class _QueryNamespace:
             item = value(item)
         return QueryExprT(
             exprType=QueryExprKind.TermQuery,
-            expr=__import__("SearchKernel.V2.TermQuery", fromlist=["TermQueryT"]).TermQueryT(
-                value=item if isinstance(item, ValueT) else value(item)
+            expr=table_type("TermQuery")(
+                value=item if is_semantic_table(item, "Value") else value(item)
             ),
         )
 
@@ -612,7 +607,7 @@ class _QueryNamespace:
     def fuzzy(self, item: Any) -> QueryExprT:
         return QueryExprT(
             exprType=QueryExprKind.QueryFuzzy,
-            expr=QueryFuzzyT(value=item if isinstance(item, ValueT) else value(item)),
+            expr=QueryFuzzyT(value=item if is_semantic_table(item, "Value") else value(item)),
         )
 
     def _combine(self, expression_type: int, expression: QueryExprT) -> QuerySourceT:
@@ -830,7 +825,7 @@ class Group:
         if self._orders:
             operations.append(GroupingOperationT(operationType=GroupingOperationKind.GroupingOrderOperation, operation=GroupingOrderOperationT(expressions=[GroupingOrderExprT(expression=o.expression.model) for o in self._orders])))
         if self._filter is not None:
-            operations.append(GroupingOperationT(operationType=GroupingOperationKind.GroupingFilterOperation, operation=__import__("SearchKernel.V2.GroupingFilterOperation", fromlist=["GroupingFilterOperationT"]).GroupingFilterOperationT(filter=self._filter)))
+            operations.append(GroupingOperationT(operationType=GroupingOperationKind.GroupingFilterOperation, operation=table_type("GroupingFilterOperation")(filter=self._filter)))
         if self._keep is not None:
             operations.append(GroupingOperationT(operationType=GroupingOperationKind.GroupingKeepOperation, operation=GroupingKeepOperationT(filter=self._keep)))
         if self._outputs:
@@ -1165,15 +1160,15 @@ def _relevance_value(node):
     if node is None or node.valueType == RelevanceKind.NONE:
         return None
     if node.valueType == RelevanceKind.FiniteRelevance:
-        if not isinstance(node.value, FiniteRelevanceT):
+        if not is_semantic_table(node.value, "FiniteRelevance"):
             raise ValueError("finite relevance has a missing or mismatched payload")
         return node.value.value
     if node.valueType == RelevanceKind.PositiveInfinityRelevance:
-        if not isinstance(node.value, PositiveInfinityRelevanceT):
+        if not is_semantic_table(node.value, "PositiveInfinityRelevance"):
             raise ValueError("positive-infinity relevance has a missing or mismatched payload")
         return float("inf")
     if node.valueType == RelevanceKind.NegativeInfinityRelevance:
-        if not isinstance(node.value, NegativeInfinityRelevanceT):
+        if not is_semantic_table(node.value, "NegativeInfinityRelevance"):
             raise ValueError("negative-infinity relevance has a missing or mismatched payload")
         return float("-inf")
     raise ValueError(f"unsupported relevance kind: {node.valueType}")
@@ -1241,11 +1236,11 @@ def _node(node):
         raise ValueError("missing ResultNode payload")
     node_type = getattr(node, "nodeType", ResultNodeKind.NONE)
     if node_type == ResultNodeKind.ResultGroup:
-        if not isinstance(node.node, ResultGroupT):
+        if not is_semantic_table(node.node, "ResultGroup"):
             raise ValueError("mismatched ResultNode union: ResultGroup payload")
         return ResultGroup(node.node)
     if node_type == ResultNodeKind.Hit:
-        if not isinstance(node.node, HitT):
+        if not is_semantic_table(node.node, "Hit"):
             raise ValueError("mismatched ResultNode union: Hit payload")
         return Hit(node.node)
     raise ValueError(f"unknown ResultNode union kind: {node_type}")

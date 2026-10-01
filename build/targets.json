@@ -343,7 +343,7 @@
       "focused_check": "verify:contracts",
       "strong_check": "test:python"
     },
-    "clients/python/searchkernel/_wire_generated/": {
+    "clients/python/searchkernel/_wire/v1/generated/": {
       "owner": "python-wire-generated",
       "area": "Generated Python FlatBuffers bindings",
       "read": [

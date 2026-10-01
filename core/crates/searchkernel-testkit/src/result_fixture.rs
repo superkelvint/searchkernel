@@ -689,7 +689,7 @@ mod expanded_canonical_corpus {
     use std::collections::BTreeMap;
 
     use searchkernel_ir as ir;
-    use searchkernel_protocol::v2 as api;
+    use searchkernel_protocol::wire::v1 as api;
 
     fn result(root: ir::ResultNode, total_hits: u64) -> ir::SearchResult {
         ir::SearchResult {
@@ -1531,7 +1531,7 @@ mod expanded_canonical_corpus {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use searchkernel_protocol::protocol::v2 as wire;
+        use searchkernel_protocol::protocol::v1 as wire;
 
         #[test]
         fn corpus_is_fresh_named_and_covers_the_canonical_cases() {
@@ -1737,7 +1737,7 @@ mod expanded_canonical_corpus {
                 let envelope = decoded.unwrap_or_else(|error| {
                     panic!("{name} envelope should be structurally valid: {error:?}")
                 });
-                let Some(result) = envelope.payload_as_search_kernel_v2_search_result() else {
+                let Some(result) = envelope.payload_as_search_kernel_wire_search_result() else {
                     assert_eq!(class, "envelope", "{name} must retain SearchResult payload");
                     continue;
                 };

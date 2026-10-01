@@ -54,7 +54,7 @@ pub use model::*;
 pub use session::{BackendSession, SessionError};
 
 /// The generated FlatBuffers API used at the portable API boundary.
-pub use searchkernel_protocol::v2 as api;
+pub use searchkernel_protocol::wire::v1 as api;
 
 /// Test and contract clients use the same FlatBuffers parser as this crate.
 #[doc(hidden)]

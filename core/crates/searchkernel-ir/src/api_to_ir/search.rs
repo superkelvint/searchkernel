@@ -3,7 +3,7 @@ use crate::api_to_ir::resolve::{
     resolve_highlighting, resolve_search, resolve_search_fields_at, resolve_sort, SearchInput,
 };
 use crate::model::*;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 
 impl IndexContext {

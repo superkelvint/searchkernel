@@ -1035,8 +1035,8 @@ fn advanced_grouping_facade_matches_independent_portable_request_ir() {
     );
     let request = searchkernel_protocol::json::request_json_to_flatbuffer(
         br#"{
-          "protocol_version": 2,
-          "payload_type": "SearchKernel_V2_SearchRequest",
+          "protocol_version": 1,
+          "payload_type": "SearchKernel_Wire_SearchRequest",
           "payload": {
             "query": {"source_type": "MatchAllQuery", "source": {}},
             "grouping": [{

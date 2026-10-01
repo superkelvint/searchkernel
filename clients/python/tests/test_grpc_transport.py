@@ -17,13 +17,13 @@ from searchkernel.grpc_transport import (  # noqa: E402
     GrpcTransport,
 )
 from searchkernel.protocol import pack_object, pack_request  # noqa: E402
-from SearchKernel.Protocol.V2.ResponseEnvelope import ResponseEnvelopeT  # noqa: E402
-from SearchKernel.Protocol.V2.ResponsePayload import ResponsePayload  # noqa: E402
-from SearchKernel.V2.CreateIndexResult import CreateIndexResultT  # noqa: E402
-from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
-from SearchKernel.V2.OpenIndexResult import OpenIndexResultT  # noqa: E402
-from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelope  # noqa: E402
-from SearchKernel.V2.InsertRequest import InsertRequestT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Protocol.ResponseEnvelope import ResponseEnvelopeT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Protocol.ResponsePayload import ResponsePayload  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.CreateIndexResult import CreateIndexResultT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.IndexDefinition import IndexDefinitionT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.OpenIndexResult import OpenIndexResultT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Protocol.RequestEnvelope import RequestEnvelope  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.InsertRequest import InsertRequestT  # noqa: E402
 
 
 class _Stub:
@@ -49,7 +49,7 @@ class _FrameTransport:
 
 def _response(payload_type, payload):
     return pack_object(
-        ResponseEnvelopeT(2, payload_type, payload),
+        ResponseEnvelopeT(1, payload_type, payload),
         file_identifier=b"SKRS",
     )
 
@@ -68,11 +68,11 @@ class GrpcTransportTest(unittest.TestCase):
 
     def test_lifecycle_success_requires_index_definition(self):
         malformed_create = _response(
-            ResponsePayload.SearchKernel_V2_CreateIndexResult,
+            ResponsePayload.SearchKernel_Wire_CreateIndexResult,
             CreateIndexResultT(),
         )
         malformed_open = _response(
-            ResponsePayload.SearchKernel_V2_OpenIndexResult,
+            ResponsePayload.SearchKernel_Wire_OpenIndexResult,
             OpenIndexResultT(),
         )
         client = Client(_FrameTransport([malformed_create, malformed_open]), target="products")

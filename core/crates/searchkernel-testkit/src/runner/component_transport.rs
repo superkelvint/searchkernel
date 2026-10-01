@@ -1,4 +1,5 @@
 use super::*;
+use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
 
 /// A component corpus case embedded in a valid transport envelope for JSON
 /// round-trip testing. Direct component tables are not themselves transport
@@ -57,7 +58,7 @@ pub fn build_component_transport_case(
             );
             response(
                 &mut builder,
-                transport::ResponsePayload::SearchKernel_V2_DescribeResult,
+                transport::ResponsePayload::SearchKernel_Wire_DescribeResult,
                 payload.as_union_value(),
             )
         }
@@ -78,7 +79,7 @@ pub fn build_component_transport_case(
             );
             response(
                 &mut builder,
-                transport::ResponsePayload::SearchKernel_V2_DescribeResult,
+                transport::ResponsePayload::SearchKernel_Wire_DescribeResult,
                 payload.as_union_value(),
             )
         }
@@ -86,7 +87,7 @@ pub fn build_component_transport_case(
             let payload = builder.analyze(input)?;
             request(
                 &mut builder,
-                transport::RequestPayload::SearchKernel_V2_AnalyzeRequest,
+                transport::RequestPayload::SearchKernel_Wire_AnalyzeRequest,
                 payload.as_union_value(),
             )
         }
@@ -100,7 +101,7 @@ pub fn build_component_transport_case(
             );
             request(
                 &mut builder,
-                transport::RequestPayload::SearchKernel_V2_InsertRequest,
+                transport::RequestPayload::SearchKernel_Wire_InsertRequest,
                 payload.as_union_value(),
             )
         }
@@ -124,7 +125,7 @@ pub fn build_component_transport_case(
             );
             request(
                 &mut builder,
-                transport::RequestPayload::SearchKernel_V2_InsertRequest,
+                transport::RequestPayload::SearchKernel_Wire_InsertRequest,
                 payload.as_union_value(),
             )
         }
@@ -141,7 +142,7 @@ pub fn build_component_transport_case(
             let payload = builder.search(&component_search_input(operation, input))?;
             request(
                 &mut builder,
-                transport::RequestPayload::SearchKernel_V2_SearchRequest,
+                transport::RequestPayload::SearchKernel_Wire_SearchRequest,
                 payload.as_union_value(),
             )
         }

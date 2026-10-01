@@ -34,17 +34,6 @@ export {
   type GeneratedRpcClient,
 } from "./transport/grpc-web.js";
 export {
-  ProtocolError,
-  PROTOCOL_VERSION,
-  REQUEST_IDENTIFIER,
-  RESPONSE_IDENTIFIER,
-  packObject,
-  packRequest,
-  unpackResponse,
-  type OperationRequestMap,
-  type Operation,
-} from "./protocol/envelope.js";
-export {
   SearchBuilder,
   YqlBuilder,
   PatchBuilder,
@@ -67,5 +56,5 @@ export {
 export { q, type TypedQuery } from "./ergonomic/query.js";
 
 export { Text, Keyword, Integer, Float, Boolean, TensorField, PositionField, ArrayOfStructField, RankProfile, type FieldOptions } from "./ergonomic/schema.js";
-export { IndexDefinitionT } from "./generated/flatbuffers/search-kernel/v2/index-definition.js";
-export { FieldDefinitionT } from "./generated/flatbuffers/search-kernel/v2/field-definition.js";
+export { IndexDefinitionT } from "./semantic.js";
+export { FieldDefinitionT } from "./semantic.js";

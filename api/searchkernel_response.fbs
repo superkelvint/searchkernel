@@ -1,27 +1,27 @@
 include "searchkernel.fbs";
 
-namespace SearchKernel.Protocol.V2;
+namespace SearchKernel.Protocol;
 
 union ResponsePayload {
-  // Append-only: existing V2 union discriminator numbers are wire ABI.
-  SearchKernel.V2.InsertResult,
-  SearchKernel.V2.UpsertResult,
-  SearchKernel.V2.PatchResult,
-  SearchKernel.V2.DeleteResult,
-  SearchKernel.V2.GetResult,
-  SearchKernel.V2.SearchResult,
-  SearchKernel.V2.AnalyzeResult,
-  SearchKernel.V2.Error,
-  SearchKernel.V2.DescribeResult,
-  SearchKernel.V2.InspectQueryResult,
-  SearchKernel.V2.UpdateResult,
-  SearchKernel.V2.CreateIndexResult,
-  SearchKernel.V2.OpenIndexResult,
-  SearchKernel.V2.DeleteIndexResult
+  // Append-only: existing union discriminator numbers are wire ABI.
+  SearchKernel.Wire.InsertResult,
+  SearchKernel.Wire.UpsertResult,
+  SearchKernel.Wire.PatchResult,
+  SearchKernel.Wire.DeleteResult,
+  SearchKernel.Wire.GetResult,
+  SearchKernel.Wire.SearchResult,
+  SearchKernel.Wire.AnalyzeResult,
+  SearchKernel.Wire.Error,
+  SearchKernel.Wire.DescribeResult,
+  SearchKernel.Wire.InspectQueryResult,
+  SearchKernel.Wire.UpdateResult,
+  SearchKernel.Wire.CreateIndexResult,
+  SearchKernel.Wire.OpenIndexResult,
+  SearchKernel.Wire.DeleteIndexResult
 }
 
 table ResponseEnvelope {
-  // Zero is deliberately invalid; V2 senders must write version 2 explicitly.
+  // Zero is deliberately invalid; senders must write the selected major.
   protocol_version:uint = 0;
   payload:ResponsePayload;
 }

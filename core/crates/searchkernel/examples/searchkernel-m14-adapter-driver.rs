@@ -32,7 +32,7 @@ fn open(definition: &Path, config: &Path, data: &Path) -> Dispatcher {
     Dispatcher::new(context, BackendSession::from_backend(backend))
 }
 fn envelope(kind: &str, payload: Json) -> Vec<u8> {
-    serde_json::to_vec(&json!({"protocol_version":2,"payload_type":kind,"payload":payload}))
+    serde_json::to_vec(&json!({"protocol_version":1,"payload_type":kind,"payload":payload}))
         .unwrap()
 }
 fn dispatch(d: &Dispatcher, kind: &str, payload: Json) -> Json {
@@ -98,7 +98,7 @@ fn query(
 ) -> (Vec<String>, Option<Json>) {
     let response = dispatch(
         d,
-        "SearchKernel_V2_SearchRequest",
+        "SearchKernel_Wire_SearchRequest",
         json!({
             "query":{"source_type":"TypedQuery","source":{"query":{"expr_type":"QueryNearestNeighbor","expr":{"document_field":{"path":root["tensor_field"]["name"]},"query_tensor":"query_embedding"},"annotations":annotations(step)}}},
             "ranking":{"profile":"semantic"},
@@ -107,26 +107,26 @@ fn query(
             "limit":{"value":step["limit"]}
         }),
     );
-    assert_eq!(response["payload_type"], "SearchKernel_V2_SearchResult");
+    assert_eq!(response["payload_type"], "SearchKernel_Wire_SearchResult");
     (hits(&response), traces.next())
 }
 fn feed(d: &Dispatcher, root: &Json) {
     for item in root["documents"].as_array().unwrap() {
         let response = dispatch(
             d,
-            "SearchKernel_V2_InsertRequest",
+            "SearchKernel_Wire_InsertRequest",
             json!({"document":doc(root,item)}),
         );
-        assert_eq!(response["payload_type"], "SearchKernel_V2_InsertResult");
+        assert_eq!(response["payload_type"], "SearchKernel_Wire_InsertResult");
     }
 }
 fn patch(d: &Dispatcher, root: &Json, id: &str, values: &Json) {
     let response = dispatch(
         d,
-        "SearchKernel_V2_PatchRequest",
+        "SearchKernel_Wire_PatchRequest",
         json!({"id":id,"operations":[{"operation_type":"SetField","operation":{"field":root["tensor_field"]["name"],"value":dense(root,values)}}]}),
     );
-    assert_eq!(response["payload_type"], "SearchKernel_V2_PatchResult");
+    assert_eq!(response["payload_type"], "SearchKernel_Wire_PatchResult");
 }
 fn run(root: &Json, definition: &Path, config: &Path, data: &Path) -> Json {
     if root["id"] == "hnsw-query-controls" {
@@ -167,7 +167,7 @@ fn run(root: &Json, definition: &Path, config: &Path, data: &Path) -> Json {
     let d = open(definition, config, data);
     let (after_reopen, trace) = query(&d, root, opts, &root["query"], &mut traces);
     evidence.push(json!({"id":"after_reopen","trace":trace}));
-    let deleted = dispatch(&d, "SearchKernel_V2_DeleteRequest", json!({"id":delete_id}));
+    let deleted = dispatch(&d, "SearchKernel_Wire_DeleteRequest", json!({"id":delete_id}));
     assert_eq!(deleted["payload"]["deleted"], true);
     let (after_delete, trace) = query(&d, root, opts, &root["query"], &mut traces);
     evidence.push(json!({"id":"after_delete","trace":trace}));

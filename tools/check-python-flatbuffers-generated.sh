@@ -7,6 +7,8 @@ trap 'rm -rf -- "$temporary"' EXIT
 
 PYTHON_FLATBUFFERS_GENERATED_DIR="$temporary/generated"   bash "$root/tools/generate-python-flatbuffers.sh"
 
-diff -ruNB --   "$root/clients/python/searchkernel/_wire_generated"   "$temporary/generated"
+diff -ruNB --exclude='__pycache__' --exclude='*.pyc' \
+    "$root/clients/python/searchkernel/_wire/v1/generated" \
+    "$temporary/generated"
 
 echo "Python FlatBuffers generation reproducibility PASS"

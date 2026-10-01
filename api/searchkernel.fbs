@@ -3,14 +3,11 @@
 // This schema is internal plumbing. Application developers should use idiomatic
 // language clients rather than generated FlatBuffers APIs directly.
 //
-// This is a deliberate V2 semantic contract boundary. V2 is NOT sent through a
-// V1 request envelope and MUST NOT rely on an older FlatBuffers reader ignoring
-// unknown fields: several V2 fields are authoritative query semantics. Protocol
-// envelopes must require protocol_version >= 2 before dispatching a
-// SearchKernel.V2 request. A V1 runtime must reject V2 rather than execute a
-// partially understood request.
+// This is the current version-neutral wire payload schema. Compatible schema
+// evolution stays in this namespace; an incompatible wire major is selected at
+// the private codec/envelope boundary instead of by renaming payload types.
 //
-// Evolution rules within V2:
+// Evolution rules within the current wire major:
 //   * existing table fields must not be reordered or removed;
 //   * new table fields are appended at the end;
 //   * removed fields are retained and may be marked deprecated;
@@ -25,7 +22,7 @@
 // OpenIndex / DeleteIndex lifecycle operations are control-plane semantics handled above the
 // per-index dispatcher.
 
-namespace SearchKernel.V2;
+namespace SearchKernel.Wire;
 
 // -----------------------------------------------------------------------------
 // Presence helpers
@@ -174,7 +171,7 @@ union TensorPayloadKind {
 
 table TensorValue {
   // All cell values in every portable tensor encoding MUST be finite. This is
-// a V2 semantic invariant enforced by C1/C2 and by standard JSON decoding.
+// a portable semantic invariant enforced by C1/C2 and by standard JSON decoding.
   type_spec:string;
   payload:TensorPayloadKind;
 }
@@ -210,7 +207,7 @@ table Document {
 // Index definition
 // -----------------------------------------------------------------------------
 
-// V2 separates physical/document data types from Search Kernel matching/indexing
+// The schema separates physical/document data types from Search Kernel matching/indexing
 // behavior. Text/Keyword remain facade concepts and must not be used as recursive
 // data types.
 enum PrimitiveDataTypeKind:ubyte {
@@ -804,7 +801,7 @@ table GetResult {
 // Search
 // -----------------------------------------------------------------------------
 
-// V2 is the parity-oriented request model. The client-facing facade may expose
+// The schema is the parity-oriented request model. The client-facing facade may expose
 // smaller conveniences, but every such operation must lower losslessly into the
 // structures below before API -> IR conversion.
 
@@ -911,7 +908,7 @@ table FilterClause {
 table FilterRequest {
   structured:[FilterExpr];
 
-  // These fields occupy released V2 slots and cannot be removed or reused.
+  // These fields occupy released schema slots and cannot be removed or reused.
   // They are deprecated: API -> IR rejects them and never resolves them.
   sources:[string];
   parameters:[ValueEntry];

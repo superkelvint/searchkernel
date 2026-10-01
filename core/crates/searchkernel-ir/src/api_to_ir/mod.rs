@@ -49,7 +49,7 @@ pub(crate) use value::{request_values_to_map, value_from_api};
 
 use crate::error::{PortableError, Result};
 use crate::model::IndexDefinitionIr;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy)]

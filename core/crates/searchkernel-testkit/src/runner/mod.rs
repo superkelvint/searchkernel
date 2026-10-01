@@ -9,7 +9,7 @@ use searchkernel_ir::{
     ScalarValueIr, SearchFieldIr, SearchRequestIr, SortIr, UpdateArithmeticOperatorIr,
     UpdateOperationIr, UpdateRequestIr, UpsertRequestIr, WriteRequestIr, WriteRequestRef,
 };
-use searchkernel_protocol::{protocol::v2 as transport, PROTOCOL_VERSION};
+use searchkernel_protocol::protocol::v1 as transport;
 use serde_json::{json, Map, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::fmt;

@@ -373,7 +373,7 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                 return Err(PortableError::unsupported(
                     "data_type_not_supported",
                     Some(format!("fields[{index}].data_type")),
-                    "the current native adapter cannot lower this V2 data type",
+                    "the current native adapter cannot lower this data type",
                 ))
             }
         }

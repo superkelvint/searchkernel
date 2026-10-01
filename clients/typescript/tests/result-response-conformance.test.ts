@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { unpackResponse } from "../src/protocol/envelope.js";
 import { Hit, ResultGroup, SearchResults } from "../src/client/results.js";
-import { SearchResultT } from "../src/generated/flatbuffers/search-kernel/v2/search-result.js";
+import { SearchResultT } from "../src/semantic.js";
 
 function value(input: unknown): unknown {
   if (input == null || typeof input === "boolean" || typeof input === "string") return input;

@@ -19,9 +19,10 @@ use searchkernel::{
     field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Patch, Ranking, Sort,
     Tensor,
 };
-use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
+use searchkernel_dispatch::Dispatcher;
+use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
-use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_protocol::protocol::v1 as wire;
 use searchkernel_testkit::{
     canonical_result_fixtures, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
 };
@@ -48,7 +49,7 @@ fn describe_request(version: u32) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: version,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -72,7 +73,7 @@ fn targeted_describe_request(version: u32, target_name: &str) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: version,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -88,7 +89,7 @@ fn search_request() -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -122,7 +123,7 @@ fn valid_search_request() -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -156,7 +157,7 @@ fn large_search_request() -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -564,7 +565,7 @@ async fn execute_uses_the_canonical_dispatcher_over_a_real_socket() {
         remote_envelope.payload_type()
     );
     assert!(remote_envelope
-        .payload_as_search_kernel_v2_describe_result()
+        .payload_as_search_kernel_wire_describe_result()
         .is_some());
 
     server.shutdown().await.expect("shutdown server");
@@ -628,15 +629,15 @@ async fn semantic_dispatch_errors_remain_canonical_error_payloads() {
     let remote = root::<wire::ResponseEnvelope<'_>>(&remote).expect("remote response");
     assert_eq!(
         direct.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     assert_eq!(
         remote.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     assert_eq!(
-        direct.payload_as_search_kernel_v2_error().unwrap().code(),
-        remote.payload_as_search_kernel_v2_error().unwrap().code()
+        direct.payload_as_search_kernel_wire_error().unwrap().code(),
+        remote.payload_as_search_kernel_wire_error().unwrap().code()
     );
 
     server.shutdown().await.expect("shutdown server");
@@ -671,8 +672,8 @@ async fn direct_dispatch_and_grpc_share_the_same_backend_operation_ir() {
     assert_eq!(direct_response, remote_response);
     let direct = root::<wire::ResponseEnvelope<'_>>(&direct_response).unwrap();
     let remote = root::<wire::ResponseEnvelope<'_>>(&remote_response).unwrap();
-    let direct_error = direct.payload_as_search_kernel_v2_error().unwrap();
-    let remote_error = remote.payload_as_search_kernel_v2_error().unwrap();
+    let direct_error = direct.payload_as_search_kernel_wire_error().unwrap();
+    let remote_error = remote.payload_as_search_kernel_wire_error().unwrap();
     assert_eq!(direct_error.code(), remote_error.code());
     assert_eq!(
         direct_error.details().map(|details| details
@@ -989,9 +990,9 @@ async fn framing_and_lifecycle_failures_are_transport_statuses() {
     let envelope = flatbuffers::root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
-    let error = envelope.payload_as_search_kernel_v2_error().unwrap();
+    let error = envelope.payload_as_search_kernel_wire_error().unwrap();
     assert_eq!(error.code(), wire::ErrorCode::FailedPrecondition);
     assert_eq!(
         error.details().unwrap().get(0).code(),

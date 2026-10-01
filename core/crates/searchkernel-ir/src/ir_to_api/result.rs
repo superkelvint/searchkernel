@@ -168,7 +168,7 @@ pub(super) fn search_result_offset_unchecked<'a>(
     )
 }
 
-/// Validate backend-owned result values before they enter the canonical V2
+/// Validate backend-owned result values before they enter the canonical wire
 /// response. The schema can represent non-finite scalar values explicitly,
 /// but relevance, coverage/timing doubles, and tensor cells have narrower
 /// contracts.

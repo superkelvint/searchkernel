@@ -80,7 +80,7 @@ pub(crate) fn portable_coverage(coverage: searchkernel_vespa_engine::SearchCover
 }
 
 /// `UniqueIssues` are not portable semantic errors. Keep this policy explicit
-/// until the V2 result contract grows an issue channel rather than treating
+/// until the portable result contract grows an issue channel rather than treating
 /// Vespa diagnostics as request failures.
 pub(crate) fn portable_errors_from_native_issues(
     _issues: &[String],

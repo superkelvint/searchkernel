@@ -162,9 +162,9 @@ pub enum FieldValueIr {
     Tensor(RequestTensorIr),
 }
 
-/// The complete V2 value domain used by request controls.  Document values
+/// The complete portable value domain used by request controls.  Document values
 /// remain deliberately narrower while the native document ABI has that limit;
-/// request properties and query inputs must not lose valid V2 values for that
+/// request properties and query inputs must not lose valid portable values for that
 /// reason.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestValueIr {

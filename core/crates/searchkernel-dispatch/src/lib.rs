@@ -1,15 +1,13 @@
-//! Transport-independent dispatch for canonical Search Kernel V2 envelopes.
+//! Transport-independent dispatch for canonical Search Kernel envelopes.
 
 use flatbuffers::{root, WIPOffset};
 use searchkernel_ir::{Backend, BackendSession, IndexContext, SessionError};
-use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use std::sync::Arc;
 
 #[cfg(test)]
 mod tests;
 
-/// The canonical portable protocol version.
-pub use searchkernel_protocol::PROTOCOL_VERSION;
 const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
 const RESPONSE_IDENTIFIER: &str = "SKRS";
 
@@ -49,9 +47,9 @@ impl Dispatcher {
         }
 
         match envelope.payload_type() {
-            wire::RequestPayload::SearchKernel_V2_InsertRequest => {
+            wire::RequestPayload::SearchKernel_Wire_InsertRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_insert_request()
+                    .payload_as_search_kernel_wire_insert_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_backend(|context, backend| {
                     context
@@ -60,15 +58,15 @@ impl Dispatcher {
                 })?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_InsertResult,
+                    wire::ResponsePayload::SearchKernel_Wire_InsertResult,
                     |builder, result| {
                         Ok(searchkernel_ir::insert_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_UpsertRequest => {
+            wire::RequestPayload::SearchKernel_Wire_UpsertRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_upsert_request()
+                    .payload_as_search_kernel_wire_upsert_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_backend(|context, backend| {
                     context
@@ -77,15 +75,15 @@ impl Dispatcher {
                 })?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_UpsertResult,
+                    wire::ResponsePayload::SearchKernel_Wire_UpsertResult,
                     |builder, result| {
                         Ok(searchkernel_ir::upsert_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_PatchRequest => {
+            wire::RequestPayload::SearchKernel_Wire_PatchRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_patch_request()
+                    .payload_as_search_kernel_wire_patch_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_backend(|context, backend| {
                     context
@@ -94,15 +92,15 @@ impl Dispatcher {
                 })?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_PatchResult,
+                    wire::ResponsePayload::SearchKernel_Wire_PatchResult,
                     |builder, result| {
                         Ok(searchkernel_ir::patch_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_UpdateRequest => {
+            wire::RequestPayload::SearchKernel_Wire_UpdateRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_update_request()
+                    .payload_as_search_kernel_wire_update_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_backend(|context, backend| {
                     context
@@ -111,15 +109,15 @@ impl Dispatcher {
                 })?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_UpdateResult,
+                    wire::ResponsePayload::SearchKernel_Wire_UpdateResult,
                     |builder, result| {
                         Ok(searchkernel_ir::update_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_DeleteRequest => {
+            wire::RequestPayload::SearchKernel_Wire_DeleteRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_delete_request()
+                    .payload_as_search_kernel_wire_delete_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_backend(|context, backend| {
                     context
@@ -128,15 +126,15 @@ impl Dispatcher {
                 })?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_DeleteResult,
+                    wire::ResponsePayload::SearchKernel_Wire_DeleteResult,
                     |builder, result| {
                         Ok(searchkernel_ir::delete_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_GetRequest => {
+            wire::RequestPayload::SearchKernel_Wire_GetRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_get_request()
+                    .payload_as_search_kernel_wire_get_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_backend(|context, backend| {
                     context
@@ -145,15 +143,15 @@ impl Dispatcher {
                 })?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_GetResult,
+                    wire::ResponsePayload::SearchKernel_Wire_GetResult,
                     |builder, result| {
                         Ok(searchkernel_ir::get_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_SearchRequest => {
+            wire::RequestPayload::SearchKernel_Wire_SearchRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_search_request()
+                    .payload_as_search_kernel_wire_search_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_backend(|context, backend| {
                     context
@@ -162,16 +160,16 @@ impl Dispatcher {
                 })?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_SearchResult,
+                    wire::ResponsePayload::SearchKernel_Wire_SearchResult,
                     |builder, result| {
                         searchkernel_ir::search_result_offset(builder, result)
                             .map(|result| result.as_union_value())
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_AnalyzeRequest => {
+            wire::RequestPayload::SearchKernel_Wire_AnalyzeRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_analyze_request()
+                    .payload_as_search_kernel_wire_analyze_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_backend(|context, backend| {
                     context
@@ -180,7 +178,7 @@ impl Dispatcher {
                 })?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_AnalyzeResult,
+                    wire::ResponsePayload::SearchKernel_Wire_AnalyzeResult,
                     |builder, result| {
                         Ok(
                             searchkernel_ir::analyze_result_offset(builder, result)
@@ -189,30 +187,30 @@ impl Dispatcher {
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_DescribeRequest => {
+            wire::RequestPayload::SearchKernel_Wire_DescribeRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_describe_request()
+                    .payload_as_search_kernel_wire_describe_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let _ = payload;
                 let result = self.execute_context(|context| Ok(context.describe()))?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_DescribeResult,
+                    wire::ResponsePayload::SearchKernel_Wire_DescribeResult,
                     |builder, result| {
                         Ok(searchkernel_ir::describe_result_offset(builder, result)
                             .as_union_value())
                     },
                 ))
             }
-            wire::RequestPayload::SearchKernel_V2_InspectQueryRequest => {
+            wire::RequestPayload::SearchKernel_Wire_InspectQueryRequest => {
                 let payload = envelope
-                    .payload_as_search_kernel_v2_inspect_query_request()
+                    .payload_as_search_kernel_wire_inspect_query_request()
                     .ok_or(DispatchError::InvalidRequest)?;
                 let request = payload.request().ok_or(DispatchError::InvalidRequest)?;
                 let result = self.execute_context(|context| context.inspect_query(request))?;
                 Ok(encode_result(
                     result,
-                    wire::ResponsePayload::SearchKernel_V2_InspectQueryResult,
+                    wire::ResponsePayload::SearchKernel_Wire_InspectQueryResult,
                     |builder, result| {
                         Ok(
                             searchkernel_ir::inspect_query_result_offset(builder, result)
@@ -285,12 +283,12 @@ fn encode_result<T>(
         Ok(value) => match encode(&mut builder, &value) {
             Ok(payload) => (success_kind, payload),
             Err(error) => (
-                wire::ResponsePayload::SearchKernel_V2_Error,
+                wire::ResponsePayload::SearchKernel_Wire_Error,
                 searchkernel_ir::error_offset(&mut builder, &error).as_union_value(),
             ),
         },
         Err(error) => (
-            wire::ResponsePayload::SearchKernel_V2_Error,
+            wire::ResponsePayload::SearchKernel_Wire_Error,
             searchkernel_ir::error_offset(&mut builder, &error).as_union_value(),
         ),
     };

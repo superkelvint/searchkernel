@@ -1,36 +1,35 @@
-import { AnalyzeFieldTargetT } from "../generated/flatbuffers/search-kernel/v2/analyze-field-target.js";
-import { AnalyzeRequestT } from "../generated/flatbuffers/search-kernel/v2/analyze-request.js";
-import { AnalyzeTarget } from "../generated/flatbuffers/search-kernel/v2/analyze-target.js";
-import { AnalyzeResultT } from "../generated/flatbuffers/search-kernel/v2/analyze-result.js";
-import { DeleteRequestT } from "../generated/flatbuffers/search-kernel/v2/delete-request.js";
-import { DeleteResultT } from "../generated/flatbuffers/search-kernel/v2/delete-result.js";
-import { DescribeRequestT } from "../generated/flatbuffers/search-kernel/v2/describe-request.js";
-import { DescribeResultT } from "../generated/flatbuffers/search-kernel/v2/describe-result.js";
-import { DocumentT } from "../generated/flatbuffers/search-kernel/v2/document.js";
-import { ErrorCode } from "../generated/flatbuffers/search-kernel/v2/error-code.js";
-import { ErrorT } from "../generated/flatbuffers/search-kernel/v2/error.js";
-import { FieldProjectionT } from "../generated/flatbuffers/search-kernel/v2/field-projection.js";
-import { GetRequestT } from "../generated/flatbuffers/search-kernel/v2/get-request.js";
-import { GetResultT } from "../generated/flatbuffers/search-kernel/v2/get-result.js";
-import { InsertRequestT } from "../generated/flatbuffers/search-kernel/v2/insert-request.js";
-import { InsertResultT } from "../generated/flatbuffers/search-kernel/v2/insert-result.js";
-import { InspectQueryRequestT } from "../generated/flatbuffers/search-kernel/v2/inspect-query-request.js";
-import { InspectQueryResultT } from "../generated/flatbuffers/search-kernel/v2/inspect-query-result.js";
-import { PatchRequestT } from "../generated/flatbuffers/search-kernel/v2/patch-request.js";
-import { PatchResultT } from "../generated/flatbuffers/search-kernel/v2/patch-result.js";
-import { SearchRequestT } from "../generated/flatbuffers/search-kernel/v2/search-request.js";
-import { SearchResultT } from "../generated/flatbuffers/search-kernel/v2/search-result.js";
-import { UpdateRequestT } from "../generated/flatbuffers/search-kernel/v2/update-request.js";
-import { UpdateResultT } from "../generated/flatbuffers/search-kernel/v2/update-result.js";
-import { UpsertRequestT } from "../generated/flatbuffers/search-kernel/v2/upsert-request.js";
-import { UpsertResultT } from "../generated/flatbuffers/search-kernel/v2/upsert-result.js";
-import { CreateIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/create-index-request.js";
-import { OpenIndexRequestT } from "../generated/flatbuffers/search-kernel/v2/open-index-request.js";
-import { CreateIndexResultT } from "../generated/flatbuffers/search-kernel/v2/create-index-result.js";
-import { OpenIndexResultT } from "../generated/flatbuffers/search-kernel/v2/open-index-result.js";
-import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
-import { ValueEntryT } from "../generated/flatbuffers/search-kernel/v2/value-entry.js";
-import { ResponsePayload } from "../generated/flatbuffers/search-kernel/protocol/v2/response-payload.js";
+import { AnalyzeFieldTargetT } from "../semantic.js";
+import { AnalyzeRequestT } from "../semantic.js";
+import { AnalyzeTarget } from "../semantic.js";
+import { AnalyzeResultT } from "../semantic.js";
+import { DeleteRequestT } from "../semantic.js";
+import { DeleteResultT } from "../semantic.js";
+import { DescribeRequestT } from "../semantic.js";
+import { DescribeResultT } from "../semantic.js";
+import { DocumentT } from "../semantic.js";
+import { ErrorCode } from "../semantic.js";
+import { ErrorT } from "../semantic.js";
+import { FieldProjectionT } from "../semantic.js";
+import { GetRequestT } from "../semantic.js";
+import { GetResultT } from "../semantic.js";
+import { InsertRequestT } from "../semantic.js";
+import { InsertResultT } from "../semantic.js";
+import { InspectQueryRequestT } from "../semantic.js";
+import { InspectQueryResultT } from "../semantic.js";
+import { PatchRequestT } from "../semantic.js";
+import { PatchResultT } from "../semantic.js";
+import { SearchRequestT } from "../semantic.js";
+import { SearchResultT } from "../semantic.js";
+import { UpdateRequestT } from "../semantic.js";
+import { UpdateResultT } from "../semantic.js";
+import { UpsertRequestT } from "../semantic.js";
+import { UpsertResultT } from "../semantic.js";
+import { CreateIndexRequestT } from "../semantic.js";
+import { OpenIndexRequestT } from "../semantic.js";
+import { CreateIndexResultT } from "../semantic.js";
+import { OpenIndexResultT } from "../semantic.js";
+import { IndexDefinitionT } from "../semantic.js";
+import { ValueEntryT } from "../semantic.js";
 import { packRequest, unpackResponse, type Operation, type OperationRequestMap, ProtocolError } from "../protocol/envelope.js";
 import { GrpcWebTransport } from "../transport/grpc-web.js";
 import { TransportError, type ExecuteOptions } from "../transport/types.js";
@@ -119,7 +118,7 @@ export class Client {
         await this.transport.execute(packRequest(operation, request, this.target), options),
         operation,
       );
-      if (decoded.payloadType === ResponsePayload.SearchKernel_V2_Error) {
+      if (decoded.isError) {
         const error = decoded.payload as ErrorT;
         throw new SearchKernelError(
           typeof error.message === "string" ? error.message : "Search Kernel request failed",

@@ -58,12 +58,12 @@ if (($grouping['source_type'] ?? null) !== 'StructuredGroupingSource') {
 $transport = new class implements Transport {
     public function execute(array $request): array
     {
-        if (($request['payload_type'] ?? null) !== 'SearchKernel_V2_DescribeRequest') {
+        if (($request['payload_type'] ?? null) !== 'SearchKernel_Wire_DescribeRequest') {
             throw new RuntimeException('unexpected packaged low-level request');
         }
         return [
-            'protocol_version' => 2,
-            'payload_type' => 'SearchKernel_V2_DescribeResult',
+            'protocol_version' => 1,
+            'payload_type' => 'SearchKernel_Wire_DescribeResult',
             'payload' => ['index' => ['name' => 'packaged']],
         ];
     }

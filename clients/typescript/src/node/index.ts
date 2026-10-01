@@ -4,9 +4,9 @@ import { existsSync } from "node:fs";
 import { lstat, mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { IndexDefinitionT } from "../generated/flatbuffers/search-kernel/v2/index-definition.js";
-import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/field-definition.js";
-import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
+import { IndexDefinitionT } from "../semantic.js";
+import { FieldDefinitionT } from "../semantic.js";
+import { RankProfileDefinitionT } from "../semantic.js";
 import { NodeGrpcTransport } from "../transport/grpc-node.js";
 import { ManagedLocalHost } from "./managed-local-host.js";
 
