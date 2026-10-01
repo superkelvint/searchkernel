@@ -16,7 +16,7 @@ use std::{
 fn context(path: &Path) -> Arc<IndexContext> {
     let bytes = fs::read(path).expect("read M13 portable definition");
     let root =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
+        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(&bytes)
             .expect("parse M13 portable definition");
     Arc::new(IndexContext::from_definition_ir(
         index_definition_to_ir(root).expect("convert M13 portable definition"),
@@ -26,7 +26,7 @@ fn context(path: &Path) -> Arc<IndexContext> {
 fn create_dispatcher(definition: &Path, config: &Path, data: &Path) -> Dispatcher {
     if !config.join("searchkernel-schema.json").exists() {
         let definition_bytes = fs::read(definition).expect("read M13 portable definition");
-        let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(
+        let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(
             &definition_bytes,
         )
         .expect("parse M13 portable definition");
