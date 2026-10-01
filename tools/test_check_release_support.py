@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,7 +41,9 @@ class ReleaseSupportCheckerTest(unittest.TestCase):
             (root / "docs").mkdir()
             (root / "clients").mkdir()
             (root / "build").mkdir()
+            (root / "tools").mkdir()
             (root / "dev").write_text("#!/bin/sh\n", encoding="utf-8")
+            shutil.copy2(ROOT / "tools" / "qualify-consumer-release.py", root / "tools")
 
             supported = [
                 {
@@ -48,6 +51,7 @@ class ReleaseSupportCheckerTest(unittest.TestCase):
                     "runtime": runtime,
                     "evidence": evidence,
                     "verification": MODULE.REQUIRED_VERIFICATION[(surface, runtime)],
+                    "qualification": MODULE.PACKAGED_QUALIFICATION,
                 }
                 for surface, runtime, evidence in sorted(MODULE.EXPECTED_SUPPORTED)
             ]
@@ -64,7 +68,7 @@ class ReleaseSupportCheckerTest(unittest.TestCase):
             (root / "build" / "targets.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "test": {"python": {}, "typescript": {}, "ruby": {}},
                         "verify": {"persistence": {}, "product.integration": {}},
                     }
@@ -72,16 +76,15 @@ class ReleaseSupportCheckerTest(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "README.md").write_text(
-                "Ruby (connect-to-daemon)\n[release](docs/release-support.md)\n",
+                "Ruby (managed-local/connect-to-daemon)\n[release](docs/release-support.md)\n",
                 encoding="utf-8",
             )
             (root / "clients" / "README.md").write_text(
-                "Ruby (connect-to-daemon)\n[release](../docs/release-support.md)\n",
+                "Ruby (managed-local/connect-to-daemon)\n[release](../docs/release-support.md)\n",
                 encoding="utf-8",
             )
             (root / "docs" / "release-support.md").write_text(
-                "| Ruby | Supported | connect-to-daemon |\n"
-                "| Ruby managed-local | Deferred | consumer runtime pending |\n",
+                "| Ruby | Supported | managed-local and connect-to-daemon |\n",
                 encoding="utf-8",
             )
 
