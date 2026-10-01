@@ -339,13 +339,32 @@ verify_archive_consumer() {
 }
 
 
+provision_native_base() {
+    local build_env="$1"
+
+    if [[ "$build_env" == host ]]; then
+        env -u SK_NATIVE_SDK \
+            SEARCHKERNEL_DEV_USE_CI_IMAGE=0 \
+            SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
+            ./dev native-sdk ensure
+        return
+    fi
+
+    env -u SK_NATIVE_SDK \
+        SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
+        ./dev native-sdk ensure
+}
+
 for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     section "Building $BUILD_ENV artifact"
     export SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" SK_NATIVE_TARGET="$TARGET" VESPA_ROOT="$REAL_VESPA_ROOT" VESPA_DEPS="$REAL_DEPS"
-    SK_NATIVE_DISABLE_PUBLISHED_BASE=1 ./dev native-sdk ensure
+    provision_native_base "$BUILD_ENV"
     ORIGINAL_OUT="$TMP/original-$BUILD_ENV"
     mkdir -p "$ORIGINAL_OUT"
-    mapfile -t ORIGINAL_FILES < <(bash tools/package-native-base-artifact.sh "$ORIGINAL_OUT")
+    mapfile -t ORIGINAL_FILES < <(
+        env -u SK_NATIVE_SDK \
+            bash tools/package-native-base-artifact.sh "$ORIGINAL_OUT"
+    )
     [[ ${#ORIGINAL_FILES[@]} -ge 2 && -s "${ORIGINAL_FILES[0]}" ]] || die "canonical packager did not emit an archive"
     STAGE="$TMP/stage-$BUILD_ENV"
     mkdir -p "$STAGE"
