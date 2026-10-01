@@ -697,6 +697,16 @@ test_target() {
     local requested=${1:-} target
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
+        native-base-artifact)
+            "$PYTHON" "$ROOT/tools/test_check_native_runtime_closure.py"
+            "$PYTHON" "$ROOT/tools/test_bundle_native_runtime_closure.py"
+            "$PYTHON" "$ROOT/tools/test_native_base_metadata.py"
+            bash "$ROOT/tools/test-native-base-artifact.sh"
+            bash "$ROOT/tools/test-fetch-native-base.sh"
+            bash "$ROOT/tools/test-native-base-publish-policy.sh"
+            bash "$ROOT/tools/test-native-sdk-cache.sh"
+            bash "$ROOT/tools/test-native-base-artifact-real.sh"
+            ;;
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;

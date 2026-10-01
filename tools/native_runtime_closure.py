@@ -6,6 +6,7 @@ from __future__ import annotations
 import pathlib
 import re
 import subprocess
+import hashlib
 
 
 # GNU/Linux C/C++ runtime baseline for the supported x86_64-unknown-linux-gnu
@@ -24,6 +25,11 @@ SYSTEM_BASELINE = {
 }
 
 NEEDED_RE = re.compile(r"\(NEEDED\).*Shared library: \[(?P<name>[^\]]+)\]")
+SONAME_RE = re.compile(r"\(SONAME\).*Library soname: \[(?P<name>[^\]]+)\]")
+LDD_RESOLUTION_RE = re.compile(
+    r"^\s*(?P<name>\S+)\s+=>\s+(?P<path>/\S+)\s+\(0x[0-9a-fA-F]+\)\s*$"
+)
+LDD_DIRECT_RE = re.compile(r"^\s*(?P<path>/\S+)\s+\(0x[0-9a-fA-F]+\)\s*$")
 
 
 def is_elf(path: pathlib.Path) -> bool:
@@ -69,3 +75,66 @@ def needed_libraries(path: pathlib.Path, readelf: str) -> set[str]:
         for line in completed.stdout.splitlines()
         if (match := NEEDED_RE.search(line)) is not None
     }
+
+
+def elf_soname(path: pathlib.Path, readelf: str) -> str | None:
+    completed = subprocess.run(
+        [readelf, "-d", str(path)],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"could not inspect ELF SONAME for {path}: {completed.stderr.strip()}")
+    return next(
+        (match.group("name") for line in completed.stdout.splitlines() if (match := SONAME_RE.search(line))),
+        None,
+    )
+
+
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def ldd_resolutions(payload: pathlib.Path, ldd: str, library_path: list[pathlib.Path]) -> dict[str, pathlib.Path]:
+    """Return concrete loader choices while allowing only explicitly named search roots."""
+    import os
+
+    env = os.environ.copy()
+    env.pop("LD_PRELOAD", None)
+    env.pop("LD_LIBRARY_PATH", None)
+    if library_path:
+        env["LD_LIBRARY_PATH"] = ":".join(str(path) for path in library_path)
+    completed = subprocess.run(
+        [ldd, "-r", str(payload)],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    output = completed.stdout + "\n" + completed.stderr
+    failures = [
+        line.strip()
+        for line in output.splitlines()
+        if "not found" in line or "undefined symbol" in line
+    ]
+    if failures:
+        raise RuntimeError("loader rejected {}:\n  {}".format(payload, "\n  ".join(failures)))
+
+    resolved: dict[str, pathlib.Path] = {}
+    for line in completed.stdout.splitlines():
+        match = LDD_RESOLUTION_RE.match(line)
+        if match:
+            resolved[match.group("name")] = pathlib.Path(match.group("path"))
+            continue
+        match = LDD_DIRECT_RE.match(line)
+        if match:
+            path = pathlib.Path(match.group("path"))
+            resolved[path.name] = path
+    return resolved

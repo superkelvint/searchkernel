@@ -10,6 +10,9 @@ bash -n "$source_root/tools/resolve-native-sdk.sh"
 bash -n "$source_root/tools/install-native-base-artifact.sh"
 bash -n "$source_root/tools/package-native-base-artifact.sh"
 bash -n "$source_root/tools/publish-native-base.sh"
+bash -n "$source_root/tools/build-native-base-release.sh"
+bash -n "$source_root/tools/build-native-base-adapter.sh"
+bash -n "$source_root/tools/verify-native-base-archive.sh"
 bash -n "$source_root/tools/fetch-native-base.sh"
 bash -n "$source_root/tools/test-native-base-artifact.sh"
 bash -n "$source_root/tools/test-fetch-native-base.sh"
@@ -42,17 +45,17 @@ python3 "$source_root/tools/test_check_native_runtime_closure.py"
 python3 "$source_root/tools/test_bundle_native_runtime_closure.py"
 grep -Fq 'bundle-native-runtime-closure.py' "$source_root/tools/package-native-base-artifact.sh"
 grep -Fq 'check-native-runtime-closure.py' "$source_root/tools/package-native-base-artifact.sh"
-grep -Fq 'check-native-runtime-closure.py" "$BUNDLE/base/lib" >&2' "$source_root/tools/package-native-base-artifact.sh"
+grep -Fq '"$BUNDLE/base/lib" --require-provenance' "$source_root/tools/package-native-base-artifact.sh"
 grep -Fq 'git/ref/heads/main' "$source_root/tools/publish-native-base.sh"
-grep -Fq 'tools/install-native-base-artifact.sh' "$source_root/tools/publish-native-base.sh"
-grep -Fq 'check-native-runtime-closure.py' "$source_root/tools/publish-native-base.sh"
-grep -Fq 'bundle-native-runtime-closure.py' "$source_root/tools/publish-native-base.sh"
-grep -Fq -- '--extra-elf "$verify_root/sdk/lib/libsearchkernel_vespa.so.2"' "$source_root/tools/publish-native-base.sh"
-grep -Fq '"$base/lib" "$verify_root/sdk/lib/libsearchkernel_vespa.so.2"' "$source_root/tools/publish-native-base.sh"
-grep -Fq 'verify_archive_consumer "$ARCHIVE"' "$source_root/tools/publish-native-base.sh"
-grep -Fq 'verify_archive_consumer "$REMOTE/$ASSET"' "$source_root/tools/publish-native-base.sh"
-grep -Fq 'data["searchkernel_commit"] = source_commit' "$source_root/tools/publish-native-base.sh"
-grep -Fq 'section "Revalidating publication source"' "$source_root/tools/publish-native-base.sh"
+grep -Fq 'tools/install-native-base-artifact.sh' "$source_root/tools/verify-native-base-archive.sh"
+grep -Fq 'check-native-runtime-closure.py' "$source_root/tools/build-native-base-release.sh"
+grep -Fq 'bundle-native-runtime-closure.py' "$source_root/tools/build-native-base-release.sh"
+grep -Fq -- '--extra-elf "$STAGED_ADAPTER/sdk/lib/libsearchkernel_vespa.so.2"' "$source_root/tools/build-native-base-release.sh"
+grep -Fq '"$BASE/lib" "$OUTPUT/sdk/lib/libsearchkernel_vespa.so.2"' "$source_root/tools/build-native-base-adapter.sh"
+grep -Fq 'verify-native-base-archive.sh' "$source_root/tools/build-native-base-release.sh"
+grep -Fq 'verify-native-base-archive.sh' "$source_root/tools/publish-native-base.sh"
+grep -Fq '"searchkernel_commit": args.searchkernel_commit' "$source_root/tools/write-native-base-manifest.py"
+grep -Fq 'section "Revalidating canonical publication source"' "$source_root/tools/publish-native-base.sh"
 grep -Fq -- '--draft' "$source_root/tools/publish-native-base.sh"
 grep -Fq -- '--target "$SOURCE_COMMIT"' "$source_root/tools/publish-native-base.sh"
 python3 - "$source_root/tools/publish-native-base.sh" <<'PY'
@@ -61,8 +64,8 @@ import sys
 
 text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
 draft_upload = text.index('gh release create "$TAG"')
-remote_verify = text.index('section "Remote draft verification:')
-publish_verified = text.index('section "Publishing verified native-base releases"')
+remote_verify = text.index('section "Verifying uploaded draft bytes $TAG"')
+publish_verified = text.index('section "Publishing verified native-base drafts"')
 if not (draft_upload < remote_verify < publish_verified):
     raise SystemExit(
         "native-base release must stay draft through remote verification and publish only afterward"
@@ -73,11 +76,11 @@ import pathlib
 import sys
 
 text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
-section = text.index('section "Revalidating publication source"')
+section = text.index('section "Revalidating canonical publication source"')
 preflight = text.index('section "Publication preflight"', section)
 between = text[section:preflight]
 if "require_canonical_main" not in between:
-    raise SystemExit("publisher must revalidate canonical main immediately before publication preflight")
+    raise SystemExit("publisher must revalidate canonical main before release preflight")
 PY
 bash -n "$source_root/reference/vespa/common/verify-common.sh"
 bash -n "$source_root/reference/vespa/common/test-published-provenance.sh"

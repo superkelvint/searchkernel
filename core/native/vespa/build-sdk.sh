@@ -60,6 +60,7 @@ case "$BUILD" in
     *) BUILD=$ROOT/$BUILD ;;
 esac
 CXX=${CXX:-c++}
+PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
 ENABLE_FAILPOINTS=${SK_NATIVE_ENABLE_FAILPOINTS:-0}
 ENABLE_COVERAGE=${SK_NATIVE_COVERAGE:-0}
 EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
@@ -190,31 +191,16 @@ fi
 if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
     if [ "$ADAPTER_ONLY" = 1 ] && [ -f "$BASE_SDK/lib/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$BASE_SDK/lib
+    elif [ "$BASE_ONLY" = 1 ] && [ -f "$DEPS_LIB_DIR/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$DEPS_LIB_DIR
+    elif [ "$BASE_ONLY" = 1 ] && [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
     elif [ -f "$SDK_PACKAGE/lib/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
     elif [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
-    elif [ -n "$VESPA_WORKTREE_ROOT" ] && [ -f "$VESPA_WORKTREE_ROOT/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
-        VESPA_EXTRA_LIB_DIR=$VESPA_WORKTREE_ROOT/core/native/sdk/linux-x86_64/lib
-    elif [ -f "$ROOT/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
-        VESPA_EXTRA_LIB_DIR=$ROOT/core/native/sdk/linux-x86_64/lib
     else
-        WORKTREE_EXTRA_LIB=$(git -C "$ROOT" worktree list --porcelain 2>/dev/null |
-            sed -n 's/^worktree //p' |
-            while IFS= read -r WORKTREE; do
-                if [ -f "$WORKTREE/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
-                    printf '%s\n' "$WORKTREE/core/native/sdk/linux-x86_64/lib"
-                    break
-                fi
-            done)
-        if [ -n "$WORKTREE_EXTRA_LIB" ]; then
-            VESPA_EXTRA_LIB_DIR=$WORKTREE_EXTRA_LIB
-            echo "using native runtime libraries from worktree: $VESPA_EXTRA_LIB_DIR" >&2
-        elif [ -f "$ROOT/target/native-sdk-package/lib/libLLVM.so.21.1" ]; then
-            VESPA_EXTRA_LIB_DIR=$ROOT/target/native-sdk-package/lib
-        else
-            VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
-        fi
+        VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
     fi
 fi
 if [ ! -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
@@ -368,7 +354,7 @@ fi
 # point its RPATH at that shared base. Do not copy or mutate the Vespa base.
 if [ "$ADAPTER_ONLY" = 1 ]; then
     if [ "${SK_NATIVE_SKIP_ABI_AUTHORITIES:-0}" != 1 ]; then
-        python3 "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
+        $PYTHON_BIN "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
     fi
     if command -v patchelf >/dev/null 2>&1; then
         patchelf --force-rpath --set-rpath "$BASE_SDK/lib" "$SDK/lib/libsearchkernel_vespa.so.2"
@@ -381,7 +367,7 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
     fi
     cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
     cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
-    python3 - "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
+    $PYTHON_BIN - "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
 import sys
 
@@ -440,13 +426,13 @@ if [ "$BASE_ONLY" != 1 ]; then
         echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
         exit 1
     fi
-    python3 "$ROOT/tools/native-build-fingerprint.py" \
+    $PYTHON_BIN "$ROOT/tools/native-build-fingerprint.py" \
         --root "$ROOT" \
         --vespa-root "$VESPA_ROOT" \
         --target "$NATIVE_TARGET" \
         --scope full \
         --output "$SDK/native-build-fingerprint-v2.txt"
-    python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
+    $PYTHON_BIN - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
 import re
 import sys
@@ -476,7 +462,7 @@ with open(path, "w", encoding="utf-8") as stream:
 PY
     cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 else
-    python3 - "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json" <<'PY'
+    $PYTHON_BIN - "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json" <<'PY'
 import json
 import sys
 
@@ -502,7 +488,18 @@ fi
 # Copy each resolved payload once, then recreate linker and SONAME aliases as
 # relative links inside SDK/lib. This keeps the package self-contained without
 # duplicating large shared objects for every alias.
-if [ "$VESPA_LIBRARY_ROOT" = "$VESPA_ROOT" ]; then
+if [ "$BASE_ONLY" = 1 ]; then
+    LINKER_ALIASES=()
+    if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
+        LINKER_ALIASES+=(--linker-alias "LLVM-21=$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")
+    fi
+    if [ -n "$CONFIGURED_DEPS" ]; then
+        LINKER_ALIASES+=(--producer-root "$CONFIGURED_DEPS=$VESPA_DEPS")
+    fi
+    LINKER_ALIASES+=(--producer-root "/work/vespa=$VESPA_ROOT")
+    "$PYTHON_BIN" "$ROOT/tools/copy-native-base-link-shared-libraries.py" \
+        "$LINK_FILE" "$SDK/lib" --cxx "$CXX" "${LINKER_ALIASES[@]}"
+elif [ "$VESPA_LIBRARY_ROOT" = "$VESPA_ROOT" ]; then
     find "$VESPA_ROOT" -name '*.so*' \
         -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 else
@@ -512,9 +509,16 @@ else
     find "$VESPA_LIBRARY_ROOT" -maxdepth 1 -name 'libvespa*.so*' \
         -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 fi
-find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
-    ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
-    -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
+# Do not mirror the dependency installation by filename for a Vespa base.
+# Runtime DSOs are added below by the ELF resolver only when a pinned Vespa DSO
+# actually loads them; this avoids shadowing a compatible producer choice with
+# an unrelated same-name file from lib64. The legacy full development SDK
+# keeps its existing convenience copy behavior.
+if [ "$BASE_ONLY" != 1 ]; then
+    find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
+        ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
+        -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
+fi
 if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
     if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
          "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
@@ -554,10 +558,13 @@ fi
 # Bundle every non-baseline DT_NEEDED dependency now rather than allowing the
 # later artifact packager to repair an already-invalid cache object.
 if [ "$BASE_ONLY" = 1 ]; then
-    python3 "$ROOT/tools/bundle-native-runtime-closure.py" \
+    $PYTHON_BIN "$ROOT/tools/bundle-native-runtime-closure.py" \
         "$SDK/lib" \
         --search-dir "$DEPS_LIB_DIR" \
-        --search-dir "$VESPA_EXTRA_LIB_DIR"
+        --search-dir "$VESPA_EXTRA_LIB_DIR" \
+        --source-root "vespa-build=$VESPA_ROOT" \
+        --source-root "vespa-deps=$VESPA_DEPS" \
+        --source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR"
 fi
 
 # Shared-library aliases are allowed only when they are simple relative names
@@ -600,7 +607,7 @@ elif [ "$BASE_ONLY" != 1 ] && [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; th
     SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-vespa-bindings.sh"
 fi
 if [ "$BASE_ONLY" != 1 ]; then
-    python3 "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
+    $PYTHON_BIN "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
 fi
 
 # The upstream build tree also contains unit-test support libraries. Keep

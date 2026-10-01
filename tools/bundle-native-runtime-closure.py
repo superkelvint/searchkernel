@@ -4,32 +4,28 @@
 from __future__ import annotations
 
 import argparse
-import os
 import pathlib
-import re
+import json
 import shutil
-import subprocess
 import sys
 
 from native_runtime_closure import (
     SYSTEM_BASELINE,
     is_elf,
+    elf_soname,
+    ldd_resolutions,
     needed_libraries,
     resolve_origin_dependency,
+    sha256_file,
 )
-
-
-LDD_ARROW_RE = re.compile(r"^\s*(?P<name>\S+)\s+=>\s+(?P<path>/\S+)")
-LDD_DIRECT_RE = re.compile(r"^\s*(?P<path>/\S+)\s+\(")
 
 
 def die(message: str) -> "NoReturn":
     raise SystemExit(message)
 
 
-def bundle_entries(libdir: pathlib.Path) -> tuple[set[str], list[pathlib.Path]]:
+def bundle_entries(libdir: pathlib.Path) -> list[pathlib.Path]:
     root = libdir.resolve()
-    available: set[str] = set()
     payloads: set[pathlib.Path] = set()
 
     for entry in libdir.iterdir():
@@ -43,63 +39,36 @@ def bundle_entries(libdir: pathlib.Path) -> tuple[set[str], list[pathlib.Path]]:
             die(f"native runtime entry escapes bundled lib directory: {entry} -> {resolved}")
         if not resolved.is_file() or not is_elf(resolved):
             continue
-        available.add(entry.name)
         payloads.add(resolved)
 
     if not payloads:
         die(f"native runtime lib directory contains no ELF shared libraries: {libdir}")
-    return available, sorted(payloads, key=str)
+    return sorted(payloads, key=str)
 
 
-def ldd_resolution(
-    payload: pathlib.Path,
-    needed: str,
-    libdir: pathlib.Path,
-    search_dirs: list[pathlib.Path],
-    ldd: str,
-) -> pathlib.Path | None:
-    env = os.environ.copy()
-    env.pop("LD_PRELOAD", None)
-    paths = [str(libdir), *(str(path) for path in search_dirs)]
-    inherited = env.get("LD_LIBRARY_PATH")
-    if inherited:
-        paths.append(inherited)
-    env["LD_LIBRARY_PATH"] = ":".join(paths)
-
-    completed = subprocess.run(
-        [ldd, str(payload)],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-    )
-    for raw in completed.stdout.splitlines():
-        match = LDD_ARROW_RE.match(raw)
-        if match is not None and match.group("name") == needed:
-            return pathlib.Path(match.group("path"))
-        match = LDD_DIRECT_RE.match(raw)
-        if match is not None:
-            candidate = pathlib.Path(match.group("path"))
-            if candidate.name == needed:
-                return candidate
-    return None
+def source_identity(path: pathlib.Path, source_roots: list[tuple[str, pathlib.Path]]) -> str:
+    resolved = path.resolve(strict=True)
+    for label, root in source_roots:
+        try:
+            return f"{label}/{resolved.relative_to(root)}"
+        except ValueError:
+            continue
+    return f"external/{resolved.name}/{sha256_file(resolved)}"
 
 
 def bundle(
     libdir: pathlib.Path,
     search_dirs: list[pathlib.Path],
     extra_elfs: list[pathlib.Path],
+    source_roots: list[tuple[str, pathlib.Path]],
 ) -> int:
     if not libdir.is_dir():
         die(f"native runtime lib directory does not exist: {libdir}")
 
     readelf = shutil.which("readelf")
     ldd = shutil.which("ldd")
-    if readelf is None:
-        die("native runtime bundling requires readelf")
-    if ldd is None:
-        die("native runtime bundling requires ldd")
+    if readelf is None or ldd is None:
+        die("native runtime bundling requires readelf and ldd")
 
     root = libdir.resolve()
     resolved_search_dirs: list[pathlib.Path] = []
@@ -112,7 +81,22 @@ def bundle(
             die(f"runtime search path is not a directory: {resolved}")
         resolved_search_dirs.append(resolved)
 
-    available, queue = bundle_entries(libdir)
+    queue = bundle_entries(libdir)
+    bundled_sonames: dict[str, tuple[str, pathlib.Path]] = {}
+    for payload in queue:
+        try:
+            needed_name = elf_soname(payload, readelf)
+        except RuntimeError as exc:
+            die(str(exc))
+        if needed_name:
+            digest = sha256_file(payload)
+            previous = bundled_sonames.get(needed_name)
+            if previous is not None and previous[0] != digest:
+                die(
+                    f"conflicting bundled ELF candidates provide SONAME {needed_name}: "
+                    f"{previous[1]} vs {payload}"
+                )
+            bundled_sonames[needed_name] = (digest, payload)
     for extra in extra_elfs:
         try:
             resolved_extra = extra.resolve(strict=True)
@@ -123,6 +107,25 @@ def bundle(
         queue.append(resolved_extra)
 
     inspected: set[pathlib.Path] = set()
+    selected: dict[str, tuple[str, pathlib.Path]] = {}
+    required_by: dict[pathlib.Path, set[str]] = {}
+    provenance: dict[pathlib.Path, dict[str, str]] = {}
+    provenance_path = libdir / ".searchkernel-runtime-provenance.json"
+    prior_identities: dict[tuple[str, str, str | None], str] = {}
+    if provenance_path.exists():
+        try:
+            previous = json.loads(provenance_path.read_text(encoding="utf-8"))
+            for item in previous.get("libraries", []):
+                if isinstance(item, dict):
+                    prior_identities[(item.get("packaged_name"), item.get("sha256"), item.get("soname"))] = item.get("source_identity")
+        except (OSError, json.JSONDecodeError) as exc:
+            die(f"invalid existing runtime provenance {provenance_path}: {exc}")
+    for payload in queue:
+        resolved = payload.resolve(strict=True)
+        provenance[resolved] = {
+            "source_identity": source_identity(resolved, source_roots),
+            "sha256": sha256_file(resolved),
+        }
     copied = 0
 
     while queue:
@@ -136,9 +139,17 @@ def bundle(
             needed_names = needed_libraries(resolved_payload, readelf)
         except RuntimeError as exc:
             die(str(exc))
+        try:
+            resolutions = ldd_resolutions(
+                resolved_payload,
+                ldd,
+                [*resolved_search_dirs, root],
+            )
+        except RuntimeError as exc:
+            die(str(exc))
 
         for needed in sorted(needed_names):
-            if needed in SYSTEM_BASELINE or needed in available:
+            if needed in SYSTEM_BASELINE:
                 continue
 
             if needed.startswith(("$ORIGIN/", "${ORIGIN}/")):
@@ -148,16 +159,20 @@ def bundle(
                         f"{resolved_payload.name}: unresolved origin-relative "
                         f"runtime dependency {needed}"
                     )
+                origin_root = root if resolved_payload.is_relative_to(root) else resolved_payload.parent
+                if not origin_dependency.resolve(strict=True).is_relative_to(origin_root):
+                    die(
+                        f"{resolved_payload.name}: origin-relative dependency escapes "
+                        f"its packaged runtime directory: {needed}"
+                    )
                 queue.append(origin_dependency)
+                required_by.setdefault(origin_dependency.resolve(strict=True), set()).add(
+                    str(resolved_payload.relative_to(root))
+                    if resolved_payload.is_relative_to(root)
+                    else resolved_payload.name
+                )
                 continue
-
-            source = ldd_resolution(
-                resolved_payload,
-                needed,
-                root,
-                resolved_search_dirs,
-                ldd,
-            )
+            source = resolutions.get(needed)
             if source is None:
                 die(
                     f"{resolved_payload.name}: could not resolve non-baseline "
@@ -173,21 +188,77 @@ def bundle(
                     f"{needed} is not an ELF file: {source}"
                 )
 
-            destination = root / needed
-            if destination.exists() or destination.is_symlink():
-                die(
-                    f"{resolved_payload.name}: unresolved dependency {needed} "
-                    "collides with a non-usable bundled entry"
+            try:
+                source.relative_to(root)
+                source_is_bundled = True
+            except ValueError:
+                source_is_bundled = False
+            if source_is_bundled:
+                required_by.setdefault(source, set()).add(
+                    str(resolved_payload.relative_to(root))
+                    if resolved_payload.is_relative_to(root)
+                    else resolved_payload.name
                 )
+                queue.append(source)
+                continue
 
+            digest = sha256_file(source)
+            previous = selected.get(needed)
+            if previous is not None and previous[0] != digest:
+                die(
+                    f"conflicting producer resolution for {needed}: "
+                    f"{previous[1]} vs {source}"
+                )
+            selected[needed] = (digest, source)
+            destination = root / needed
+            if destination.is_symlink():
+                destination.unlink()
+            if destination.exists():
+                destination.unlink()
             shutil.copy2(source, destination)
-            available.add(needed)
             queue.append(destination)
-            copied += 1
-            print(
-                f"bundled runtime dependency {needed} from {source}",
-                file=sys.stderr,
+            resolved_destination = destination.resolve(strict=True)
+            provenance[resolved_destination] = {
+                "source_identity": source_identity(source, source_roots),
+                "sha256": digest,
+            }
+            required_by.setdefault(resolved_destination, set()).add(
+                str(resolved_payload.relative_to(root))
+                if resolved_payload.is_relative_to(root)
+                else resolved_payload.name
             )
+            copied += 1
+            print(f"bundled runtime dependency {needed} from {source}", file=sys.stderr)
+
+    entries = []
+    seen_payloads: set[pathlib.Path] = set()
+    for entry in sorted(libdir.iterdir(), key=lambda item: item.name):
+        resolved = entry.resolve(strict=True)
+        if resolved in seen_payloads or not resolved.is_file() or not is_elf(resolved):
+            continue
+        seen_payloads.add(resolved)
+        entry_soname = elf_soname(resolved, readelf)
+        preserved_identity = prior_identities.get((entry.name, sha256_file(resolved), entry_soname))
+        identity = provenance.get(resolved, {
+            "source_identity": source_identity(resolved, source_roots),
+            "sha256": sha256_file(resolved),
+        })
+        try:
+            soname = elf_soname(resolved, readelf)
+        except RuntimeError as exc:
+            die(str(exc))
+        entries.append({
+            "packaged_name": entry.name,
+            "soname": soname,
+            "sha256": identity["sha256"],
+            "source_identity": preserved_identity or identity["source_identity"],
+            "required_by": sorted(required_by.get(resolved, set())),
+        })
+    provenance_path = libdir / ".searchkernel-runtime-provenance.json"
+    provenance_path.write_text(
+        json.dumps({"format_version": 1, "libraries": entries}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     return copied
 
@@ -209,8 +280,21 @@ def main() -> int:
         type=pathlib.Path,
         help="ELF outside libdir whose DT_NEEDED dependencies must also be bundled",
     )
+    parser.add_argument(
+        "--source-root",
+        action="append",
+        default=[],
+        metavar="LABEL=PATH",
+        help="named producer root used to create relocatable provenance identities",
+    )
     args = parser.parse_args()
-    count = bundle(args.libdir, args.search_dir, args.extra_elf)
+    source_roots: list[tuple[str, pathlib.Path]] = []
+    for value in args.source_root:
+        label, separator, raw_path = value.partition("=")
+        if not separator or not label or not raw_path:
+            die(f"invalid source root {value!r}; expected LABEL=PATH")
+        source_roots.append((label, pathlib.Path(raw_path).resolve(strict=True)))
+    count = bundle(args.libdir, args.search_dir, args.extra_elf, source_roots)
     print(f"bundled {count} non-baseline runtime dependencies", file=sys.stderr)
     return 0
 
