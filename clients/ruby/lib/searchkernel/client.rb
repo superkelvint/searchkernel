@@ -32,7 +32,7 @@ module SearchKernel
       )
       result = Protocol.expect_response(operation, response)
       if %i[create_index open_index].include?(operation.to_sym)
-        generation = response["index_generation"]
+        generation = result["generation"]
         unless generation.is_a?(String) && !generation.empty?
           raise ProtocolError, "#{operation} response is missing canonical index generation"
         end
