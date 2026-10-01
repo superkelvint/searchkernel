@@ -18,8 +18,8 @@ grep -Fq 'GENERATION=$(' "$PUBLISH" || { echo 'publisher must allocate fresh rel
 grep -Fq 'if gh release view "$TAG"' "$PUBLISH" || { echo 'publisher must reject existing immutable tags' >&2; exit 1; }
 grep -Fq 'gh release create "$TAG"' "$PUBLISH" || { echo 'publisher must create a new draft release' >&2; exit 1; }
 grep -Fq -- '--draft' "$PUBLISH" || { echo 'publisher must create drafts first' >&2; exit 1; }
-grep -Fq 'build-native-base-release.sh' "$PUBLISH" || { echo 'publisher must delegate builds to the canonical builder' >&2; exit 1; }
-grep -Fq 'verify-native-base-archive.sh' "$PUBLISH" || { echo 'publisher must reverify downloaded archive bytes through the consumer path' >&2; exit 1; }
+grep -Fq '"$ROOT/dev" native-base build' "$PUBLISH" || { echo 'publisher must build through the canonical ./dev container path' >&2; exit 1; }
+grep -Fq '"$ROOT/dev" native-base verify' "$PUBLISH" || { echo 'publisher must reverify downloaded bytes through the canonical ./dev container path' >&2; exit 1; }
 if grep -Fq 'package-native-base-artifact.sh' "$PUBLISH" || grep -Fq 'bundle-native-runtime-closure.py' "$PUBLISH"; then
     echo 'publisher contains a competing artifact construction path' >&2
     exit 1
@@ -28,17 +28,22 @@ if grep -Eq '\bgh\b|release (create|upload|edit)' "$BUILDER"; then
     echo 'build-only builder must not call GitHub' >&2
     exit 1
 fi
-grep -Fq 'SEARCHKERNEL_DEV_USE_CI_IMAGE=0' "$BUILDER" || { echo 'builder must provision host inputs in the selected host environment' >&2; exit 1; }
+if grep -Fq 'SEARCHKERNEL_DEV_USE_CI_IMAGE=0' "$BUILDER"; then
+    echo 'native-base builder must not bypass canonical container execution' >&2
+    exit 1
+fi
+grep -Fq "native-base release construction must run through './dev native-base build ...'" "$BUILDER" || { echo 'builder must fail closed outside the canonical container' >&2; exit 1; }
+grep -Fq "native-base archive verification must run through './dev native-base verify ...'" "$VERIFY" || { echo 'archive verifier must fail closed outside the canonical container' >&2; exit 1; }
 grep -Fq 'env -u SK_NATIVE_SDK' "$BUILDER" || { echo 'builder must ignore ambient SK_NATIVE_SDK' >&2; exit 1; }
 grep -Fq 'check-native-runtime-closure.py' "$BUILDER" || { echo 'builder must verify ELF closure before archiving' >&2; exit 1; }
 grep -Fq 'build-native-base-adapter.sh' "$BUILDER" || { echo 'builder must link the adapter against staged and archived bases' >&2; exit 1; }
 grep -Fq 'smoke-native-base-adapter.py' "$BUILDER" || { echo 'builder must load and call the adapter ABI probe' >&2; exit 1; }
 grep -Fq 'runtime_provenance_sha256' "$ROOT/tools/write-native-base-manifest.py" || { echo 'artifact manifest must seal runtime provenance' >&2; exit 1; }
 
-builder_line=$(grep -n 'build-native-base-release.sh' "$PUBLISH" | head -1 | cut -d: -f1)
+builder_line=$(grep -n 'native-base build' "$PUBLISH" | head -1 | cut -d: -f1)
 draft_line=$(grep -n 'gh release create' "$PUBLISH" | head -1 | cut -d: -f1)
 download_line=$(grep -n 'gh release download' "$PUBLISH" | head -1 | cut -d: -f1)
-remote_verify_line=$(grep -n 'verify-native-base-archive.sh' "$PUBLISH" | tail -1 | cut -d: -f1)
+remote_verify_line=$(grep -n 'native-base verify' "$PUBLISH" | tail -1 | cut -d: -f1)
 publish_line=$(grep -n 'gh release edit' "$PUBLISH" | head -1 | cut -d: -f1)
 (( builder_line < draft_line && draft_line < download_line && download_line < remote_verify_line && remote_verify_line < publish_line )) || {
     echo 'publisher order must be build, draft upload, download/check, consumer verification, publish' >&2
