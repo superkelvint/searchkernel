@@ -142,12 +142,13 @@ export class Client {
         );
       }
       if (operation === "createIndex" || operation === "openIndex") {
-        if (typeof decoded.indexGeneration !== "string" || decoded.indexGeneration.length === 0) {
+        const lifecycle = decoded.payload as CreateIndexResultT | OpenIndexResultT;
+        if (typeof lifecycle.generation !== "string" || lifecycle.generation.length === 0) {
           throw new ProtocolError(
             `${operation} response is missing canonical index generation`,
           );
         }
-        this.indexGeneration = decoded.indexGeneration;
+        this.indexGeneration = lifecycle.generation;
       }
       return decoded.payload as OperationResponseMap[K];
     } catch (error) {
