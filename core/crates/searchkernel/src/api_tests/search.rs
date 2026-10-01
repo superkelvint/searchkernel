@@ -57,7 +57,7 @@ fn public_rust_browse_and_portable_match_all_share_source_semantics() {
     };
     let bytes = portable_match_all_request(false);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let portable_request = context.search_to_ir(request).unwrap();
+    let portable_request = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap();
     assert_eq!(rust_request, portable_request);
 
     let recording = Arc::new(RecordingBackend::new());
@@ -69,7 +69,7 @@ fn public_rust_browse_and_portable_match_all_share_source_semantics() {
         .unwrap_err();
     let bytes = portable_match_all_request(true);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let portable_error = context.search_to_ir(request).unwrap_err();
+    let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
     assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
     assert_eq!(
         portable_error.code,
@@ -125,7 +125,7 @@ fn public_rust_typed_query_errors_match_independent_portable_requests() {
         let builder = index.search("typed").typed_query(query);
         let rust_error = builder.execute::<serde_json::Value>().unwrap_err();
         let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-        let portable_error = context.search_to_ir(request).unwrap_err();
+        let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
         assert_eq!(
             rust_error.code(),
             crate::ErrorCode::InvalidArgument,
@@ -360,7 +360,7 @@ fn public_and_portable_advanced_query_errors_converge_in_the_ir() {
         let rust_error = builder.execute::<serde_json::Value>().unwrap_err();
         let bytes = portable_typed_request(portable_query, inputs);
         let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-        let portable_error = context.search_to_ir(request).unwrap_err();
+        let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
 
         let portable_code = match portable_error.code {
             searchkernel_ir::ErrorCode::InvalidArgument => crate::ErrorCode::InvalidArgument,
@@ -423,7 +423,7 @@ fn public_rust_typed_query_values_survive_canonical_normalization() {
             panic!("typed query should reach the recording backend");
         };
         let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-        let portable_request = context.search_to_ir(request).unwrap();
+        let portable_request = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap();
         assert_eq!(rust_request, portable_request);
 
         let searchkernel_ir::QueryIr::Typed(query) = rust_request.query() else {
@@ -512,8 +512,7 @@ fn public_rust_omitted_typed_query_defaults_match_portable_requests() {
         let bytes = portable_typed_request(portable_query, BTreeMap::new());
         let portable_request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
             .expect("portable request should parse");
-        let portable_request = context
-            .search_to_ir(portable_request)
+        let portable_request = searchkernel_ir::wire::v1::search_to_ir(&context, portable_request)
             .expect("portable query should resolve");
         assert_eq!(rust_request.query(), portable_request.query());
     }
@@ -545,8 +544,7 @@ fn public_rust_omitted_typed_query_defaults_match_portable_requests() {
     let bytes = portable_typed_request(portable_query, BTreeMap::from([("q".to_owned(), tensor)]));
     let portable_request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
         .expect("portable request should parse");
-    let portable_request = context
-        .search_to_ir(portable_request)
+    let portable_request = searchkernel_ir::wire::v1::search_to_ir(&context, portable_request)
         .expect("portable nearest-neighbor should resolve");
     assert_eq!(rust_request.query(), portable_request.query());
     assert_eq!(rust_request.inputs(), portable_request.inputs());
@@ -566,7 +564,7 @@ fn blank_text_is_rejected_identically_and_match_all_remains_explicit() {
             .unwrap_err();
         let bytes = portable_text_request(Some(text));
         let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-        let portable_error = context.search_to_ir(request).unwrap_err();
+        let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
         assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
         assert_eq!(
             portable_error.code,
@@ -578,7 +576,7 @@ fn blank_text_is_rejected_identically_and_match_all_remains_explicit() {
 
     let bytes = portable_text_request(None);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let missing_text_error = context.search_to_ir(request).unwrap_err();
+    let missing_text_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
     assert_eq!(
         missing_text_error.code,
         searchkernel_ir::ErrorCode::InvalidArgument
@@ -586,7 +584,7 @@ fn blank_text_is_rejected_identically_and_match_all_remains_explicit() {
 
     let bytes = portable_match_all_request(false);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let match_all = context.search_to_ir(request).unwrap();
+    let match_all = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap();
     assert!(matches!(
         match_all.query(),
         searchkernel_ir::QueryIr::MatchAll
@@ -606,8 +604,7 @@ fn empty_language_has_identical_rust_and_portable_semantics() {
         .expect_err("empty Rust language must be invalid");
     let bytes = portable_text_request_with_empty_controls(None, Some(""), None);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let portable_error = context
-        .search_to_ir(request)
+    let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request)
         .expect_err("empty portable language must not disappear");
 
     assert_eq!(rust_error.details()[0].code, "invalid_language");
@@ -722,8 +719,7 @@ fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
     let bytes = searchkernel_ir::wire::v1::search_request_ir_to_api(&direct);
     let portable = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
         .expect("canonical search request should decode");
-    let portable = context
-        .search_to_ir(portable)
+    let portable = searchkernel_ir::wire::v1::search_to_ir(&context, portable)
         .expect("canonical portable search should resolve");
 
     assert_eq!(direct, portable);
