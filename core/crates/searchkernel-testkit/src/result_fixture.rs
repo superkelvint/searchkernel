@@ -1554,7 +1554,7 @@ mod expanded_canonical_corpus {
                 let actual = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes)
                     .unwrap_or_else(|error| panic!("fixture {name} must decode: {error:?}"));
                 assert_api_search_result_matches(actual, &expected);
-                let decoded = searchkernel_ir::search_result_from_api(actual)
+                let decoded = searchkernel_ir::wire::v1::search_result_from_api(actual)
                     .unwrap_or_else(|error| panic!("fixture {name} must decode to IR: {error:?}"));
                 assert_eq!(decoded, expected, "IR round trip changed fixture {name}");
             }
@@ -1614,7 +1614,7 @@ mod expanded_canonical_corpus {
                 let bytes = searchkernel_ir::search_result_to_api(&expected).unwrap();
                 let wire =
                     searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
-                let actual = searchkernel_ir::search_result_from_api(wire).unwrap();
+                let actual = searchkernel_ir::wire::v1::search_result_from_api(wire).unwrap();
                 assert_eq!(actual, expected, "generated result tree seed {seed}");
             }
         }
@@ -1743,7 +1743,7 @@ mod expanded_canonical_corpus {
                 };
                 assert_eq!(class, "result", "{name} must reject before result decoding");
                 assert!(
-                    searchkernel_ir::search_result_from_api(result).is_err(),
+                    searchkernel_ir::wire::v1::search_result_from_api(result).is_err(),
                     "malformed result fixture was accepted: {name}"
                 );
             }
