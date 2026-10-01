@@ -718,6 +718,10 @@ test_target() {
             bash "$ROOT/tools/test-dev-ci-image.sh"
             bash "$ROOT/tools/test-native-base-publish-policy.sh"
             ;;
+        verification-control-plane)
+            "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
+            "$PYTHON" "$ROOT/tools/test_verification_request_normalizer.py"
+            ;;
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
