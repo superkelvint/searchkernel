@@ -26,7 +26,7 @@ module SearchKernel
 
     module_function
 
-    def request_envelope(operation, payload, target: nil)
+    def request_envelope(operation, payload, target: nil, expected_index_generation: nil)
       spec = operation_spec(operation)
       raise ArgumentError, "Search Kernel request payload must be an object" unless payload.is_a?(Hash)
 
@@ -39,6 +39,13 @@ module SearchKernel
         raise ArgumentError, "Search Kernel target must be a string" unless target.is_a?(String)
 
         envelope["target"] = { "name" => target }
+      end
+      unless expected_index_generation.nil?
+        unless expected_index_generation.is_a?(String) && !expected_index_generation.empty?
+          raise ArgumentError, "Search Kernel expected index generation must be a non-empty string"
+        end
+
+        envelope["expected_index_generation"] = expected_index_generation
       end
       envelope
     end
