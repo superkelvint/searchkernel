@@ -158,13 +158,19 @@ approximated.
 
 ### Structured grouping and faceting (`grouping.structured`)
 
+- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, ordering, precision, filter/keep controls, and the executable expression/aggregation subset. The pinned native GroupingLevel has one filter predicate slot, so filter() and keep() are each executable alone but using both on the same level returns Unsupported rather than being approximated.
+
 - The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, and regex keep filters.
 
 ### Executable grouping expression/function subset (`grouping.functions`)
 
+- The native adapter and Rust facade support attributes, scalar literals, unary/binary arithmetic, aggregation/alias references in executable positions, and the pinned native function subset: cat, reverse, normalize, strlen, and xor. Other functions accepted by the portable grouping grammar remain represented/resolved but return Unsupported at the current native ABI. Member, MapLookup, and Bucket remain rejected by native lowering and are intentionally not exposed as Rust grouping classifiers.
+
 - The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust exposes named aggregation aliases and regex keep filters; Python exposes the richer expression facade.
 
 ### Grouping aggregations (`grouping.aggregations`)
+
+- The native layer and Rust facade support count, average, sum, min, max, stddev, xor, and quantiles. Summary aggregation is tracked separately because grouped docsum payloads do not cross the native ABI.
 
 - The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust exposes those aggregation constructors, aliases, ordering, precision, and root outputs; richer grouping expression/filter ergonomics remain narrower than the portable model. Summary aggregation is tracked separately because grouped docsum payloads are incomplete.
 
