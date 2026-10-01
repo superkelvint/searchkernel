@@ -188,6 +188,178 @@ class ClientContractTests(unittest.TestCase):
             [],
         )
 
+    def _write_fake_lifecycle_bfbs(self) -> tuple[Path, Path]:
+        bfbs = (
+            self.root
+            / "core"
+            / "crates"
+            / "searchkernel-protocol"
+            / "bfbs"
+        )
+        bfbs.mkdir(parents=True, exist_ok=True)
+        request = bfbs / "searchkernel_request.bfbs"
+        response = bfbs / "searchkernel_response.bfbs"
+        request.write_bytes(b"request")
+        response.write_bytes(b"response")
+        return request, response
+
+    @staticmethod
+    def _lifecycle_payloads(operations, suffix):
+        return tuple(
+            f"SearchKernel.V2.{operation}{suffix}"
+            for operation in operations
+        )
+
+    def _minimal_lifecycle_catalog(
+        self,
+        surface_name: str,
+        public_path: str,
+        *,
+        operations=("CreateIndex", "OpenIndex", "DeleteIndex"),
+    ) -> dict:
+        wire_path = f"{surface_name}-wire.txt"
+        (self.root / wire_path).write_text(
+            "\n".join(
+                f"{operation}Request {operation}Result"
+                for operation in operations
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "lifecycle_surfaces": [surface_name],
+            "surfaces": {
+                surface_name: {
+                    "lifecycle_contract": {
+                        operation: [
+                            {
+                                "kind": "public",
+                                "path": public_path,
+                                "contains": f"public:{operation}",
+                            },
+                            {
+                                "kind": "wire",
+                                "path": wire_path,
+                                "contains": f"{operation}Request {operation}Result",
+                            },
+                        ]
+                        for operation in operations
+                    }
+                }
+            },
+        }
+
+    def test_lifecycle_parity_fails_closed_without_canonical_bfbs(self) -> None:
+        with self.assertRaisesRegex(
+            MODULE.RegistryError,
+            "canonical BFBS lifecycle metadata is missing",
+        ):
+            MODULE.canonical_lifecycle_operations(self.root)
+
+    def test_bfbs_lifecycle_parity_tracks_future_operations(self) -> None:
+        request, _response = self._write_fake_lifecycle_bfbs()
+        operations = ("CreateIndex", "OpenIndex", "DeleteIndex", "RenameIndex")
+
+        def reflected(path: Path, _union_name: str) -> tuple[str, ...]:
+            suffix = "Request" if path == request else "Result"
+            return self._lifecycle_payloads(operations, suffix)
+
+        with mock.patch.object(
+            MODULE,
+            "_reflected_union_payloads",
+            side_effect=reflected,
+        ):
+            self.assertEqual(
+                MODULE.canonical_lifecycle_operations(self.root),
+                operations,
+            )
+
+    def test_lifecycle_parity_rejects_request_result_union_drift(self) -> None:
+        request, _response = self._write_fake_lifecycle_bfbs()
+
+        def reflected(path: Path, _union_name: str) -> tuple[str, ...]:
+            operations = (
+                ("CreateIndex", "OpenIndex", "DeleteIndex", "RenameIndex")
+                if path == request
+                else ("CreateIndex", "OpenIndex", "DeleteIndex")
+            )
+            suffix = "Request" if path == request else "Result"
+            return self._lifecycle_payloads(operations, suffix)
+
+        with mock.patch.object(
+            MODULE,
+            "_reflected_union_payloads",
+            side_effect=reflected,
+        ):
+            with self.assertRaisesRegex(
+                MODULE.RegistryError,
+                "missing result\\(s\\): RenameIndex",
+            ):
+                MODULE.canonical_lifecycle_operations(self.root)
+
+    def test_lifecycle_parity_requires_public_api_not_just_wire_tokens(self) -> None:
+        request, _response = self._write_fake_lifecycle_bfbs()
+        operations = ("CreateIndex", "OpenIndex", "DeleteIndex")
+
+        def reflected(path: Path, _union_name: str) -> tuple[str, ...]:
+            suffix = "Request" if path == request else "Result"
+            return self._lifecycle_payloads(operations, suffix)
+
+        for surface_name in ("python", "ruby"):
+            with self.subTest(surface=surface_name):
+                public_path = f"{surface_name}-public.txt"
+                (self.root / public_path).write_text(
+                    "public:CreateIndex\npublic:OpenIndex\n",
+                    encoding="utf-8",
+                )
+                catalog = self._minimal_lifecycle_catalog(
+                    surface_name,
+                    public_path,
+                )
+                with mock.patch.object(
+                    MODULE,
+                    "_reflected_union_payloads",
+                    side_effect=reflected,
+                ):
+                    with self.assertRaisesRegex(
+                        MODULE.RegistryError,
+                        rf"surface {surface_name} lifecycle DeleteIndex.*"
+                        "missing required source evidence",
+                    ):
+                        MODULE.validate_client_lifecycle_parity(
+                            catalog,
+                            self.root,
+                        )
+
+    def test_future_lifecycle_operation_requires_every_surface_contract_to_follow(self) -> None:
+        request, _response = self._write_fake_lifecycle_bfbs()
+        canonical_operations = (
+            "CreateIndex",
+            "OpenIndex",
+            "DeleteIndex",
+            "RenameIndex",
+        )
+
+        def reflected(path: Path, _union_name: str) -> tuple[str, ...]:
+            suffix = "Request" if path == request else "Result"
+            return self._lifecycle_payloads(canonical_operations, suffix)
+
+        public_path = "python-public.txt"
+        (self.root / public_path).write_text(
+            "public:CreateIndex\npublic:OpenIndex\npublic:DeleteIndex\n",
+            encoding="utf-8",
+        )
+        catalog = self._minimal_lifecycle_catalog("python", public_path)
+        with mock.patch.object(
+            MODULE,
+            "_reflected_union_payloads",
+            side_effect=reflected,
+        ):
+            with self.assertRaisesRegex(
+                MODULE.RegistryError,
+                "missing operation\\(s\\): RenameIndex",
+            ):
+                MODULE.validate_client_lifecycle_parity(catalog, self.root)
+
     def test_evidence_is_discovered_and_rendered(self) -> None:
         (self.root / "rust-tests" / "e2e.rs").write_text(
             "// SKC: result.highlighting/basic "

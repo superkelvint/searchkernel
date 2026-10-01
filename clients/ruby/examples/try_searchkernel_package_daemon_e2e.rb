@@ -173,6 +173,21 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
       target: "products",
       fields: fields
     )
+    sibling_index = SearchKernel::Index.create(
+      base_url,
+      target: "products-b",
+      fields: fields
+    )
+    begin
+      same(
+        "sibling-1",
+        sibling_index.upsert("sibling-1", {"title" => "Sibling Ruby Client", "inventory" => 7}),
+        "sibling lifecycle target mutation id"
+      )
+    ensure
+      sibling_index.close
+    end
+
     begin
       SearchKernel::Index.create(base_url, target: "products", fields: fields)
       raise "duplicate logical index unexpectedly created"
@@ -242,6 +257,21 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
       same("NotFound", error.code, "missing delete has canonical NotFound semantics")
       same("index_not_found", error.details.first.fetch("code"), "missing delete canonical detail")
     end
+
+    surviving_sibling = SearchKernel::Index.open(base_url, target: "products-b")
+    begin
+      same(
+        7,
+        surviving_sibling.get("sibling-1").fetch("inventory"),
+        "deleting one lifecycle target leaves sibling target usable"
+      )
+    ensure
+      surviving_sibling.close
+    end
+    check(
+      SearchKernel::Index.delete(base_url, target: "products-b"),
+      "delete surviving sibling logical index"
+    )
 
     stop_daemon(pid)
     pid = nil

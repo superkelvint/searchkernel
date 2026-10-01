@@ -1191,10 +1191,12 @@ Use current first-party client behavior and shared fixtures to determine what is
 
 ## 33. `Index`
 
-Remote/client mode should support the language equivalent of:
+Remote/client mode should connect to the daemon separately from selecting an
+index, using the language equivalent of:
 
 ```text
-Index.connect(endpoint)
+client = RemoteClient.connect(endpoint)
+index = client.open_index(target)
 ```
 
 Clients that explicitly claim managed-local operation should additionally support managed local lifecycle as described later. Runtime capability alone does not force a connect-only client to claim daemon ownership.
@@ -1368,7 +1370,8 @@ model is an already-managed daemon, including shared-host/server deployments.
 Such a client must:
 
 - document that lifecycle boundary clearly;
-- expose `Index.connect(endpoint)` or its language equivalent;
+- expose daemon-level `connect(endpoint)` and target-specific `open_index`
+  operations, or their language equivalents;
 - not claim managed-local capability evidence;
 - still verify persistence/reopen semantics through an external harness when
   those semantics are part of its public behavior.
