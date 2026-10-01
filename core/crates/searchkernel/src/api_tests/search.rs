@@ -719,7 +719,7 @@ fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
         .offset(2);
 
     let direct = expected_search(&context, &rust_request);
-    let bytes = searchkernel_ir::search_request_ir_to_api(&direct);
+    let bytes = searchkernel_ir::wire::v1::search_request_ir_to_api(&direct);
     let portable = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
         .expect("canonical search request should decode");
     let portable = context

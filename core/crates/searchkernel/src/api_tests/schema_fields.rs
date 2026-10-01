@@ -45,7 +45,7 @@ fn custom_analyzer_configuration_is_shared_portable_schema_state() {
         .expect("describe should preserve rich analyzer state");
     let rust = definition_to_ir(&described).expect("Rust ingress should preserve rich analyzer");
 
-    let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let bytes = searchkernel_ir::wire::v1::index_definition_ir_to_api(&canonical);
     let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("portable schema should decode");
     let portable = searchkernel_ir::wire::v1::index_definition_to_ir(portable)

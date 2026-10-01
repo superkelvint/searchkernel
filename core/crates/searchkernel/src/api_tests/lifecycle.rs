@@ -771,7 +771,7 @@ fn manifest_preserves_rich_described_schema_provenance() {
     write_config(&config);
     let (canonical, described) = public_described_canonical_fixture();
     let portable_bytes = crate::portable_definition::encode_portable_definition(&described);
-    let canonical_bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let canonical_bytes = searchkernel_ir::wire::v1::index_definition_ir_to_api(&canonical);
 
     let manifest =
         IndexManifest::for_definitions(&portable_bytes, &resolved_context(&described), &config)

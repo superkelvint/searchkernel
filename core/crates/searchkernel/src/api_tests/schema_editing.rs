@@ -28,7 +28,7 @@ fn schema_field_builder_adds_schema_only_field_to_ir() {
 #[test]
 fn canonical_index_definition_round_trips_through_flatbuffers_without_loss() {
     let canonical = canonical_fixture_ir();
-    let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let bytes = searchkernel_ir::wire::v1::index_definition_ir_to_api(&canonical);
     let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("encoded canonical fixture should parse");
     let round_tripped = searchkernel_ir::wire::v1::index_definition_to_ir(root)

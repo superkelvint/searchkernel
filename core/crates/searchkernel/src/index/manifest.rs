@@ -89,7 +89,7 @@ impl IndexManifest {
                 "resolved_engine_config_identity": config_identity(config)?,
             }),
             portable_definition_bytes: portable_definition_bytes.to_vec(),
-            resolved_definition_bytes: searchkernel_ir::index_definition_ir_to_api(
+            resolved_definition_bytes: searchkernel_ir::wire::v1::index_definition_ir_to_api(
                 resolved_context.definition(),
             ),
         })

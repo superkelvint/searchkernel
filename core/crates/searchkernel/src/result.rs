@@ -1152,7 +1152,7 @@ mod tests {
             let encoded = envelope
                 .payload_as_search_kernel_wire_search_result()
                 .unwrap_or_else(|| panic!("{} must contain SearchResult", path.display()));
-            let decoded = core::search_result_from_api(encoded)
+            let decoded = core::wire::v1::search_result_from_api(encoded)
                 .unwrap_or_else(|error| panic!("{name} failed IR decoding: {error:?}"));
             let actual: SearchResult<serde_json::Value> = search_result(decoded, &[])
                 .unwrap_or_else(|error| panic!("{name} failed public projection: {error:?}"));
@@ -1236,7 +1236,7 @@ mod tests {
                     .payload_as_search_kernel_wire_search_result()
                     .unwrap_or_else(|| panic!("{name} must reach the SearchResult decoder"));
                 assert!(
-                    core::search_result_from_api(result).is_err(),
+                    core::wire::v1::search_result_from_api(result).is_err(),
                     "Rust public result decoding accepted malformed scenario {name}"
                 );
             }
@@ -1280,11 +1280,11 @@ mod tests {
             ..Default::default()
         });
 
-        let bytes = core::search_result_to_api(&result)
+        let bytes = core::wire::v1::search_result_to_api(&result)
             .expect("production encoder must accept non-finite scalar values");
         let encoded = core::__flatbuffers::root::<wire::SearchResult>(&bytes)
             .expect("production-encoded SearchResult must decode as FlatBuffers");
-        let decoded = core::search_result_from_api(encoded)
+        let decoded = core::wire::v1::search_result_from_api(encoded)
             .expect("production-encoded non-finite values must decode to IR");
         let projection: SearchResult<serde_json::Value> = search_result(decoded, &[])
             .expect("public result projection must retain non-finite values");
