@@ -572,6 +572,7 @@ pub fn ensure_runtime(descriptor_path: &Path) -> Result<PathBuf, String> {
     let lock_path = cache.join("locks").join(format!("{identity}.lock"));
     let lock = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&lock_path)
