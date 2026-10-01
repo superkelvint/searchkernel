@@ -12,6 +12,7 @@ pub const MISSING_INDEX_DEFINITION_DETAIL_CODE: &str = "missing_index_definition
 pub const INDEX_ALREADY_EXISTS_DETAIL_CODE: &str = "index_already_exists";
 pub const INDEX_NOT_FOUND_DETAIL_CODE: &str = "index_not_found";
 pub const INDEX_IN_USE_DETAIL_CODE: &str = "index_in_use";
+pub const STALE_INDEX_HANDLE_DETAIL_CODE: &str = "stale_index_handle";
 pub const TARGET_PATH: &str = "target";
 pub const TARGET_NAME_PATH: &str = "target.name";
 pub const CREATE_INDEX_DEFINITION_PATH: &str = "payload.definition";
@@ -273,6 +274,15 @@ pub fn index_in_use_error() -> PortableError {
         INDEX_IN_USE_DETAIL_CODE,
         None,
         "Search Kernel index is in use by another runtime".to_owned(),
+    )
+}
+
+pub fn stale_index_handle_error() -> PortableError {
+    control_error(
+        ErrorCode::FailedPrecondition,
+        STALE_INDEX_HANDLE_DETAIL_CODE,
+        Some(TARGET_PATH),
+        "Search Kernel index handle refers to an obsolete target incarnation".to_owned(),
     )
 }
 
