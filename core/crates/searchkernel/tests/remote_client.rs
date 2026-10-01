@@ -256,7 +256,7 @@ fn lifecycle_definition_response(
         wire::v1 as api,
     };
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let index = searchkernel_ir::wire::v1::index_definition_offset(&mut builder, definition);
     let (payload_type, payload) = if create {
         let result = api::CreateIndexResult::create(
             &mut builder,
