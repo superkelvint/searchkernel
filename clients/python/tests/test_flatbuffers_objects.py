@@ -146,12 +146,12 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
 
         self.assertEqual(
             envelope.payloadType,
-            RequestPayload.RequestPayload.SearchKernel_Wire_DeleteIndexRequest,
+            RequestPayload.SearchKernel_Wire_DeleteIndexRequest,
         )
         self.assertEqual(envelope.target.name, "catalog-a")
         self.assertEqual(
             expected_response_type("delete_index"),
-            ResponsePayload.ResponsePayload.SearchKernel_Wire_DeleteIndexResult,
+            ResponsePayload.SearchKernel_Wire_DeleteIndexResult,
         )
 
     def test_signed_value_checks_int64_range_before_flatbuffers_packing(self):
