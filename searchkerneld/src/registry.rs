@@ -457,7 +457,7 @@ impl IndexRegistry {
                 searchkernel_ir::not_found_error(),
             )));
         };
-        if expected_generation.is_some_and(|generation| generation != entry.generation) {
+        if expected_generation.is_some_and(|generation| generation != entry.generation.as_str()) {
             return Ok(RegistryDispatchResult::payload(encode_error(
                 searchkernel_ir::stale_index_handle_error(),
             )));
