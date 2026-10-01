@@ -55,6 +55,16 @@ from SearchKernel.V2.SortExpr import SortExprT  # noqa: E402
 from SearchKernel.V2.SortTarget import SortTargetT  # noqa: E402
 from SearchKernel.V2.SortTargetKind import SortTargetKind  # noqa: E402
 from SearchKernel.V2.FieldSortTarget import FieldSortTargetT  # noqa: E402
+from SearchKernel.V2.RelevanceSortTarget import RelevanceSortTargetT  # noqa: E402
+from SearchKernel.V2.RankFeatureSortTarget import RankFeatureSortTargetT  # noqa: E402
+from SearchKernel.V2.MissingPolicy import MissingPolicyT  # noqa: E402
+from SearchKernel.V2.MissingPolicyKind import MissingPolicyKind  # noqa: E402
+from SearchKernel.V2.MissingLast import MissingLastT  # noqa: E402
+from SearchKernel.V2.SearchField import SearchFieldT  # noqa: E402
+from SearchKernel.V2.SearchFieldSelection import SearchFieldSelectionT  # noqa: E402
+from SearchKernel.V2.OptionalUInt64 import OptionalUInt64T  # noqa: E402
+from SearchKernel.V2.QueryModel import QueryModelT  # noqa: E402
+from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT  # noqa: E402
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
 from SearchKernel.V2.QuerySource import QuerySourceT  # noqa: E402
 from SearchKernel.V2.QuerySourceKind import QuerySourceKind  # noqa: E402
@@ -71,9 +81,9 @@ from SearchKernel.V2.RelevanceKind import RelevanceKind  # noqa: E402
 from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT  # noqa: E402
 from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT  # noqa: E402
 from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT  # noqa: E402
-from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
 from SearchKernel.V2.ResultGroup import ResultGroupT  # noqa: E402
 from SearchKernel.V2.ResultNode import ResultNodeT  # noqa: E402
+from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
 from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation  # noqa: E402
 
 
@@ -246,6 +256,73 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                     _canonical_snapshot(index.client.request),
                     _canonical_snapshot(canonical),
                 )
+
+    # SKC: search.search_fields/basic kinds=ergonomic runtime=shared
+    # SKC: search.sort_missing_placement/basic kinds=ergonomic runtime=shared
+    def test_search_builder_executable_union_converges_on_shared_ir(self):
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return _empty_search_result()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        request = (
+            SearchBuilder(index, "wireless")
+            .search_fields("title")
+            .sort("price", "asc", missing="last")
+            .sort_relevance("desc")
+            .sort_feature("freshness", "asc")
+            .timeout(500)
+            .language("en")
+            ._request()
+        )
+        canonical = SearchRequestT(
+            query=QuerySourceT(
+                sourceType=QuerySourceKind.SearchKernelTextQuery,
+                source=SearchKernelTextQueryT(text="wireless"),
+            ),
+            searchFields=SearchFieldSelectionT(fields=[SearchFieldT(field="title")]),
+            sort=[
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.FieldSortTarget,
+                        target=FieldSortTargetT(field="price"),
+                    ),
+                    direction=SortDirection.Asc,
+                    missing=MissingPolicyT(
+                        policyType=MissingPolicyKind.MissingLast,
+                        policy=MissingLastT(),
+                    ),
+                ),
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.RelevanceSortTarget,
+                        target=RelevanceSortTargetT(),
+                    ),
+                    direction=SortDirection.Desc,
+                ),
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.RankFeatureSortTarget,
+                        target=RankFeatureSortTargetT(feature="freshness"),
+                    ),
+                    direction=SortDirection.Asc,
+                ),
+            ],
+            timeoutMs=OptionalUInt64T(value=500),
+            queryModel=QueryModelT(language="en"),
+        )
+        self.assertEqual(
+            _canonical_snapshot(request),
+            _canonical_snapshot(canonical),
+        )
 
     def test_nested_grouping_uses_structural_all_scope(self):
         request = Group.by("category").output(agg.count()).subgroup(
