@@ -54,7 +54,7 @@ final class Client
         );
         $result = Protocol::expectPayload($response, $responseType);
         if ($operation === 'create_index' || $operation === 'open_index') {
-            $generation = $response['index_generation'] ?? null;
+            $generation = $result['generation'] ?? null;
             if (!is_string($generation) || $generation === '') {
                 throw new ProtocolException(
                     $responseType . ' is missing canonical index generation',
