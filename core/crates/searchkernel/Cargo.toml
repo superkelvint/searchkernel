@@ -41,6 +41,7 @@ tower = { version = "0.4", default-features = false, features = ["util"], option
 searchkernel-dispatch = { path = "../searchkernel-dispatch", version = "=0.1.0" }
 searchkernel-ir = { path = "../searchkernel-ir", version = "=0.1.0", features = ["test"] }
 searchkernel-protocol = { path = "../searchkernel-protocol", version = "=0.1.0" }
+flatbuffers = "=25.12.19"
 searchkernel-testkit = { path = "../searchkernel-testkit", version = "=0.1.0" }
 tokio-stream = { version = "0.1", features = ["net"] }
 

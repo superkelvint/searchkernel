@@ -138,27 +138,50 @@ def target_dir(metadata: dict[str, object]) -> Path:
     return Path(str(metadata["target_directory"]))
 
 
-RUST_BUNDLE_PATHS = [
-    "Cargo.toml",
-    "Cargo.lock",
-    "LICENSE",
-    "README.md",
-    "core/README.md",
-    "core/crates",
-    "searchkerneld",
-    "api",
-]
+def packaged_rust_consumer_bundle() -> str:
+    return (
+        "// @generated for the publishable Rust consumer artifact; do not edit.\n"
+        "pub const FILES: &[(&str, &[u8])] = &[];\n"
+    )
 
 
-def build_rust_bundle(rust_bundle: Path) -> None:
-    missing = [relative for relative in RUST_BUNDLE_PATHS if not (ROOT / relative).exists()]
-    if missing:
-        raise FileNotFoundError(
-            f"missing Rust consumer bundle inputs: {', '.join(missing)}"
+def build_rust_crates(out: Path, descriptor: dict[str, object]) -> list[Path]:
+    bindings_root = ROOT / "core/crates/searchkernel-vespa-bindings"
+    runtime_descriptor_path = bindings_root / "runtime.json"
+    consumer_bundle_path = bindings_root / "consumer_bundle.rs"
+    if runtime_descriptor_path.exists():
+        raise RuntimeError(f"refusing to overwrite source runtime descriptor: {runtime_descriptor_path}")
+    original_consumer_bundle = consumer_bundle_path.read_text(encoding="utf-8")
+    try:
+        runtime_descriptor_path.write_text(
+            json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-    with tarfile.open(rust_bundle, "w:gz") as archive:
-        for relative in RUST_BUNDLE_PATHS:
-            archive.add(ROOT / relative, arcname=relative)
+        # The real publishable bindings crate carries this exact descriptor.
+        # Its include list makes Cargo package the generated file even though it
+        # is intentionally absent from the developer checkout.
+        consumer_bundle_path.write_text(packaged_rust_consumer_bundle(), encoding="utf-8")
+        with tempfile.TemporaryDirectory(prefix="searchkernel-cargo-package-") as raw:
+            package_target = Path(raw)
+            subprocess.run(
+                [
+                    "cargo", "package", "--workspace", "--exclude", "searchkerneld",
+                    "--no-verify", "--locked", "--allow-dirty", "--target-dir", str(package_target),
+                ],
+                cwd=ROOT,
+                check=True,
+            )
+            packaged = sorted((package_target / "package").glob("*.crate"))
+            if not packaged:
+                raise RuntimeError("cargo package did not produce any publishable Rust crates")
+            artifacts: list[Path] = []
+            for crate in packaged:
+                target = out / crate.name
+                shutil.copy2(crate, target)
+                artifacts.append(target)
+            return artifacts
+    finally:
+        consumer_bundle_path.write_text(original_consumer_bundle, encoding="utf-8")
+        runtime_descriptor_path.unlink(missing_ok=True)
 
 
 def build_release_daemon(target: Path) -> tuple[Path, Path]:
@@ -258,6 +281,10 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[s
         adapter_lib / "libsearchkernel_vespa.so.2",
         libdir / "libsearchkernel_vespa.so.2",
     )
+    patchelf = shutil.which("patchelf")
+    if patchelf is None:
+        raise RuntimeError("consumer runtime packaging requires patchelf for relocatable native RPATH")
+    run(patchelf, "--force-rpath", "--set-rpath", "$ORIGIN", str(libdir / "libsearchkernel_vespa.so.2"))
     cargo_adapter = bindir / ".searchkernel-native"
     cargo_adapter.mkdir()
     (cargo_adapter / "libsearchkernel_vespa.so.2").symlink_to(
@@ -363,9 +390,6 @@ def main() -> None:
     # Rust embedded distribution is a complete versioned workspace snapshot.
     # The generated bindings consumer bundle owns native provisioning support,
     # so the source artifact must not depend on repository-only native helpers.
-    rust_bundle = out / f"searchkernel-rust-{VERSION}.tar.gz"
-    build_rust_bundle(rust_bundle)
-
     target = target_dir(metadata)
     daemon, adapter_lib = build_release_daemon(target)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
@@ -397,10 +421,14 @@ def main() -> None:
         created: list[Path] = []
         try:
             descriptor = runtime_descriptor(identity, daemon_bundle)
+            build_rust_crates(out, descriptor)
             created.extend(stage_python_runtime_support(ROOT / "clients/python/searchkernel", descriptor))
             ts_descriptor = ROOT / "clients/typescript/runtime.json"
             ts_descriptor.write_text(json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             created.append(ts_descriptor)
+            ruby_descriptor = ROOT / "clients/ruby/lib/searchkernel/runtime.json"
+            ruby_descriptor.write_text(json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            created.append(ruby_descriptor)
             run(
                 sys.executable,
                 "-m",
@@ -450,6 +478,7 @@ def main() -> None:
                 "commit": commit,
                 "platform": platform,
                 "runtime": {**identity, **runtime_measurement},
+                "runtime_descriptor": descriptor,
                 "artifacts": artifacts,
             },
             indent=2,

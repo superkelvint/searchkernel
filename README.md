@@ -58,7 +58,7 @@ It also doesn't have its own ranking language, storage engine, or schema migrati
 
 ## Installing
 
-Search Kernel links against Vespa's native libraries at build time. None of the managed-local bindings are pure-language packages. The next beta release qualifies **Linux x86-64 with glibc** for the Rust embedded API and `searchkerneld`; for non-Rust SDKs, Python (managed-local/connect), TypeScript/Node.js (connect), and Ruby (connect-to-daemon) are qualified. Ruby managed-local remains deferred until the gem can obtain its native runtime without repository-local state or an injected host binary. Browser TypeScript/gRPC-Web, PHP, Go, macOS, Windows, and Linux ARM/aarch64 are not release-supported surfaces.
+Search Kernel links against Vespa's native libraries at build time. None of the managed-local bindings are pure-language packages. The next beta release qualifies **Linux x86-64 with glibc** for the Rust embedded API and `searchkerneld`; for non-Rust SDKs, Python (managed-local/connect), TypeScript/Node.js (managed-local/connect), and Ruby (managed-local/connect-to-daemon) are qualified. Browser TypeScript/gRPC-Web, PHP, Go, macOS, Windows, and Linux ARM/aarch64 are not release-supported surfaces.
 
 See the [authoritative release support matrix](docs/release-support.md) before deploying or packaging Search Kernel.
 
@@ -146,7 +146,7 @@ models and do not maintain parallel full-schema DTOs or handwritten codecs.
 
 ## Language bindings
 
-Release support is deliberately narrower than implementation inventory. For the next beta, Python (managed-local/connect), TypeScript/Node.js (connect), and Ruby (connect-to-daemon) are supported non-Rust SDK modes on the qualified Linux x86-64 glibc platform. Ruby managed-local, PHP, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
+Release support is deliberately narrower than implementation inventory. For the next beta, Python (managed-local/connect), TypeScript/Node.js (managed-local/connect), and Ruby (managed-local/connect-to-daemon) are supported non-Rust SDK modes on the qualified Linux x86-64 glibc platform. PHP, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
 
 ## Repository layout
 

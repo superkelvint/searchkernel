@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import ast
+import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +12,71 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class QualificationPolicyTests(unittest.TestCase):
+    def test_managed_local_runner_starts_first_use_processes_concurrently(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            dist = root / "dist"
+            dist.mkdir()
+            (dist / "manifest.json").write_text('{"artifacts": []}\n', encoding="utf-8")
+            script_path = ROOT / "tools/qualify-consumer-release.py"
+            spec = importlib.util.spec_from_file_location("qualify_consumer_release", script_path)
+            module = importlib.util.module_from_spec(spec)
+            previous_argv = sys.argv
+            try:
+                sys.argv = [str(script_path), str(dist)]
+                assert spec.loader is not None
+                spec.loader.exec_module(module)
+
+                def fake_process(language, _installs, process_root, *_args):
+                    marker = process_root / f"{language}.started"
+                    command = [
+                        sys.executable,
+                        "-c",
+                        "from pathlib import Path; import sys; "
+                        "Path(sys.argv[1]).write_text(sys.argv[2])",
+                        str(marker),
+                        language,
+                    ]
+                    return command, process_root, {}
+
+                module.managed_local_process = fake_process
+                outcomes = module.run_managed_local_processes(
+                    ("python", "node", "ruby"),
+                    {},
+                    root,
+                    root / "cache",
+                    "file:///runtime",
+                    label="test",
+                )
+            finally:
+                sys.argv = previous_argv
+            self.assertEqual([outcome[1] for outcome in outcomes], [0, 0, 0])
+            self.assertEqual(
+                {path.read_text() for path in root.glob("*.started")},
+                {"python", "node", "ruby"},
+            )
+
+    def test_m4_qualification_exercises_one_shared_runtime_cache(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text(encoding="utf-8")
+        self.assertIn('"typescript-node/managed-local": "typescript_node_managed_local"', gate)
+        self.assertIn('"ruby/managed-local": "ruby_managed_local"', gate)
+        self.assertIn("def shared_runtime_contract_probe", gate)
+        self.assertIn("run_managed_local_processes", gate)
+        self.assertIn("cold-concurrent", gate)
+        self.assertIn('"SEARCHKERNEL_RUNTIME_CACHE": str(root / "runtime-cache")', gate)
+        self.assertIn("prefetch", gate)
+        self.assertIn("offline", gate)
+        self.assertIn("runtime_identity", gate)
+        self.assertIn("mismatch", gate)
+        self.assertNotIn("runtime-cache-python", gate)
+        self.assertNotIn("runtime-cache-node", gate)
+        self.assertNotIn("runtime-cache-ruby", gate)
+
+    def test_daemon_probe_uses_release_runtime_artifact_name(self) -> None:
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text(encoding="utf-8")
+        self.assertIn('artifact("searchkernel-runtime-", ".tar.gz")', gate)
+        self.assertNotIn('artifact("searchkerneld-", ".tar.gz")', gate)
+
     def test_gate_runs_in_consumer_container_without_producer_state(self):
         runner = (ROOT / ".github/ci/ci-image-runner.yml").read_text()
         marker = 'echo "==> Qualify packaged release in clean consumer"'
@@ -70,8 +137,13 @@ class QualificationPolicyTests(unittest.TestCase):
             self.assertIn(variable, gate)
         self.assertNotIn('"--no-index"', gate)
         rust_runner = gate.split("def run_rust_quickstart", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn('os.environ.get("GH_TOKEN")', rust_runner)
-        self.assertIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
+        self.assertIn('"SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri()', rust_runner)
+        self.assertNotIn('os.environ.get("GH_TOKEN")', rust_runner)
+        self.assertNotIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
+        self.assertIn('"cargo", "add", "searchkernel"', rust_runner)
+        self.assertIn('run("cargo", "build", cwd=project, env=environment)', rust_runner)
+        self.assertIn('item["file"].endswith(".crate")', rust_runner)
+        self.assertNotIn('"path": "../core/crates/searchkernel"', gate)
         self.assertNotIn("SEARCHKERNEL_BUILD_ENV", gate)
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):

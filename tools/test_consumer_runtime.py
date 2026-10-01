@@ -100,6 +100,39 @@ class Tests(unittest.TestCase):
             self.assertEqual(vector["cache_relative_path"], f"objects/{identity}")
             self.assertEqual(vector["lock_relative_path"], f"locks/{identity}.lock")
 
+    def test_shared_runtime_validation_fixtures(self):
+        fixtures = json.loads(
+            (ROOT / "build/consumer-runtime/conformance.json").read_text()
+        )["runtime_validation_cases"]
+        for fixture in fixtures:
+            with self.subTest(fixture=fixture["name"]), tempfile.TemporaryDirectory() as raw:
+                base = Path(raw)
+                descriptor, runtime, _ = make_artifact(base)
+                manifest_path = runtime / "manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                mutation = fixture["mutation"]
+                if mutation == "manifest-format":
+                    manifest["format_version"] = 99
+                elif mutation == "non-executable":
+                    (runtime / "bin/searchkerneld.real").chmod(0o644)
+                elif mutation == "escaping-symlink":
+                    member = runtime / "lib/libsearchkernel_vespa.so.2"
+                    member.unlink()
+                    member.symlink_to(base / "outside.so")
+                    (base / "outside.so").write_bytes(b"outside")
+                elif mutation == "identity-mismatch":
+                    manifest["searchkernel_revision"] = "different"
+                elif mutation == "payload-digest-mismatch":
+                    manifest["payload_sha256"] = "0" * 64
+                else:
+                    self.fail(f"unknown runtime fixture mutation: {mutation}")
+                if mutation not in {"non-executable", "escaping-symlink"}:
+                    manifest_path.write_text(json.dumps(manifest))
+
+                with self.assertRaises(m.RuntimeResolutionError) as raised:
+                    m.validate_runtime(runtime, descriptor)
+                self.assertEqual(fixture["expected_error"], raised.exception.code)
+
     def test_descriptor_rejects_tampered_derived_identity(self):
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw)

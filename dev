@@ -707,6 +707,7 @@ test_target() {
             ;;
         rust-api)
             "$CARGO" test -p searchkernel-vespa-bindings --lib --no-default-features
+            "$CARGO" test -p searchkernel --all-targets --no-default-features
             "$CARGO" test -p searchkernel --all-targets --no-default-features --features remote,internal-api
             ;;
         rust-native-e2e)
