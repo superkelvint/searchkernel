@@ -518,20 +518,27 @@ fn encode_lifecycle_result(
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let generation = builder.create_string(index_generation);
     let payload = match payload_type {
         wire::ResponsePayload::SearchKernel_V2_CreateIndexResult => api::CreateIndexResult::create(
             &mut builder,
-            &api::CreateIndexResultArgs { index: Some(index) },
+            &api::CreateIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         )
         .as_union_value(),
         wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => api::OpenIndexResult::create(
             &mut builder,
-            &api::OpenIndexResultArgs { index: Some(index) },
+            &api::OpenIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         )
         .as_union_value(),
         _ => unreachable!("lifecycle result kind is fixed by caller"),
     };
-    encode_response(&mut builder, payload_type, payload, Some(index_generation))
+    encode_response(&mut builder, payload_type, payload)
 }
 
 fn encode_delete_index_result() -> Vec<u8> {
@@ -543,7 +550,6 @@ fn encode_delete_index_result() -> Vec<u8> {
         &mut builder,
         wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
         payload,
-        None,
     )
 }
 
@@ -554,7 +560,6 @@ fn encode_error(error: PortableError) -> Vec<u8> {
         &mut builder,
         wire::ResponsePayload::SearchKernel_V2_Error,
         payload,
-        None,
     )
 }
 
@@ -562,17 +567,13 @@ fn encode_response(
     builder: &mut flatbuffers::FlatBufferBuilder<'_>,
     payload_type: wire::ResponsePayload,
     payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
-    index_generation: Option<&str>,
 ) -> Vec<u8> {
-    let index_generation =
-        index_generation.map(|generation| builder.create_string(generation));
     let envelope = wire::ResponseEnvelope::create(
         builder,
         &wire::ResponseEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             payload_type,
             payload: Some(payload),
-            index_generation,
         },
     );
     builder.finish(envelope, Some(RESPONSE_IDENTIFIER));
