@@ -25,6 +25,11 @@ pub mod session;
 pub mod snapshot;
 pub mod wire;
 
+#[cfg(test)]
+pub use wire::v1::schema as api;
+#[cfg(test)]
+pub use wire::v1::*;
+
 pub use api_to_ir::control_plane::{
     already_exists_error, index_in_use_error, lifecycle_failure, not_found_error, path_failure,
     stale_index_handle_error, validate_index_target, LifecycleFailure, LifecycleFailureCode,

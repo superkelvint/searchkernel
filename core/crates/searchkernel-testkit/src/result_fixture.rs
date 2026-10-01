@@ -1549,7 +1549,7 @@ mod expanded_canonical_corpus {
         #[test]
         fn every_fixture_survives_ir_to_flatbuffers() {
             for (name, expected) in canonical_result_fixtures() {
-                let bytes = searchkernel_ir::search_result_to_api(&expected)
+                let bytes = searchkernel_ir::wire::v1::search_result_to_api(&expected)
                     .unwrap_or_else(|error| panic!("fixture {name} must encode: {error:?}"));
                 let actual = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes)
                     .unwrap_or_else(|error| panic!("fixture {name} must decode: {error:?}"));
@@ -1611,7 +1611,7 @@ mod expanded_canonical_corpus {
                     ]))),
                     metadata: BTreeMap::new(),
                 };
-                let bytes = searchkernel_ir::search_result_to_api(&expected).unwrap();
+                let bytes = searchkernel_ir::wire::v1::search_result_to_api(&expected).unwrap();
                 let wire =
                     searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
                 let actual = searchkernel_ir::wire::v1::search_result_from_api(wire).unwrap();
@@ -1636,7 +1636,7 @@ mod expanded_canonical_corpus {
                 ),
             ];
             for (result, expected_kind) in cases {
-                let bytes = searchkernel_ir::search_result_to_api(&result).unwrap();
+                let bytes = searchkernel_ir::wire::v1::search_result_to_api(&result).unwrap();
                 let encoded =
                     searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
                 assert_eq!(
@@ -1651,7 +1651,7 @@ mod expanded_canonical_corpus {
                     expected_kind
                 );
             }
-            let bytes = searchkernel_ir::search_result_to_api(&relevance_result(None)).unwrap();
+            let bytes = searchkernel_ir::wire::v1::search_result_to_api(&relevance_result(None)).unwrap();
             let encoded =
                 searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
             assert!(encoded
