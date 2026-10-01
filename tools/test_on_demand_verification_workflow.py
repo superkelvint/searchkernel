@@ -105,7 +105,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         report = text[report_start:]
 
         self.assertNotIn("pull-requests: write", verify)
-        self.assertIn("permissions:\\n      pull-requests: write\\n", report)
+        self.assertIn("permissions:\n      pull-requests: write\n", report)
         self.assertIn("needs: verify", report)
         self.assertIn("always() &&", report)
         self.assertIn("github.event_name == 'issue_comment'", report)
