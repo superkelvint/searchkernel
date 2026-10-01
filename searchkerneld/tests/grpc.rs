@@ -22,6 +22,7 @@ use searchkernel::{
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
 use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_rpc::INDEX_GENERATION_METADATA_KEY;
 use searchkernel_testkit::{
     canonical_result_fixtures, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
 };
@@ -204,6 +205,11 @@ impl rpc::search_kernel_server::SearchKernel for RemoteTestService {
         let payload = request.into_inner().payload;
         let envelope = wire::root_as_request_envelope(&payload)
             .map_err(|_| Status::invalid_argument("invalid Search Kernel request"))?;
+        let lifecycle_response = matches!(
+            envelope.payload_type(),
+            wire::RequestPayload::SearchKernel_V2_CreateIndexRequest
+                | wire::RequestPayload::SearchKernel_V2_OpenIndexRequest
+        );
         let response = match envelope.payload_type() {
             wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
                 lifecycle_definition_response(&self.definition, true)
@@ -217,7 +223,16 @@ impl rpc::search_kernel_server::SearchKernel for RemoteTestService {
                 .dispatch(&payload)
                 .map_err(|_| Status::invalid_argument("invalid Search Kernel request"))?,
         };
-        Ok(Response::new(rpc::FlatBufferFrame { payload: response }))
+        let mut response = Response::new(rpc::FlatBufferFrame { payload: response });
+        if lifecycle_response {
+            response.metadata_mut().insert(
+                INDEX_GENERATION_METADATA_KEY,
+                "fixture-generation"
+                    .parse()
+                    .expect("static fixture generation metadata"),
+            );
+        }
+        Ok(response)
     }
 }
 
