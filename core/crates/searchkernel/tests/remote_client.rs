@@ -28,7 +28,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{net::TcpListener, sync::oneshot};
+use tokio::{net::TcpListener, sync::{oneshot, Notify}};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
 
@@ -183,6 +183,8 @@ struct TestService {
     dispatcher: Arc<Dispatcher>,
     definition: searchkernel_ir::IndexDefinitionIr,
     targets: Arc<Mutex<Vec<String>>>,
+    slow_create_started: Arc<Notify>,
+    slow_create_release: Arc<Notify>,
 }
 
 #[tonic::async_trait]
@@ -211,7 +213,8 @@ impl SearchKernel for TestService {
             && envelope.payload_type()
                 == searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest
         {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            self.slow_create_started.notify_one();
+            self.slow_create_release.notified().await;
         }
         let payload = match envelope.payload_type() {
             searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
@@ -313,6 +316,8 @@ fn dispatch_status(error: DispatchError) -> Status {
 struct TestServer {
     endpoint: String,
     targets: Arc<Mutex<Vec<String>>>,
+    slow_create_started: Arc<Notify>,
+    slow_create_release: Arc<Notify>,
     shutdown: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
 }
@@ -327,6 +332,8 @@ impl TestServer {
         let definition = context.definition().clone();
         let dispatcher = Arc::new(Dispatcher::new(context, session));
         let targets = Arc::new(Mutex::new(Vec::new()));
+        let slow_create_started = Arc::new(Notify::new());
+        let slow_create_release = Arc::new(Notify::new());
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -338,6 +345,8 @@ impl TestServer {
             dispatcher,
             definition,
             targets: Arc::clone(&targets),
+            slow_create_started: Arc::clone(&slow_create_started),
+            slow_create_release: Arc::clone(&slow_create_release),
         })
         .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
         .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
@@ -351,6 +360,8 @@ impl TestServer {
         Self {
             endpoint: address.to_string(),
             targets,
+            slow_create_started,
+            slow_create_release,
             shutdown: Some(shutdown),
             task,
         }
@@ -600,6 +611,45 @@ async fn mutation_deadlines_do_not_claim_ambiguous_writes_are_retryable() {
     );
 
     index.close().expect("close remote index");
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unrelated_remote_lifecycle_operations_do_not_share_one_client_lock() {
+    let backend = Arc::new(ProbeBackend::default());
+    let server = TestServer::start(backend).await;
+    let client = RemoteClient::connect(&server.endpoint).expect("connect remote daemon");
+    let definition = IndexDefinition::new().field(Field::text("title").stored(true));
+
+    let slow_client = client.clone();
+    let slow = tokio::task::spawn_blocking(move || {
+        slow_client.create_index("slow-create", definition)
+    });
+    server.slow_create_started.notified().await;
+
+    let fast_client = client.clone();
+    let mut fast = tokio::task::spawn_blocking(move || fast_client.open_index("probe"));
+    let completed_before_release =
+        tokio::time::timeout(Duration::from_millis(500), &mut fast).await;
+
+    server.slow_create_release.notify_one();
+
+    let slow_index = tokio::time::timeout(Duration::from_secs(2), slow)
+        .await
+        .expect("slow create must finish after release")
+        .expect("slow create task")
+        .expect("slow create");
+    slow_index.close().expect("close slow-created index");
+
+    let fast_index = match completed_before_release {
+        Ok(result) => result.expect("unrelated open task").expect("unrelated open"),
+        Err(_) => {
+            let _ = fast.await;
+            panic!("slow lifecycle operation for target A blocked unrelated target B");
+        }
+    };
+    fast_index.close().expect("close unrelated index");
+
     server.shutdown().await;
 }
 
