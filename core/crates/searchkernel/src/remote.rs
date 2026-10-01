@@ -708,7 +708,11 @@ impl Backend for RemoteBackend {
     }
 
     fn close(self: Box<Self>) -> ir::Result<()> {
-        Ok(())
+        if self.target.is_none() {
+            self.transport.shutdown()
+        } else {
+            Ok(())
+        }
     }
 }
 
