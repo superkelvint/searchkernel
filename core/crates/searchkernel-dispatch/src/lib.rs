@@ -35,11 +35,15 @@ impl Dispatcher {
 
     /// Runs one canonical request envelope.
     pub fn dispatch(&self, request: &[u8]) -> Result<Vec<u8>, DispatchError> {
-        let envelope = parse_request(request)?;
-        if envelope.protocol_version() != PROTOCOL_VERSION {
-      pub fn dispatch(&self, request: &[u8]) -> Result<Vec<u8>, DispatchError> {
         wire::dispatch(self, request)
-    }ckend<T>(
+    }
+
+    /// Closes the underlying execution target after active operations drain.
+    pub fn close(&self) -> searchkernel_ir::Result<()> {
+        self.session.close()
+    }
+
+    fn execute_backend<T>(
         &self,
         callback: impl FnOnce(&IndexContext, &dyn Backend) -> searchkernel_ir::Result<T>,
     ) -> Result<searchkernel_ir::Result<T>, DispatchError> {
@@ -72,5 +76,7 @@ fn closed_target_error() -> searchkernel_ir::PortableError {
         "Search Kernel target is closed",
     )
 }
+
+
 
 
