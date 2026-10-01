@@ -7,6 +7,10 @@ if [[ $# -ne 5 ]]; then
 fi
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+if [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" != "1" && ! -f /opt/searchkernel/native-validation-pass ]]; then
+    echo "native-base archive verification must run through './dev native-base verify ...'" >&2
+    exit 1
+fi
 ARCHIVE=$(cd -- "$(dirname -- "$1")" && pwd -P)/$(basename -- "$1")
 BUILD_ENV=$2
 TARGET=$3
