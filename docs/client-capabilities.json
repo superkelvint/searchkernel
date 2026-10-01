@@ -724,7 +724,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 759
+              "line": 760
             },
             {
               "capability": "query.prefix_suffix_substring",
