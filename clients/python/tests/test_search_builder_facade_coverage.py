@@ -13,10 +13,10 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel.ergonomic import SearchBuilder, YqlBuilder  # noqa: E402
 from searchkernel.protocol import pack_object  # noqa: E402
-from SearchKernel.V2.GroupingSourceKind import GroupingSourceKind  # noqa: E402
-from SearchKernel.V2.MissingPolicyKind import MissingPolicyKind  # noqa: E402
-from SearchKernel.V2.QueryInputKind import QueryInputKind  # noqa: E402
-from SearchKernel.V2.SortTargetKind import SortTargetKind  # noqa: E402
+from searchkernel._semantic import GroupingSourceKind  # noqa: E402
+from searchkernel._semantic import MissingPolicyKind  # noqa: E402
+from searchkernel._semantic import QueryInputKind  # noqa: E402
+from searchkernel._semantic import SortTargetKind  # noqa: E402
 
 
 # This is intentionally exhaustive for docs/client-api-spec.md SearchBuilder.
