@@ -218,7 +218,9 @@ impl rpc::search_kernel_server::SearchKernel for RemoteTestService {
             wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest => {
                 lifecycle_definition_response(&self.definition, false)
             }
-            wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest => lifecycle_delete_response(),
+            wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest => {
+                lifecycle_delete_response()
+            }
             _ => self
                 .dispatcher
                 .dispatch(&payload)

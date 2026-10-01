@@ -729,10 +729,8 @@ impl Backend for RemoteBackend {
             ir::encode_get_request_for_target(&request, self.target())?,
             true,
         )?;
-        let envelope = expected_response(
-            &payload,
-            wire::ResponsePayload::SearchKernel_Wire_GetResult,
-        )?;
+        let envelope =
+            expected_response(&payload, wire::ResponsePayload::SearchKernel_Wire_GetResult)?;
         let result = ir::get_result_from_api(
             envelope
                 .payload_as_search_kernel_wire_get_result()
