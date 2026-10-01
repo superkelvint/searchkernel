@@ -208,18 +208,22 @@ associations and a single-line, bounded command grammar. Remote verification mus
 - accept only bounded `ci`, `test`, and `verify` operations;
 - validate targets against the canonical repository-owned target registry;
 - expose no arbitrary shell input;
-- use read-only repository permissions by default;
+- keep the verification/subject-execution job on read-only repository contents;
+- isolate PR result-comment write permission in a separate trusted reporting job;
 - receive no release/deploy/write secrets;
 - accept only exact commit SHAs available from this repository; fork-only or
   unavailable SHAs fail closed;
 - use job-private writable state;
 - preserve exact-SHA identity in results.
 
-The workflow has read-only GitHub repository permissions, exposes no release,
-deployment, or write secrets to subject execution, and accepts no arbitrary
-shell command. Repository-dispatch callers must have dispatch access; comment
-callers must be authorized collaborators by GitHub author association. There is
-no separate actor allowlist or runner-permission service.
+The verification job has read-only repository contents permission, exposes no
+release, deployment, or write secrets to subject execution, and accepts no
+arbitrary shell command. A separate trusted reporting job may hold only
+`pull-requests: write` so an accepted comment request can receive its PASS/FAIL
+result on the pull request; that reporting job does not check out or execute the
+requested subject revision. Repository-dispatch callers must have dispatch
+access; comment callers must be authorized collaborators by GitHub author
+association. There is no separate actor allowlist or runner-permission service.
 
 A candidate may change implementation or verifier code, but it must not gain
 the ability to alter privileged orchestration for its own execution.
