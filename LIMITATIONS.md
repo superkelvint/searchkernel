@@ -1,4 +1,4 @@
-# Vespa compatibility limitations
+# Search Kernel limitations
 
 This file is generated from [`docs/capabilities.json`](docs/capabilities.json).
 Search Kernel is a thin wrapper around the pinned Vespa engine, but its
@@ -6,30 +6,28 @@ public contract is intentionally smaller than Vespa's complete model.
 Unsupported behavior must remain an explicit error; it must not be silently
 approximated.
 
-**Snapshot:** 2026-09-21
+**Snapshot:** 2026-09-30
+
+## Release scope
+
+- The `0.1.x beta` release is qualified only for **linux x86_64 glibc**.
+- Supported release surfaces: `rust-embedded` (`native`), `searchkerneld` (`native`), `python` (`managed-local`), `python` (`connect`), `typescript-node` (`connect`), `ruby` (`connect`).
+- Deferred release surfaces: `typescript-browser-grpc-web`, `php`, `ruby-managed-local`, `go`, `macos`, `windows`, `linux-aarch64`.
+- Implementation presence outside this matrix is not a release-support promise; see [`docs/release-support.md`](docs/release-support.md).
 
 ## Query
 
 ### True and false query constants (`query.boolean_constants`)
 
-- No high-level Rust, Python, or TypeScript facade helper currently constructs these constants.
+- Rust exposes true/false query constants; the Python and TypeScript q facades do not yet expose equivalent helpers.
 
 ### Comparison queries (`query.comparison`)
 
-- The Python and TypeScript q facades do not yet expose comparison constructors.
-
-### Range queries (`query.range`)
-
-- The Python and TypeScript q facades do not yet expose range constructors.
+- Python and TypeScript expose equality comparison helpers, but their high-level q facades do not yet expose the full comparison-operator surface.
 
 ### sameElement query (`query.same_element`)
 
-- Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field.
-- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
-
-### Fuzzy query (`query.fuzzy`)
-
-- The TypeScript high-level q facade does not yet expose a fuzzy helper.
+- Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. Python and TypeScript expose the supported array-of-struct schema/query path; the high-level Rust schema facade still cannot define the required array-of-struct field.
 
 ### Alternatives queries (`query.alternatives`)
 
@@ -41,21 +39,12 @@ approximated.
 
 ### Geo-location and bounding-box queries (`query.geo`)
 
-- Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end schema-and-query ergonomic SDK capability.
-- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
+- Real Vespa execution is verified, including inclusive bounding-box edges. Python and TypeScript expose position-field schema builders and geo query helpers; the high-level Rust schema facade does not yet expose position fields.
 
 ### Predicate queries (`query.predicate`)
 
 - Only the supported predicate feature/range representation and documented expression shapes are lowered. Predicate field definitions are not exposed by the high-level Rust or Python schema facades.
 - The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
-
-### WeakAnd and WAND queries (`query.weighted_and_wand`)
-
-- The Python and TypeScript q facades do not yet expose
-
-### Weighted-set and dot-product queries (`query.weighted_set_dot_product`)
-
-- The Python and TypeScript q facades do not yet expose weighted-set or dot-product helpers.
 
 ### Equivalence queries (`query.equivalence`)
 
@@ -80,10 +69,6 @@ approximated.
 ### Typed analyzed-text query nodes (`query.typed_text`)
 
 - The typed QueryText node executes through the adapter, but no high-level Rust, Python, or TypeScript q facade helper constructs it.
-
-### Native in-term queries (`query.in_term`)
-
-- The Python and TypeScript q facades do not yet expose
 
 ### NonEmpty query wrapper (`query.non_empty`)
 
@@ -114,7 +99,7 @@ approximated.
 
 ### First/last missing-value sort placement (`search.sort_missing_placement`)
 
-- Python and TypeScript high-level sort() helpers
+- Missing-value placement is represented and executable, but the Python and TypeScript high-level field-sort helpers do not yet expose first/last placement controls.
 
 ### Limit and offset pagination (`search.pagination`)
 
@@ -163,7 +148,7 @@ approximated.
 
 ### Recursive grouping result trees (`result.grouping_tree`)
 
-- The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Rust now preserves nested Hit children with the same Hit decoder used at the root, but its GroupingResult convenience separates nested groups and hits into distinct vectors and does not expose the canonical mixed-child ordering or canonical root directly.
+- The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Rust now publicly exports SearchResult.root plus ResultNode, ResultGroup, ResultHit, and ResultLimits with mixed child ordering preserved; convenience hit/group projections intentionally separate node kinds and should not be used when canonical interleaving matters.
 
 ### Coverage and degradation metadata (`result.degradation_metadata`)
 
@@ -173,19 +158,19 @@ approximated.
 
 ### Structured grouping and faceting (`grouping.structured`)
 
-- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, and regex keep filters.
+- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, ordering, precision, filter/keep controls, and the executable expression/aggregation subset. The pinned native GroupingLevel has one filter predicate slot, so filter() and keep() are each executable alone but using both on the same level returns Unsupported rather than being approximated.
 
 ### Executable grouping expression/function subset (`grouping.functions`)
 
-- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust exposes named aggregation aliases and regex keep filters; Python exposes the richer expression facade.
+- The native adapter and Rust facade support attributes, scalar literals, unary/binary arithmetic, aggregation/alias references in executable positions, and the pinned native function subset: cat, reverse, normalize, strlen, and xor. Other functions accepted by the portable grouping grammar remain represented/resolved but return Unsupported at the current native ABI. Member, MapLookup, and Bucket remain rejected by native lowering and are intentionally not exposed as Rust grouping classifiers.
 
 ### Grouping aggregations (`grouping.aggregations`)
 
-- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust exposes count/average/sum/min/max, named outputs, and root-scope outputs; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
+- The native layer and Rust facade support count, average, sum, min, max, stddev, xor, and quantiles. Summary aggregation is tracked separately because grouped docsum payloads do not cross the native ABI.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 
-- The native grouping skeleton preserves summary() and finite max propagation, and the Python and TypeScript facades can construct agg.summary(), but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant.
+- The native grouping skeleton preserves summary() and finite max propagation, and the Rust, Python, and TypeScript facades can construct summary aggregation, but grouped docsum payloads do not cross the native ABI; production real-engine use remains explicitly blocked.
 
 ### Grouping continuations (`grouping.continuations`)
 
@@ -244,11 +229,11 @@ approximated.
 
 ### Array-of-struct document fields (`schema.array_struct_fields`)
 
-- The portable/native path supports the existing array<object> shape used by SameElement. The high-level Rust Field, Python field-spec, and TypeScript schema facades expose only primitive/tensor kinds today; nested structs, maps, and heterogeneous object members remain unsupported.
+- The portable/native path supports the existing array<object> shape used by SameElement. Python and TypeScript expose the supported array-of-struct schema shape; the high-level Rust schema facade does not yet define it. Nested maps and arbitrary heterogeneous object models remain unsupported.
 
 ### Position fields and derived geo attributes (`schema.position_geo_fields`)
 
-- The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Position is not exposed by the high-level Rust, Python, or TypeScript schema builders.
+- The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Python and TypeScript expose position fields; the high-level Rust schema builder does not yet.
 
 ## Ranking
 

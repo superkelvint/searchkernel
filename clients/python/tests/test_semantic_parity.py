@@ -1,14 +1,19 @@
 import json, os, subprocess, tempfile, unittest
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parents[1] / "examples"))
+
 from searchkernel.ergonomic import SearchBuilder
 from searchkernel import uint64
 from searchkernel.protocol import pack_object
+from client_real_e2e_parity_helpers import corpus_value
 from SearchKernel.V2.ResultGroup import ResultGroupT
 from SearchKernel.V2.ResultNode import ResultNodeT
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
 from SearchKernel.V2.TotalHits import TotalHitsT
 from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation
-def corpus_value(item):
+def corpus_binding_value(item):
     if 'int64' in item:
         return int(item['int64'])
     if 'uint64' in item:
@@ -48,6 +53,10 @@ def snapshot(binary, fixture, request):
         f.write(pack_object(request)); f.flush()
         return json.loads(subprocess.check_output([str(binary),'--index-json',str(fixture),'--request',f.name],text=True))
 class SemanticParity(unittest.TestCase):
+    def test_corpus_values_follow_declared_field_types(self):
+        self.assertEqual(corpus_value({"type": "float64"}, 89), 89.0)
+        self.assertEqual(corpus_value({"type": "int64"}, 5), 5)
+
     @unittest.skipUnless(
         os.getenv("SEARCHKERNEL_PARITY_CORPUS") and os.getenv("SEARCHKERNEL_PARITY_OUTPUT"),
         "run through tools/check-client-semantic-parity.py",
@@ -60,9 +69,9 @@ class SemanticParity(unittest.TestCase):
         for scenario in data['scenarios']:
             i=scenario['intent']; idx=CaptureIndex(); b=SearchBuilder(idx,None if i['kind']=='browse' else i.get('query'))
             if 'filter' in i:
-                bindings={k:corpus_value(v) for k,v in i['filter']['bindings'].items()}; b.filter(i['filter']['source'],bindings)
+                bindings={k:corpus_binding_value(v) for k,v in i['filter']['bindings'].items()}; b.filter(i['filter']['source'],bindings)
             if 'ranking' in i: b.ranking(i['ranking'])
-            for k,v in i.get('inputs',{}).items(): b.input(k,corpus_value(v))
+            for k,v in i.get('inputs',{}).items(): b.input(k,corpus_binding_value(v))
             for k,v in i.get('rank_properties',{}).items(): b.rank_property(k,v)
             if 'limit' in i: b.limit(i['limit'])
             if 'offset' in i: b.offset(i['offset'])

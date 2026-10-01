@@ -1,5 +1,6 @@
 //! FlatBuffers API to owned Search Kernel IR conversion.
 
+pub mod control_plane;
 mod document;
 mod filter;
 mod grouping;

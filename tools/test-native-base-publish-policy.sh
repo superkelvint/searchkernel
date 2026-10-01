@@ -4,9 +4,20 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 PUBLISH="$ROOT/tools/publish-native-base.sh"
 REPAIR="$ROOT/tools/repair-native-base.sh"
+PACKAGE="$ROOT/tools/package-native-base-artifact.sh"
+REMOVE_READONLY_TREE="$ROOT/tools/remove-readonly-tree.sh"
 
 bash -n "$PUBLISH"
 bash -n "$REPAIR"
+bash -n "$PACKAGE"
+bash -n "$REMOVE_READONLY_TREE"
+
+for script in "$PUBLISH" "$PACKAGE"; do
+    grep -Fq 'remove-readonly-tree.sh' "$script" || {
+        echo "$script must clean staged read-only native-base files safely" >&2
+        exit 1
+    }
+done
 
 if grep -Fq -- "--clobber" "$REPAIR"; then
     echo "native-base repair must never clobber an existing published generation" >&2
@@ -40,6 +51,28 @@ grep -Fq -- '--draft' "$PUBLISH" || {
     exit 1
 }
 
+grep -Fq 'SEARCHKERNEL_DEV_USE_CI_IMAGE=0' "$PUBLISH" || {
+    echo "host native-base publication must provision in the selected host environment" >&2
+    exit 1
+}
+grep -Fq 'env -u SK_NATIVE_SDK' "$PUBLISH" || {
+    echo "native-base publication must ignore ambient legacy SK_NATIVE_SDK overrides" >&2
+    exit 1
+}
+grep -Fq 'provision_native_base "$BUILD_ENV"' "$PUBLISH" || {
+    echo "native-base publication must provision before packaging each selected environment" >&2
+    exit 1
+}
+
+grep -Fq 'normalize_absolute_root' "$PACKAGE" || {
+    echo "native-base packager must normalize producer roots without corrupting relative CMake paths" >&2
+    exit 1
+}
+if grep -Fq 'text.replace(vespa_root, "/work/vespa")' "$PACKAGE"; then
+    echo "native-base packager must not blindly replace the Vespa root substring" >&2
+    exit 1
+fi
+
 python3 - "$PUBLISH" <<'PY'
 import pathlib
 import sys
@@ -56,6 +89,17 @@ PY
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-native-publish-policy.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
+
+readonly_tree="$tmp/read-only-tree"
+mkdir -p "$readonly_tree/base/lib/nested"
+printf 'fixture\n' >"$readonly_tree/base/lib/nested/runtime.so"
+chmod -R a-w "$readonly_tree"
+bash "$REMOVE_READONLY_TREE" "$readonly_tree"
+[[ ! -e "$readonly_tree" ]] || {
+    echo "read-only native-base staging tree was not removed" >&2
+    exit 1
+}
+
 mkdir -p "$tmp/tools"
 cp "$REPAIR" "$tmp/tools/repair-native-base.sh"
 cat >"$tmp/tools/publish-native-base.sh" <<'SH'

@@ -431,9 +431,35 @@ fn search_json(result: searchkernel::SearchResult<Value>) -> Value {
         })).collect::<Vec<_>>(),
         "facets": result.facets.into_iter().map(|facet| json!({
             "field": facet.field,
-            "values": facet.values.into_iter().map(|value| json!({"value": value.value, "count": value.count})).collect::<Vec<_>>(),
+            "values": facet.values.into_iter().map(|value| json!({"value": result_value_json(value.value), "count": value.count})).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
     })
+}
+
+fn result_value_json(value: searchkernel::ResultValue) -> Value {
+    use searchkernel::ResultValue;
+
+    match value {
+        ResultValue::Null => Value::Null,
+        ResultValue::Bool(value) => json!(value),
+        ResultValue::Int64(value) => json!(value),
+        ResultValue::UInt64(value) => json!(value),
+        ResultValue::Float64(value) => json!(value),
+        ResultValue::NonFiniteFloat(value) => json!(format!("{value:?}")),
+        ResultValue::String(value) => json!(value),
+        ResultValue::Bytes(value) => json!(value),
+        ResultValue::List(values) => {
+            Value::Array(values.into_iter().map(result_value_json).collect())
+        }
+        ResultValue::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, result_value_json(value)))
+                .collect(),
+        ),
+        ResultValue::Tensor(value) => json!({"type_spec": value.type_spec}),
+        _ => panic!("unsupported result value variant in trace snapshot"),
+    }
 }
 
 fn analyze_json(result: searchkernel::AnalyzeResult) -> Value {

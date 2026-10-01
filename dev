@@ -153,6 +153,7 @@ Search Kernel development commands
   ./dev test --remote <scope> Dispatch exact-HEAD test through GitHub Actions
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
+  ./dev test rust-native-e2e  Test the Rust API against the native Vespa engine
   ./dev test client-real-e2e-parity Compare first-party real-engine showcases
   ./dev test native-crud      Test native Vespa engine CRUD
   ./dev test python           Test the Python client, including real E2E
@@ -363,6 +364,7 @@ check_fast() {
     bash "$ROOT/tools/test-dev-ci-image.sh"
     bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
     "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
+    "$PYTHON" "$ROOT/tools/test_verification_request_normalizer.py"
     "$PYTHON" "$ROOT/tools/test_remote_verification.py"
     bash "$ROOT/tools/test-ci-image-publishing.sh"
     "$PYTHON" "$ROOT/tools/test_toolchain_authorities.py"
@@ -389,6 +391,8 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/check-python-flatbuffers-boundary.py"
     "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
     "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+    "$PYTHON" "$ROOT/tools/check-audit-split.py"
+    "$PYTHON" "$ROOT/tools/check-audit-client-coverage.py"
     run_typescript_generation_check
     "$CARGO" run -p searchkernel-testkit --no-default-features --bin searchkernel-result-fixtures -- --check
     "$PYTHON" "$ROOT/tools/test_build_system_ci.py"
@@ -435,6 +439,8 @@ bookkeeping_command() {
             "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            "$PYTHON" "$ROOT/tools/check-audit-split.py"
+            "$PYTHON" "$ROOT/tools/check-audit-client-coverage.py"
             ;;
         sync)
             "$PYTHON" "$ROOT/tools/check-agent-map.py" --write
@@ -447,6 +453,8 @@ bookkeeping_command() {
             "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            "$PYTHON" "$ROOT/tools/check-audit-split.py"
+            "$PYTHON" "$ROOT/tools/check-audit-client-coverage.py"
             ;;
         *)
             echo 'usage: ./dev bookkeeping check|sync' >&2
@@ -471,6 +479,8 @@ check_all() {
     check_protocol
     "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
     "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
+    "$PYTHON" "$ROOT/tools/test_check_audit_split.py"
+    "$PYTHON" "$ROOT/tools/test_check_audit_client_coverage.py"
     "$PYTHON" "$ROOT/tools/test_check_issue_queue.py"
     lint_target --profile rust-clippy-all-features
     "$CARGO" test --workspace --all-targets --all-features
@@ -696,7 +706,10 @@ test_target() {
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
         rust-api)
-            "$CARGO" test -p searchkernel --all-targets --no-default-features
+            "$CARGO" test -p searchkernel --all-targets --no-default-features --features remote,internal-api
+            ;;
+        rust-native-e2e)
+            "$CARGO" test -p searchkernel --test native_e2e --features native
             ;;
         client-real-e2e-parity)
             "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"
@@ -717,7 +730,7 @@ test_target() {
             run_ruby_tests
             ;;
         searchkerneld-multi-index)
-            "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown
+            "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown --test grpc
             ;;
         *)
             echo "registry error: test target '$target' has no dispatcher" >&2
@@ -751,8 +764,12 @@ verify_target() {
         contracts)
             "$PYTHON" "$ROOT/tools/check-capabilities.py" --check
             "$PYTHON" "$ROOT/tools/check-client-contracts.py" --check
+            "$PYTHON" "$ROOT/tools/check-audit-split.py"
+            "$PYTHON" "$ROOT/tools/check-audit-client-coverage.py"
             "$PYTHON" "$ROOT/tools/test_check_capabilities.py"
             "$PYTHON" "$ROOT/tools/test_check_client_contracts.py"
+            "$PYTHON" "$ROOT/tools/test_check_audit_split.py"
+            "$PYTHON" "$ROOT/tools/test_check_audit_client_coverage.py"
             "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
             ;;
         client-semantic-parity)

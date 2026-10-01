@@ -253,6 +253,28 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.assertEqual({hit.id for hit in reopened.search("hello").execute().hits}, {"doc:1"})
         reopened.close()
 
+    def test_search_builder_inspect_returns_canonical_resolved_request(self):
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint), target=self.target)
+        index = Index(self.client, ergonomic=True)
+
+        resolved = (
+            index.search("hello")
+            .search_fields("title")
+            .sort("price", "asc", missing="last")
+            .timeout(250)
+            .language("en")
+            .limit(3)
+            .inspect()
+        )
+
+        self.assertEqual(resolved.limit, 3)
+        self.assertEqual(resolved.offset, 0)
+        self.assertEqual(resolved.timeoutMs.value, 250)
+        self.assertEqual([field.field for field in resolved.searchFields], ["title"])
+        self.assertEqual(resolved.queryModel.language, "en")
+        self.assertEqual(len(resolved.sort), 1)
+
     def test_focused_updates_survive_restart_and_change_search_visibility(self):
         endpoint = self._start_server(definition=True)
         self.client = Client(GrpcTransport(endpoint), target=self.target)
@@ -394,9 +416,61 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             second.upsert("doc-c", {"title": "another alpha", "category": "a", "price": 2})
             self.assertIsNotNone(second.get("doc-c"))
             second.close()
+
+            closed_only = Index.open(endpoint, target="products-b")
+            closed_only.close()
+            reopened_beta = Index.open(endpoint, target="products-b")
+            self.assertIsNotNone(reopened_beta.get("doc-b"))
+            reopened_beta.close()
+
+            Index.delete_index(endpoint, target="products-a")
+            with self.assertRaises(ClientError) as deleted:
+                Index.open(endpoint, target="products-a")
+            self.assertEqual(deleted.exception.code, "not_found")
+            still_usable_beta = Index.open(endpoint, target="products-b")
+            self.assertIsNotNone(still_usable_beta.get("doc-b"))
+            still_usable_beta.close()
+
+            with self.assertRaises(ClientError) as missing_delete:
+                Index.delete_index(endpoint, target="products-a")
+            self.assertEqual(missing_delete.exception.code, "not_found")
         finally:
             alpha.close()
             beta.close()
+
+    def test_managed_local_delete_uses_path_identity_and_preserves_sibling(self):
+        root = Path(self.tempdir.name)
+        alpha_path = root / "managed-alpha"
+        beta_path = root / "managed-beta"
+
+        alpha = Index.create(alpha_path, fields=self.definition)
+        beta = Index.create(beta_path, fields=self.definition)
+        try:
+            alpha.upsert("alpha-doc", {"title": "alpha", "category": "a", "price": 1})
+            beta.upsert("beta-doc", {"title": "beta", "category": "b", "price": 2})
+        finally:
+            alpha.close()
+            beta.close()
+
+        Index.delete_index(alpha_path)
+        self.assertFalse(alpha_path.exists(), "successful managed delete should remove only its marker path")
+
+        with self.assertRaises(ClientError) as deleted:
+            Index.open(alpha_path)
+        self.assertEqual(deleted.exception.code, "not_found")
+
+        surviving = Index.open(beta_path)
+        try:
+            self.assertIsNotNone(surviving.get("beta-doc"))
+        finally:
+            surviving.close()
+
+        with self.assertRaises(ClientError) as missing_delete:
+            Index.delete_index(alpha_path)
+        self.assertEqual(missing_delete.exception.code, "not_found")
+
+        Index.delete_index(beta_path)
+        self.assertFalse(beta_path.exists())
 
     def test_ranking_profile_reaches_vespa_and_survives_reopen(self):
         self.definition = IndexDefinitionT(
