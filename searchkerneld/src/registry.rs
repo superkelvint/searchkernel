@@ -7,11 +7,48 @@ use std::{
     collections::BTreeMap,
     fmt,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, RwLock, Weak},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex, RwLock, Weak,
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
 const RESPONSE_IDENTIFIER: &str = "SKRS";
+
+static NEXT_GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+fn new_generation() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let process = std::process::id();
+    let sequence = NEXT_GENERATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("{nanos:032x}-{process:08x}-{sequence:016x}")
+}
+
+pub(crate) struct RegistryDispatchResult {
+    pub(crate) payload: Vec<u8>,
+    pub(crate) generation: Option<String>,
+}
+
+impl RegistryDispatchResult {
+    fn payload(payload: Vec<u8>) -> Self {
+        Self {
+            payload,
+            generation: None,
+        }
+    }
+
+    fn with_generation(payload: Vec<u8>, generation: String) -> Self {
+        Self {
+            payload,
+            generation: Some(generation),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum RegistryInitError {
@@ -73,6 +110,7 @@ struct RegistryEntry {
     index: Index,
     dispatcher: Arc<Dispatcher>,
     lifecycle: RwLock<()>,
+    generation: String,
 }
 
 pub struct IndexRegistry {
@@ -119,6 +157,22 @@ impl IndexRegistry {
     }
 
     pub fn dispatch(&self, request: &[u8]) -> Result<Vec<u8>, RegistryDispatchError> {
+        Ok(self.dispatch_with_generation(request, None)?.payload)
+    }
+
+    pub(crate) fn dispatch_grpc(
+        &self,
+        request: &[u8],
+        expected_generation: Option<&str>,
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+        self.dispatch_with_generation(request, expected_generation)
+    }
+
+    fn dispatch_with_generation(
+        &self,
+        request: &[u8],
+        expected_generation: Option<&str>,
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         // Keep shutdown linearizable with every request, including lifecycle
         // transitions that temporarily operate outside the registry map.
         let shutdown = self
@@ -141,7 +195,7 @@ impl IndexRegistry {
                 return Err(RegistryDispatchError::InvalidRequest)
             }
             Err(searchkernel_ir::ControlPlaneResolutionError::Semantic(error)) => {
-                return Ok(encode_error(error))
+                return Ok(RegistryDispatchResult::payload(encode_error(error)))
             }
         };
 
@@ -149,7 +203,9 @@ impl IndexRegistry {
             ControlPlaneRequest::Create { target, definition } => self.create(target, definition),
             ControlPlaneRequest::Open { target } => self.open(target),
             ControlPlaneRequest::Delete { target } => self.delete_index(target),
-            ControlPlaneRequest::Route { target } => self.dispatch_loaded(target, request),
+            ControlPlaneRequest::Route { target } => {
+                self.dispatch_loaded(target, request, expected_generation)
+            }
         }
     }
 
@@ -218,10 +274,10 @@ impl IndexRegistry {
         &self,
         target: &str,
         definition: api::IndexDefinition<'_>,
-    ) -> Result<Vec<u8>, RegistryDispatchError> {
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let definition_ir = match searchkernel_ir::index_definition_to_ir(definition) {
             Ok(definition) => definition,
-            Err(error) => return Ok(encode_error(error)),
+            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
         let definition_bytes = searchkernel_ir::index_definition_ir_to_api(&definition_ir);
 
@@ -235,40 +291,49 @@ impl IndexRegistry {
                 .lock()
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if entries.contains_key(target) {
-                return Ok(encode_error(searchkernel_ir::already_exists_error()));
+                return Ok(RegistryDispatchResult::payload(encode_error(
+                    searchkernel_ir::already_exists_error(),
+                )));
             }
         }
 
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => return Ok(encode_error(error)),
+            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
         let index = match Index::create_from_definition_bytes(&path, &definition_bytes) {
             Ok(index) => index,
             Err(error) => {
-                return Ok(encode_error(lifecycle_index_error_to_portable(
-                    searchkernel_ir::LifecycleOperation::Create,
-                    error,
+                return Ok(RegistryDispatchResult::payload(encode_error(
+                    lifecycle_index_error_to_portable(
+                        searchkernel_ir::LifecycleOperation::Create,
+                        error,
+                    ),
                 )))
             }
         };
         let (context, session) = index.clone().into_session_parts();
+        let generation = new_generation();
         let entry = Arc::new(RegistryEntry {
             index,
             dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
             lifecycle: RwLock::new(()),
+            generation: generation.clone(),
         });
         self.entries
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .insert(target.to_owned(), entry);
-        Ok(encode_lifecycle_result(
-            context.definition(),
-            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        Ok(RegistryDispatchResult::with_generation(
+            encode_lifecycle_result(
+                context.definition(),
+                wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            ),
+            generation,
         ))
     }
 
-    fn open(&self, target: &str) -> Result<Vec<u8>, RegistryDispatchError> {
+    fn open(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let transition = self.transition_lock(target)?;
         let _transition = transition
             .lock()
@@ -280,50 +345,60 @@ impl IndexRegistry {
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if let Some(entry) = entries.get(target) {
                 let (context, _) = entry.index.clone().into_session_parts();
-                return Ok(encode_lifecycle_result(
-                    context.definition(),
-                    wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+                return Ok(RegistryDispatchResult::with_generation(
+                    encode_lifecycle_result(
+                        context.definition(),
+                        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+                    ),
+                    entry.generation.clone(),
                 ));
             }
         }
 
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => return Ok(encode_error(error)),
+            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
         let index = match Index::open(&path) {
             Ok(index) => index,
             Err(error) => {
-                return Ok(encode_error(lifecycle_index_error_to_portable(
-                    searchkernel_ir::LifecycleOperation::Open,
-                    error,
+                return Ok(RegistryDispatchResult::payload(encode_error(
+                    lifecycle_index_error_to_portable(
+                        searchkernel_ir::LifecycleOperation::Open,
+                        error,
+                    ),
                 )))
             }
         };
         let (context, session) = index.clone().into_session_parts();
+        let generation = new_generation();
         let entry = Arc::new(RegistryEntry {
             index,
             dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
             lifecycle: RwLock::new(()),
+            generation: generation.clone(),
         });
         self.entries
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .insert(target.to_owned(), entry);
-        Ok(encode_lifecycle_result(
-            context.definition(),
-            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+        Ok(RegistryDispatchResult::with_generation(
+            encode_lifecycle_result(
+                context.definition(),
+                wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            ),
+            generation,
         ))
     }
 
-    fn delete_index(&self, target: &str) -> Result<Vec<u8>, RegistryDispatchError> {
+    fn delete_index(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let transition = self.transition_lock(target)?;
         let _transition = transition
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => return Ok(encode_error(error)),
+            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
 
         let entry = self
@@ -332,7 +407,9 @@ impl IndexRegistry {
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .remove(target);
         if entry.is_none() && !path.exists() {
-            return Ok(encode_error(searchkernel_ir::not_found_error()));
+            return Ok(RegistryDispatchResult::payload(encode_error(
+                searchkernel_ir::not_found_error(),
+            )));
         }
 
         if let Some(entry) = entry {
@@ -341,18 +418,22 @@ impl IndexRegistry {
                 .write()
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if let Err(error) = entry.index.close() {
-                return Ok(encode_error(lifecycle_index_error_to_portable(
-                    searchkernel_ir::LifecycleOperation::Delete,
-                    error,
+                return Ok(RegistryDispatchResult::payload(encode_error(
+                    lifecycle_index_error_to_portable(
+                        searchkernel_ir::LifecycleOperation::Delete,
+                        error,
+                    ),
                 )));
             }
         }
 
         match Index::delete_storage(&path) {
-            Ok(()) => Ok(encode_delete_index_result()),
-            Err(error) => Ok(encode_error(lifecycle_index_error_to_portable(
-                searchkernel_ir::LifecycleOperation::Delete,
-                error,
+            Ok(()) => Ok(RegistryDispatchResult::payload(encode_delete_index_result())),
+            Err(error) => Ok(RegistryDispatchResult::payload(encode_error(
+                lifecycle_index_error_to_portable(
+                    searchkernel_ir::LifecycleOperation::Delete,
+                    error,
+                ),
             ))),
         }
     }
@@ -361,7 +442,8 @@ impl IndexRegistry {
         &self,
         target: &str,
         request: &[u8],
-    ) -> Result<Vec<u8>, RegistryDispatchError> {
+        expected_generation: Option<&str>,
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         // Acquire the per-entry admission guard while the entry is still
         // reachable from the registry. Delete removes the entry under the same
         // registry lock before taking its exclusive guard, so every request
@@ -371,8 +453,15 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         let Some(entry) = entries.get(target).cloned() else {
-            return Ok(encode_error(searchkernel_ir::not_found_error()));
+            return Ok(RegistryDispatchResult::payload(encode_error(
+                searchkernel_ir::not_found_error(),
+            )));
         };
+        if expected_generation.is_some_and(|generation| generation != entry.generation.as_str()) {
+            return Ok(RegistryDispatchResult::payload(encode_error(
+                searchkernel_ir::stale_index_handle_error(),
+            )));
+        }
         let lifecycle = entry
             .lifecycle
             .read()
@@ -382,9 +471,9 @@ impl IndexRegistry {
         let result = entry
             .dispatcher
             .dispatch(request)
-            .map_err(map_dispatch_error);
+            .map_err(map_dispatch_error)?;
         drop(lifecycle);
-        result
+        Ok(RegistryDispatchResult::payload(result))
     }
 
     fn checked_index_path(&self, target: &str) -> Result<PathBuf, PortableError> {

@@ -1,7 +1,8 @@
 #![cfg(feature = "remote")]
 
 use searchkernel::{
-    field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Patch, RemoteOptions,
+    field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Patch, RemoteClient,
+    RemoteOptions,
 };
 use searchkernel_dispatch::{DispatchError, Dispatcher};
 use searchkernel_ir::{
@@ -16,7 +17,7 @@ use searchkernel_rpc::{
         search_kernel_server::{SearchKernel, SearchKernelServer},
         FlatBufferFrame,
     },
-    MAX_GRPC_MESSAGE_SIZE,
+    INDEX_GENERATION_METADATA_KEY, MAX_GRPC_MESSAGE_SIZE,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -180,6 +181,8 @@ impl Backend for ProbeBackend {
 #[derive(Clone)]
 struct TestService {
     dispatcher: Arc<Dispatcher>,
+    definition: searchkernel_ir::IndexDefinitionIr,
+    targets: Arc<Mutex<Vec<String>>>,
 }
 
 #[tonic::async_trait]
@@ -188,12 +191,114 @@ impl SearchKernel for TestService {
         &self,
         request: Request<FlatBufferFrame>,
     ) -> Result<Response<FlatBufferFrame>, Status> {
-        let payload = self
-            .dispatcher
-            .dispatch(&request.into_inner().payload)
-            .map_err(dispatch_status)?;
-        Ok(Response::new(FlatBufferFrame { payload }))
+        let request_generation = request
+            .metadata()
+            .get(INDEX_GENERATION_METADATA_KEY)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let request = request.into_inner().payload;
+        let envelope = searchkernel_protocol::protocol::v2::root_as_request_envelope(&request)
+            .map_err(|_| Status::invalid_argument("invalid request envelope"))?;
+        let target = envelope
+            .target()
+            .and_then(|target| target.name())
+            .unwrap_or_default();
+        self.targets
+            .lock()
+            .expect("target log")
+            .push(target.to_owned());
+        if target == "slow-create"
+            && envelope.payload_type()
+                == searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest
+        {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        let payload = match envelope.payload_type() {
+            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+                lifecycle_definition_response(&self.definition, true)
+            }
+            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+                lifecycle_definition_response(&self.definition, target == "wrong-response")
+            }
+            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
+                lifecycle_delete_response()
+            }
+            _ => {
+                if request_generation.as_deref() != Some("probe-generation") {
+                    return Err(Status::failed_precondition(
+                        "target-bound request is missing the expected generation",
+                    ));
+                }
+                self.dispatcher.dispatch(&request).map_err(dispatch_status)?
+            }
+        };
+        let mut response = Response::new(FlatBufferFrame { payload });
+        if matches!(
+            envelope.payload_type(),
+            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest
+                | searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_OpenIndexRequest
+        ) {
+            response.metadata_mut().insert(
+                INDEX_GENERATION_METADATA_KEY,
+                "probe-generation".parse().expect("static generation metadata"),
+            );
+        }
+        Ok(response)
     }
+}
+
+fn lifecycle_definition_response(
+    definition: &searchkernel_ir::IndexDefinitionIr,
+    create: bool,
+) -> Vec<u8> {
+    use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let (payload_type, payload) = if create {
+        let result = api::CreateIndexResult::create(
+            &mut builder,
+            &api::CreateIndexResultArgs { index: Some(index) },
+        );
+        (
+            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            result.as_union_value(),
+        )
+    } else {
+        let result = api::OpenIndexResult::create(
+            &mut builder,
+            &api::OpenIndexResultArgs { index: Some(index) },
+        );
+        (
+            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            result.as_union_value(),
+        )
+    };
+    let envelope = wire::ResponseEnvelope::create(
+        &mut builder,
+        &wire::ResponseEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            payload_type,
+            payload: Some(payload),
+        },
+    );
+    wire::finish_response_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn lifecycle_delete_response() -> Vec<u8> {
+    use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let result = api::DeleteIndexResult::create(&mut builder, &api::DeleteIndexResultArgs {});
+    let envelope = wire::ResponseEnvelope::create(
+        &mut builder,
+        &wire::ResponseEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            payload_type: wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+            payload: Some(result.as_union_value()),
+        },
+    );
+    wire::finish_response_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
 }
 
 fn dispatch_status(error: DispatchError) -> Status {
@@ -207,6 +312,7 @@ fn dispatch_status(error: DispatchError) -> Status {
 
 struct TestServer {
     endpoint: String,
+    targets: Arc<Mutex<Vec<String>>>,
     shutdown: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
 }
@@ -218,7 +324,9 @@ impl TestServer {
             .field(Field::float64("price").stored(true).filterable(true));
         let local = Index::from_backend(definition, backend).expect("valid probe index");
         let (context, session) = local.into_session_parts();
+        let definition = context.definition().clone();
         let dispatcher = Arc::new(Dispatcher::new(context, session));
+        let targets = Arc::new(Mutex::new(Vec::new()));
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -226,9 +334,13 @@ impl TestServer {
         let address = listener.local_addr().expect("probe address");
         let incoming = TcpListenerStream::new(listener);
         let (shutdown, shutdown_rx) = oneshot::channel();
-        let service = SearchKernelServer::new(TestService { dispatcher })
-            .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
-            .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
+        let service = SearchKernelServer::new(TestService {
+            dispatcher,
+            definition,
+            targets: Arc::clone(&targets),
+        })
+        .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
+        .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
         let task = tokio::spawn(
             tonic::transport::Server::builder()
                 .add_service(service)
@@ -238,6 +350,7 @@ impl TestServer {
         );
         Self {
             endpoint: address.to_string(),
+            targets,
             shutdown: Some(shutdown),
             task,
         }
@@ -261,7 +374,8 @@ async fn same_index_facade_executes_crud_search_and_analysis_over_tcp() {
 
     // Plain host:port is the common ergonomic form; the client supplies the
     // transport URI internally.
-    let index = Index::connect(&server.endpoint).expect("connect remote index");
+    let client = RemoteClient::connect(&server.endpoint).expect("connect remote daemon");
+    let index = client.open_index("probe").expect("open remote index");
 
     let product = Product {
         title: "Remote Rust".to_owned(),
@@ -300,6 +414,13 @@ async fn same_index_facade_executes_crud_search_and_analysis_over_tcp() {
     assert!(index.delete("doc-1").expect("remote delete"));
     index.close().expect("close remote index");
 
+    assert!(server
+        .targets
+        .lock()
+        .expect("target log")
+        .iter()
+        .all(|target| target == "probe"));
+
     let calls = backend.calls();
     assert!(matches!(calls[0], OperationIr::Insert(_)));
     assert!(matches!(calls[1], OperationIr::Upsert(_)));
@@ -313,10 +434,89 @@ async fn same_index_facade_executes_crud_search_and_analysis_over_tcp() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn daemon_lifecycle_uses_canonical_results_and_rejects_wrong_response_types() {
+    let backend = Arc::new(ProbeBackend::default());
+    let server = TestServer::start(Arc::clone(&backend)).await;
+    let client = RemoteClient::connect(&server.endpoint).expect("connect remote daemon");
+    let definition = || {
+        IndexDefinition::new()
+            .field(Field::text("title").stored(true))
+            .field(Field::float64("price").stored(true).filterable(true))
+    };
+
+    let first = client
+        .create_index("first", definition())
+        .expect("decode create result");
+    let second = client
+        .create_index("second", definition())
+        .expect("create second target");
+    first
+        .insert(
+            "first-doc",
+            &Product {
+                title: "first".into(),
+                price: 1.0,
+            },
+        )
+        .expect("insert first");
+    second
+        .insert(
+            "second-doc",
+            &Product {
+                title: "second".into(),
+                price: 2.0,
+            },
+        )
+        .expect("insert second");
+    first.close().expect("close first handle");
+    second.close().expect("close second handle");
+
+    let opened = client.open_index("first").expect("decode open result");
+    opened.close().expect("close opened handle");
+    let stale = client
+        .open_index("first")
+        .expect("open handle that must be invalidated by delete");
+    client.delete_index("first").expect("decode delete result");
+    let stale_error = stale
+        .describe()
+        .expect_err("delete must permanently close existing target-bound handles");
+    assert_eq!(stale_error.code(), PublicErrorCode::IndexClosed);
+
+    let replacement = client
+        .create_index("first", definition())
+        .expect("recreate target after delete");
+    let stale_error = stale
+        .describe()
+        .expect_err("recreating a target must not revive an old Rust handle");
+    assert_eq!(stale_error.code(), PublicErrorCode::IndexClosed);
+    replacement.close().expect("close replacement handle");
+
+    let error = client
+        .open_index("wrong-response")
+        .err()
+        .expect("reject mismatched lifecycle result");
+    assert_eq!(error.code(), PublicErrorCode::Internal);
+    assert!(error
+        .details()
+        .iter()
+        .any(|detail| detail.code == "invalid_remote_response"));
+
+    let targets = server.targets.lock().expect("target log").clone();
+    assert!(targets.contains(&"first".to_owned()));
+    assert!(targets.contains(&"second".to_owned()));
+    assert!(targets.contains(&"wrong-response".to_owned()));
+    assert!(targets.iter().all(|target| !target.is_empty()));
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn portable_errors_survive_the_remote_boundary_without_becoming_transport_errors() {
     let backend = Arc::new(ProbeBackend::default());
     let server = TestServer::start(Arc::clone(&backend)).await;
-    let index = Index::connect(&server.endpoint).expect("connect remote index");
+    let index = RemoteClient::connect(&server.endpoint)
+        .expect("connect remote daemon")
+        .open_index("probe")
+        .expect("open remote index");
 
     backend.search_mode(1);
     let error = index
@@ -343,10 +543,16 @@ async fn portable_errors_survive_the_remote_boundary_without_becoming_transport_
 async fn request_deadlines_are_transport_errors_and_do_not_require_an_async_rust_api() {
     let backend = Arc::new(ProbeBackend::default());
     let server = TestServer::start(Arc::clone(&backend)).await;
-    let warmup = Index::connect(&server.endpoint).expect("warm up remote connection");
+    let client = RemoteClient::connect(&server.endpoint).expect("connect remote daemon");
+    let warmup = client
+        .open_index("probe")
+        .expect("warm up remote connection");
     warmup.close().expect("close warmup remote connection");
     let options = RemoteOptions::default().request_timeout(Duration::from_millis(500));
-    let index = Index::connect_with(&server.endpoint, options).expect("connect remote index");
+    let index = RemoteClient::connect_with(&server.endpoint, options)
+        .expect("connect remote daemon")
+        .open_index("probe")
+        .expect("open remote index");
 
     backend.search_mode(2);
     let error = index
@@ -366,7 +572,10 @@ async fn mutation_deadlines_do_not_claim_ambiguous_writes_are_retryable() {
     let backend = Arc::new(ProbeBackend::default());
     let server = TestServer::start(Arc::clone(&backend)).await;
     let options = RemoteOptions::default().request_timeout(Duration::from_millis(500));
-    let index = Index::connect_with(&server.endpoint, options).expect("connect remote index");
+    let index = RemoteClient::connect_with(&server.endpoint, options)
+        .expect("connect remote daemon")
+        .open_index("probe")
+        .expect("open remote index");
 
     backend.insert_mode(1);
     let product = Product {
@@ -395,10 +604,37 @@ async fn mutation_deadlines_do_not_claim_ambiguous_writes_are_retryable() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn lifecycle_mutation_deadlines_report_ambiguous_create() {
+    let backend = Arc::new(ProbeBackend::default());
+    let server = TestServer::start(backend).await;
+    let options = RemoteOptions::default().request_timeout(Duration::from_millis(500));
+    let client =
+        RemoteClient::connect_with(&server.endpoint, options).expect("connect remote daemon");
+    let definition = IndexDefinition::new().field(Field::text("title").stored(true));
+
+    let error = client
+        .create_index("slow-create", definition)
+        .err()
+        .expect("slow lifecycle mutation must time out");
+    assert_eq!(error.code(), PublicErrorCode::DeadlineExceeded);
+    assert!(!error.retryable());
+    assert_eq!(error.details()[0].code, "grpc_transport");
+    assert!(error
+        .details()
+        .iter()
+        .any(|detail| detail.code == "remote_outcome_unknown"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn mismatched_mutation_response_identity_is_rejected() {
     let backend = Arc::new(ProbeBackend::default());
     let server = TestServer::start(Arc::clone(&backend)).await;
-    let index = Index::connect(&server.endpoint).expect("connect remote index");
+    let index = RemoteClient::connect(&server.endpoint)
+        .expect("connect remote daemon")
+        .open_index("probe")
+        .expect("open remote index");
 
     backend.insert_mode(2);
     let product = Product {
@@ -422,7 +658,10 @@ async fn mismatched_mutation_response_identity_is_rejected() {
 async fn mismatched_get_document_identity_is_rejected_before_deserialization() {
     let backend = Arc::new(ProbeBackend::default());
     let server = TestServer::start(Arc::clone(&backend)).await;
-    let index = Index::connect(&server.endpoint).expect("connect remote index");
+    let index = RemoteClient::connect(&server.endpoint)
+        .expect("connect remote daemon")
+        .open_index("probe")
+        .expect("open remote index");
 
     backend.get_mode(1);
     let error = index

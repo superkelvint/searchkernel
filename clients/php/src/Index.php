@@ -47,8 +47,13 @@ final class Index
 
     public static function deleteTarget(string $baseUrl, string $target): bool
     {
-        Client::connect($baseUrl, target: $target)->deleteIndex();
-        return true;
+        $client = Client::connect($baseUrl, target: $target);
+        try {
+            $client->deleteIndex();
+            return true;
+        } finally {
+            $client->close();
+        }
     }
 
     /** @param array<string, mixed> $document */

@@ -23,9 +23,11 @@ from searchkernel.ergonomic import (  # noqa: E402
     _root_aggregation_request,
     _value_entries,
 )
-from searchkernel.protocol import pack_object, pack_request  # noqa: E402
+from searchkernel.protocol import expected_response_type, pack_object, pack_request  # noqa: E402
 from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelopeT  # noqa: E402
+from SearchKernel.Protocol.V2 import RequestPayload, ResponsePayload  # noqa: E402
 from SearchKernel.V2.Document import DocumentT  # noqa: E402
+from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT  # noqa: E402
 from SearchKernel.V2.InsertRequest import InsertRequestT  # noqa: E402
 from SearchKernel.V2.Int64Value import Int64ValueT  # noqa: E402
 from SearchKernel.V2.TensorValue import TensorValueT  # noqa: E402
@@ -137,6 +139,20 @@ def _canonical_snapshot(request):
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
+    def test_delete_index_uses_canonical_envelope_discriminators_and_target(self):
+        raw = pack_request("delete_index", DeleteIndexRequestT(), target="catalog-a")
+        envelope = RequestEnvelopeT.InitFromPackedBuf(raw)
+
+        self.assertEqual(
+            envelope.payloadType,
+            RequestPayload.RequestPayload.SearchKernel_V2_DeleteIndexRequest,
+        )
+        self.assertEqual(envelope.target.name, "catalog-a")
+        self.assertEqual(
+            expected_response_type("delete_index"),
+            ResponsePayload.ResponsePayload.SearchKernel_V2_DeleteIndexResult,
+        )
+
     def test_signed_value_checks_int64_range_before_flatbuffers_packing(self):
         for item in (-(2**63) - 1, 2**63):
             with self.subTest(item=item):

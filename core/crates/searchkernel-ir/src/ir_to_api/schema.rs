@@ -38,7 +38,7 @@ pub fn index_definition_input_to_api(
     builder.finished_data().to_vec()
 }
 
-fn index_definition_input_offset<'a>(
+pub(super) fn index_definition_input_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     definition: &crate::api_to_ir::IndexDefinitionInput,
 ) -> flatbuffers::WIPOffset<api::IndexDefinition<'a>> {

@@ -70,8 +70,10 @@ if (!Index::deleteTarget($url, $boundaryTarget)) {
     throw new RuntimeException('128-byte target was not deleted');
 }
 
-$target = 'php-lifecycle-smoke';
+$target = 'php-lifecycle-smoke-a';
+$otherTarget = 'php-lifecycle-smoke-b';
 Index::create($url, $target, $definition);
+Index::create($url, $otherTarget, $definition);
 $expectPortable(
     static fn () => Index::create($url, $target, $definition),
     'AlreadyExists',
@@ -79,7 +81,8 @@ $expectPortable(
     null,
     'duplicate create',
 );
-Index::open($url, $target);
+Index::open($url, $target)->close();
+Index::open($url, $target)->close();
 if (!Index::deleteTarget($url, $target)) {
     throw new RuntimeException('created target was not deleted');
 }
@@ -97,5 +100,13 @@ $expectPortable(
     null,
     'delete after delete',
 );
+$other = Index::open($url, $otherTarget);
+if ($other->describe()['name'] === '') {
+    throw new RuntimeException('surviving target returned an empty definition');
+}
+$other->close();
+if (!Index::deleteTarget($url, $otherTarget)) {
+    throw new RuntimeException('surviving target was not deleted');
+}
 
 echo "PHP create/open/delete lifecycle semantics PASS\n";
