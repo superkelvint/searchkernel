@@ -37,9 +37,23 @@
     },
     {
       "surface": "typescript-node",
+      "runtime": "managed-local",
+      "evidence": "native-full",
+      "verification": "./dev test typescript",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
+    },
+    {
+      "surface": "typescript-node",
       "runtime": "connect",
       "evidence": "client-e2e",
       "verification": "./dev test typescript",
+      "qualification": "tools/qualify-consumer-release.py dist/release"
+    },
+    {
+      "surface": "ruby",
+      "runtime": "managed-local",
+      "evidence": "native-full",
+      "verification": "./dev test ruby",
       "qualification": "tools/qualify-consumer-release.py dist/release"
     },
     {
@@ -53,7 +67,6 @@
   "deferred": [
     "typescript-browser-grpc-web",
     "php",
-    "ruby-managed-local",
     "go",
     "macos",
     "windows",
