@@ -37,11 +37,13 @@ products.close()?;
 
 let products = client.open_index("products")?;
 let results = products.search("keyboard").execute::<Product>()?;
+products.close()?;
 client.delete_index("products")?;
 ```
 
-`Index::connect(endpoint)` is deprecated because an endpoint alone does not
-select a logical index. Use `RemoteClient::connect(endpoint)` followed by
+`Index::connect(endpoint)` remains the compatibility entry point for a legacy
+single-index daemon. Multi-index daemons require
+`RemoteClient::connect(endpoint)` followed by
 `create_index(target, definition)` or `open_index(target)`.
 
 Search result fields are also available as `ResultValue`, which preserves the
