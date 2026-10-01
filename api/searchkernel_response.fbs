@@ -24,7 +24,6 @@ table ResponseEnvelope {
   // Zero is deliberately invalid; V2 senders must write version 2 explicitly.
   protocol_version:uint = 0;
   payload:ResponsePayload;
-  index_generation:string;
 }
 
 root_type ResponseEnvelope;
