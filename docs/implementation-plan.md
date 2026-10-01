@@ -34,7 +34,7 @@ milestones:
 | Native engine | M0-M14 implementation surface and harness |
 | Native/query expansion | Phase 9 |
 | Public Rust real-engine path | Phase 10 + `reference/vespa/i` |
-| Portable semantics | canonical V2 FlatBuffers, dispatcher, shared search-resolution architecture |
+| Portable semantics | canonical FlatBuffers, dispatcher, shared search-resolution architecture |
 | Transport | `searchkerneld` UDS/TCP + gRPC-Web |
 | Python | generated models + gRPC + managed local facade + E2E |
 | TypeScript | generated models + browser gRPC-Web + managed Node facade + E2E |

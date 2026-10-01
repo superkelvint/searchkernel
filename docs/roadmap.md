@@ -16,7 +16,7 @@ foundation rather than future design work:
 - native Vespa capability through the M14 implementation surface;
 - Phase 9 additive native/query coverage and Phase 10 public Rust real-engine E2E;
 - the integrated public product path and `reference/vespa/i` release gate;
-- one canonical FlatBuffers V2 -> Search Kernel IR -> Vespa adapter architecture;
+- one canonical FlatBuffers -> Search Kernel IR -> Vespa adapter architecture;
 - shared dispatcher used by non-Rust transports;
 - direct in-process Rust product API;
 - `searchkerneld` over UDS/TCP plus the gRPC-Web listener;
@@ -79,7 +79,7 @@ Recent reconciliation fixed:
 - incomplete public `RankProfile` state;
 - stale facet result expectations;
 - stale generated capability limitations;
-- the rich V2 schema round-trip fixture;
+- the rich schema round-trip fixture;
 - a real `BackendSession` close race where an operation published
   `active == 0` before releasing its backend owner.
 

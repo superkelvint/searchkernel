@@ -2,7 +2,7 @@ use crate::{
     error::{ErrorCode, PortableError},
     model as ir,
 };
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::{collections::BTreeMap, result::Result};
 
 fn invalid_response(path: impl Into<String>, message: impl Into<String>) -> PortableError {

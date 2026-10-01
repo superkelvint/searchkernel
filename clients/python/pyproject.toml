@@ -29,8 +29,8 @@ include = ["searchkernel*"]
 
 [tool.setuptools.package-data]
 searchkernel = [
-    "_wire_generated/**/*.py",
-    "_wire_generated/**/*.pyi",
+    "_wire/v1/generated/**/*.py",
+    "_wire/v1/generated/**/*.pyi",
     "bin/*",
     "bin/.searchkernel-native/*",
     "lib/*",

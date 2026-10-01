@@ -48,7 +48,7 @@ fn create_persists_rich_schema_provenance_and_reopens_consistently() {
     let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&portable_bytes)
         .expect("persisted portable definition should parse");
     assert_eq!(portable_bytes, expected_portable);
-    let portable_ir = searchkernel_ir::index_definition_to_ir(portable)
+    let portable_ir = searchkernel_ir::wire::v1::index_definition_to_ir(portable)
         .expect("persisted portable definition should resolve");
     assert_eq!(portable_ir, expected_resolved);
     assert_eq!(portable_ir.schema_fields().len(), 0);
@@ -65,7 +65,7 @@ fn create_persists_rich_schema_provenance_and_reopens_consistently() {
         .expect("read persisted canonical definition");
     let canonical = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&canonical_bytes)
         .expect("persisted canonical definition should parse");
-    let persisted_resolved = searchkernel_ir::index_definition_to_ir(canonical)
+    let persisted_resolved = searchkernel_ir::wire::v1::index_definition_to_ir(canonical)
         .expect("persisted canonical definition should resolve");
     assert_eq!(persisted_resolved, expected_resolved);
 
@@ -771,7 +771,7 @@ fn manifest_preserves_rich_described_schema_provenance() {
     write_config(&config);
     let (canonical, described) = public_described_canonical_fixture();
     let portable_bytes = crate::portable_definition::encode_portable_definition(&described);
-    let canonical_bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let canonical_bytes = searchkernel_ir::wire::v1::index_definition_ir_to_api(&canonical);
 
     let manifest =
         IndexManifest::for_definitions(&portable_bytes, &resolved_context(&described), &config)
@@ -909,31 +909,31 @@ fn sparse_resolved_snapshot_is_rejected_before_caller_intent_resolution() {
 
     let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
     let field_name = builder.create_string("title");
-    let primitive = searchkernel_ir::api::PrimitiveDataType::create(
+    let primitive = searchkernel_ir::wire::v1::schema::PrimitiveDataType::create(
         &mut builder,
-        &searchkernel_ir::api::PrimitiveDataTypeArgs {
-            kind: searchkernel_ir::api::PrimitiveDataTypeKind::String,
+        &searchkernel_ir::wire::v1::schema::PrimitiveDataTypeArgs {
+            kind: searchkernel_ir::wire::v1::schema::PrimitiveDataTypeKind::String,
         },
     );
-    let data_type = searchkernel_ir::api::DataType::create(
+    let data_type = searchkernel_ir::wire::v1::schema::DataType::create(
         &mut builder,
-        &searchkernel_ir::api::DataTypeArgs {
-            kind_type: searchkernel_ir::api::DataTypeKind::PrimitiveDataType,
+        &searchkernel_ir::wire::v1::schema::DataTypeArgs {
+            kind_type: searchkernel_ir::wire::v1::schema::DataTypeKind::PrimitiveDataType,
             kind: Some(primitive.as_union_value()),
         },
     );
-    let field = searchkernel_ir::api::FieldDefinition::create(
+    let field = searchkernel_ir::wire::v1::schema::FieldDefinition::create(
         &mut builder,
-        &searchkernel_ir::api::FieldDefinitionArgs {
+        &searchkernel_ir::wire::v1::schema::FieldDefinitionArgs {
             name: Some(field_name),
             data_type: Some(data_type),
             ..Default::default()
         },
     );
     let fields = builder.create_vector(&[field]);
-    let sparse_snapshot = searchkernel_ir::api::IndexDefinition::create(
+    let sparse_snapshot = searchkernel_ir::wire::v1::schema::IndexDefinition::create(
         &mut builder,
-        &searchkernel_ir::api::IndexDefinitionArgs {
+        &searchkernel_ir::wire::v1::schema::IndexDefinitionArgs {
             fields: Some(fields),
             ..Default::default()
         },
@@ -974,17 +974,17 @@ fn semantically_invalid_resolved_snapshot_is_reported_as_compatibility_error() {
 
     let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
     let field_name = builder.create_string("title");
-    let field = searchkernel_ir::api::FieldDefinition::create(
+    let field = searchkernel_ir::wire::v1::schema::FieldDefinition::create(
         &mut builder,
-        &searchkernel_ir::api::FieldDefinitionArgs {
+        &searchkernel_ir::wire::v1::schema::FieldDefinitionArgs {
             name: Some(field_name),
             ..Default::default()
         },
     );
     let fields = builder.create_vector(&[field]);
-    let invalid_snapshot = searchkernel_ir::api::IndexDefinition::create(
+    let invalid_snapshot = searchkernel_ir::wire::v1::schema::IndexDefinition::create(
         &mut builder,
-        &searchkernel_ir::api::IndexDefinitionArgs {
+        &searchkernel_ir::wire::v1::schema::IndexDefinitionArgs {
             fields: Some(fields),
             ..Default::default()
         },

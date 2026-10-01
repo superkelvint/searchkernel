@@ -17,7 +17,7 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ResultResponseSchemaTest(unittest.TestCase):
-    MINIMAL_SCHEMA = """namespace SearchKernel.V2;
+    MINIMAL_SCHEMA = """namespace SearchKernel.Wire;
 
 enum Relation:ubyte {
   Unspecified = 0,
@@ -341,7 +341,7 @@ root_type SearchResult;
         self.assertEqual(set(closure["ResultNodeKind"][1]), {"Hit", "ResultGroup"})
 
     def test_vector_union_discriminator_is_not_a_logical_field(self) -> None:
-        schema = """namespace SearchKernel.V2;
+        schema = """namespace SearchKernel.Wire;
 
 table Hit {
   id:string;

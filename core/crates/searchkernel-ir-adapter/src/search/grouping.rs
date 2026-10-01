@@ -1,4 +1,4 @@
-//! Lower V2 grouping into either the existing facet path or the supported
+//! Lower portable grouping into either the existing facet path or the supported
 //! recursive native grouping-plan subset.
 
 use searchkernel_ir::{
@@ -40,7 +40,7 @@ pub(crate) fn lower_facets_into_request(
 
 /// Recognize the exact structured grouping emitted by the Rust facet facade:
 /// `all(group(attribute(field)), each(max(limit), order(...), output(count)))`.
-/// Other valid V2 grouping programs remain unsupported until they have a
+/// Other valid portable grouping programs remain unsupported until they have a
 /// faithful native lowering.
 #[cfg(test)]
 pub(crate) fn lower_facet_groupings(
@@ -78,7 +78,7 @@ pub(crate) fn lower_groupings(
                         PortableError::unsupported(
                             "grouping_not_supported",
                             Some(format!("grouping[{index}]")),
-                            "the V2 grouping program cannot be represented by the supported native grouping primitives",
+                            "the portable grouping program cannot be represented by the supported native grouping primitives",
                         )
                     } else {
                         error

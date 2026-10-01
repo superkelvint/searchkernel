@@ -95,9 +95,10 @@ fn low_level(root: &Json, case: &Json, config: &Path, data: &Path) -> String {
 
 fn context(definition: &Path) -> Arc<IndexContext> {
     let bytes = fs::read(definition).expect("read definition");
-    let root =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
-            .expect("parse definition");
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&bytes)
+    .expect("parse definition");
     Arc::new(IndexContext::from_definition_ir(
         index_definition_to_ir(root).expect("definition IR"),
     ))
@@ -128,12 +129,12 @@ fn envelope(case: &Json, operation: &str) -> Vec<u8> {
         json!({"document":{"id":id,"fields":[{"key":field,"value":portable_value(case)}]}})
     };
     let payload_type = if operation == "patch" {
-        "SearchKernel_V2_PatchRequest"
+        "SearchKernel_Wire_PatchRequest"
     } else {
-        "SearchKernel_V2_InsertRequest"
+        "SearchKernel_Wire_InsertRequest"
     };
     let mut bytes = serde_json::to_vec(
-        &json!({"protocol_version":2,"payload_type":payload_type,"payload":payload}),
+        &json!({"protocol_version":1,"payload_type":payload_type,"payload":payload}),
     )
     .expect("encode negative request");
     if case["portable_non_finite"] == true {
@@ -148,9 +149,10 @@ fn envelope(case: &Json, operation: &str) -> Vec<u8> {
 fn portable(case: &Json, definition: &Path, config: &Path, data: &Path) -> String {
     if !config.join("searchkernel-schema.json").exists() {
         let bytes = fs::read(definition).expect("read definition");
-        let root =
-            searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
-                .expect("parse definition");
+        let root = searchkernel_ir::__flatbuffers::root::<
+            searchkernel_ir::wire::v1::schema::IndexDefinition,
+        >(&bytes)
+        .expect("parse definition");
         let ir = index_definition_to_ir(root).expect("definition IR");
         searchkernel_ir_adapter::compile_index_definition(&ir, config).expect("compile definition");
     }
@@ -159,7 +161,7 @@ fn portable(case: &Json, definition: &Path, config: &Path, data: &Path) -> Strin
     let dispatcher = Dispatcher::new(context(definition), BackendSession::from_backend(backend));
     if case["operation"] == "patch" {
         let baseline = json!({"document":{"id":"id:ns:typea::negative","fields":[{"key":"embedding","value":{"kind_type":"TensorValue","kind":{"type_spec":"tensor<float>(x[2])","payload_type":"DenseTensorValues","payload":{"values":[1.0,0.0]}}}}]}});
-        let baseline_bytes = serde_json::to_vec(&json!({"protocol_version":2,"payload_type":"SearchKernel_V2_InsertRequest","payload":baseline})).expect("serialize baseline");
+        let baseline_bytes = serde_json::to_vec(&json!({"protocol_version":1,"payload_type":"SearchKernel_Wire_InsertRequest","payload":baseline})).expect("serialize baseline");
         let request = request_json_to_flatbuffer(&baseline_bytes).expect("encode baseline");
         dispatcher.dispatch(&request).expect("dispatch baseline");
     }

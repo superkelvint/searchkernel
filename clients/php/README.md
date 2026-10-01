@@ -84,7 +84,7 @@ lifecycle on an externally managed `searchkerneld`. `Index::create()` creates
 a logical target from an `IndexDefinition`, `Index::open()` reopens an existing
 target, and `Index::deleteTarget()` removes it. Ordinary operations carry the
 same target in the canonical request envelope. PHP schema builders only
-construct the V2 `IndexDefinition`; validation, defaults, and backend
+construct the `IndexDefinition`; validation, defaults, and backend
 semantics remain server-owned. Local handle-close ownership semantics are not
 introduced by this slice.
 

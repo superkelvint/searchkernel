@@ -206,7 +206,7 @@ class ClientContractTests(unittest.TestCase):
     @staticmethod
     def _lifecycle_payloads(operations, suffix):
         return tuple(
-            f"SearchKernel.V2.{operation}{suffix}"
+            f"SearchKernel.Wire.{operation}{suffix}"
             for operation in operations
         )
 

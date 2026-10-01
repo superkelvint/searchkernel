@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 #[cfg(feature = "native")]
 use crate::schema::{Analyzer, Field, IndexDefinition, SearchField};
 #[cfg(feature = "native")]
-use searchkernel_ir::api;
+use searchkernel_ir::wire::v1::schema as api;
 #[cfg(feature = "native")]
 use searchkernel_ir::IndexContext;
 #[cfg(feature = "native")]
@@ -89,7 +89,7 @@ impl IndexManifest {
                 "resolved_engine_config_identity": config_identity(config)?,
             }),
             portable_definition_bytes: portable_definition_bytes.to_vec(),
-            resolved_definition_bytes: searchkernel_ir::index_definition_ir_to_api(
+            resolved_definition_bytes: searchkernel_ir::wire::v1::index_definition_ir_to_api(
                 resolved_context.definition(),
             ),
         })
@@ -463,7 +463,7 @@ impl IndexManifest {
         .map_err(|error| {
             Error::corrupt_index(format!("invalid resolved index definition: {error}"))
         })?;
-        searchkernel_ir::index_definition_to_ir(root)
+        searchkernel_ir::wire::v1::index_definition_to_ir(root)
             .map_err(|_| Error::incompatible_index("resolved schema snapshot is not compatible"))
     }
 

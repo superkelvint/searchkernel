@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Make recursive flatc Python object-api modules importable.
+"""Keep recursive flatc Python object-api imports inside the client package.
 
-flatc currently emits eager imports for every referenced table.  The V2 value
+flatc currently emits eager imports for every referenced table.  The recursive value
 model is recursive (Value -> ValueObject -> ValueEntry -> Value), so those
 imports otherwise form a Python import cycle.  This is a mechanical generated
 output post-processing step; it does not know any schema fields or protocol
@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 
+PACKAGE = "searchkernel._wire.v1.generated.SearchKernel"
 DIRECT_IMPORT = re.compile(r"^(from (SearchKernel\.[A-Za-z0-9_.]+) import ([A-Za-z0-9_]+))$")
 MODULE_IMPORT = re.compile(r"^import (SearchKernel\.[A-Za-z0-9_.]+)$")
 
@@ -25,30 +26,36 @@ def patch(path: Path) -> None:
     has_lazy_module_import = False
     result: list[str] = []
     for line in lines:
+        indented_module = re.match(r"^(\s*)import SearchKernel\.[A-Za-z0-9_.]+$", line)
+        if indented_module:
+            result.append(f"{indented_module.group(1)}from {PACKAGE.rsplit('.', 1)[0]} import SearchKernel")
+            continue
         direct = DIRECT_IMPORT.match(line)
         if direct:
             _, module, attribute = direct.groups()
             result.append(
-                "from SearchKernel._lazy import lazy_type as _lazy_type"
+                f"from {PACKAGE}._lazy import lazy_type as _lazy_type"
                 if not has_lazy_type_import
                 else ""
             )
             has_lazy_type_import = True
-            result.append(f'_lazy_{attribute} = _lazy_type("{module}", "{attribute}")')
+            module_name = f'{PACKAGE}.{module.removeprefix("SearchKernel.")}'
+            result.append(f'_lazy_{attribute} = _lazy_type("{module_name}", "{attribute}")')
             result.append(f'{attribute} = _lazy_{attribute}')
             continue
         module = MODULE_IMPORT.match(line)
         if module:
             result.append(
-                "from SearchKernel._lazy import lazy_module as _lazy_module"
+                f"from {PACKAGE}._lazy import lazy_module as _lazy_module"
                 if not has_lazy_module_import
                 else ""
             )
             has_lazy_module_import = True
-            result.append(f'_lazy_{module.group(1).rsplit(".", 1)[-1]} = _lazy_module("{module.group(1)}")')
+            module_name = f'{PACKAGE}.{module.group(1).removeprefix("SearchKernel.")}'
+            result.append(f'_lazy_{module.group(1).rsplit(".", 1)[-1]} = _lazy_module("{module_name}")')
             continue
         result.append(line)
-    path.write_text("import SearchKernel\n\n" + "\n".join(result) + "\n")
+    path.write_text(f"import {PACKAGE} as SearchKernel\n\n" + "\n".join(result) + "\n")
 
 
 def main() -> None:
@@ -83,7 +90,7 @@ def main() -> None:
         "def __getattr__(name):\n"
         "    return importlib.import_module(f\"{__name__}.{name}\")\n"
     )
-    for package in (root / "SearchKernel", root / "SearchKernel" / "V2", root / "SearchKernel" / "Protocol", root / "SearchKernel" / "Protocol" / "V2"):
+    for package in (root / "SearchKernel", root / "SearchKernel" / "Wire", root / "SearchKernel" / "Protocol"):
         (package / "__init__.py").write_text(package_code)
     for path in root.rglob("*.py"):
         if path.name not in {"__init__.py", "_lazy.py"}:

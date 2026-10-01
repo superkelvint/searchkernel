@@ -1,7 +1,7 @@
 # Search Kernel TypeScript client
 
 `@searchkernel/client` is the browser-capable TypeScript facade over Search
-Kernel's canonical V2 FlatBuffers contract. It expects a gRPC-Web-compatible
+Kernel's canonical FlatBuffers contract. It expects a gRPC-Web-compatible
 `SearchKernel.Execute(FlatBufferFrame)` endpoint; configuring the daemon for
 gRPC-Web is outside this package.
 
@@ -67,18 +67,6 @@ await index.upsert({
 An ordinary JavaScript string remains a Search Kernel string; it is never
 silently reinterpreted as an integer. Decoded `int64`/`uint64` values are
 returned as `bigint`.
-
-## Low-level generated API
-
-Capabilities represented by the canonical FlatBuffers contract but not yet
-wrapped ergonomically remain available through the supported low-level export:
-
-```ts
-import { SearchRequestT, ValueT } from "@searchkernel/client/low-level";
-```
-
-This is a generated wire-model escape hatch only; it does not define separate
-client-side Search Kernel semantics.
 
 ## Target serverless deployment architecture
 
@@ -269,7 +257,7 @@ ranking, grouping, or query semantics.
 
 ## Managed local Node.js usage
 
-Browser and Node clients select a logical index through canonical V2 request envelopes. Use `Index.create(endpoint, target, definition)`, `Index.open(endpoint, target)`, `Index.delete(endpoint, target)`, or `Index.connect(endpoint, target)` with an externally managed daemon. Node also retains path-based `create(path, options)`, `open(path)`, and `delete(path)` helpers. Managed-local keeps daemon authority inside a dedicated `.searchkernel-managed` data root beside the caller path, derives a stable canonical target from the full path, and shares one daemon across sibling indexes. Existing legacy path-owned indexes are validated and migrated into that managed root on first open; arbitrary path names remain valid. Installed npm packages do not bundle the daemon, so managed-local calls require `SEARCHKERNEL_LOCAL_HOST` to name an existing binary. A source checkout may use the development fallback `target/host/debug/searchkerneld`.
+Browser and Node clients select a logical index through canonical request envelopes. Use `Index.create(endpoint, target, definition)`, `Index.open(endpoint, target)`, or `Index.connect(endpoint, target)` with an externally managed daemon. Node also retains path-based `create(path, options)` and `open(path)` helpers. Managed-local keeps daemon authority inside a dedicated `.searchkernel-managed` data root beside the caller path, derives a stable canonical target from the full path, and shares one daemon across sibling indexes. Existing legacy path-owned indexes are validated and migrated into that managed root on first open; arbitrary path names remain valid. Installed npm packages do not bundle the daemon, so managed-local calls require `SEARCHKERNEL_LOCAL_HOST` to name an existing binary. A source checkout may use the development fallback `target/host/debug/searchkerneld`.
 
 The complete managed-local showcase lives at `examples/try_searchkernel_client_api_e2e.ts`. After building `searchkerneld`, run it with:
 

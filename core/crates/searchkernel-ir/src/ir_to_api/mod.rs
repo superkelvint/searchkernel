@@ -2,7 +2,7 @@
 
 use crate::error::{ErrorCode, PortableError};
 use crate::model as ir;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 
 mod error;
 mod filter;

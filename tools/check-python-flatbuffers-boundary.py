@@ -23,7 +23,7 @@ def main() -> int:
 
     forbidden = {"searchkernel.wire", "searchkernel.legacy_json", "searchkernel.generated.models"}
     for path in PACKAGE.rglob("*.py"):
-        if "_wire_generated" in path.parts:
+        if "generated" in path.parts and "_wire" in path.parts:
             continue
         tree = ast.parse(path.read_text(), filename=str(path))
         for node in ast.walk(tree):

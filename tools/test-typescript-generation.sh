@@ -7,7 +7,7 @@ PATH="$(dirname -- "$node"):$PATH"
 export PATH
 npm=$(bash "$root/tools/resolve-node.sh" npm)
 client="$root/clients/typescript"
-generated="$client/src/generated"
+generated="$client/src/_wire/v1/generated/flatbuffers"
 backup=$(mktemp -d)
 failures=0
 

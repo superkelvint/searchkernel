@@ -1,7 +1,7 @@
 //! Generate and check the canonical encoded result corpus.
 
 use flatbuffers::FlatBufferBuilder;
-use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_protocol::protocol::v1 as wire;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -14,14 +14,14 @@ const RESPONSE_IDENTIFIER: &str = "SKRS";
 
 fn encode_fixture(result: &searchkernel_ir::SearchResult) -> Vec<u8> {
     let mut builder = FlatBufferBuilder::new();
-    let payload = searchkernel_ir::search_result_offset(&mut builder, result)
+    let payload = searchkernel_ir::wire::v1::search_result_offset(&mut builder, result)
         .expect("canonical result fixture must validate")
         .as_union_value();
     let envelope = wire::ResponseEnvelope::create(
         &mut builder,
         &wire::ResponseEnvelopeArgs {
-            protocol_version: searchkernel_protocol::PROTOCOL_VERSION,
-            payload_type: wire::ResponsePayload::SearchKernel_V2_SearchResult,
+            protocol_version: searchkernel_protocol::protocol::v1::PROTOCOL_VERSION,
+            payload_type: wire::ResponsePayload::SearchKernel_Wire_SearchResult,
             payload: Some(payload),
         },
     );

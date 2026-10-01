@@ -8,9 +8,10 @@
 
 use crate::{Index, IndexDefinition, Result};
 use searchkernel_ir::{
-    self as ir, Backend, BackendSession, ErrorCode, IndexContext, PortableError,
+    self as ir, wire::v1 as wire_ir, Backend, BackendSession, ErrorCode, IndexContext,
+    PortableError,
 };
-use searchkernel_protocol::{protocol::v2 as wire, PROTOCOL_VERSION};
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use searchkernel_rpc::{
     rpc::{search_kernel_client::SearchKernelClient, FlatBufferFrame},
     INDEX_GENERATION_METADATA_KEY, MAX_GRPC_MESSAGE_SIZE,
@@ -454,7 +455,7 @@ fn request_transport_error(
 fn status_error(status: tonic::Status, retry_safe: bool) -> PortableError {
     let (code, transient, delivery_ambiguous) = match status.code() {
         // searchkerneld reserves these statuses for failures before portable
-        // backend execution. Portable semantic errors travel inside the V2
+        // backend execution. Portable semantic errors travel inside the current
         // response envelope instead.
         tonic::Code::InvalidArgument => (ErrorCode::Internal, false, false),
         tonic::Code::FailedPrecondition => (ErrorCode::FailedPrecondition, false, false),
@@ -522,18 +523,23 @@ impl RemoteBackend {
         let address = RemoteAddress::parse(endpoint)?;
         let transport = Arc::new(RemoteTransport::connect(address, options)?);
         let backend = Self::new(transport, None, None);
-        let response = backend.call(ir::encode_describe_request(), true)?;
-        let envelope = expected_response(
-            &response,
-            wire::ResponsePayload::SearchKernel_V2_DescribeResult,
-        )?;
+        let response = backend.call(wire_ir::encode_describe_request(), true)?;
+        let envelope = response_envelope(&response)?;
+        if let Some(error) = response_error(envelope)? {
+            return Err(error);
+        }
+        if envelope.payload_type() != wire::ResponsePayload::SearchKernel_Wire_DescribeResult {
+            return Err(invalid_remote_response(
+                "describe response has the wrong payload kind",
+            ));
+        }
         let describe = envelope
-            .payload_as_search_kernel_v2_describe_result()
+            .payload_as_search_kernel_wire_describe_result()
             .ok_or_else(|| invalid_remote_response("describe response payload is missing"))?;
         let definition = describe.index().ok_or_else(|| {
             invalid_remote_response("describe response index definition is missing")
         })?;
-        let definition = ir::index_definition_to_ir(definition).map_err(|error| {
+        let definition = wire_ir::index_definition_to_ir(definition).map_err(|error| {
             invalid_remote_response(format!(
                 "describe response contains an invalid index definition: {}",
                 error.message
@@ -619,28 +625,28 @@ fn response_envelope(payload: &[u8]) -> ir::Result<wire::ResponseEnvelope<'_>> {
 }
 
 fn response_error(envelope: wire::ResponseEnvelope<'_>) -> ir::Result<Option<PortableError>> {
-    if envelope.payload_type() != wire::ResponsePayload::SearchKernel_V2_Error {
+    if envelope.payload_type() != wire::ResponsePayload::SearchKernel_Wire_Error {
         return Ok(None);
     }
     let error = envelope
-        .payload_as_search_kernel_v2_error()
+        .payload_as_search_kernel_wire_error()
         .ok_or_else(|| invalid_remote_response("portable error payload is missing"))?;
-    ir::portable_error_from_api(error).map(Some)
+    wire_ir::portable_error_from_api(error).map(Some)
 }
 
 impl Backend for RemoteBackend {
     fn insert(&self, request: ir::InsertRequestIr) -> ir::Result<ir::InsertResult> {
         let payload = self.call(
-            ir::encode_insert_request_for_target(&request, self.target())?,
+            wire_ir::encode_insert_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope = expected_response(
             &payload,
-            wire::ResponsePayload::SearchKernel_V2_InsertResult,
+            wire::ResponsePayload::SearchKernel_Wire_InsertResult,
         )?;
-        let result = ir::insert_result_from_api(
+        let result = wire_ir::insert_result_from_api(
             envelope
-                .payload_as_search_kernel_v2_insert_result()
+                .payload_as_search_kernel_wire_insert_result()
                 .ok_or_else(|| invalid_remote_response("insert result payload is missing"))?,
         )?;
         validate_response_id("insert", request.document().id().as_str(), &result.id)?;
@@ -649,16 +655,16 @@ impl Backend for RemoteBackend {
 
     fn upsert(&self, request: ir::UpsertRequestIr) -> ir::Result<ir::UpsertResult> {
         let payload = self.call(
-            ir::encode_upsert_request_for_target(&request, self.target())?,
+            wire_ir::encode_upsert_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope = expected_response(
             &payload,
-            wire::ResponsePayload::SearchKernel_V2_UpsertResult,
+            wire::ResponsePayload::SearchKernel_Wire_UpsertResult,
         )?;
-        let result = ir::upsert_result_from_api(
+        let result = wire_ir::upsert_result_from_api(
             envelope
-                .payload_as_search_kernel_v2_upsert_result()
+                .payload_as_search_kernel_wire_upsert_result()
                 .ok_or_else(|| invalid_remote_response("upsert result payload is missing"))?,
         )?;
         validate_response_id("upsert", request.document().id().as_str(), &result.id)?;
@@ -667,14 +673,16 @@ impl Backend for RemoteBackend {
 
     fn patch(&self, request: ir::PatchRequestIr) -> ir::Result<ir::PatchResult> {
         let payload = self.call(
-            ir::encode_patch_request_for_target(&request, self.target())?,
+            wire_ir::encode_patch_request_for_target(&request, self.target())?,
             false,
         )?;
-        let envelope =
-            expected_response(&payload, wire::ResponsePayload::SearchKernel_V2_PatchResult)?;
-        let result = ir::patch_result_from_api(
+        let envelope = expected_response(
+            &payload,
+            wire::ResponsePayload::SearchKernel_Wire_PatchResult,
+        )?;
+        let result = wire_ir::patch_result_from_api(
             envelope
-                .payload_as_search_kernel_v2_patch_result()
+                .payload_as_search_kernel_wire_patch_result()
                 .ok_or_else(|| invalid_remote_response("patch result payload is missing"))?,
         )?;
         validate_response_id("patch", request.id().as_str(), &result.id)?;
@@ -683,16 +691,16 @@ impl Backend for RemoteBackend {
 
     fn update(&self, request: ir::UpdateRequestIr) -> ir::Result<ir::UpdateResult> {
         let payload = self.call(
-            ir::encode_update_request_for_target(&request, self.target())?,
+            wire_ir::encode_update_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope = expected_response(
             &payload,
-            wire::ResponsePayload::SearchKernel_V2_UpdateResult,
+            wire::ResponsePayload::SearchKernel_Wire_UpdateResult,
         )?;
-        let result = ir::update_result_from_api(
+        let result = wire_ir::update_result_from_api(
             envelope
-                .payload_as_search_kernel_v2_update_result()
+                .payload_as_search_kernel_wire_update_result()
                 .ok_or_else(|| invalid_remote_response("update result payload is missing"))?,
         )?;
         validate_response_id("update", request.id().as_str(), &result.id)?;
@@ -701,16 +709,16 @@ impl Backend for RemoteBackend {
 
     fn delete(&self, request: ir::DeleteRequestIr) -> ir::Result<ir::DeleteResult> {
         let payload = self.call(
-            ir::encode_delete_request_for_target(&request, self.target())?,
+            wire_ir::encode_delete_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope = expected_response(
             &payload,
-            wire::ResponsePayload::SearchKernel_V2_DeleteResult,
+            wire::ResponsePayload::SearchKernel_Wire_DeleteResult,
         )?;
-        let result = ir::delete_result_from_api(
+        let result = wire_ir::delete_result_from_api(
             envelope
-                .payload_as_search_kernel_v2_delete_result()
+                .payload_as_search_kernel_wire_delete_result()
                 .ok_or_else(|| invalid_remote_response("delete result payload is missing"))?,
         )?;
         validate_response_id("delete", request.id().as_str(), &result.id)?;
@@ -719,14 +727,14 @@ impl Backend for RemoteBackend {
 
     fn get(&self, request: ir::GetRequestIr) -> ir::Result<ir::GetResult> {
         let payload = self.call(
-            ir::encode_get_request_for_target(&request, self.target())?,
+            wire_ir::encode_get_request_for_target(&request, self.target())?,
             true,
         )?;
         let envelope =
-            expected_response(&payload, wire::ResponsePayload::SearchKernel_V2_GetResult)?;
-        let result = ir::get_result_from_api(
+            expected_response(&payload, wire::ResponsePayload::SearchKernel_Wire_GetResult)?;
+        let result = wire_ir::get_result_from_api(
             envelope
-                .payload_as_search_kernel_v2_get_result()
+                .payload_as_search_kernel_wire_get_result()
                 .ok_or_else(|| invalid_remote_response("get result payload is missing"))?,
         )?;
         if let Some(document) = &result.document {
@@ -737,32 +745,32 @@ impl Backend for RemoteBackend {
 
     fn search(&self, request: ir::SearchRequestIr) -> ir::Result<ir::SearchResult> {
         let payload = self.call(
-            ir::encode_search_request_for_target(&request, self.target())?,
+            wire_ir::encode_search_request_for_target(&request, self.target())?,
             true,
         )?;
         let envelope = expected_response(
             &payload,
-            wire::ResponsePayload::SearchKernel_V2_SearchResult,
+            wire::ResponsePayload::SearchKernel_Wire_SearchResult,
         )?;
-        ir::search_result_from_api(
+        wire_ir::search_result_from_api(
             envelope
-                .payload_as_search_kernel_v2_search_result()
+                .payload_as_search_kernel_wire_search_result()
                 .ok_or_else(|| invalid_remote_response("search result payload is missing"))?,
         )
     }
 
     fn analyze(&self, request: ir::AnalyzeRequestIr) -> ir::Result<ir::AnalyzeResult> {
         let payload = self.call(
-            ir::encode_analyze_request_for_target(&request, self.target())?,
+            wire_ir::encode_analyze_request_for_target(&request, self.target())?,
             true,
         )?;
         let envelope = expected_response(
             &payload,
-            wire::ResponsePayload::SearchKernel_V2_AnalyzeResult,
+            wire::ResponsePayload::SearchKernel_Wire_AnalyzeResult,
         )?;
-        ir::analyze_result_from_api(
+        wire_ir::analyze_result_from_api(
             envelope
-                .payload_as_search_kernel_v2_analyze_result()
+                .payload_as_search_kernel_wire_analyze_result()
                 .ok_or_else(|| invalid_remote_response("analyze result payload is missing"))?,
         )
     }
@@ -818,22 +826,22 @@ impl RemoteClient {
         let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
         let input = crate::schema::index_definition_to_input(&definition)?;
-        let request = ir::encode_create_index_request(target, &input);
+        let request = wire_ir::encode_create_index_request(target, &input);
         let response = self
             .transport
             .call(request, false, None)
             .map_err(crate::Error::from_ir)?;
+        let envelope = self.response(
+            &response.payload,
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+        )?;
         let generation = response.generation.clone().ok_or_else(|| {
             crate::Error::from_ir(invalid_remote_response(
                 "create-index response is missing target generation metadata",
             ))
         })?;
-        let envelope = self.response(
-            &response.payload,
-            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
-        )?;
         let result = envelope
-            .payload_as_search_kernel_v2_create_index_result()
+            .payload_as_search_kernel_wire_create_index_result()
             .ok_or_else(|| {
                 crate::Error::from_ir(invalid_remote_response("create result payload is missing"))
             })?;
@@ -849,22 +857,22 @@ impl RemoteClient {
     pub fn open_index(&self, target: impl AsRef<str>) -> Result<Index> {
         let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
-        let request = ir::encode_open_index_request(target);
+        let request = wire_ir::encode_open_index_request(target);
         let response = self
             .transport
             .call(request, true, None)
             .map_err(crate::Error::from_ir)?;
+        let envelope = self.response(
+            &response.payload,
+            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
+        )?;
         let generation = response.generation.clone().ok_or_else(|| {
             crate::Error::from_ir(invalid_remote_response(
                 "open-index response is missing target generation metadata",
             ))
         })?;
-        let envelope = self.response(
-            &response.payload,
-            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
-        )?;
         let result = envelope
-            .payload_as_search_kernel_v2_open_index_result()
+            .payload_as_search_kernel_wire_open_index_result()
             .ok_or_else(|| {
                 crate::Error::from_ir(invalid_remote_response("open result payload is missing"))
             })?;
@@ -880,17 +888,17 @@ impl RemoteClient {
     pub fn delete_index(&self, target: impl AsRef<str>) -> Result<()> {
         let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
-        let request = ir::encode_delete_index_request(target);
+        let request = wire_ir::encode_delete_index_request(target);
         let response = self
             .transport
             .call(request, false, None)
             .map_err(crate::Error::from_ir)?;
         let envelope = self.response(
             &response.payload,
-            wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
         )?;
         envelope
-            .payload_as_search_kernel_v2_delete_index_result()
+            .payload_as_search_kernel_wire_delete_index_result()
             .ok_or_else(|| {
                 crate::Error::from_ir(invalid_remote_response(
                     "delete-index result payload is missing",
@@ -959,10 +967,10 @@ impl RemoteClient {
     fn index_from_api_definition(
         &self,
         target: &str,
-        definition: searchkernel_protocol::v2::IndexDefinition<'_>,
+        definition: wire::IndexDefinition<'_>,
         generation: String,
     ) -> Result<Index> {
-        let definition = ir::index_definition_to_ir(definition).map_err(|error| {
+        let definition = wire_ir::index_definition_to_ir(definition).map_err(|error| {
             crate::Error::from_ir(invalid_remote_response(format!(
                 "lifecycle result contains an invalid index definition: {}",
                 error.message

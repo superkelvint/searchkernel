@@ -107,43 +107,43 @@ final class RecordingTransport implements Transport
         $payload = is_array($request['payload'] ?? null) ? $request['payload'] : [];
 
         $result = match ($requestType) {
-            'SearchKernel_V2_InsertRequest' => [
-                'payload_type' => 'SearchKernel_V2_InsertResult',
+            'SearchKernel_Wire_InsertRequest' => [
+                'payload_type' => 'SearchKernel_Wire_InsertResult',
                 'payload' => ['id' => $payload['document']['id'] ?? ''],
             ],
-            'SearchKernel_V2_UpsertRequest' => [
-                'payload_type' => 'SearchKernel_V2_UpsertResult',
+            'SearchKernel_Wire_UpsertRequest' => [
+                'payload_type' => 'SearchKernel_Wire_UpsertResult',
                 'payload' => ['id' => $payload['document']['id'] ?? ''],
             ],
-            'SearchKernel_V2_GetRequest' => [
-                'payload_type' => 'SearchKernel_V2_GetResult',
+            'SearchKernel_Wire_GetRequest' => [
+                'payload_type' => 'SearchKernel_Wire_GetResult',
                 'payload' => ['document' => null],
             ],
-            'SearchKernel_V2_DeleteRequest' => [
-                'payload_type' => 'SearchKernel_V2_DeleteResult',
+            'SearchKernel_Wire_DeleteRequest' => [
+                'payload_type' => 'SearchKernel_Wire_DeleteResult',
                 'payload' => ['id' => $payload['id'] ?? '', 'deleted' => true],
             ],
-            'SearchKernel_V2_PatchRequest' => [
-                'payload_type' => 'SearchKernel_V2_PatchResult',
+            'SearchKernel_Wire_PatchRequest' => [
+                'payload_type' => 'SearchKernel_Wire_PatchResult',
                 'payload' => ['id' => $payload['id'] ?? ''],
             ],
-            'SearchKernel_V2_UpdateRequest' => [
-                'payload_type' => 'SearchKernel_V2_UpdateResult',
+            'SearchKernel_Wire_UpdateRequest' => [
+                'payload_type' => 'SearchKernel_Wire_UpdateResult',
                 'payload' => ['id' => $payload['id'] ?? ''],
             ],
-            'SearchKernel_V2_SearchRequest' => [
-                'payload_type' => 'SearchKernel_V2_SearchResult',
+            'SearchKernel_Wire_SearchRequest' => [
+                'payload_type' => 'SearchKernel_Wire_SearchResult',
                 'payload' => [
                     'root' => null,
                     'total_hits' => ['value' => 0, 'relation' => 'Exact'],
                 ],
             ],
-            'SearchKernel_V2_DescribeRequest' => [
-                'payload_type' => 'SearchKernel_V2_DescribeResult',
+            'SearchKernel_Wire_DescribeRequest' => [
+                'payload_type' => 'SearchKernel_Wire_DescribeResult',
                 'payload' => ['index' => ['name' => 'test']],
             ],
-            'SearchKernel_V2_AnalyzeRequest' => [
-                'payload_type' => 'SearchKernel_V2_AnalyzeResult',
+            'SearchKernel_Wire_AnalyzeRequest' => [
+                'payload_type' => 'SearchKernel_Wire_AnalyzeResult',
                 'payload' => ['tokens' => [[
                     'surface' => 'Running',
                     'term' => 'run',
@@ -152,27 +152,27 @@ final class RecordingTransport implements Transport
                     'end_byte' => 7,
                 ]]],
             ],
-            'SearchKernel_V2_InspectQueryRequest' => [
-                'payload_type' => 'SearchKernel_V2_InspectQueryResult',
+            'SearchKernel_Wire_InspectQueryRequest' => [
+                'payload_type' => 'SearchKernel_Wire_InspectQueryResult',
                 'payload' => ['resolved_request' => $payload['request'] ?? []],
             ],
-            'SearchKernel_V2_CreateIndexRequest' => [
-                'payload_type' => 'SearchKernel_V2_CreateIndexResult',
+            'SearchKernel_Wire_CreateIndexRequest' => [
+                'payload_type' => 'SearchKernel_Wire_CreateIndexResult',
                 'payload' => ['index' => $payload['definition'] ?? []],
             ],
-            'SearchKernel_V2_OpenIndexRequest' => [
-                'payload_type' => 'SearchKernel_V2_OpenIndexResult',
+            'SearchKernel_Wire_OpenIndexRequest' => [
+                'payload_type' => 'SearchKernel_Wire_OpenIndexResult',
                 'payload' => ['index' => ['fields' => []]],
             ],
-            'SearchKernel_V2_DeleteIndexRequest' => [
-                'payload_type' => 'SearchKernel_V2_DeleteIndexResult',
+            'SearchKernel_Wire_DeleteIndexRequest' => [
+                'payload_type' => 'SearchKernel_Wire_DeleteIndexResult',
                 'payload' => [],
             ],
             default => throw new RuntimeException('unexpected test request type: ' . $requestType),
         };
 
         return [
-            'protocol_version' => 2,
+            'protocol_version' => 1,
             ...$result,
         ];
     }
@@ -311,8 +311,8 @@ $malformedFacadeCases = [
 ];
 foreach ($malformedFacadeCases as [$resultType, $operation, $payload]) {
     $indexWithMalformedResult = new Index(new FixedResponseTransport([
-        'protocol_version' => 2,
-        'payload_type' => 'SearchKernel_V2_' . $resultType,
+        'protocol_version' => 1,
+        'payload_type' => 'SearchKernel_Wire_' . $resultType,
         'payload' => $payload,
     ]));
     throws(
@@ -333,8 +333,8 @@ $getFieldCases = [
 ];
 foreach ($getFieldCases as $label => $fields) {
     $malformedGet = new Index(new FixedResponseTransport([
-        'protocol_version' => 2,
-        'payload_type' => 'SearchKernel_V2_GetResult',
+        'protocol_version' => 1,
+        'payload_type' => 'SearchKernel_Wire_GetResult',
         'payload' => ['document' => ['id' => 'doc-1', 'fields' => $fields]],
     ]));
     throws(
@@ -344,8 +344,8 @@ foreach ($getFieldCases as $label => $fields) {
     );
 }
 $validGet = new Index(new FixedResponseTransport([
-    'protocol_version' => 2,
-    'payload_type' => 'SearchKernel_V2_GetResult',
+    'protocol_version' => 1,
+    'payload_type' => 'SearchKernel_Wire_GetResult',
     'payload' => ['document' => [
         'id' => 'doc-1',
         'fields' => [
@@ -385,7 +385,7 @@ same(
     'patch result id',
 );
 $patch = $transport->requests[array_key_last($transport->requests)];
-same('SearchKernel_V2_PatchRequest', $patch['payload_type'], 'patch envelope discriminator');
+same('SearchKernel_Wire_PatchRequest', $patch['payload_type'], 'patch envelope discriminator');
 same('SetField', $patch['payload']['operations'][0]['operation_type'], 'patch set discriminator');
 same('UnsetField', $patch['payload']['operations'][1]['operation_type'], 'patch unset discriminator');
 
@@ -607,13 +607,13 @@ $resolved = $index->search('inspect me')->limit(5)->inspect();
 same('SearchKernelTextQuery', $resolved['query']['source_type'], 'inspect returns server-resolved request');
 same(['value' => 5], $resolved['limit'], 'inspect sends configured search controls');
 $inspectRequest = $transport->requests[array_key_last($transport->requests)];
-same('SearchKernel_V2_InspectQueryRequest', $inspectRequest['payload_type'], 'inspect request discriminator');
+same('SearchKernel_Wire_InspectQueryRequest', $inspectRequest['payload_type'], 'inspect request discriminator');
 
 $tokens = $index->analyze('Running')->field('title')->language('en')->execute();
 same('run', $tokens[0]['term'], 'analyze result term');
 same(7, $tokens[0]['end_byte'], 'analyze result byte span');
 $analyzeRequest = $transport->requests[array_key_last($transport->requests)];
-same('SearchKernel_V2_AnalyzeRequest', $analyzeRequest['payload_type'], 'analyze request discriminator');
+same('SearchKernel_Wire_AnalyzeRequest', $analyzeRequest['payload_type'], 'analyze request discriminator');
 same('AnalyzeFieldTarget', $analyzeRequest['payload']['target']['target_type'], 'analyze field target');
 same('en', $analyzeRequest['payload']['language'], 'analyze language');
 
@@ -621,8 +621,8 @@ $badAnalyze = new Index(new class implements Transport {
     public function execute(array $request): array
     {
         return [
-            'protocol_version' => 2,
-            'payload_type' => 'SearchKernel_V2_AnalyzeResult',
+            'protocol_version' => 1,
+            'payload_type' => 'SearchKernel_Wire_AnalyzeResult',
             'payload' => ['tokens' => [[
                 'surface' => 'bad',
                 'term' => 'bad',
@@ -766,8 +766,8 @@ same('opaque-token', $result->continuations['next'], 'continuation token remains
 
 try {
     Protocol::expectPayload([
-        'protocol_version' => 2,
-        'payload_type' => 'SearchKernel_V2_Error',
+        'protocol_version' => 1,
+        'payload_type' => 'SearchKernel_Wire_Error',
         'payload' => [
             'code' => 'InvalidArgument',
             'message' => 'bad request',
@@ -839,8 +839,8 @@ throws(
 throws(
     \UnexpectedValueException::class,
     static fn () => Protocol::expectPayload([
-        'protocol_version' => 2,
-        'payload_type' => 'SearchKernel_V2_Error',
+        'protocol_version' => 1,
+        'payload_type' => 'SearchKernel_Wire_Error',
         'payload' => [
             'code' => ['not-a-code'],
             'message' => 'bad request',
@@ -1122,8 +1122,8 @@ truth(
 // --------------------------------------------------------------------------
 
 $defaultDeleteIndex = new Index(new FixedResponseTransport([
-    'protocol_version' => 2,
-    'payload_type' => 'SearchKernel_V2_DeleteResult',
+    'protocol_version' => 1,
+    'payload_type' => 'SearchKernel_Wire_DeleteResult',
     'payload' => ['id' => 'doc-default'],
 ]));
 same(false, $defaultDeleteIndex->delete('doc-default'), 'omitted DeleteResult.deleted defaults false');
@@ -1136,8 +1136,8 @@ $defaultError = SearchKernelException::fromPayload([
 same(false, $defaultError->retryable, 'omitted Error.retryable defaults false');
 
 $defaultAnalyzeIndex = new Index(new FixedResponseTransport([
-    'protocol_version' => 2,
-    'payload_type' => 'SearchKernel_V2_AnalyzeResult',
+    'protocol_version' => 1,
+    'payload_type' => 'SearchKernel_Wire_AnalyzeResult',
     'payload' => ['tokens' => [[
         'surface' => 'fox',
         'term' => 'fox',

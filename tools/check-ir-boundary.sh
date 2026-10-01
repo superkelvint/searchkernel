@@ -22,10 +22,11 @@ if grep -nE 'searchkernel_protocol::.*(Insert|Upsert|Patch|Delete|Get|Search|Ana
 fi
 # Generated protocol types may appear only at the two conversion boundaries.
 # The crate-level `api` and hidden FlatBuffers re-exports are compatibility
-# entry points, not semantic-layer dependencies.  Directory exclusions are
-# deliberate: the IR refactor split both conversion modules into submodules.
+# entry points, not semantic-layer dependencies. The wire facade is itself a
+# conversion boundary, while the IR refactor split conversion code into two
+# modules; these paths are deliberately excluded from the semantic-layer scan.
 WIRE='searchkernel_protocol|flatbuffers::|api::'
-if grep -rEn --include='*.rs' --exclude='*_tests.rs' --exclude='lib.rs' \
+if grep -rEn --include='*.rs' --exclude='*_tests.rs' --exclude='lib.rs' --exclude='wire.rs' \
     --exclude-dir=api_to_ir --exclude-dir=ir_to_api "$WIRE" "$CORE"; then
   echo "generated protocol type interpreted past conversion boundary" >&2; exit 1
 fi

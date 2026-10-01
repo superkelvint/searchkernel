@@ -65,7 +65,7 @@ core/crates/searchkernel-protocol/
   Generated Rust views of the FlatBuffers schemas
 
 core/crates/searchkernel-dispatch/
-  Canonical V2 envelope validation, routing, and response construction
+  Canonical envelope validation, routing, and response construction
 
 core/crates/searchkernel-protocol/src/json.rs
   Generic standard FlatBuffers JSON ↔ BFBS boundary

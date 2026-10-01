@@ -349,7 +349,7 @@ run_ruby_tests() {
             ruby -S gem install --local --install-dir "$gem_home" \
                 "$package_dir/searchkernel.gem" --no-document >/dev/null
         GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
-            ruby -e 'require "rubygems"; Gem.use_paths(ENV.fetch("GEM_HOME"), [ENV.fetch("GEM_HOME")]); Gem::Specification.reset; gem "searchkernel"; require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 2;
+            ruby -e 'require "rubygems"; Gem.use_paths(ENV.fetch("GEM_HOME"), [ENV.fetch("GEM_HOME")]); Gem::Specification.reset; gem "searchkernel"; require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 1;
               v = SearchKernel::Value; abort unless v.decode(v.encode(v.uint64(2**64 - 1))) == 2**64 - 1;
               root = {"node_type" => "ResultGroup", "node" => {"children" => [
                 {"node_type" => "Hit", "node" => {"id" => "from-installed-gem"}}]}};
@@ -470,6 +470,7 @@ check_protocol() {
     bash "$ROOT/tools/check-python-flatbuffers-generated.sh"
     bash "$ROOT/tools/check-python-grpc.sh"
     "$PYTHON" "$ROOT/tools/test_python_dependency_contract.py"
+    "$PYTHON" "$ROOT/tools/test_searchkernel_bfbs.py"
     run_typescript_generation_check
 }
 
@@ -673,8 +674,14 @@ regen_protocol() {
     bash "$ROOT/tools/generate-flatbuffers-bfbs.sh"
     bash "$ROOT/tools/generate-searchkernel-rpc.sh"
     bash "$ROOT/tools/generate-python-flatbuffers.sh"
-    bash "$ROOT/tools/generate-python-grpc.sh"
+    PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
+        "$PYTHON" "$ROOT/tools/regenerate-request-fixtures.py" \
+        "$ROOT/core/crates/searchkernel-dispatch/tests/fixtures/portable/requests"
+    PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
+        "$PYTHON" "$ROOT/tools/regenerate-response-error-fixtures.py" \
+        "$ROOT/core/crates/searchkernel-dispatch/tests/fixtures/portable/responses"
     "$NPM" run generate --prefix "$ROOT/clients/typescript"
+    bash "$ROOT/tools/generate-python-grpc.sh"
 }
 
 regen_result_fixtures() {

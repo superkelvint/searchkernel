@@ -689,7 +689,7 @@ mod expanded_canonical_corpus {
     use std::collections::BTreeMap;
 
     use searchkernel_ir as ir;
-    use searchkernel_protocol::v2 as api;
+    use searchkernel_protocol::wire::v1 as api;
 
     fn result(root: ir::ResultNode, total_hits: u64) -> ir::SearchResult {
         ir::SearchResult {
@@ -1531,7 +1531,7 @@ mod expanded_canonical_corpus {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use searchkernel_protocol::protocol::v2 as wire;
+        use searchkernel_protocol::protocol::v1 as wire;
 
         #[test]
         fn corpus_is_fresh_named_and_covers_the_canonical_cases() {
@@ -1549,12 +1549,12 @@ mod expanded_canonical_corpus {
         #[test]
         fn every_fixture_survives_ir_to_flatbuffers() {
             for (name, expected) in canonical_result_fixtures() {
-                let bytes = searchkernel_ir::search_result_to_api(&expected)
+                let bytes = searchkernel_ir::wire::v1::search_result_to_api(&expected)
                     .unwrap_or_else(|error| panic!("fixture {name} must encode: {error:?}"));
                 let actual = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes)
                     .unwrap_or_else(|error| panic!("fixture {name} must decode: {error:?}"));
                 assert_api_search_result_matches(actual, &expected);
-                let decoded = searchkernel_ir::search_result_from_api(actual)
+                let decoded = searchkernel_ir::wire::v1::search_result_from_api(actual)
                     .unwrap_or_else(|error| panic!("fixture {name} must decode to IR: {error:?}"));
                 assert_eq!(decoded, expected, "IR round trip changed fixture {name}");
             }
@@ -1611,10 +1611,10 @@ mod expanded_canonical_corpus {
                     ]))),
                     metadata: BTreeMap::new(),
                 };
-                let bytes = searchkernel_ir::search_result_to_api(&expected).unwrap();
+                let bytes = searchkernel_ir::wire::v1::search_result_to_api(&expected).unwrap();
                 let wire =
                     searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
-                let actual = searchkernel_ir::search_result_from_api(wire).unwrap();
+                let actual = searchkernel_ir::wire::v1::search_result_from_api(wire).unwrap();
                 assert_eq!(actual, expected, "generated result tree seed {seed}");
             }
         }
@@ -1636,7 +1636,7 @@ mod expanded_canonical_corpus {
                 ),
             ];
             for (result, expected_kind) in cases {
-                let bytes = searchkernel_ir::search_result_to_api(&result).unwrap();
+                let bytes = searchkernel_ir::wire::v1::search_result_to_api(&result).unwrap();
                 let encoded =
                     searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
                 assert_eq!(
@@ -1651,7 +1651,8 @@ mod expanded_canonical_corpus {
                     expected_kind
                 );
             }
-            let bytes = searchkernel_ir::search_result_to_api(&relevance_result(None)).unwrap();
+            let bytes =
+                searchkernel_ir::wire::v1::search_result_to_api(&relevance_result(None)).unwrap();
             let encoded =
                 searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
             assert!(encoded
@@ -1737,13 +1738,13 @@ mod expanded_canonical_corpus {
                 let envelope = decoded.unwrap_or_else(|error| {
                     panic!("{name} envelope should be structurally valid: {error:?}")
                 });
-                let Some(result) = envelope.payload_as_search_kernel_v2_search_result() else {
+                let Some(result) = envelope.payload_as_search_kernel_wire_search_result() else {
                     assert_eq!(class, "envelope", "{name} must retain SearchResult payload");
                     continue;
                 };
                 assert_eq!(class, "result", "{name} must reject before result decoding");
                 assert!(
-                    searchkernel_ir::search_result_from_api(result).is_err(),
+                    searchkernel_ir::wire::v1::search_result_from_api(result).is_err(),
                     "malformed result fixture was accepted: {name}"
                 );
             }

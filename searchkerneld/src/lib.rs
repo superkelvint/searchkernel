@@ -48,7 +48,7 @@ use http_body_util::{BodyExt, Full};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
 use searchkernel_protocol::{
     json::{request_json_to_flatbuffer, response_flatbuffer_to_json},
-    protocol::v2 as wire,
+    protocol::v1 as wire,
 };
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};

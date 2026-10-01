@@ -1,8 +1,14 @@
 use flatbuffers::root;
 use searchkernel::{Error as IndexError, ErrorCode as IndexErrorCode, Index};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
-use searchkernel_ir::{ControlPlaneRequest, PortableError};
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+use searchkernel_ir::{
+    wire::v1::{self as wire_ir, ControlPlaneRequest},
+    PortableError,
+};
+use searchkernel_protocol::{
+    protocol::v1::{self as wire, PROTOCOL_VERSION},
+    wire::v1 as api,
+};
 use std::{
     collections::BTreeMap,
     fmt,
@@ -189,12 +195,12 @@ impl IndexRegistry {
                 envelope.protocol_version(),
             ));
         }
-        let control = match searchkernel_ir::resolve_control_plane_request(envelope) {
+        let control = match wire_ir::resolve_control_plane_request(envelope) {
             Ok(control) => control,
-            Err(searchkernel_ir::ControlPlaneResolutionError::InvalidEnvelope) => {
+            Err(wire_ir::ControlPlaneResolutionError::InvalidEnvelope) => {
                 return Err(RegistryDispatchError::InvalidRequest)
             }
-            Err(searchkernel_ir::ControlPlaneResolutionError::Semantic(error)) => {
+            Err(wire_ir::ControlPlaneResolutionError::Semantic(error)) => {
                 return Ok(RegistryDispatchResult::payload(encode_error(error)))
             }
         };
@@ -275,11 +281,11 @@ impl IndexRegistry {
         target: &str,
         definition: api::IndexDefinition<'_>,
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
-        let definition_ir = match searchkernel_ir::index_definition_to_ir(definition) {
+        let definition_ir = match wire_ir::index_definition_to_ir(definition) {
             Ok(definition) => definition,
             Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
-        let definition_bytes = searchkernel_ir::index_definition_ir_to_api(&definition_ir);
+        let definition_bytes = wire_ir::index_definition_ir_to_api(&definition_ir);
 
         let transition = self.transition_lock(target)?;
         let _transition = transition
@@ -327,7 +333,7 @@ impl IndexRegistry {
         Ok(RegistryDispatchResult::with_generation(
             encode_lifecycle_result(
                 context.definition(),
-                wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+                wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
             ),
             generation,
         ))
@@ -348,7 +354,7 @@ impl IndexRegistry {
                 return Ok(RegistryDispatchResult::with_generation(
                     encode_lifecycle_result(
                         context.definition(),
-                        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+                        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
                     ),
                     entry.generation.clone(),
                 ));
@@ -385,7 +391,7 @@ impl IndexRegistry {
         Ok(RegistryDispatchResult::with_generation(
             encode_lifecycle_result(
                 context.definition(),
-                wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+                wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
             ),
             generation,
         ))
@@ -534,14 +540,16 @@ fn encode_lifecycle_result(
     payload_type: wire::ResponsePayload,
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let index = wire_ir::index_definition_offset(&mut builder, definition);
     let payload = match payload_type {
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult => api::CreateIndexResult::create(
-            &mut builder,
-            &api::CreateIndexResultArgs { index: Some(index) },
-        )
-        .as_union_value(),
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => api::OpenIndexResult::create(
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => {
+            api::CreateIndexResult::create(
+                &mut builder,
+                &api::CreateIndexResultArgs { index: Some(index) },
+            )
+            .as_union_value()
+        }
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult => api::OpenIndexResult::create(
             &mut builder,
             &api::OpenIndexResultArgs { index: Some(index) },
         )
@@ -558,17 +566,17 @@ fn encode_delete_index_result() -> Vec<u8> {
             .as_union_value();
     encode_response(
         &mut builder,
-        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
         payload,
     )
 }
 
 fn encode_error(error: PortableError) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let payload = searchkernel_ir::error_offset(&mut builder, &error).as_union_value();
+    let payload = wire_ir::error_offset(&mut builder, &error).as_union_value();
     encode_response(
         &mut builder,
-        wire::ResponsePayload::SearchKernel_V2_Error,
+        wire::ResponsePayload::SearchKernel_Wire_Error,
         payload,
     )
 }
