@@ -21,7 +21,7 @@ import { FilterRequest, FilterRequestT } from "./generated/flatbuffers/search-ke
 import type { FilterClauseT as WireFilterClauseT } from "./generated/flatbuffers/search-kernel/wire/filter-clause.js";
 import * as Wire from "./generated/flatbuffers/search-kernel/wire.js";
 import * as Semantic from "../../semantic.js";
-import { SemanticTable, isSemanticTable } from "../../semantic.js";
+import { SemanticTable, isSemanticTable, SEMANTIC_ENUM_FIELDS } from "../../semantic.js";
 
 export const PROTOCOL_VERSION = 1;
 export const REQUEST_IDENTIFIER = "SKRQ";
@@ -79,6 +79,60 @@ const responseTypes: Record<Operation, ResponsePayload> = {
 
 export class ProtocolError extends Error { override name = "ProtocolError"; }
 
+function semanticEnumToWire(enumName: string, value: unknown): number {
+  if (typeof value !== "number") {
+    throw new ProtocolError(`semantic enum ${enumName} requires a numeric semantic value`);
+  }
+  const semanticEnum = (Semantic as any)[enumName];
+  const wireEnum = (Wire as any)[enumName];
+  const memberName = semanticEnum?.[value];
+  if (typeof memberName !== "string") {
+    throw new ProtocolError(`semantic enum ${enumName} has no value ${value}`);
+  }
+  const wireValue = wireEnum?.[memberName];
+  if (typeof wireValue !== "number") {
+    throw new ProtocolError(`wire enum ${enumName} has no member ${memberName}`);
+  }
+  return wireValue;
+}
+
+function wireEnumToSemantic(enumName: string, value: unknown): number {
+  if (typeof value !== "number") {
+    throw new ProtocolError(`wire enum ${enumName} requires a numeric wire value`);
+  }
+  const semanticEnum = (Semantic as any)[enumName];
+  const wireEnum = (Wire as any)[enumName];
+  const memberName = wireEnum?.[value];
+  if (typeof memberName !== "string") {
+    throw new ProtocolError(`wire enum ${enumName} has no value ${value}`);
+  }
+  const semanticValue = semanticEnum?.[memberName];
+  if (typeof semanticValue !== "number") {
+    throw new ProtocolError(`semantic enum ${enumName} has no member ${memberName}`);
+  }
+  return semanticValue;
+}
+
+function convertEnumToWire(spec: string, value: unknown): unknown {
+  if (spec.endsWith("[]")) {
+    if (!Array.isArray(value)) throw new ProtocolError(`semantic enum vector ${spec} must be an array`);
+    const enumName = spec.slice(0, -2);
+    return value.map((item) => semanticEnumToWire(enumName, item));
+  }
+  if (value === null || value === undefined) return value;
+  return semanticEnumToWire(spec, value);
+}
+
+function convertEnumFromWire(spec: string, value: unknown): unknown {
+  if (spec.endsWith("[]")) {
+    if (!Array.isArray(value)) throw new ProtocolError(`wire enum vector ${spec} must be an array`);
+    const enumName = spec.slice(0, -2);
+    return value.map((item) => wireEnumToSemantic(enumName, item));
+  }
+  if (value === null || value === undefined) return value;
+  return wireEnumToSemantic(spec, value);
+}
+
 function toGenerated(value: any): any {
   if (value instanceof Uint8Array) return value;
   if (isSemanticTable(value)) {
@@ -87,7 +141,12 @@ function toGenerated(value: any): any {
     }
     const constructor = (Wire as any)[`${value._schemaName}T`];
     if (typeof constructor !== "function") throw new ProtocolError(`unsupported semantic table ${value._schemaName}`);
-    const fields = value._semanticFields.map((field) => toGenerated((value as any)[field]));
+    const enumFields = SEMANTIC_ENUM_FIELDS[value._schemaName] ?? {};
+    const fields = value._semanticFields.map((field) => {
+      const item = (value as any)[field];
+      const enumSpec = enumFields[field];
+      return enumSpec ? convertEnumToWire(enumSpec, item) : toGenerated(item);
+    });
     return new constructor(...fields);
   }
   if (Array.isArray(value)) return value.map(toGenerated);
@@ -124,7 +183,14 @@ function fromGenerated(value: any): any {
       const semanticConstructor = (Semantic as any)[name];
       if (typeof semanticConstructor === "function") {
         const semantic = new semanticConstructor();
-        for (const field of semantic._semanticFields) semantic[field] = fromGenerated(value[field]);
+        const tableName = name.slice(0, -1);
+        const enumFields = SEMANTIC_ENUM_FIELDS[tableName] ?? {};
+        for (const field of semantic._semanticFields) {
+          const enumSpec = enumFields[field];
+          semantic[field] = enumSpec
+            ? convertEnumFromWire(enumSpec, value[field])
+            : fromGenerated(value[field]);
+        }
         return semantic;
       }
     }

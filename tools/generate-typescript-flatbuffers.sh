@@ -16,4 +16,4 @@ python=$(bash "$root/tools/resolve-python.sh")
 "$python" "$root/tools/normalize-generated-text.py" "$out"
 semantic_output=${TYPESCRIPT_SEMANTIC_MODEL_OUTPUT:-"$root/clients/typescript/src/semantic.ts"}
 "$python" "$root/tools/generate-typescript-semantic-model.py" \
-  "$out/search-kernel/wire" "$semantic_output"
+  "$root/core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs" "$semantic_output"

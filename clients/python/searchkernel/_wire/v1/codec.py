@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from functools import lru_cache
 from typing import Any
 
 import flatbuffers
@@ -11,7 +12,8 @@ import flatbuffers
 from searchkernel._wire.v1.generated.SearchKernel.Protocol import RequestEnvelope, RequestPayload
 from searchkernel._wire.v1.generated.SearchKernel.Protocol import ResponseEnvelope, ResponsePayload
 from searchkernel._wire.v1.generated.SearchKernel.Wire.IndexTarget import IndexTargetT  # noqa: E402
-from ..._semantic import SemanticEnumValue, SemanticTable, install_enum_value_resolver
+from searchkernel._wire.v1.generated.semantic_metadata import ENUM_FIELDS
+from ..._semantic import SemanticEnumValue, SemanticTable
 
 
 PROTOCOL_VERSION = 1
@@ -20,17 +22,80 @@ RESPONSE_IDENTIFIER = b"SKRS"
 _WIRE_PACKAGE = "searchkernel._wire.v1.generated.SearchKernel.Wire"
 
 
-def _enum_value(enum_name: str, member_name: str) -> int:
+@lru_cache(maxsize=None)
+def _enum_maps(enum_name: str) -> tuple[dict[str, int], dict[int, str]]:
     module = importlib.import_module(f"{_WIRE_PACKAGE}.{enum_name}")
-    return int(getattr(getattr(module, enum_name), member_name))
+    enum_type = getattr(module, enum_name)
+    by_name = {
+        name: int(value)
+        for name, value in vars(enum_type).items()
+        if not name.startswith("_") and isinstance(value, int)
+    }
+    by_value: dict[int, str] = {}
+    for name, value in by_name.items():
+        if value in by_value:
+            raise ValueError(f"wire enum {enum_name} has duplicate value {value}")
+        by_value[value] = name
+    return by_name, by_value
 
 
-install_enum_value_resolver(_enum_value)
+def _semantic_enum_to_wire(value: SemanticEnumValue) -> int:
+    by_name, _ = _enum_maps(value.enum_name)
+    try:
+        return by_name[value.member_name]
+    except KeyError as exc:
+        raise ValueError(
+            f"wire enum {value.enum_name} has no member {value.member_name}"
+        ) from exc
+
+
+def _wire_enum_to_semantic(enum_name: str, value: int) -> SemanticEnumValue:
+    _, by_value = _enum_maps(enum_name)
+    try:
+        member_name = by_value[int(value)]
+    except KeyError as exc:
+        raise ValueError(f"wire enum {enum_name} has no value {value}") from exc
+    return SemanticEnumValue(enum_name, member_name)
+
+
+def _convert_enum_to_wire(spec: str, value: Any) -> Any:
+    if spec.endswith("[]"):
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple)):
+            raise TypeError(f"semantic enum vector {spec} must be a sequence")
+        enum_name = spec[:-2]
+        return [
+            _semantic_enum_to_wire(item)
+            if isinstance(item, SemanticEnumValue)
+            else item
+            for item in value
+        ]
+    if value is None:
+        return None
+    if not isinstance(value, SemanticEnumValue):
+        raise TypeError(f"semantic enum {spec} requires a SemanticEnumValue")
+    if value.enum_name != spec:
+        raise TypeError(
+            f"semantic enum mismatch: expected {spec}, got {value.enum_name}"
+        )
+    return _semantic_enum_to_wire(value)
+
+
+def _convert_enum_from_wire(spec: str, value: Any) -> Any:
+    if spec.endswith("[]"):
+        if value is None:
+            return None
+        enum_name = spec[:-2]
+        return [_wire_enum_to_semantic(enum_name, item) for item in value]
+    if value is None:
+        return None
+    return _wire_enum_to_semantic(spec, value)
 
 
 def _to_generated(value: Any) -> Any:
     if isinstance(value, SemanticEnumValue):
-        return _enum_value(value.enum_name, value.member_name)
+        return _semantic_enum_to_wire(value)
     if isinstance(value, SemanticTable):
         module = importlib.import_module(f"{_WIRE_PACKAGE}.{value._schema_name}")
         constructor = getattr(module, f"{value._schema_name}T")
@@ -39,9 +104,22 @@ def _to_generated(value: Any) -> Any:
             for parameter in inspect.signature(constructor).parameters.values()
             if parameter.kind in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD)
         ]
-        fields = {key: _to_generated(item) for key, item in value._values.items()}
+        enum_fields = ENUM_FIELDS.get(value._schema_name, {})
+        fields = {
+            key: (
+                _convert_enum_to_wire(enum_fields[key], item)
+                if key in enum_fields
+                else _to_generated(item)
+            )
+            for key, item in value._values.items()
+        }
         for key, item in zip(parameters, value._positional):
-            fields.setdefault(key, _to_generated(item))
+            converted = (
+                _convert_enum_to_wire(enum_fields[key], item)
+                if key in enum_fields
+                else _to_generated(item)
+            )
+            fields.setdefault(key, converted)
         return constructor(**fields)
     if isinstance(value, list):
         return [_to_generated(item) for item in value]
@@ -62,8 +140,17 @@ def _from_generated(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_from_generated(item) for item in value)
     if hasattr(value, "__dict__") and value.__class__.__name__.endswith("T"):
-        fields = {key: _from_generated(item) for key, item in vars(value).items()}
-        return SemanticTable(value.__class__.__name__[:-1], **fields)
+        table_name = value.__class__.__name__[:-1]
+        enum_fields = ENUM_FIELDS.get(table_name, {})
+        fields = {
+            key: (
+                _convert_enum_from_wire(enum_fields[key], item)
+                if key in enum_fields
+                else _from_generated(item)
+            )
+            for key, item in vars(value).items()
+        }
+        return SemanticTable(table_name, **fields)
     return value
 
 _REQUEST_TYPES = {

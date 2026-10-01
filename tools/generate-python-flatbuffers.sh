@@ -24,10 +24,7 @@ find "$output" -depth -type d -empty -delete
 PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" \
     "$python" "$repo_root/tools/patch-python-flatbuffers-object-api.py" "$output"
 "$python" "$repo_root/tools/normalize-generated-text.py" "$output"
+"$python" "$repo_root/tools/generate-python-wire-metadata.py" \
+    "$repo_root/core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs" \
+    "$output/semantic_metadata.py"
 
-PYTHONPATH="$repo_root/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
-    "$python" "$repo_root/tools/regenerate-request-fixtures.py" \
-    "$repo_root/core/crates/searchkernel-dispatch/tests/fixtures/portable/requests"
-PYTHONPATH="$repo_root/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
-    "$python" "$repo_root/tools/regenerate-response-error-fixtures.py" \
-    "$repo_root/core/crates/searchkernel-dispatch/tests/fixtures/portable/responses"

@@ -114,5 +114,55 @@ class PackageImportTest(unittest.TestCase):
                     self.assertEqual(root.ProtocolVersion(), 1)
 
 
+    def test_semantic_enum_identity_is_codec_independent(self):
+        from searchkernel._semantic import ErrorCode
+
+        value = ErrorCode.Unsupported
+        before = hash(value)
+        from searchkernel._wire.v1 import codec as _codec  # noqa: F401
+
+        self.assertEqual(value, ErrorCode.Unsupported)
+        self.assertEqual(hash(value), before)
+        self.assertNotEqual(value, 6)
+
+    def test_v1_codec_maps_symbolic_semantic_enums_by_name(self):
+        from searchkernel._semantic import Int64ValueT, ValueKind, ValueT
+        from searchkernel._wire import pack_object
+        from searchkernel._wire.v1.generated.SearchKernel.Wire.Int64Value import Int64ValueT as WireInt64ValueT
+        from searchkernel._wire.v1.generated.SearchKernel.Wire.Value import ValueT as WireValueT
+        from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueKind import ValueKind as WireValueKind
+
+        encoded = pack_object(
+            ValueT(
+                kindType=ValueKind.Int64Value,
+                kind=Int64ValueT(value=7),
+            )
+        )
+        decoded = WireValueT.InitFromPackedBuf(encoded)
+        self.assertEqual(decoded.kindType, WireValueKind.Int64Value)
+        self.assertIsInstance(decoded.kind, WireInt64ValueT)
+        self.assertEqual(decoded.kind.value, 7)
+
+    def test_v1_response_codec_restores_symbolic_semantic_enums(self):
+        from searchkernel._semantic import ErrorCode
+        from searchkernel._wire import PROTOCOL_VERSION, RESPONSE_IDENTIFIER, pack_object, unpack_response
+        from searchkernel._wire.v1.generated.SearchKernel.Protocol.ResponseEnvelope import ResponseEnvelopeT
+        from searchkernel._wire.v1.generated.SearchKernel.Protocol.ResponsePayload import ResponsePayload
+        from searchkernel._wire.v1.generated.SearchKernel.Wire.Error import ErrorT
+        from searchkernel._wire.v1.generated.SearchKernel.Wire.ErrorCode import ErrorCode as WireErrorCode
+
+        response = ResponseEnvelopeT(
+            PROTOCOL_VERSION,
+            ResponsePayload.SearchKernel_Wire_Error,
+            ErrorT(code=WireErrorCode.Unsupported, message="unsupported"),
+        )
+        decoded = unpack_response(
+            pack_object(response, file_identifier=RESPONSE_IDENTIFIER),
+            "insert",
+        )
+        self.assertEqual(decoded.payload.code, ErrorCode.Unsupported)
+        self.assertNotEqual(decoded.payload.code, WireErrorCode.Unsupported)
+
+
 if __name__ == "__main__":
     unittest.main()

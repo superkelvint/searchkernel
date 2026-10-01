@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
-
-
-_enum_value_resolver: Callable[[str, str], int] | None = None
-
-
-def install_enum_value_resolver(resolver: Callable[[str, str], int]) -> None:
-    global _enum_value_resolver
-    _enum_value_resolver = resolver
+from typing import Any
 
 
 class SemanticEnumValue:
+    """Stable symbolic enum identity owned by the semantic model, not a wire codec."""
+
     __slots__ = ("enum_name", "member_name")
 
     def __init__(self, enum_name: str, member_name: str) -> None:
@@ -21,15 +15,15 @@ class SemanticEnumValue:
         self.member_name = member_name
 
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, SemanticEnumValue):
-            return (self.enum_name, self.member_name) == (other.enum_name, other.member_name)
-        if isinstance(other, int) and _enum_value_resolver is not None:
-            return _enum_value_resolver(self.enum_name, self.member_name) == other
-        return False
+        return isinstance(other, SemanticEnumValue) and (
+            self.enum_name,
+            self.member_name,
+        ) == (
+            other.enum_name,
+            other.member_name,
+        )
 
     def __hash__(self) -> int:
-        if _enum_value_resolver is not None:
-            return hash(_enum_value_resolver(self.enum_name, self.member_name))
         return hash((self.enum_name, self.member_name))
 
     def __repr__(self) -> str:
