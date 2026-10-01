@@ -574,14 +574,14 @@ fi
 # roots so transitive symlinks cannot pull in another local SDK.
 if [ "$BASE_ONLY" = 1 ]; then
     AWS_SOURCE_ARGS=()
+    RUNTIME_SEARCH_ARGS=(--search-dir "$DEPS_LIB_DIR" --search-dir "$VESPA_EXTRA_LIB_DIR")
     if [ -n "$AWS_LIB_DIR" ]; then
         AWS_SOURCE_ARGS+=(--source-root "vespa-aws=$AWS_LIB_DIR")
+        RUNTIME_SEARCH_ARGS+=(--search-dir "$AWS_LIB_DIR")
     fi
     "$PYTHON_BIN" "$ROOT/tools/bundle-native-runtime-closure.py" \
         "$SDK/lib" \
-        --search-dir "$AWS_LIB_DIR" \
-        --search-dir "$DEPS_LIB_DIR" \
-        --search-dir "$VESPA_EXTRA_LIB_DIR" \
+        "${RUNTIME_SEARCH_ARGS[@]}" \
         --source-root "vespa-build=$VESPA_ROOT" \
         --source-root "vespa-deps=$VESPA_DEPS" \
         --source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR" \
