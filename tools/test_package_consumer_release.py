@@ -195,7 +195,10 @@ class ConsumerReleaseTests(unittest.TestCase):
             self.assertEqual(manifest["vespa_commit"], native["vespa_commit"])
             self.assertEqual(manifest["platform"], "linux-x86_64-glibc")
             self.assertEqual(manifest["native_target"], MODULE.native_target())
-            self.assertEqual(manifest["build_environment"], "host")
+            self.assertEqual(
+                manifest["build_environment"],
+                os.environ.get("SEARCHKERNEL_BUILD_ENV", "host"),
+            )
             self.assertRegex(manifest["runtime_identity"], r"^skrt-v1-")
             self.assertEqual(manifest["payload_sha256"], MODULE.runtime_payload_digest(stage))
             MODULE.validate_runtime_manifest(stage, identity)
