@@ -48,7 +48,7 @@ fn custom_analyzer_configuration_is_shared_portable_schema_state() {
     let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
     let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("portable schema should decode");
-    let portable = searchkernel_ir::index_definition_to_ir(portable)
+    let portable = searchkernel_ir::wire::v1::index_definition_to_ir(portable)
         .expect("portable ingress should preserve rich analyzer");
 
     assert_eq!(
@@ -426,7 +426,7 @@ fn portable_definition_preserves_explicit_vs_omitted_capability_presence() {
 
     // Canonical resolution deliberately erases this presence distinction:
     // both fields resolve to the same default-true stored/searchable behavior.
-    let resolved = searchkernel_ir::index_definition_to_ir(portable)
+    let resolved = searchkernel_ir::wire::v1::index_definition_to_ir(portable)
         .expect("portable definition should resolve");
     for name in ["explicit_defaults", "omitted_defaults"] {
         let field = resolved
