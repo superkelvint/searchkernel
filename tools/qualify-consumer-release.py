@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -31,7 +32,9 @@ QUALIFICATION_PROBES = {
     "searchkerneld/native": "searchkerneld_runtime",
     "python/managed-local": "python_managed_local",
     "python/connect": "python_connect",
+    "typescript-node/managed-local": "typescript_node_managed_local",
     "typescript-node/connect": "typescript_node_connect",
+    "ruby/managed-local": "ruby_managed_local",
     "ruby/connect": "ruby_connect",
 }
 
@@ -131,14 +134,198 @@ def install_consumers(root: Path) -> dict[str, Path]:
     return {"python": venv, "node": node, "ruby": gem_home}
 
 
-def run_python_quickstart(venv: Path, root: Path) -> None:
+def installed_runtime_descriptors(installs: dict[str, Path]) -> dict:
+    python_descriptors = sorted(
+        installs["python"].glob("lib/python*/site-packages/searchkernel/runtime.json")
+    )
+    node_descriptor = installs["node"] / "node_modules/@searchkernel/client/runtime.json"
+    ruby_descriptors = sorted(
+        installs["ruby"].glob("gems/searchkernel-*/lib/searchkernel/runtime.json")
+    )
+    rust_crates = [
+        DIST / item["file"]
+        for item in MANIFEST["artifacts"]
+        if item["file"].startswith("searchkernel-vespa-bindings-")
+        and item["file"].endswith(".crate")
+    ]
+    if len(rust_crates) != 1:
+        raise RuntimeError(
+            f"release must contain exactly one packaged Rust runtime descriptor crate: {rust_crates}"
+        )
+    with tarfile.open(rust_crates[0], "r:gz") as archive:
+        members = [
+            member
+            for member in archive.getmembers()
+            if member.isfile() and member.name.endswith("/runtime.json")
+        ]
+        if len(members) != 1:
+            raise RuntimeError(
+                f"Rust bindings crate must contain exactly one runtime.json: {[m.name for m in members]}"
+            )
+        stream = archive.extractfile(members[0])
+        if stream is None:
+            raise RuntimeError("could not read runtime.json from Rust bindings crate")
+        rust_descriptor = json.loads(stream.read().decode("utf-8"))
+
+    paths = [*python_descriptors, node_descriptor, *ruby_descriptors]
+    if any(not path.is_file() for path in paths) or len(paths) != 3:
+        raise RuntimeError(
+            "consumer packages did not install exactly one runtime descriptor per contract: "
+            + ", ".join(str(path) for path in paths)
+        )
+    descriptors = [
+        *(json.loads(path.read_text(encoding="utf-8")) for path in paths),
+        rust_descriptor,
+    ]
+    if len({json.dumps(descriptor, sort_keys=True) for descriptor in descriptors}) != 1:
+        raise RuntimeError("Python, Node, Ruby, and Rust runtime descriptors differ")
+    descriptor = descriptors[0]
+    runtime = artifact("searchkernel-runtime-", ".tar.gz")
+    expected_name = (
+        f"searchkernel-runtime-{descriptor['runtime_identity']}-{descriptor['platform']}.tar.gz"
+    )
+    if runtime.name != expected_name:
+        raise RuntimeError(
+            f"runtime artifact {runtime.name!r} does not match installed identity {expected_name!r}"
+        )
+    return descriptor
+
+
+def managed_local_process(
+    language: str,
+    installs: dict[str, Path],
+    root: Path,
+    cache: Path,
+    origin: str | None,
+    runtime_dir: Path | None,
+    label: str,
+) -> tuple[list[str], Path, dict[str, str]]:
+    index = root / f"runtime-{label}-{language}-index"
+    environment = {
+        "SEARCHKERNEL_RUNTIME_CACHE": str(cache),
+        "SK_INDEX": str(index),
+    }
+    if origin is not None:
+        environment["SEARCHKERNEL_RUNTIME_ORIGIN"] = origin
+    if runtime_dir is not None:
+        environment["SEARCHKERNEL_RUNTIME_DIR"] = str(runtime_dir)
+    if language == "python":
+        code = (
+            "from searchkernel import Index,Text; "
+            "x=Index.create(__import__('os').environ['SK_INDEX'], "
+            "fields={'title': Text(stored=True, searchable=True)}); x.close()"
+        )
+        return [str(installs["python"] / "bin/python"), "-c", code], root, environment
+    if language == "node":
+        script = root / f"runtime-{label}-node.mjs"
+        script.write_text(
+            'import { Index, Text } from "@searchkernel/client/node";\n'
+            "const x=await Index.create(process.env.SK_INDEX,{fields:{title:new Text({stored:true,searchable:true})}});\n"
+            "await x.close();\n",
+            encoding="utf-8",
+        )
+        return ["node", str(script)], installs["node"], environment
+    if language == "ruby":
+        code = (
+            'require "searchkernel"; '
+            'x=SearchKernel::Index.create(ENV.fetch("SK_INDEX"), '
+            'fields: {"title" => SearchKernel::Text.new(stored: true, searchable: true)}); '
+            "x.close"
+        )
+        environment.update({"GEM_HOME": str(installs["ruby"]), "GEM_PATH": str(installs["ruby"])})
+        return ["ruby", "-e", code], root, environment
+    raise ValueError(f"unknown managed-local language {language!r}")
+
+def run_managed_local_processes(
+    languages: tuple[str, ...],
+    installs: dict[str, Path],
+    root: Path,
+    cache: Path,
+    origin: str | None,
+    *,
+    runtime_dir: Path | None = None,
+    label: str,
+    expect_success: bool = True,
+) -> list[tuple[str, int, str, str]]:
+    specs = [
+        managed_local_process(language, installs, root, cache, origin, runtime_dir, label)
+        for language in languages
+    ]
+
+    def execute(spec):
+        command, cwd, overrides = spec
+        environment = clean_environment()
+        environment.update(overrides)
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        stdout, stderr = process.communicate()
+        return process.returncode, stdout, stderr
+
+    with ThreadPoolExecutor(max_workers=len(specs)) as executor:
+        results = list(executor.map(execute, specs))
+    outcomes = [
+        (language, returncode, stdout, stderr)
+        for language, (returncode, stdout, stderr) in zip(languages, results)
+    ]
+    failures = [outcome for outcome in outcomes if outcome[1] != 0]
+    successes = [outcome for outcome in outcomes if outcome[1] == 0]
+    if expect_success and failures:
+        raise RuntimeError(
+            f"managed-local {label} failed: "
+            + "; ".join(f"{language}: {stderr or stdout}" for language, _, stdout, stderr in failures)
+        )
+    if not expect_success and successes:
+        raise RuntimeError(
+            f"managed-local {label} unexpectedly accepted the runtime: "
+            + ", ".join(language for language, *_ in successes)
+        )
+    return outcomes
+
+def assert_one_valid_runtime_object(
+    cache: Path, descriptor_path: Path, venv: Path, identity: str
+) -> Path:
+    objects = cache / "objects"
+    entries = sorted(objects.iterdir()) if objects.is_dir() else []
+    expected = objects / identity
+    if len(entries) != 1 or entries[0] != expected or not expected.is_dir():
+        raise RuntimeError(
+            f"shared runtime cache did not publish exactly one object: {entries}"
+        )
+    code = (
+        "import sys; from pathlib import Path; "
+        "from searchkernel._runtime import ensure_runtime, load_descriptor; "
+        "ensure_runtime(load_descriptor(Path(sys.argv[1])), "
+        "root=Path(sys.argv[2]), offline=True)"
+    )
+    run(
+        str(venv / "bin/python"),
+        "-c",
+        code,
+        str(descriptor_path),
+        str(cache),
+        cwd=venv.parent,
+        env={"SEARCHKERNEL_RUNTIME_ORIGIN": "file:///offline-runtime"},
+    )
+    return expected
+
+def run_python_quickstart(
+    venv: Path, root: Path, runtime_env: dict[str, str] | None = None
+) -> None:
     run(
         str(venv / "bin/python"),
         str(QUICKSTARTS / "python.py"),
         cwd=root,
-        env={"SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-python-index")},
+        env={
+            **(runtime_env or {}),
+            "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-python-index"),
+        },
     )
-
 
 def run_node_quickstart(node: Path, endpoint: str, target: str) -> None:
     script = node / "release-quickstart.mjs"
@@ -407,7 +594,9 @@ def run_rust_quickstart(root: Path) -> None:
         run("cargo", "run", "--quiet", cwd=project, env=environment)
 
 
-def python_managed_local(venv: Path, index: Path) -> None:
+def python_managed_local(
+    venv: Path, index: Path, runtime_env: dict[str, str] | None = None
+) -> None:
     code = r'''from searchkernel import Index,Text,Keyword,Integer,Tensor,TensorField,HnswIndexConfig,RankProfile,q
 p=r"''' + str(index) + r'''"
 fields={"title":Text(stored=True,searchable=True),"kind":Keyword(stored=True,filterable=True,sortable=True),"score":Integer(stored=True,filterable=True,sortable=True),"embedding":TensorField("tensor<float>(x[2])",stored=True,distance_metric="angular",hnsw=HnswIndexConfig())}
@@ -433,8 +622,7 @@ with Index.open(p) as x:
  result=x.query(q.nearest_neighbor("embedding","query_embedding",target_hits=2)).ranking("semantic").input("query_embedding",Tensor.dense("tensor<float>(x[2])",[1,0])).limit(2).execute()
  assert result.hits[0].id=="managed-a"
 '''
-    run(str(venv / "bin/python"), "-c", code, cwd=venv.parent)
-
+    run(str(venv / "bin/python"), "-c", code, cwd=venv.parent, env=runtime_env)
 
 def free_port() -> int:
     with socket.socket() as sock:
@@ -817,6 +1005,96 @@ def multi_index_registry_probe(gem_home: Path, root: Path, daemon: Path) -> None
         stop_daemon(proc, log)
 
 
+def shared_runtime_contract_probe(
+    root: Path, installs: dict[str, Path]
+) -> None:
+    descriptor = installed_runtime_descriptors(installs)
+    identity = descriptor["runtime_identity"]
+    python_descriptor = next(
+        installs["python"].glob("lib/python*/site-packages/searchkernel/runtime.json")
+    )
+    runtime_origin = DIST.as_uri()
+    offline_origin = "file:///searchkernel-runtime-offline"
+
+    # The first-use race is deliberately cross-language and uses one cache.
+    # Each process starts a managed-local host, so the check exercises the
+    # packaged clients' actual lazy runtime acquisition path.
+    shared_cache = root / "runtime-cache"
+    run_managed_local_processes(
+        ("python", "node", "ruby"),
+        installs,
+        root,
+        shared_cache,
+        runtime_origin,
+        label="cold-concurrent",
+    )
+    assert_one_valid_runtime_object(shared_cache, python_descriptor, installs["python"], identity)
+
+    # Check both asymmetric warm-cache directions. The offline origin makes a
+    # warm success observable: a resolver that downloads again cannot pass.
+    for seed, warm in (("python", ("node", "ruby")), ("node", ("python", "ruby"))):
+        cache = root / f"runtime-cache-seed-{seed}"
+        run_managed_local_processes(
+            (seed,), installs, root, cache, runtime_origin, label=f"{seed}-cold"
+        )
+        assert_one_valid_runtime_object(cache, python_descriptor, installs["python"], identity)
+        run_managed_local_processes(
+            warm, installs, root, cache, offline_origin, label=f"{seed}-warm"
+        )
+        assert_one_valid_runtime_object(cache, python_descriptor, installs["python"], identity)
+
+    # Exercise the explicit prefetch/prewarm command, then require all three
+    # managed-local clients to consume that exact object without an origin.
+    prefetch_cache = root / "runtime-cache-prefetch"
+    runtime_module = next(
+        installs["python"].glob("lib/python*/site-packages/searchkernel/_runtime.py")
+    )
+    run(
+        str(installs["python"] / "bin/python"),
+        str(runtime_module),
+        "prefetch",
+        str(python_descriptor),
+        "--cache",
+        str(prefetch_cache),
+        cwd=installs["python"].parent,
+        env={"SEARCHKERNEL_RUNTIME_ORIGIN": runtime_origin},
+    )
+    prefetched = assert_one_valid_runtime_object(
+        prefetch_cache, python_descriptor, installs["python"], identity
+    )
+    run_managed_local_processes(
+        ("python", "node", "ruby"),
+        installs,
+        root,
+        prefetch_cache,
+        offline_origin,
+        label="prefetched-warm",
+    )
+    assert prefetched == prefetch_cache / "objects" / identity
+
+    # A mismatched object must be rejected by every client, rather than being
+    # treated as a usable cache hit or silently replaced from an untrusted path.
+    mismatch_manifest = json.loads(
+        (prefetched / "manifest.json").read_text(encoding="utf-8")
+    )
+    mismatch_manifest["runtime_identity"] = "skrt-v1-" + "0" * 64
+    (prefetched / "manifest.json").write_text(
+        json.dumps(mismatch_manifest), encoding="utf-8"
+    )
+    outcomes = run_managed_local_processes(
+        ("python", "node", "ruby"),
+        installs,
+        root,
+        prefetch_cache,
+        None,
+        runtime_dir=prefetched,
+        label="mismatch-rejected",
+        expect_success=False,
+    )
+    if any("identity" not in (stdout + stderr).lower() and "mismatch" not in (stdout + stderr).lower()
+           for _, _, stdout, stderr in outcomes):
+        raise RuntimeError("runtime mismatch rejection did not identify the identity failure")
+
 def main() -> None:
     verify_manifest()
     with tempfile.TemporaryDirectory(prefix="searchkernel-release-qualification-") as raw:
@@ -836,8 +1114,34 @@ def main() -> None:
             multi_index_registry_probe(installs["ruby"], root, context["daemon"])
 
         def python_managed_local_probe() -> None:
-            run_python_quickstart(installs["python"], root)
-            python_managed_local(installs["python"], root / "managed-local-index")
+            runtime_env = {
+                "SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri(),
+                "SEARCHKERNEL_RUNTIME_CACHE": str(root / "runtime-cache"),
+            }
+            run_python_quickstart(installs["python"], root, runtime_env)
+            python_managed_local(
+                installs["python"], root / "managed-local-index", runtime_env
+            )
+
+        def typescript_node_managed_local_probe() -> None:
+            run_managed_local_processes(
+                ("node",),
+                installs,
+                root,
+                root / "runtime-cache",
+                "file:///searchkernel-runtime-offline",
+                label="node-managed-local",
+            )
+
+        def ruby_managed_local_probe() -> None:
+            run_managed_local_processes(
+                ("ruby",),
+                installs,
+                root,
+                root / "runtime-cache",
+                "file:///searchkernel-runtime-offline",
+                label="ruby-managed-local",
+            )
 
         def python_connect_probe_runner() -> None:
             with_restarted_daemon(
@@ -873,10 +1177,17 @@ def main() -> None:
             "searchkerneld_runtime": searchkerneld_runtime_probe,
             "python_managed_local": python_managed_local_probe,
             "python_connect": python_connect_probe_runner,
+            "typescript_node_managed_local": typescript_node_managed_local_probe,
             "typescript_node_connect": typescript_node_connect_probe_runner,
+            "ruby_managed_local": ruby_managed_local_probe,
             "ruby_connect": ruby_connect_probe_runner,
         }
         failures = []
+        try:
+            shared_runtime_contract_probe(root, installs)
+            print("packaged qualification PASS: shared consumer runtime contract")
+        except Exception as exc:
+            failures.append(f"shared consumer runtime contract: {exc}")
         for row, probe_name in QUALIFICATION_PROBES.items():
             try:
                 runners[probe_name]()
