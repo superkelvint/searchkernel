@@ -11,6 +11,7 @@ approximated.
 ## Release scope
 
 - The `0.1.x beta` release is qualified only for **linux x86_64 glibc**.
+- Node managed-local cache locking requires the standard util-linux `flock` executable on the qualified Linux host; the clean-consumer qualification gate exercises this dependency.
 - Supported release surfaces: `rust-embedded` (`native`), `searchkerneld` (`native`), `python` (`managed-local`), `python` (`connect`), `typescript-node` (`managed-local`), `typescript-node` (`connect`), `ruby` (`managed-local`), `ruby` (`connect`).
 - Deferred release surfaces: `typescript-browser-grpc-web`, `php`, `go`, `macos`, `windows`, `linux-aarch64`.
 - Implementation presence outside this matrix is not a release-support promise; see [`docs/release-support.md`](docs/release-support.md).
