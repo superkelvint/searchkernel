@@ -13,14 +13,15 @@ EXPECTED_SUPPORTED = {
     ("searchkerneld", "native", "client-e2e"),
     ("python", "managed-local", "native-full"),
     ("python", "connect", "client-e2e"),
+    ("typescript-node", "managed-local", "native-full"),
     ("typescript-node", "connect", "client-e2e"),
+    ("ruby", "managed-local", "native-full"),
     ("ruby", "connect", "client-e2e"),
 }
 
 REQUIRED_DEFERRED = {
     "typescript-browser-grpc-web",
     "php",
-    "ruby-managed-local",
     "go",
     "macos",
     "windows",
@@ -34,7 +35,9 @@ REQUIRED_VERIFICATION = {
     ("searchkerneld", "native"): "./dev verify product.integration",
     ("python", "managed-local"): "./dev test python",
     ("python", "connect"): "./dev test python",
+    ("typescript-node", "managed-local"): "./dev test typescript",
     ("typescript-node", "connect"): "./dev test typescript",
+    ("ruby", "managed-local"): "./dev test ruby",
     ("ruby", "connect"): "./dev test ruby",
 }
 
@@ -175,18 +178,18 @@ def validate(root: Path = ROOT) -> None:
         raise SystemExit("README.md does not link the authoritative release support matrix")
     if "../docs/release-support.md" not in clients:
         raise SystemExit("clients/README.md does not link the authoritative release support matrix")
-    if "Ruby (connect-to-daemon)" not in readme:
-        raise SystemExit("README.md must describe Ruby as connect-to-daemon release support")
-    if "Ruby (connect-to-daemon)" not in clients:
-        raise SystemExit("clients/README.md must describe Ruby as connect-to-daemon release support")
-    if "| Ruby | Supported | connect-to-daemon |" not in support:
-        raise SystemExit("release-support.md must keep Ruby connect-only")
-    if "| Ruby managed-local | Deferred |" not in support:
-        raise SystemExit("release-support.md must keep Ruby managed-local deferred")
+    if "Ruby (managed-local/connect-to-daemon)" not in readme:
+        raise SystemExit("README.md must describe Ruby managed-local/connect release support")
+    if "Ruby (managed-local/connect-to-daemon)" not in clients:
+        raise SystemExit("clients/README.md must describe Ruby managed-local/connect release support")
+    if "| Ruby | Supported | managed-local and connect-to-daemon |" not in support:
+        raise SystemExit("release-support.md must describe Ruby managed-local and connect support")
+    if "| Ruby managed-local | Deferred |" in support:
+        raise SystemExit("release-support.md must not keep Ruby managed-local deferred")
 
     print(
         "Release support matrix PASS: Linux x86_64 glibc "
-        "Rust/daemon/Python/Node plus Ruby connect-only scope is explicit and qualified"
+        "Rust/daemon/Python/Node/Ruby managed-local and connect scope is explicit and qualified"
     )
 
 
