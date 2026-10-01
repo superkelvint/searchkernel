@@ -833,7 +833,8 @@ pub fn encode_describe_request_for_target(logical_target: Option<&str>) -> Vec<u
     )
 }
 
-pub fn encode_describe_request_for_target_generation(logical_target: Option<&str>,
+pub fn encode_describe_request_for_target_generation(
+    logical_target: Option<&str>,
     expected_index_generation: Option<&str>,
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();

@@ -354,19 +354,23 @@ async fn run_worker(
                 let request_timeout = options.request_timeout;
                 tokio::spawn(async move {
                     let request = tonic::Request::new(FlatBufferFrame { payload });
-                    let result =
-                        match tokio::time::timeout(request_timeout, client.execute(request)).await {
-                            Ok(Ok(response)) => Ok(RemoteReply {
-                                payload: response.into_inner().payload,
-                            }),
-                            Ok(Err(status)) => Err(status_error(status, retry_safe)),
-                            Err(_) => Err(request_transport_error(
-                                ErrorCode::DeadlineExceeded,
-                                retry_safe,
-                                !retry_safe,
-                                "remote Search Kernel request timed out",
-                            )),
-                        };
+                    let result = match tokio::time::timeout(
+                        request_timeout,
+                        client.execute(request),
+                    )
+                    .await
+                    {
+                        Ok(Ok(response)) => Ok(RemoteReply {
+                            payload: response.into_inner().payload,
+                        }),
+                        Ok(Err(status)) => Err(status_error(status, retry_safe)),
+                        Err(_) => Err(request_transport_error(
+                            ErrorCode::DeadlineExceeded,
+                            retry_safe,
+                            !retry_safe,
+                            "remote Search Kernel request timed out",
+                        )),
+                    };
                     let _ = reply.send(result);
                 });
             }
