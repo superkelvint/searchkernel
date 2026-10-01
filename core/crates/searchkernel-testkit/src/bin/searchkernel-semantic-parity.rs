@@ -1,8 +1,8 @@
 use flatbuffers::root;
 use searchkernel_ir::wire::v1::schema as api;
 use searchkernel_ir::{
-    snapshot, IndexContext, PresentationInput, QueryInputIr, QueryModelInput,
-    QuerySourceInput, RankingInput, RequestValueIr, SearchInput, TextualFilterInput, Value,
+    snapshot, IndexContext, PresentationInput, QueryInputIr, QueryModelInput, QuerySourceInput,
+    RankingInput, RequestValueIr, SearchInput, TextualFilterInput, Value,
 };
 use serde::Deserialize;
 use std::{collections::BTreeMap, fs, path::PathBuf};
