@@ -188,25 +188,32 @@ if ! find "$VESPA_LIBRARY_ROOT" -name 'libvespa*.so*' -print -quit 2>/dev/null |
     echo "run './dev native-sdk ensure' from a clone with the pinned Vespa prerequisite or provide VESPA_LIBRARY_ROOT" >&2
     exit 1
 fi
+has_llvm_runtime() {
+    [ -f "$1/libLLVM.so.21.1" ] || [ -f "$1/libLLVM-21.so" ]
+}
 if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
-    if [ "$ADAPTER_ONLY" = 1 ] && [ -f "$BASE_SDK/lib/libLLVM.so.21.1" ]; then
+    if [ "$ADAPTER_ONLY" = 1 ] && has_llvm_runtime "$BASE_SDK/lib"; then
         VESPA_EXTRA_LIB_DIR=$BASE_SDK/lib
-    elif [ "$BASE_ONLY" = 1 ] && [ -f "$DEPS_LIB_DIR/libLLVM.so.21.1" ]; then
+    elif [ "$BASE_ONLY" = 1 ] && has_llvm_runtime "$DEPS_LIB_DIR"; then
         VESPA_EXTRA_LIB_DIR=$DEPS_LIB_DIR
-    elif [ "$BASE_ONLY" = 1 ] && [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
+    elif [ "$BASE_ONLY" = 1 ] && has_llvm_runtime "$VESPA_DEPS/../../usr/lib64"; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
-    elif [ -f "$SDK_PACKAGE/lib/libLLVM.so.21.1" ]; then
+    elif has_llvm_runtime "$SDK_PACKAGE/lib"; then
         VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
-    elif [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
+    elif has_llvm_runtime "$VESPA_DEPS/../../usr/lib64"; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
     else
-        VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
+        VESPA_EXTRA_LIB_DIR=$DEPS_LIB_DIR
     fi
 fi
-if [ ! -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
+if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
+    VESPA_EXTRA_LLVM=$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1
+elif [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM-21.so" ]; then
+    VESPA_EXTRA_LLVM=$VESPA_EXTRA_LIB_DIR/libLLVM-21.so
+else
     echo "LLVM 21 runtime was not found for the Vespa SDK link" >&2
     echo "looked in: $VESPA_EXTRA_LIB_DIR" >&2
-    echo "set VESPA_EXTRA_LIB_DIR to the directory containing libLLVM.so.21.1" >&2
+    echo "expected libLLVM-21.so or libLLVM.so.21.1" >&2
     exit 1
 fi
 EXTRA_LINK_FLAGS=${SK_NATIVE_EXTRA_LINK_FLAGS:-$EXTRA_CXX_FLAGS}
@@ -281,7 +288,7 @@ else
 fi
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed \
     "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'$ADAPTER_RPATH'|g")
-LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1#")
+LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LLVM#")
 MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa.map
 if [ "$ENABLE_FAILPOINTS" = 1 ]; then
     MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa_test.map
@@ -490,8 +497,8 @@ fi
 # duplicating large shared objects for every alias.
 if [ "$BASE_ONLY" = 1 ]; then
     LINKER_ALIASES=()
-    if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
-        LINKER_ALIASES+=(--linker-alias "LLVM-21=$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")
+    if [ -f "$VESPA_EXTRA_LLVM" ]; then
+        LINKER_ALIASES+=(--linker-alias "LLVM-21=$VESPA_EXTRA_LLVM")
     fi
     if [ -n "$CONFIGURED_DEPS" ]; then
         LINKER_ALIASES+=(--producer-root "$CONFIGURED_DEPS=$VESPA_DEPS")
@@ -519,11 +526,11 @@ if [ "$BASE_ONLY" != 1 ]; then
         ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
         -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 fi
-if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
-    if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
+if [ -f "$VESPA_EXTRA_LLVM" ]; then
+    if [ "$(readlink -f "$VESPA_EXTRA_LLVM")" != \
          "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
         sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" \
-            "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1"
+            "$VESPA_EXTRA_LLVM"
     fi
 fi
 if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
