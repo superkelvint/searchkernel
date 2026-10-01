@@ -42,6 +42,9 @@
     }
   },
   "test": {
+    "protocol-regen-dump": {
+      "description": "Temporary exact-SHA protocol regeneration capture"
+    },
     "ir": {
       "description": "Portable semantic IR tests"
     },
