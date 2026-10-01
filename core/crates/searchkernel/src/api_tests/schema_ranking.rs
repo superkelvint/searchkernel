@@ -411,8 +411,7 @@ fn empty_named_ranking_has_identical_rust_and_portable_semantics() {
         .expect_err("empty Rust ranking profile should be invalid");
     let bytes = portable_text_request_with_empty_controls(Some(""), None, None);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let portable_error = context
-        .search_to_ir(request)
+    let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request)
         .expect_err("empty portable ranking profile must not become the default");
 
     assert_eq!(rust_error.details()[0].code, "invalid_ranking");
