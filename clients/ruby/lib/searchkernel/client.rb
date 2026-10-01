@@ -14,13 +14,31 @@ module SearchKernel
 
       @transport = transport
       @target = target
+      @index_generation = nil
       @closed = false
     end
 
     def execute(operation, payload)
       raise TransportError, "Search Kernel client is closed" if @closed
-      response = @transport.execute(Protocol.request_envelope(operation, payload, target: @target))
-      Protocol.expect_response(operation, response)
+
+      lifecycle = %i[create_index open_index delete_index].include?(operation.to_sym)
+      response = @transport.execute(
+        Protocol.request_envelope(
+          operation,
+          payload,
+          target: @target,
+          expected_index_generation: lifecycle ? nil : @index_generation
+        )
+      )
+      result = Protocol.expect_response(operation, response)
+      if %i[create_index open_index].include?(operation.to_sym)
+        generation = response["index_generation"]
+        unless generation.is_a?(String) && !generation.empty?
+          raise ProtocolError, "#{operation} response is missing canonical index generation"
+        end
+        @index_generation = generation
+      end
+      result
     end
 
     def execute_raw(envelope)
