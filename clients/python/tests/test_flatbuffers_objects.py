@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel import Boolean, ClientError, Float, Group, Hit, HnswIndexConfig, Integer, Keyword, RankProfile, StructField, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
 from searchkernel.client import _document, _python_value, value  # noqa: E402
+import searchkernel._semantic as semantic  # noqa: E402
 from searchkernel.ergonomic import (  # noqa: E402
     SearchBuilder,
     _facet_request,
@@ -506,19 +507,19 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertIsNone(_python_value(value(None)))
         self.assertEqual(
             _python_value(
-                ValueT(kindType=ValueKind.UInt64Value, kind=UInt64ValueT(value=2**63))
+                semantic.ValueT(kindType=semantic.ValueKind.UInt64Value, kind=semantic.UInt64ValueT(value=2**63))
             ),
             2**63,
         )
         for kind, expected in (
-            (NonFiniteFloatKind.NaN, math.nan),
-            (NonFiniteFloatKind.PositiveInfinity, math.inf),
-            (NonFiniteFloatKind.NegativeInfinity, -math.inf),
+            (semantic.NonFiniteFloatKind.NaN, math.nan),
+            (semantic.NonFiniteFloatKind.PositiveInfinity, math.inf),
+            (semantic.NonFiniteFloatKind.NegativeInfinity, -math.inf),
         ):
             decoded = _python_value(
-                ValueT(
-                    kindType=ValueKind.NonFiniteFloatValue,
-                    kind=NonFiniteFloatValueT(kind=kind),
+                semantic.ValueT(
+                    kindType=semantic.ValueKind.NonFiniteFloatValue,
+                    kind=semantic.NonFiniteFloatValueT(kind=kind),
                 )
             )
             # Keep the public Value helper out of this regression: non-finite
@@ -530,15 +531,15 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                 self.assertEqual(decoded, expected)
 
         sparse = _python_value(
-            ValueT(
-                kindType=ValueKind.TensorValue,
-                kind=TensorValueT(
+            semantic.ValueT(
+                kindType=semantic.ValueKind.TensorValue,
+                kind=semantic.TensorValueT(
                     typeSpec="tensor<float>(x{})",
-                    payloadType=TensorPayloadKind.SparseTensorCells,
-                    payload=SparseTensorCellsT(
+                    payloadType=semantic.TensorPayloadKind.SparseTensorCells,
+                    payload=semantic.SparseTensorCellsT(
                         cells=[
-                            TensorCellT(
-                                address=[TensorAddressEntryT(dimension="x", label="a")],
+                            semantic.TensorCellT(
+                                address=[semantic.TensorAddressEntryT(dimension="x", label="a")],
                                 value=0.5,
                             )
                         ]
@@ -547,15 +548,15 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             )
         )
         mixed = _python_value(
-            ValueT(
-                kindType=ValueKind.TensorValue,
-                kind=TensorValueT(
+            semantic.ValueT(
+                kindType=semantic.ValueKind.TensorValue,
+                kind=semantic.TensorValueT(
                     typeSpec="tensor<float>(x{},y[2])",
-                    payloadType=TensorPayloadKind.MixedTensorBlocks,
-                    payload=MixedTensorBlocksT(
+                    payloadType=semantic.TensorPayloadKind.MixedTensorBlocks,
+                    payload=semantic.MixedTensorBlocksT(
                         blocks=[
-                            TensorBlockT(
-                                address=[TensorAddressEntryT(dimension="x", label="a")],
+                            semantic.TensorBlockT(
+                                address=[semantic.TensorAddressEntryT(dimension="x", label="a")],
                                 values=[0.25, 0.75],
                             )
                         ]
@@ -568,20 +569,20 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
 
     def test_result_value_decoder_rejects_malformed_tensor_state(self):
         malformed_addresses = [
-            TensorAddressEntryT(dimension=None, label="a"),
-            TensorAddressEntryT(dimension="x", label=None),
+            semantic.TensorAddressEntryT(dimension=None, label="a"),
+            semantic.TensorAddressEntryT(dimension="x", label=None),
         ]
         for address in malformed_addresses:
             with self.subTest(address=address):
                 with self.assertRaisesRegex(ValueError, "malformed tensor address"):
                     _python_value(
-                        ValueT(
-                            kindType=ValueKind.TensorValue,
-                            kind=TensorValueT(
+                        semantic.ValueT(
+                            kindType=semantic.ValueKind.TensorValue,
+                            kind=semantic.TensorValueT(
                                 typeSpec="tensor<float>(x{})",
-                                payloadType=TensorPayloadKind.SparseTensorCells,
-                                payload=SparseTensorCellsT(
-                                    cells=[TensorCellT(address=[address], value=0.5)]
+                                payloadType=semantic.TensorPayloadKind.SparseTensorCells,
+                                payload=semantic.SparseTensorCellsT(
+                                    cells=[semantic.TensorCellT(address=[address], value=0.5)]
                                 ),
                             ),
                         )
@@ -589,26 +590,26 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
 
         for payload_type, payload in (
             (
-                TensorPayloadKind.DenseTensorValues,
-                DenseTensorValuesT(values=[math.nan]),
+                semantic.TensorPayloadKind.DenseTensorValues,
+                semantic.DenseTensorValuesT(values=[math.nan]),
             ),
             (
-                TensorPayloadKind.SparseTensorCells,
-                SparseTensorCellsT(
+                semantic.TensorPayloadKind.SparseTensorCells,
+                semantic.SparseTensorCellsT(
                     cells=[
-                        TensorCellT(
-                            address=[TensorAddressEntryT(dimension="x", label="a")],
+                        semantic.TensorCellT(
+                            address=[semantic.TensorAddressEntryT(dimension="x", label="a")],
                             value=math.inf,
                         )
                     ]
                 ),
             ),
             (
-                TensorPayloadKind.MixedTensorBlocks,
-                MixedTensorBlocksT(
+                semantic.TensorPayloadKind.MixedTensorBlocks,
+                semantic.MixedTensorBlocksT(
                     blocks=[
-                        TensorBlockT(
-                            address=[TensorAddressEntryT(dimension="x", label="a")],
+                        semantic.TensorBlockT(
+                            address=[semantic.TensorAddressEntryT(dimension="x", label="a")],
                             values=[-math.inf],
                         )
                     ]
@@ -618,9 +619,9 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             with self.subTest(payload_type=payload_type):
                 with self.assertRaisesRegex(ValueError, "tensor cells must be finite"):
                     _python_value(
-                        ValueT(
-                            kindType=ValueKind.TensorValue,
-                            kind=TensorValueT(
+                        semantic.ValueT(
+                            kindType=semantic.ValueKind.TensorValue,
+                            kind=semantic.TensorValueT(
                                 typeSpec="tensor<float>(x{})",
                                 payloadType=payload_type,
                                 payload=payload,
@@ -637,18 +638,18 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             _value_entries(entries)
 
         with self.assertRaisesRegex(ValueError, "unknown Value union"):
-            _python_value(ValueT(kindType=255))
+            _python_value(semantic.ValueT(kindType=255))
         with self.assertRaisesRegex(ValueError, "mismatched Value union"):
             _python_value(
-                ValueT(
-                    kindType=ValueKind.BytesValue,
-                    kind=Int64ValueT(value=1),
+                semantic.ValueT(
+                    kindType=semantic.ValueKind.BytesValue,
+                    kind=semantic.Int64ValueT(value=1),
                 )
             )
         with self.assertRaisesRegex(ValueError, "unknown ResultNode union"):
             _node(SimpleNamespace(nodeType=255, node=SimpleNamespace()))
         with self.assertRaisesRegex(ValueError, "missing ResultNode payload"):
-            _node(SimpleNamespace(nodeType=ResultNodeKind.Hit, node=None))
+            _node(SimpleNamespace(nodeType=semantic.ResultNodeKind.Hit, node=None))
 
     def test_feature_value_lists_are_not_reinterpreted_as_bytes(self):
         entry = ValueEntryT(key="numbers", value=value([1, 2]))
