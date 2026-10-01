@@ -173,13 +173,13 @@ def canonical_lifecycle_operations(root: Path = ROOT) -> tuple[str, ...]:
 
     request_operations = lifecycle_names(
         _reflected_union_payloads(
-            request_bfbs, "SearchKernel.Protocol.V2.RequestPayload"
+            request_bfbs, "SearchKernel.Protocol.RequestPayload"
         ),
         "Request",
     )
     response_operations = lifecycle_names(
         _reflected_union_payloads(
-            response_bfbs, "SearchKernel.Protocol.V2.ResponsePayload"
+            response_bfbs, "SearchKernel.Protocol.ResponsePayload"
         ),
         "Result",
     )
