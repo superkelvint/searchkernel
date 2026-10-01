@@ -229,23 +229,9 @@ cases.fetch("malformed").each do |scenario|
   raise "malformed result was accepted: #{scenario.fetch('id')}"
 end
 
-malformed_cases = cases.fetch("malformed").to_h { |scenario| [scenario.fetch("id"), scenario] }
-%w[
-  unknown-tensor-payload-union
-  non-finite-dense-tensor-cell
-  non-finite-sparse-tensor-cell
-  non-finite-mixed-tensor-cell
-  tensor-dense-nan
-  tensor-sparse-positive-infinity
-  tensor-mixed-negative-infinity
-].each do |scenario_id|
-  scenario = malformed_cases.fetch(scenario_id)
-  expected_stage = scenario.fetch("bridge_rejected") ? "bridge" : "client"
-  actual_stage = outcomes.fetch(scenario_id)
-  unless actual_stage == expected_stage
-    raise "shared malformed tensor fixture rejected at wrong stage: #{scenario_id} expected=#{expected_stage} actual=#{actual_stage}"
-  end
-end
+# The shared driver validates the bridge/client rejection stage for every malformed
+# fixture. Cases rejected by the FlatBuffers JSON bridge never reach Ruby, so
+# equivalent direct Ruby decoder regressions live in test/run.rb instead.
 
 traces["malformed_outcomes"] = outcomes
 File.write(File.join(ENV.fetch("SEARCHKERNEL_RESULT_TRACE_DIR"), "ruby.json"), JSON.generate(traces))
