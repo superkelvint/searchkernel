@@ -27,7 +27,9 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertNotIn("workflow_dispatch:", text)
         self.assertNotRegex(text, r"(?m)^\s+pull_request:")
         self.assertNotRegex(text, r"(?m)^\s+push:")
-        self.assertIn("permissions:\n  contents: read\n", text)
+        self.assertIn("permissions: {}\n", text)
+        verify = text[text.index("  verify:"):text.index("  report-comment:")]
+        self.assertIn("permissions:\n      contents: read\n", verify)
         self.assertNotIn("${{ secrets.", text)
 
     def test_control_plane_is_proven_before_subject_checkout(self):
