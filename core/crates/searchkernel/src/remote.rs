@@ -675,7 +675,7 @@ impl Backend for RemoteBackend {
             ir::encode_patch_request_for_target(&request, self.target())?,
             false,
         )?;
-        let envelope = self.response(
+        let envelope = expected_response(
             &payload,
             wire::ResponsePayload::SearchKernel_Wire_PatchResult,
         )?;
@@ -729,8 +729,10 @@ impl Backend for RemoteBackend {
             ir::encode_get_request_for_target(&request, self.target())?,
             true,
         )?;
-        let envelope =
-            self.response(&payload, wire::ResponsePayload::SearchKernel_Wire_GetResult)?;
+        let envelope = expected_response(
+            &payload,
+            wire::ResponsePayload::SearchKernel_Wire_GetResult,
+        )?;
         let result = ir::get_result_from_api(
             envelope
                 .payload_as_search_kernel_wire_get_result()
@@ -840,7 +842,7 @@ impl RemoteClient {
             wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
         )?;
         let result = envelope
-            .payload_as_search_kernel_v2_create_index_result()
+            .payload_as_search_kernel_wire_create_index_result()
             .ok_or_else(|| {
                 crate::Error::from_ir(invalid_remote_response("create result payload is missing"))
             })?;
@@ -871,7 +873,7 @@ impl RemoteClient {
             wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
         )?;
         let result = envelope
-            .payload_as_search_kernel_v2_open_index_result()
+            .payload_as_search_kernel_wire_open_index_result()
             .ok_or_else(|| {
                 crate::Error::from_ir(invalid_remote_response("open result payload is missing"))
             })?;
@@ -897,7 +899,7 @@ impl RemoteClient {
             wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
         )?;
         envelope
-            .payload_as_search_kernel_v2_delete_index_result()
+            .payload_as_search_kernel_wire_delete_index_result()
             .ok_or_else(|| {
                 crate::Error::from_ir(invalid_remote_response(
                     "delete-index result payload is missing",
