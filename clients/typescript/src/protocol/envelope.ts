@@ -85,6 +85,7 @@ export function packRequest<K extends Operation>(
   operation: K,
   payload: OperationRequestMap[K],
   target?: string,
+  expectedIndexGeneration?: string,
 ): Uint8Array {
   let indexTarget: IndexTargetT | null = null;
   if (target !== undefined) {
@@ -95,11 +96,16 @@ export function packRequest<K extends Operation>(
     requestTypes[operation],
     payload as never,
     indexTarget,
+    expectedIndexGeneration ?? null,
   );
   return packObject(envelope, REQUEST_IDENTIFIER);
 }
 
-export interface DecodedResponse { payloadType: ResponsePayload; payload: unknown; }
+export interface DecodedResponse {
+  payloadType: ResponsePayload;
+  payload: unknown;
+  indexGeneration: string | null;
+}
 
 export function expectedResponseType(operation: Operation): ResponsePayload { return responseTypes[operation]; }
 
@@ -179,7 +185,11 @@ export function unpackResponse(bytes: Uint8Array, operation: Operation): Decoded
     if (unpacked.payload === null) {
       throw new ProtocolError("response envelope has no payload");
     }
-    return { payloadType: type, payload: unpacked.payload };
+    return {
+      payloadType: type,
+      payload: unpacked.payload,
+      indexGeneration: unpacked.indexGeneration,
+    };
   } catch (error) {
     if (error instanceof ProtocolError) throw error;
     throw new ProtocolError("malformed Search Kernel response envelope");
