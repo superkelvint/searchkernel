@@ -2,7 +2,7 @@
 
 use crate::error::{ErrorCode, PortableError};
 use crate::model as ir;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 
 mod error;
 mod filter;
@@ -45,11 +45,20 @@ pub use search::{
     inspect_query_result_offset, inspect_query_result_to_api, search_request_ir_to_api,
 };
 pub use transport::{
-    encode_analyze_request, encode_analyze_request_for_target, encode_create_index_request,
+    encode_analyze_request, encode_analyze_request_for_target,
+    encode_analyze_request_for_target_generation, encode_create_index_request,
     encode_delete_index_request, encode_delete_request, encode_delete_request_for_target,
-    encode_describe_request, encode_describe_request_for_target, encode_get_request,
-    encode_get_request_for_target, encode_insert_request, encode_insert_request_for_target,
+    encode_delete_request_for_target_generation,
+    encode_describe_request, encode_describe_request_for_target,
+    encode_describe_request_for_target_generation, encode_get_request,
+    encode_get_request_for_target, encode_get_request_for_target_generation,
+    encode_insert_request, encode_insert_request_for_target,
+    encode_insert_request_for_target_generation,
     encode_open_index_request, encode_patch_request, encode_patch_request_for_target,
-    encode_search_request, encode_search_request_for_target, encode_update_request,
-    encode_update_request_for_target, encode_upsert_request, encode_upsert_request_for_target,
+    encode_patch_request_for_target_generation,
+    encode_search_request, encode_search_request_for_target,
+    encode_search_request_for_target_generation, encode_update_request,
+    encode_update_request_for_target, encode_update_request_for_target_generation,
+    encode_upsert_request, encode_upsert_request_for_target,
+    encode_upsert_request_for_target_generation,
 };

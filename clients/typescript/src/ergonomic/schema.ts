@@ -1,21 +1,21 @@
 import { comparePortableKeys } from "../internal/scalars.js";
-import { DataTypeKind } from "../generated/flatbuffers/search-kernel/v2/data-type-kind.js";
-import { DataTypeT } from "../generated/flatbuffers/search-kernel/v2/data-type.js";
-import { FieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/field-definition.js";
-import { MatchingConfigT } from "../generated/flatbuffers/search-kernel/v2/matching-config.js";
-import { MatchingMode } from "../generated/flatbuffers/search-kernel/v2/matching-mode.js";
-import { OptionalBoolT } from "../generated/flatbuffers/search-kernel/v2/optional-bool.js";
-import { OptionalUInt32T } from "../generated/flatbuffers/search-kernel/v2/optional-uint32.js";
-import { PrimitiveDataTypeKind } from "../generated/flatbuffers/search-kernel/v2/primitive-data-type-kind.js";
-import { PrimitiveDataTypeT } from "../generated/flatbuffers/search-kernel/v2/primitive-data-type.js";
-import { RankPhaseDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-phase-definition.js";
-import { RankProfileDefinitionT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-definition.js";
-import { RankProfileInputT } from "../generated/flatbuffers/search-kernel/v2/rank-profile-input.js";
-import { TensorDataTypeT } from "../generated/flatbuffers/search-kernel/v2/tensor-data-type.js";
-import { ArrayDataTypeT } from "../generated/flatbuffers/search-kernel/v2/array-data-type.js";
-import { StructDataTypeT } from "../generated/flatbuffers/search-kernel/v2/struct-data-type.js";
-import { StructFieldDefinitionT } from "../generated/flatbuffers/search-kernel/v2/struct-field-definition.js";
-import { PositionDataTypeT } from "../generated/flatbuffers/search-kernel/v2/position-data-type.js";
+import { DataTypeKind } from "../semantic.js";
+import { DataTypeT } from "../semantic.js";
+import { FieldDefinitionT } from "../semantic.js";
+import { MatchingConfigT } from "../semantic.js";
+import { MatchingMode } from "../semantic.js";
+import { OptionalBoolT } from "../semantic.js";
+import { OptionalUInt32T } from "../semantic.js";
+import { PrimitiveDataTypeKind } from "../semantic.js";
+import { PrimitiveDataTypeT } from "../semantic.js";
+import { RankPhaseDefinitionT } from "../semantic.js";
+import { RankProfileDefinitionT } from "../semantic.js";
+import { RankProfileInputT } from "../semantic.js";
+import { TensorDataTypeT } from "../semantic.js";
+import { ArrayDataTypeT } from "../semantic.js";
+import { StructDataTypeT } from "../semantic.js";
+import { StructFieldDefinitionT } from "../semantic.js";
+import { PositionDataTypeT } from "../semantic.js";
 import { Tensor, value } from "../client/values.js";
 
 export interface FieldOptions {

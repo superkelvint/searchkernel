@@ -2,12 +2,12 @@ use searchkernel_protocol::json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
     response_json_to_flatbuffer,
 };
-use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_protocol::protocol::v1 as wire;
 
 const RICH_REQUEST: &[u8] = br#"
 {
-  "protocol_version": 2,
-  "payload_type": "SearchKernel_V2_InsertRequest",
+  "protocol_version": 1,
+  "payload_type": "SearchKernel_Wire_InsertRequest",
   "payload": {
     "document": {
       "id": "id:ns:type::1",
@@ -25,8 +25,8 @@ const RICH_REQUEST: &[u8] = br#"
 
 const WIDENED_SEARCH_REQUEST: &[u8] = br#"
 {
-  "protocol_version": 2,
-  "payload_type": "SearchKernel_V2_SearchRequest",
+  "protocol_version": 1,
+  "payload_type": "SearchKernel_Wire_SearchRequest",
   "payload": {
     "query": {"source_type":"SearchKernelTextQuery","source":{"text":"fox"}},
     "ranking": {"profile":"bm25","properties":[{"key":"rankproperty","value":"value"}]},
@@ -41,8 +41,8 @@ const WIDENED_SEARCH_REQUEST: &[u8] = br#"
 
 const INTEGER_BOUNDARY_REQUEST: &[u8] = br#"
 {
-  "protocol_version": 2,
-  "payload_type": "SearchKernel_V2_InsertRequest",
+  "protocol_version": 1,
+  "payload_type": "SearchKernel_Wire_InsertRequest",
   "payload": {
     "document": {
       "id": "id:ns:type::integer-boundaries",
@@ -58,8 +58,8 @@ const INTEGER_BOUNDARY_REQUEST: &[u8] = br#"
 
 const STRUCTURED_QUERY_REQUEST: &[u8] = br#"
 {
-  "protocol_version": 2,
-  "payload_type": "SearchKernel_V2_SearchRequest",
+  "protocol_version": 1,
+  "payload_type": "SearchKernel_Wire_SearchRequest",
   "payload": {
     "query": {"source_type":"TypedQuery","source":{"query":{"expr_type":"TermQuery","expr":{"value":{"kind_type":"StringValue","kind":{"value":"fox"}}}}}}
   }
@@ -73,7 +73,7 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
 
     let printed = request_flatbuffer_to_json(&bytes).expect("request JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
-    assert_eq!(value["payload_type"], "SearchKernel_V2_InsertRequest");
+    assert_eq!(value["payload_type"], "SearchKernel_Wire_InsertRequest");
     let fields = value["payload"]["document"]["fields"]
         .as_array()
         .expect("document fields array");
@@ -104,8 +104,8 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
 #[test]
 fn standard_json_rejects_bare_64_bit_integer_scalars() {
     let input = br#"{
-      "protocol_version": 2,
-      "payload_type": "SearchKernel_V2_InsertRequest",
+      "protocol_version": 1,
+      "payload_type": "SearchKernel_Wire_InsertRequest",
       "payload": {
         "document": {
           "id": "id:ns:type::bare-int64",
@@ -161,8 +161,8 @@ fn standard_json_prints_64_bit_integer_boundaries_as_decimal_strings() {
 #[test]
 fn standard_json_canonicalizes_64_bit_scalars_outside_value_unions() {
     let request = br#"{
-      "protocol_version": 2,
-      "payload_type": "SearchKernel_V2_SearchRequest",
+      "protocol_version": 1,
+      "payload_type": "SearchKernel_Wire_SearchRequest",
       "payload": {
         "timeout_ms": {"value": "18446744073709551615"}
       }
@@ -178,8 +178,8 @@ fn standard_json_canonicalizes_64_bit_scalars_outside_value_unions() {
     );
 
     let response = br#"{
-      "protocol_version": 2,
-      "payload_type": "SearchKernel_V2_SearchResult",
+      "protocol_version": 1,
+      "payload_type": "SearchKernel_Wire_SearchResult",
       "payload": {
         "total_hits": {"value": "18446744073709551615", "relation": "Exact"},
         "errors": [{"code": "-9223372036854775808", "message": "boundary"}]
@@ -204,8 +204,8 @@ fn standard_json_canonicalizes_64_bit_scalars_outside_value_unions() {
 #[test]
 fn standard_json_handles_response_union_and_errors() {
     let input = br#"{
-      "protocol_version": 2,
-      "payload_type": "SearchKernel_V2_Error",
+      "protocol_version": 1,
+      "payload_type": "SearchKernel_Wire_Error",
       "payload": {
         "code": "InvalidArgument",
         "message": "bad request",
@@ -224,8 +224,8 @@ fn standard_json_handles_response_union_and_errors() {
 #[test]
 fn standard_json_accepts_flatbuffers_positional_empty_union_tables() {
     let input = br#"{
-      "protocol_version": 2,
-      "payload_type": "SearchKernel_V2_SearchRequest",
+      "protocol_version": 1,
+      "payload_type": "SearchKernel_Wire_SearchRequest",
       "payload": {
         "query": {"source_type":"MatchAllQuery","source":[]},
         "sort": [{
@@ -245,11 +245,10 @@ fn standard_json_accepts_flatbuffers_positional_empty_union_tables() {
 
 #[test]
 fn standard_json_carries_ranking_inputs_and_structured_grouping() {
-    let bytes =
-        request_json_to_flatbuffer(WIDENED_SEARCH_REQUEST).expect("widened V2 request JSON");
+    let bytes = request_json_to_flatbuffer(WIDENED_SEARCH_REQUEST).expect("widened request JSON");
     let printed = request_flatbuffer_to_json(&bytes).expect("widened request JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
-    assert_eq!(value["payload_type"], "SearchKernel_V2_SearchRequest");
+    assert_eq!(value["payload_type"], "SearchKernel_Wire_SearchRequest");
     assert_eq!(value["payload"]["ranking"]["profile"], "bm25");
     assert_eq!(
         value["payload"]["inputs"][0]["input_type"],
@@ -281,8 +280,8 @@ fn standard_json_carries_structured_query_unions() {
 #[test]
 fn standard_json_preserves_textual_filter_clause_bindings() {
     let input = br#"{
-      "protocol_version": 2,
-      "payload_type": "SearchKernel_V2_SearchRequest",
+      "protocol_version": 1,
+      "payload_type": "SearchKernel_Wire_SearchRequest",
       "payload": {
         "filters": {
           "textual": [
@@ -323,44 +322,50 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
 
 #[test]
 fn multi_index_protocol_baseline_pins_wire_layout() {
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_InsertRequest.0, 1);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_UpsertRequest.0, 2);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_PatchRequest.0, 3);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_DeleteRequest.0, 4);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_GetRequest.0, 5);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_SearchRequest.0, 6);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_AnalyzeRequest.0, 7);
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_DescribeRequest.0, 8);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_InsertRequest.0, 1);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_UpsertRequest.0, 2);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_PatchRequest.0, 3);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_DeleteRequest.0, 4);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_GetRequest.0, 5);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_SearchRequest.0, 6);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_AnalyzeRequest.0, 7);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_DescribeRequest.0, 8);
     assert_eq!(
-        wire::RequestPayload::SearchKernel_V2_InspectQueryRequest.0,
+        wire::RequestPayload::SearchKernel_Wire_InspectQueryRequest.0,
         9
     );
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_UpdateRequest.0, 10);
+    assert_eq!(wire::RequestPayload::SearchKernel_Wire_UpdateRequest.0, 10);
     assert_eq!(
-        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest.0,
+        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest.0,
         11
     );
-    assert_eq!(wire::RequestPayload::SearchKernel_V2_OpenIndexRequest.0, 12);
-
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_InsertResult.0, 1);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_UpsertResult.0, 2);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_PatchResult.0, 3);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_DeleteResult.0, 4);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_GetResult.0, 5);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_SearchResult.0, 6);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_AnalyzeResult.0, 7);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_Error.0, 8);
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_DescribeResult.0, 9);
     assert_eq!(
-        wire::ResponsePayload::SearchKernel_V2_InspectQueryResult.0,
-        10
-    );
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_UpdateResult.0, 11);
-    assert_eq!(
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult.0,
+        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest.0,
         12
     );
-    assert_eq!(wire::ResponsePayload::SearchKernel_V2_OpenIndexResult.0, 13);
+
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_InsertResult.0, 1);
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_UpsertResult.0, 2);
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_PatchResult.0, 3);
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_DeleteResult.0, 4);
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_GetResult.0, 5);
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_SearchResult.0, 6);
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_AnalyzeResult.0, 7);
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_Error.0, 8);
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_DescribeResult.0, 9);
+    assert_eq!(
+        wire::ResponsePayload::SearchKernel_Wire_InspectQueryResult.0,
+        10
+    );
+    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_UpdateResult.0, 11);
+    assert_eq!(
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult.0,
+        12
+    );
+    assert_eq!(
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult.0,
+        13
+    );
 
     // #848 establishes this layout as the compatibility baseline. Future
     // protocol evolution appends fields/variants rather than reusing slots.
@@ -396,9 +401,9 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
 #[test]
 fn standard_json_round_trips_targeted_open_lifecycle() {
     let input = br#"{
-      "protocol_version": 2,
+      "protocol_version": 1,
       "target": {"name": "products"},
-      "payload_type": "SearchKernel_V2_OpenIndexRequest",
+      "payload_type": "SearchKernel_Wire_OpenIndexRequest",
       "payload": {}
     }"#;
 
@@ -411,13 +416,13 @@ fn standard_json_round_trips_targeted_open_lifecycle() {
     );
     assert_eq!(
         envelope.payload_type(),
-        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest
+        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest
     );
 
     let printed = request_flatbuffer_to_json(&bytes).expect("targeted open-index JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
     assert_eq!(value["target"]["name"], "products");
-    assert_eq!(value["payload_type"], "SearchKernel_V2_OpenIndexRequest");
+    assert_eq!(value["payload_type"], "SearchKernel_Wire_OpenIndexRequest");
 
     request_json_to_flatbuffer(&printed).expect("printed lifecycle JSON remains readable");
 }
@@ -425,9 +430,9 @@ fn standard_json_round_trips_targeted_open_lifecycle() {
 #[test]
 fn create_index_keeps_logical_target_and_schema_identity_distinct() {
     let request = br#"{
-      "protocol_version": 2,
+      "protocol_version": 1,
       "target": {"name": "catalog-a"},
-      "payload_type": "SearchKernel_V2_CreateIndexRequest",
+      "payload_type": "SearchKernel_Wire_CreateIndexRequest",
       "payload": {
         "definition": {
           "name": "product_schema",
@@ -444,7 +449,7 @@ fn create_index_keeps_logical_target_and_schema_identity_distinct() {
     );
     assert_eq!(
         envelope.payload_type(),
-        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest
+        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest
     );
 
     let request_printed =
@@ -454,7 +459,7 @@ fn create_index_keeps_logical_target_and_schema_identity_distinct() {
     assert_eq!(request_value["target"]["name"], "catalog-a");
     assert_eq!(
         request_value["payload_type"],
-        "SearchKernel_V2_CreateIndexRequest"
+        "SearchKernel_Wire_CreateIndexRequest"
     );
     assert_eq!(
         request_value["payload"]["definition"]["name"],
@@ -462,12 +467,12 @@ fn create_index_keeps_logical_target_and_schema_identity_distinct() {
     );
 
     for (payload_type, schema_name) in [
-        ("SearchKernel_V2_CreateIndexResult", "product_schema"),
-        ("SearchKernel_V2_OpenIndexResult", "product_schema"),
+        ("SearchKernel_Wire_CreateIndexResult", "product_schema"),
+        ("SearchKernel_Wire_OpenIndexResult", "product_schema"),
     ] {
         let response = format!(
             r#"{{
-              "protocol_version": 2,
+              "protocol_version": 1,
               "payload_type": "{payload_type}",
               "payload": {{"index": {{"name": "{schema_name}", "fields": []}}}}
             }}"#
@@ -484,8 +489,8 @@ fn create_index_keeps_logical_target_and_schema_identity_distinct() {
 #[test]
 fn targetless_frames_remain_valid_for_embedded_callers_but_not_daemon_routing() {
     let input = br#"{
-      "protocol_version": 2,
-      "payload_type": "SearchKernel_V2_DescribeRequest",
+      "protocol_version": 1,
+      "payload_type": "SearchKernel_Wire_DescribeRequest",
       "payload": {}
     }"#;
 
@@ -497,15 +502,15 @@ fn targetless_frames_remain_valid_for_embedded_callers_but_not_daemon_routing() 
     let printed = request_flatbuffer_to_json(&bytes).expect("targetless JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
     assert!(value.get("target").is_none());
-    assert_eq!(value["payload_type"], "SearchKernel_V2_DescribeRequest");
+    assert_eq!(value["payload_type"], "SearchKernel_Wire_DescribeRequest");
 }
 
 #[test]
 fn target_domain_strings_remain_representation_values_after_structural_decode() {
     let input = br#"{
-      "protocol_version": 2,
+      "protocol_version": 1,
       "target": {"name": "../products"},
-      "payload_type": "SearchKernel_V2_OpenIndexRequest",
+      "payload_type": "SearchKernel_Wire_OpenIndexRequest",
       "payload": {}
     }"#;
     let bytes = request_json_to_flatbuffer(input)
@@ -521,11 +526,11 @@ fn target_domain_strings_remain_representation_values_after_structural_decode() 
 #[test]
 fn custom_union_shape_and_malformed_json_are_rejected() {
     assert!(
-        request_json_to_flatbuffer(br#"{"protocol_version":2,"request":{"search":{}}}"#).is_err()
+        request_json_to_flatbuffer(br#"{"protocol_version":1,"request":{"search":{}}}"#).is_err()
     );
     assert!(request_json_to_flatbuffer(br#"{"#).is_err());
     assert!(request_json_to_flatbuffer(
-        br#"{"protocol_version":2,"payload_type":"NotARequest","payload":{}}"#
+        br#"{"protocol_version":1,"payload_type":"NotARequest","payload":{}}"#
     )
     .is_err());
 }

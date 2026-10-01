@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::error::{PortableError, Result};
-/// The physical V2 document type.  Matching and index configuration are
+/// The portable document type.  Matching and index configuration are
 /// intentionally modelled separately; `Text` and `Keyword` are not document
 /// types in the portable contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,7 +141,7 @@ pub struct FieldCapabilities {
     pub(crate) searchable: bool,
     pub(crate) filterable: bool,
     pub(crate) sortable: bool,
-    /// Canonical grouping/attribute capability resolved from V2 `facetable`.
+    /// Canonical grouping/attribute capability resolved from `facetable`.
     pub(crate) groupable: bool,
 }
 
@@ -544,7 +544,7 @@ pub struct IndexDefinitionIr {
     pub(crate) properties: SchemaPropertiesIr,
     pub(crate) document_type: Option<String>,
     // Backend document identity is semantic resolved state, but is deliberately
-    // not part of the caller-visible V2 IndexDefinition contract.
+    // not part of the caller-visible IndexDefinition contract.
     pub(crate) resolved_document_type: String,
     pub(crate) schema_inherits: Vec<String>,
     pub(crate) document_inherits: Vec<String>,

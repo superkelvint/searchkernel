@@ -6,7 +6,7 @@ use crate::filter_expression::{bind_parsed_filter, parse_error_to_portable};
 use crate::model::*;
 #[cfg(test)]
 use searchkernel_filter::parse_filter;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 
 pub(crate) const MAX_FILTER_BINDINGS: usize = 1024;

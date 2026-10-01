@@ -181,7 +181,7 @@ fn public_compositional_typed_queries_match_portable_requests() {
                 searchkernel_ir::QueryExprKindIr::UserInput {
                     value: "free form".to_owned(),
                     default_index: Some("title".to_owned()),
-                    target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+                    target_hits: searchkernel_ir::DEFAULT_WEAK_AND_TARGET_HITS,
                 },
             ),
         ),
@@ -190,7 +190,7 @@ fn public_compositional_typed_queries_match_portable_requests() {
             searchkernel_ir::QueryExprIr {
                 kind: searchkernel_ir::QueryExprKindIr::UserQuery {
                     default_index: Some("title".to_owned()),
-                    target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+                    target_hits: searchkernel_ir::DEFAULT_WEAK_AND_TARGET_HITS,
                 },
                 annotations: BTreeMap::new(),
             },

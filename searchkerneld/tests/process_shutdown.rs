@@ -13,7 +13,10 @@ use std::{
 
 use flatbuffers::root;
 use searchkernel::{Field, IndexDefinition, RemoteClient};
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+use searchkernel_protocol::{
+    protocol::v1::{self as wire, PROTOCOL_VERSION},
+    wire::v1 as api,
+};
 use searchkerneld::rpc;
 use tonic::Request;
 
@@ -84,7 +87,13 @@ fn target<'a>(
     name: &str,
 ) -> flatbuffers::WIPOffset<api::IndexTarget<'a>> {
     let name = builder.create_string(name);
-    api::IndexTarget::create(builder, &api::IndexTargetArgs { name: Some(name) })
+    api::IndexTarget::create(
+        builder,
+        &api::IndexTargetArgs {
+            name: Some(name),
+            generation: None,
+        },
+    )
 }
 
 fn create_index_request(target_name: &str, field_name: &str) -> Vec<u8> {
@@ -137,7 +146,7 @@ fn create_index_request(target_name: &str, field_name: &str) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
             payload: Some(payload.as_union_value()),
         },
     );
@@ -155,7 +164,7 @@ fn open_index_request(target_name: &str) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
             payload: Some(payload.as_union_value()),
         },
     );
@@ -223,7 +232,7 @@ fn data_root_daemon_restarts_with_two_independent_indexes() {
         let response = grpc_execute(first_address, create_index_request(name, field));
         assert_response_kind(
             &response,
-            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
         );
     }
 
@@ -242,7 +251,7 @@ fn data_root_daemon_restarts_with_two_independent_indexes() {
         let response = grpc_execute(second_address, open_index_request(name));
         assert_response_kind(
             &response,
-            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
         );
     }
 

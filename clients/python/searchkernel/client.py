@@ -1,4 +1,4 @@
-"""Synchronous Python client for the canonical gRPC/V2 transport."""
+"""Synchronous Python client for the canonical gRPC transport."""
 
 from __future__ import annotations
 
@@ -19,56 +19,57 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from .grpc_transport import GrpcTransport, GrpcTransportError
-from .protocol import ERROR_TYPE, pack_request, unpack_response
+from ._wire import ERROR_TYPE, pack_request, unpack_response
 from .scalars import check_int64
+from ._semantic import is_semantic_table, table_type
 
-from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT
-from SearchKernel.V2.AnalyzeRequest import AnalyzeRequestT
-from SearchKernel.V2.AnalyzeTarget import AnalyzeTarget as AnalyzeTargetKind
-from SearchKernel.V2.BoolValue import BoolValueT
-from SearchKernel.V2.BytesValue import BytesValueT
-from SearchKernel.V2.DataType import DataTypeT
-from SearchKernel.V2.DataTypeKind import DataTypeKind
-from SearchKernel.V2.DeleteRequest import DeleteRequestT
-from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT
-from SearchKernel.V2.DescribeRequest import DescribeRequestT
-from SearchKernel.V2.Document import DocumentT
-from SearchKernel.V2.ErrorCode import ErrorCode
-from SearchKernel.V2.FieldDefinition import FieldDefinitionT
-from SearchKernel.V2.FieldProjection import FieldProjectionT
-from SearchKernel.V2.Float64Value import Float64ValueT
-from SearchKernel.V2.GetRequest import GetRequestT
-from SearchKernel.V2.CreateIndexRequest import CreateIndexRequestT
-from SearchKernel.V2.OpenIndexRequest import OpenIndexRequestT
-from SearchKernel.V2.IndexDefinition import IndexDefinitionT
-from SearchKernel.V2.InsertRequest import InsertRequestT
-from SearchKernel.V2.Int64Value import Int64ValueT
-from SearchKernel.V2.NonFiniteFloatKind import NonFiniteFloatKind
-from SearchKernel.V2.NonFiniteFloatValue import NonFiniteFloatValueT
-from SearchKernel.V2.NullValue import NullValue
-from SearchKernel.V2.NullValueValue import NullValueValueT
-from SearchKernel.V2.MatchingConfig import MatchingConfigT
-from SearchKernel.V2.MatchingMode import MatchingMode
-from SearchKernel.V2.OptionalBool import OptionalBoolT
-from SearchKernel.V2.PatchRequest import PatchRequestT
-from SearchKernel.V2.StringValue import StringValueT
-from SearchKernel.V2.DenseTensorValues import DenseTensorValuesT
-from SearchKernel.V2.MixedTensorBlocks import MixedTensorBlocksT
-from SearchKernel.V2.SparseTensorCells import SparseTensorCellsT
-from SearchKernel.V2.TensorBlock import TensorBlockT
-from SearchKernel.V2.TensorCell import TensorCellT
-from SearchKernel.V2.TensorAddressEntry import TensorAddressEntryT
-from SearchKernel.V2.TensorPayloadKind import TensorPayloadKind
-from SearchKernel.V2.TensorValue import TensorValueT
-from SearchKernel.V2.UInt64Value import UInt64ValueT
-from SearchKernel.V2.UpsertRequest import UpsertRequestT
-from SearchKernel.V2.UpdateRequest import UpdateRequestT
-from SearchKernel.V2.Value import ValueT
-from SearchKernel.V2.ValueEntry import ValueEntryT
-from SearchKernel.V2.ValueKind import ValueKind
-from SearchKernel.V2.ValueList import ValueListT
-from SearchKernel.V2.ValueObject import ValueObjectT
-from SearchKernel.V2.InspectQueryRequest import InspectQueryRequestT
+from ._semantic import AnalyzeFieldTargetT
+from ._semantic import AnalyzeRequestT
+from ._semantic import AnalyzeTarget as AnalyzeTargetKind
+from ._semantic import BoolValueT
+from ._semantic import BytesValueT
+from ._semantic import DataTypeT
+from ._semantic import DataTypeKind
+from ._semantic import DeleteRequestT
+from ._semantic import DeleteIndexRequestT
+from ._semantic import DescribeRequestT
+from ._semantic import DocumentT
+from ._semantic import ErrorCode
+from ._semantic import FieldDefinitionT
+from ._semantic import FieldProjectionT
+from ._semantic import Float64ValueT
+from ._semantic import GetRequestT
+from ._semantic import CreateIndexRequestT
+from ._semantic import OpenIndexRequestT
+from ._semantic import IndexDefinitionT
+from ._semantic import InsertRequestT
+from ._semantic import Int64ValueT
+from ._semantic import NonFiniteFloatKind
+from ._semantic import NonFiniteFloatValueT
+from ._semantic import NullValue
+from ._semantic import NullValueValueT
+from ._semantic import MatchingConfigT
+from ._semantic import MatchingMode
+from ._semantic import OptionalBoolT
+from ._semantic import PatchRequestT
+from ._semantic import StringValueT
+from ._semantic import DenseTensorValuesT
+from ._semantic import MixedTensorBlocksT
+from ._semantic import SparseTensorCellsT
+from ._semantic import TensorBlockT
+from ._semantic import TensorCellT
+from ._semantic import TensorAddressEntryT
+from ._semantic import TensorPayloadKind
+from ._semantic import TensorValueT
+from ._semantic import UInt64ValueT
+from ._semantic import UpsertRequestT
+from ._semantic import UpdateRequestT
+from ._semantic import ValueT
+from ._semantic import ValueEntryT
+from ._semantic import ValueKind
+from ._semantic import ValueListT
+from ._semantic import ValueObjectT
+from ._semantic import InspectQueryRequestT
 
 
 @dataclass(frozen=True)
@@ -94,8 +95,8 @@ class Tensor:
 
 
 def value(item: Any) -> ValueT:
-    """Convert ordinary Python values into generated V2 ValueT objects."""
-    if isinstance(item, ValueT):
+    """Convert ordinary Python values into the internal value model."""
+    if is_semantic_table(item, "Value"):
         return item
     if item is None:
         return ValueT(
@@ -165,7 +166,7 @@ def _decode_value_entries(entries: Sequence[ValueEntryT] | None) -> dict[str, An
 
 
 def _value_payload(item: ValueT, name: str, expected_type: type):
-    if item.kind is None or not isinstance(item.kind, expected_type):
+    if item.kind is None or not is_semantic_table(item.kind, expected_type.name):
         raise ValueError(f"mismatched Value union: {name} payload")
     return item.kind
 
@@ -199,20 +200,20 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
     tensor = {"type_spec": payload.typeSpec}
     if payload.payloadType == TensorPayloadKind.DenseTensorValues:
         dense = payload.payload
-        if not isinstance(dense, DenseTensorValuesT):
+        if not is_semantic_table(dense, "DenseTensorValues"):
             raise ValueError("mismatched Tensor payload: DenseTensorValues")
         if dense.values is None:
             raise ValueError("malformed dense tensor payload")
         tensor["dense"] = _finite_tensor_cells(dense.values, "dense")
     elif payload.payloadType == TensorPayloadKind.SparseTensorCells:
         sparse = payload.payload
-        if not isinstance(sparse, SparseTensorCellsT):
+        if not is_semantic_table(sparse, "SparseTensorCells"):
             raise ValueError("mismatched Tensor payload: SparseTensorCells")
         if sparse.cells is None:
             raise ValueError("malformed sparse tensor payload")
         cells = []
         for cell in sparse.cells:
-            if not isinstance(cell, TensorCellT):
+            if not is_semantic_table(cell, "TensorCell"):
                 raise ValueError("malformed sparse tensor cell")
             cells.append({
                 "address": _tensor_address(cell.address),
@@ -221,13 +222,13 @@ def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
         tensor["sparse"] = cells
     elif payload.payloadType == TensorPayloadKind.MixedTensorBlocks:
         mixed = payload.payload
-        if not isinstance(mixed, MixedTensorBlocksT):
+        if not is_semantic_table(mixed, "MixedTensorBlocks"):
             raise ValueError("mismatched Tensor payload: MixedTensorBlocks")
         if mixed.blocks is None:
             raise ValueError("malformed mixed tensor payload")
         blocks = []
         for block in mixed.blocks:
-            if not isinstance(block, TensorBlockT):
+            if not is_semantic_table(block, "TensorBlock"):
                 raise ValueError("malformed mixed tensor block")
             if block.values is None:
                 raise ValueError("malformed mixed tensor block")
@@ -990,7 +991,7 @@ class Client:
 
 
 class Index:
-    """Low-level V2 client plus the public managed/remote façade."""
+    """Low-level transport client plus the public managed/remote façade."""
 
     def __init__(self, client: Client, owner: _ManagedLocalHost | None = None, *, ergonomic: bool = False):
         self.client = client
@@ -1205,7 +1206,7 @@ def _index_definition(
     value_: Mapping[str, Any] | IndexDefinitionT,
     rank_profiles: Sequence[Any] | None = None,
 ) -> IndexDefinitionT:
-    if isinstance(value_, IndexDefinitionT):
+    if is_semantic_table(value_, "IndexDefinition"):
         if rank_profiles is not None:
             raise TypeError("rank_profiles cannot accompany an IndexDefinitionT")
         return value_
@@ -1213,7 +1214,7 @@ def _index_definition(
     for name, specification in value_.items():
         if hasattr(specification, "definition"):
             fields.append(specification.definition(name))
-        elif isinstance(specification, FieldDefinitionT):
+        elif is_semantic_table(specification, "FieldDefinition"):
             fields.append(specification)
         else:
             raise TypeError(f"unsupported field specification for {name!r}")

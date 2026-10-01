@@ -1,4 +1,4 @@
-"""Search Kernel's Python façade and canonical generated V2 client."""
+"""Search Kernel's version-free Python client façade."""
 
 from .client import Client, ClientError, Index, SearchKernelError, Tensor, uint64, value
 from .grpc_transport import GrpcTransport, GrpcTransportError

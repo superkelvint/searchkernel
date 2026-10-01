@@ -3,7 +3,7 @@
 //! # Status
 //!
 //! The first two implementation slices are present here: a typed endpoint
-//! policy/request model, strict named-route GET decoding, and canonical V2
+//! policy/request model, strict named-route GET decoding, and canonical
 //! request-envelope encoding for text and match-all search. Public listener
 //! wiring, public JSON response projection, batching, and richer controls remain
 //! future slices.
@@ -745,7 +745,7 @@
 //!
 //! Keep this module's executable surface smaller than the eventual public HTTP
 //! contract. The current typed binder exists to prove policy validation,
-//! presence preservation, and canonical V2 request construction before routing
+//! presence preservation, and canonical request construction before routing
 //! and response-shaping are introduced. Do not grow it into a parallel search
 //! API or bypass the canonical dispatcher path when later slices are added.
 
@@ -754,7 +754,10 @@
 use std::{sync::Arc, time::Duration};
 
 use searchkernel_ir::validate_index_target;
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+use searchkernel_protocol::{
+    protocol::v1::{self as wire, PROTOCOL_VERSION},
+    wire::v1 as api,
+};
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError},
     task::JoinHandle,
@@ -1443,7 +1446,7 @@ impl std::fmt::Display for SearchEndpointBindError {
 
 impl std::error::Error for SearchEndpointBindError {}
 
-/// Validates public serving policy and constructs the canonical V2 search
+/// Validates public serving policy and constructs the canonical search
 /// request envelope consumed by `searchkernel-dispatch`.
 ///
 /// This function intentionally does not dispatch. The daemon owns scheduling,
@@ -1545,6 +1548,7 @@ fn encode_search_request(
         &mut builder,
         &api::IndexTargetArgs {
             name: Some(target_name),
+            generation: None,
         },
     );
     let envelope = wire::RequestEnvelope::create(
@@ -1552,7 +1556,7 @@ fn encode_search_request(
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(search.as_union_value()),
         },
     );

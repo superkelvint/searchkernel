@@ -15,7 +15,9 @@ pub(crate) fn try_encode_portable_definition(
     definition: &IndexDefinition,
 ) -> crate::error::Result<Vec<u8>> {
     let input = crate::schema::index_definition_to_input(definition)?;
-    Ok(searchkernel_ir::index_definition_input_to_api(&input))
+    Ok(searchkernel_ir::wire::v1::index_definition_input_to_api(
+        &input,
+    ))
 }
 
 #[cfg(test)]

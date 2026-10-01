@@ -8,11 +8,11 @@ from searchkernel.ergonomic import SearchBuilder
 from searchkernel import uint64
 from searchkernel.protocol import pack_object
 from client_real_e2e_parity_helpers import corpus_value
-from SearchKernel.V2.ResultGroup import ResultGroupT
-from SearchKernel.V2.ResultNode import ResultNodeT
-from SearchKernel.V2.ResultNodeKind import ResultNodeKind
-from SearchKernel.V2.TotalHits import TotalHitsT
-from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultGroup import ResultGroupT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNode import ResultNodeT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNodeKind import ResultNodeKind
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHits import TotalHitsT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHitsRelation import TotalHitsRelation
 def corpus_binding_value(item):
     if 'int64' in item:
         return int(item['int64'])

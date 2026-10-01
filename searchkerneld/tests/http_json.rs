@@ -12,12 +12,13 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use searchkernel::{Field, Index, IndexDefinition};
-use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
+use searchkernel_dispatch::Dispatcher;
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
 use searchkernel_protocol::json::{
     request_json_to_flatbuffer, response_flatbuffer_to_json, response_json_to_flatbuffer,
 };
-use searchkernel_protocol::protocol::v2 as wire;
+use searchkernel_protocol::protocol::v1 as wire;
+use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
 use searchkernel_testkit::RecordingBackend;
 use searchkerneld::{start, ServerConfig, JSON_EXECUTE_PATH};
 use tokio::sync::Notify;
@@ -99,14 +100,14 @@ impl Backend for BlockingBackend {
 }
 
 const DESCRIBE_JSON: &[u8] = br#"{
-  "protocol_version": 2,
-  "payload_type": "SearchKernel_V2_DescribeRequest",
+  "protocol_version": 1,
+  "payload_type": "SearchKernel_Wire_DescribeRequest",
   "payload": {}
 }"#;
 
 const SEARCH_JSON: &[u8] = br#"{
-  "protocol_version": 2,
-  "payload_type": "SearchKernel_V2_SearchRequest",
+  "protocol_version": 1,
+  "payload_type": "SearchKernel_Wire_SearchRequest",
   "payload": {
     "query": {
       "source_type": "SearchKernelTextQuery",
@@ -183,7 +184,7 @@ async fn http_json_uses_the_canonical_flatbuffers_json_boundary() {
     assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_DescribeResult
+        wire::ResponsePayload::SearchKernel_Wire_DescribeResult
     );
 
     server.shutdown().await.expect("shutdown HTTP edge");
@@ -223,7 +224,7 @@ async fn http_json_and_direct_dispatch_produce_identical_ir_calls() {
         flatbuffers::root::<wire::ResponseEnvelope<'_>>(&decoded).expect("semantic error envelope");
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
 
     let remote_calls = backend.take_calls();

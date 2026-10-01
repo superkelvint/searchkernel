@@ -1,4 +1,4 @@
-"""Synchronous gRPC transport for canonical Search Kernel V2 frames."""
+"""Synchronous gRPC transport for canonical Search Kernel frames."""
 
 from __future__ import annotations
 

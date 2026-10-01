@@ -4,8 +4,8 @@ require_relative "errors"
 
 module SearchKernel
   module Protocol
-    VERSION = 2
-    TYPE_PREFIX = "SearchKernel_V2_"
+    VERSION = 1
+    TYPE_PREFIX = "SearchKernel_Wire_"
     ERROR_TYPE = "#{TYPE_PREFIX}Error"
 
     OPERATIONS = {

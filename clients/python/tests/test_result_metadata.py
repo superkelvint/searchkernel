@@ -10,22 +10,22 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel.client import value  # noqa: E402
 from searchkernel.ergonomic import SearchResults  # noqa: E402
-from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT  # noqa: E402
-from SearchKernel.V2.OptionalBool import OptionalBoolT  # noqa: E402
-from SearchKernel.V2.OptionalDouble import OptionalDoubleT  # noqa: E402
-from SearchKernel.V2.Relevance import RelevanceT  # noqa: E402
-from SearchKernel.V2.RelevanceKind import RelevanceKind  # noqa: E402
-from SearchKernel.V2.ResultGroup import ResultGroupT  # noqa: E402
-from SearchKernel.V2.ResultLimits import ResultLimitsT  # noqa: E402
-from SearchKernel.V2.ResultNode import ResultNodeT  # noqa: E402
-from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
-from SearchKernel.V2.SearchResult import SearchResultT  # noqa: E402
-from SearchKernel.V2.SearchResultError import SearchResultErrorT  # noqa: E402
-from SearchKernel.V2.SearchTiming import SearchTimingT  # noqa: E402
-from SearchKernel.V2.StringEntry import StringEntryT  # noqa: E402
-from SearchKernel.V2.TotalHits import TotalHitsT  # noqa: E402
-from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation  # noqa: E402
-from SearchKernel.V2.ValueEntry import ValueEntryT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.FiniteRelevance import FiniteRelevanceT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.OptionalBool import OptionalBoolT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.OptionalDouble import OptionalDoubleT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Relevance import RelevanceT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.RelevanceKind import RelevanceKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultGroup import ResultGroupT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultLimits import ResultLimitsT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNode import ResultNodeT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNodeKind import ResultNodeKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchResult import SearchResultT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchResultError import SearchResultErrorT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchTiming import SearchTimingT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.StringEntry import StringEntryT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHits import TotalHitsT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHitsRelation import TotalHitsRelation  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry import ValueEntryT  # noqa: E402
 
 
 class ResultMetadataTest(unittest.TestCase):

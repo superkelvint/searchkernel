@@ -1,4 +1,4 @@
-//! Deterministic internal JSON snapshots of owned V2 IR.
+//! Deterministic internal JSON snapshots of owned portable IR.
 //!
 //! This is deliberately separate from the public JSON and transport codecs.
 //! The serializers destructure owned IR structs and exhaustively match their

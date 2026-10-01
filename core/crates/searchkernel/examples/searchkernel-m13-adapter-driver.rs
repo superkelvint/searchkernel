@@ -3,7 +3,7 @@ mod m13;
 
 use crate::m13::load;
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexContext};
+use searchkernel_ir::{wire::v1::index_definition_to_ir, Backend, BackendSession, IndexContext};
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use serde_json::{json, Value as Json};
@@ -15,9 +15,10 @@ use std::{
 
 fn context(path: &Path) -> Arc<IndexContext> {
     let bytes = fs::read(path).expect("read M13 portable definition");
-    let root =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
-            .expect("parse M13 portable definition");
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&bytes)
+    .expect("parse M13 portable definition");
     Arc::new(IndexContext::from_definition_ir(
         index_definition_to_ir(root).expect("convert M13 portable definition"),
     ))
@@ -26,9 +27,9 @@ fn context(path: &Path) -> Arc<IndexContext> {
 fn create_dispatcher(definition: &Path, config: &Path, data: &Path) -> Dispatcher {
     if !config.join("searchkernel-schema.json").exists() {
         let definition_bytes = fs::read(definition).expect("read M13 portable definition");
-        let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(
-            &definition_bytes,
-        )
+        let root = searchkernel_ir::__flatbuffers::root::<
+            searchkernel_ir::wire::v1::schema::IndexDefinition,
+        >(&definition_bytes)
         .expect("parse M13 portable definition");
         let definition_ir = index_definition_to_ir(root).expect("convert M13 portable definition");
         searchkernel_ir_adapter::compile_index_definition(&definition_ir, config)
@@ -59,7 +60,7 @@ fn document(root: &Json, id: &str, tensor_name: &str) -> Json {
 
 fn envelope(payload_type: &str, payload: Json) -> Vec<u8> {
     serde_json::to_vec(&json!({
-        "protocol_version":2,
+        "protocol_version":1,
         "payload_type":payload_type,
         "payload":payload
     }))
@@ -79,7 +80,7 @@ fn dispatch(dispatcher: &Dispatcher, payload_type: &str, payload: Json) -> Json 
 fn get(dispatcher: &Dispatcher, id: &str, field: &str) -> Json {
     let response = dispatch(
         dispatcher,
-        "SearchKernel_V2_GetRequest",
+        "SearchKernel_Wire_GetRequest",
         json!({"id":id,"projection":{"fields":[field]}}),
     );
     let fields = response["payload"]["document"]["fields"].as_array();
@@ -100,7 +101,7 @@ fn get(dispatcher: &Dispatcher, id: &str, field: &str) -> Json {
 fn field_names(dispatcher: &Dispatcher, id: &str, field: &str) -> Json {
     let response = dispatch(
         dispatcher,
-        "SearchKernel_V2_GetRequest",
+        "SearchKernel_Wire_GetRequest",
         json!({"id":id,"projection":{"fields":[field]}}),
     );
     response["payload"]["document"]["fields"]
@@ -129,16 +130,16 @@ fn patch(dispatcher: &Dispatcher, root: &Json, id: &str, tensor_name: Option<&st
     };
     let response = dispatch(
         dispatcher,
-        "SearchKernel_V2_PatchRequest",
+        "SearchKernel_Wire_PatchRequest",
         json!({"id":id,"operations":[operation]}),
     );
-    assert_eq!(response["payload_type"], "SearchKernel_V2_PatchResult");
+    assert_eq!(response["payload_type"], "SearchKernel_Wire_PatchResult");
 }
 
 fn search(dispatcher: &Dispatcher, root: &Json) -> Json {
     let response = dispatch(
         dispatcher,
-        "SearchKernel_V2_SearchRequest",
+        "SearchKernel_Wire_SearchRequest",
         json!({
             "query":{"source_type":"TypedQuery","source":{"query":{
                 "expr_type":"QueryNearestNeighbor","expr":{
@@ -184,21 +185,21 @@ fn run(root: &Json, definition: &Path, config: &Path, data: &Path) -> Json {
     assert_eq!(
         dispatch(
             &dispatcher,
-            "SearchKernel_V2_InsertRequest",
+            "SearchKernel_Wire_InsertRequest",
             json!({"document":document(root,id_a,"a")})
         )["payload_type"],
-        "SearchKernel_V2_InsertResult"
+        "SearchKernel_Wire_InsertResult"
     );
     dispatch(
         &dispatcher,
-        "SearchKernel_V2_InsertRequest",
+        "SearchKernel_Wire_InsertRequest",
         json!({"document":document(root,id_b,"b")}),
     );
     let inserted = get(&dispatcher, id_a, field);
     let nn_before_patch = search(&dispatcher, root);
     dispatch(
         &dispatcher,
-        "SearchKernel_V2_UpsertRequest",
+        "SearchKernel_Wire_UpsertRequest",
         json!({"document":document(root,id_a,"b")}),
     );
     let upserted = get(&dispatcher, id_a, field);
@@ -221,7 +222,7 @@ fn run(root: &Json, definition: &Path, config: &Path, data: &Path) -> Json {
     let persisted_reassign = get(&dispatcher, id_a, field);
     let deleted = dispatch(
         &dispatcher,
-        "SearchKernel_V2_DeleteRequest",
+        "SearchKernel_Wire_DeleteRequest",
         json!({"id":id_a}),
     );
     let deleted_get = get(&dispatcher, id_a, field).is_null();

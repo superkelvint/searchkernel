@@ -2,15 +2,19 @@
 
 This directory contains the language-neutral FlatBuffers schemas used at the
 portable boundary between non-Rust callers, `searchkerneld`, and Search Kernel.
+Versioned wire schemas live under `wire/<major>/`; `wire/v1/` is the single
+authoritative source for the first released wire protocol. The top-level
+`searchkernel*.fbs` paths are symlink aliases for path compatibility only.
 The first-party Rust API is embedded directly and does not serialize requests
 through these schemas merely to reach the local engine.
 
 ## Start reading here
 
-1. Read `searchkernel.fbs` for the domain model: indexes, documents, values,
-   queries, filters, and results.
-2. Read `searchkernel_request.fbs` and `searchkernel_response.fbs` for the
-   neutral canonical request/response envelopes used by dispatchers.
+1. Read `wire/v1/searchkernel.fbs` for the domain model: indexes, documents,
+   values, queries, filters, and results.
+2. Read `wire/v1/searchkernel_request.fbs` and
+   `wire/v1/searchkernel_response.fbs` for the neutral canonical
+   request/response envelopes used by dispatchers.
 3. Follow the Rust conversion code in
    `core/crates/searchkernel-ir/src/api_to_ir/mod.rs` and
    `core/crates/searchkernel-ir/src/ir_to_api/mod.rs`.

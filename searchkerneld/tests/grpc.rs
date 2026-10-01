@@ -19,10 +19,10 @@ use searchkernel::{
     field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Patch, Ranking,
     RemoteClient, Sort, Tensor,
 };
-use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
+use searchkernel_dispatch::Dispatcher;
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
-use searchkernel_protocol::protocol::v2 as wire;
-use searchkernel_rpc::INDEX_GENERATION_METADATA_KEY;
+use searchkernel_protocol::protocol::v1 as wire;
+use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
 use searchkernel_testkit::{
     canonical_result_fixtures, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
 };
@@ -52,7 +52,7 @@ fn describe_request(version: u32) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: version,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -69,6 +69,7 @@ fn targeted_describe_request(version: u32, target_name: &str) -> Vec<u8> {
         &mut builder,
         &wire::IndexTargetArgs {
             name: Some(target_name),
+            generation: None,
         },
     );
     let envelope = wire::RequestEnvelope::create(
@@ -76,7 +77,7 @@ fn targeted_describe_request(version: u32, target_name: &str) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: version,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -92,7 +93,7 @@ fn search_request() -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -126,7 +127,7 @@ fn valid_search_request() -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -160,7 +161,7 @@ fn large_search_request() -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -205,34 +206,22 @@ impl rpc::search_kernel_server::SearchKernel for RemoteTestService {
         let payload = request.into_inner().payload;
         let envelope = wire::root_as_request_envelope(&payload)
             .map_err(|_| Status::invalid_argument("invalid Search Kernel request"))?;
-        let lifecycle_response = matches!(
-            envelope.payload_type(),
-            wire::RequestPayload::SearchKernel_V2_CreateIndexRequest
-                | wire::RequestPayload::SearchKernel_V2_OpenIndexRequest
-        );
         let response = match envelope.payload_type() {
-            wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+            wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
                 lifecycle_definition_response(&self.definition, true)
             }
-            wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+            wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest => {
                 lifecycle_definition_response(&self.definition, false)
             }
-            wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest => lifecycle_delete_response(),
+            wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest => {
+                lifecycle_delete_response()
+            }
             _ => self
                 .dispatcher
                 .dispatch(&payload)
                 .map_err(|_| Status::invalid_argument("invalid Search Kernel request"))?,
         };
-        let mut response = Response::new(rpc::FlatBufferFrame { payload: response });
-        if lifecycle_response {
-            response.metadata_mut().insert(
-                INDEX_GENERATION_METADATA_KEY,
-                "fixture-generation"
-                    .parse()
-                    .expect("static fixture generation metadata"),
-            );
-        }
-        Ok(response)
+        Ok(Response::new(rpc::FlatBufferFrame { payload: response }))
     }
 }
 
@@ -241,23 +230,30 @@ fn lifecycle_definition_response(
     create: bool,
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let index = searchkernel_ir::wire::v1::index_definition_offset(&mut builder, definition);
+    let generation = builder.create_string("fixture-generation");
     let (payload_type, payload) = if create {
         let result = wire::CreateIndexResult::create(
             &mut builder,
-            &wire::CreateIndexResultArgs { index: Some(index) },
+            &wire::CreateIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         );
         (
-            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
             result.as_union_value(),
         )
     } else {
         let result = wire::OpenIndexResult::create(
             &mut builder,
-            &wire::OpenIndexResultArgs { index: Some(index) },
+            &wire::OpenIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         );
         (
-            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
             result.as_union_value(),
         )
     };
@@ -280,7 +276,7 @@ fn lifecycle_delete_response() -> Vec<u8> {
         &mut builder,
         &wire::ResponseEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
-            payload_type: wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+            payload_type: wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
             payload: Some(result.as_union_value()),
         },
     );
@@ -758,7 +754,7 @@ async fn execute_uses_the_canonical_dispatcher_over_a_real_socket() {
         remote_envelope.payload_type()
     );
     assert!(remote_envelope
-        .payload_as_search_kernel_v2_describe_result()
+        .payload_as_search_kernel_wire_describe_result()
         .is_some());
 
     server.shutdown().await.expect("shutdown server");
@@ -822,15 +818,15 @@ async fn semantic_dispatch_errors_remain_canonical_error_payloads() {
     let remote = root::<wire::ResponseEnvelope<'_>>(&remote).expect("remote response");
     assert_eq!(
         direct.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     assert_eq!(
         remote.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     assert_eq!(
-        direct.payload_as_search_kernel_v2_error().unwrap().code(),
-        remote.payload_as_search_kernel_v2_error().unwrap().code()
+        direct.payload_as_search_kernel_wire_error().unwrap().code(),
+        remote.payload_as_search_kernel_wire_error().unwrap().code()
     );
 
     server.shutdown().await.expect("shutdown server");
@@ -865,8 +861,8 @@ async fn direct_dispatch_and_grpc_share_the_same_backend_operation_ir() {
     assert_eq!(direct_response, remote_response);
     let direct = root::<wire::ResponseEnvelope<'_>>(&direct_response).unwrap();
     let remote = root::<wire::ResponseEnvelope<'_>>(&remote_response).unwrap();
-    let direct_error = direct.payload_as_search_kernel_v2_error().unwrap();
-    let remote_error = remote.payload_as_search_kernel_v2_error().unwrap();
+    let direct_error = direct.payload_as_search_kernel_wire_error().unwrap();
+    let remote_error = remote.payload_as_search_kernel_wire_error().unwrap();
     assert_eq!(direct_error.code(), remote_error.code());
     assert_eq!(
         direct_error.details().map(|details| details
@@ -1183,9 +1179,9 @@ async fn framing_and_lifecycle_failures_are_transport_statuses() {
     let envelope = flatbuffers::root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
-    let error = envelope.payload_as_search_kernel_v2_error().unwrap();
+    let error = envelope.payload_as_search_kernel_wire_error().unwrap();
     assert_eq!(error.code(), wire::ErrorCode::FailedPrecondition);
     assert_eq!(
         error.details().unwrap().get(0).code(),

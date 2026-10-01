@@ -1,10 +1,18 @@
 use super::*;
-use searchkernel_ir::{api, OperationIr};
+use crate::wire::v1::encode_result;
+use flatbuffers::root;
+use searchkernel_ir::{wire::v1::schema as api, OperationIr};
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use searchkernel_testkit::{
     assert_api_search_result_matches, canonical_result_fixtures, representative_search_result,
     ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
 };
 use std::fs;
+
+#[test]
+fn first_released_protocol_major_is_one() {
+    assert_eq!(PROTOCOL_VERSION, 1);
+}
 
 #[test]
 fn invalid_search_result_encoding_becomes_error_response_without_panicking() {
@@ -20,9 +28,9 @@ fn invalid_search_result_encoding_becomes_error_response_without_panicking() {
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         encode_result(
             Ok(invalid),
-            wire::ResponsePayload::SearchKernel_V2_SearchResult,
+            wire::ResponsePayload::SearchKernel_Wire_SearchResult,
             |builder, result| {
-                searchkernel_ir::search_result_offset(builder, result)
+                searchkernel_ir::wire::v1::search_result_offset(builder, result)
                     .map(|result| result.as_union_value())
             },
         )
@@ -31,9 +39,9 @@ fn invalid_search_result_encoding_becomes_error_response_without_panicking() {
     let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
-    let error = envelope.payload_as_search_kernel_v2_error().unwrap();
+    let error = envelope.payload_as_search_kernel_wire_error().unwrap();
     assert_eq!(error.code(), api::ErrorCode::InvalidArgument);
     assert_eq!(
         error.details().unwrap().get(0).code(),
@@ -159,7 +167,7 @@ fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
         },
     );
     let payload = match kind {
-        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
             let definition =
                 api::IndexDefinition::create(&mut builder, &api::IndexDefinitionArgs::default());
             api::CreateIndexRequest::create(
@@ -170,7 +178,7 @@ fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
             )
             .as_union_value()
         }
-        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest => {
             api::OpenIndexRequest::create(&mut builder, &api::OpenIndexRequestArgs::default())
                 .as_union_value()
         }
@@ -197,7 +205,7 @@ fn empty_search_request() -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: None,
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
         },
     );
@@ -232,7 +240,7 @@ fn targetless_embedded_request_remains_valid_without_daemon_routing() {
     assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
     assert_eq!(
         envelope.payload_type(),
-        wire::RequestPayload::SearchKernel_V2_SearchRequest
+        wire::RequestPayload::SearchKernel_Wire_SearchRequest
     );
     assert!(envelope.target().is_none());
     assert!(envelope.target().is_none());
@@ -251,7 +259,7 @@ fn scripted_dispatch_preserves_every_canonical_result_fixture() {
             .unwrap_or_else(|error| panic!("fixture {name} dispatch failed: {error:?}"));
         let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
         let actual = envelope
-            .payload_as_search_kernel_v2_search_result()
+            .payload_as_search_kernel_wire_search_result()
             .unwrap_or_else(|| panic!("fixture {name} did not produce SearchResult"));
         assert_api_search_result_matches(actual, &expected);
     }
@@ -263,20 +271,20 @@ fn accepts_v2_and_rejects_stale_or_future_protocols() {
     assert!(dispatcher
         .dispatch(&describe_request(
             PROTOCOL_VERSION,
-            wire::RequestPayload::SearchKernel_V2_DescribeRequest
+            wire::RequestPayload::SearchKernel_Wire_DescribeRequest
         ))
         .is_ok());
     assert_eq!(
         dispatcher.dispatch(&describe_request(
             1,
-            wire::RequestPayload::SearchKernel_V2_DescribeRequest
+            wire::RequestPayload::SearchKernel_Wire_DescribeRequest
         )),
         Err(DispatchError::UnsupportedProtocol(1))
     );
     assert_eq!(
         dispatcher.dispatch(&describe_request(
             PROTOCOL_VERSION + 1,
-            wire::RequestPayload::SearchKernel_V2_DescribeRequest
+            wire::RequestPayload::SearchKernel_Wire_DescribeRequest
         )),
         Err(DispatchError::UnsupportedProtocol(PROTOCOL_VERSION + 1))
     );
@@ -286,8 +294,8 @@ fn accepts_v2_and_rejects_stale_or_future_protocols() {
 fn per_index_dispatcher_does_not_own_daemon_lifecycle() {
     let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
     for kind in [
-        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
-        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
+        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
     ] {
         assert_eq!(
             dispatcher.dispatch(&lifecycle_request(kind)),
@@ -300,7 +308,7 @@ fn per_index_dispatcher_does_not_own_daemon_lifecycle() {
 fn v2_producers_encode_protocol_version_explicitly() {
     let request = describe_request(
         PROTOCOL_VERSION,
-        wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+        wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
     );
     let request_envelope = root::<wire::RequestEnvelope<'_>>(&request).unwrap();
     assert_ne!(
@@ -309,7 +317,7 @@ fn v2_producers_encode_protocol_version_explicitly() {
             .vtable()
             .get(wire::RequestEnvelope::VT_PROTOCOL_VERSION),
         0,
-        "canonical V2 requests must physically encode protocol_version"
+        "canonical requests must physically encode protocol_version"
     );
 
     let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
@@ -321,7 +329,7 @@ fn v2_producers_encode_protocol_version_explicitly() {
             .vtable()
             .get(wire::ResponseEnvelope::VT_PROTOCOL_VERSION),
         0,
-        "canonical V2 responses must physically encode protocol_version"
+        "canonical responses must physically encode protocol_version"
     );
 }
 
@@ -377,7 +385,7 @@ fn rejects_malformed_unknown_and_closed_requests() {
     let response = dispatcher
         .dispatch(&describe_request(
             PROTOCOL_VERSION,
-            wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+            wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
         ))
         .unwrap();
     assert_eq!(
@@ -389,15 +397,15 @@ fn rejects_malformed_unknown_and_closed_requests() {
     let response = dispatcher
         .dispatch(&describe_request(
             PROTOCOL_VERSION,
-            wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+            wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
         ))
         .expect("closed target is a canonical response");
     let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
-    let error = envelope.payload_as_search_kernel_v2_error().unwrap();
+    let error = envelope.payload_as_search_kernel_wire_error().unwrap();
     assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
     assert_eq!(error.message(), Some("Search Kernel target is closed"));
     let details = error.details().expect("closed target detail");
@@ -412,9 +420,9 @@ fn semantic_errors_are_portable_error_responses() {
     let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
-    assert!(envelope.payload_as_search_kernel_v2_error().is_some());
+    assert!(envelope.payload_as_search_kernel_wire_error().is_some());
 }
 
 #[test]
@@ -424,35 +432,35 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
     let backend_cases = [
         (
             "write.insert.skrq",
-            wire::ResponsePayload::SearchKernel_V2_InsertResult,
+            wire::ResponsePayload::SearchKernel_Wire_InsertResult,
         ),
         (
             "write.upsert.skrq",
-            wire::ResponsePayload::SearchKernel_V2_UpsertResult,
+            wire::ResponsePayload::SearchKernel_Wire_UpsertResult,
         ),
         (
             "write.patch-set.skrq",
-            wire::ResponsePayload::SearchKernel_V2_PatchResult,
+            wire::ResponsePayload::SearchKernel_Wire_PatchResult,
         ),
         (
             "write.update-assign.skrq",
-            wire::ResponsePayload::SearchKernel_V2_UpdateResult,
+            wire::ResponsePayload::SearchKernel_Wire_UpdateResult,
         ),
         (
             "write.delete.skrq",
-            wire::ResponsePayload::SearchKernel_V2_DeleteResult,
+            wire::ResponsePayload::SearchKernel_Wire_DeleteResult,
         ),
         (
             "write.get.skrq",
-            wire::ResponsePayload::SearchKernel_V2_GetResult,
+            wire::ResponsePayload::SearchKernel_Wire_GetResult,
         ),
         (
             "search.defaults.skrq",
-            wire::ResponsePayload::SearchKernel_V2_SearchResult,
+            wire::ResponsePayload::SearchKernel_Wire_SearchResult,
         ),
         (
             "analyze.text-request.skrq",
-            wire::ResponsePayload::SearchKernel_V2_AnalyzeResult,
+            wire::ResponsePayload::SearchKernel_Wire_AnalyzeResult,
         ),
     ];
 
@@ -465,13 +473,13 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
             root::<wire::ResponseEnvelope<'_>>(&response)
                 .unwrap()
                 .payload_type(),
-            wire::ResponsePayload::SearchKernel_V2_Error,
+            wire::ResponsePayload::SearchKernel_Wire_Error,
             "{fixture} must preserve backend PortableError as a response"
         );
         let calls = recording.take_calls();
         let error_message = root::<wire::ResponseEnvelope<'_>>(&response)
             .unwrap()
-            .payload_as_search_kernel_v2_error()
+            .payload_as_search_kernel_wire_error()
             .and_then(|error| error.message())
             .unwrap_or("response was not a portable error");
         assert_eq!(
@@ -520,10 +528,10 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
             response_kind,
             "{fixture} response kind"
         );
-        if response_kind == wire::ResponsePayload::SearchKernel_V2_SearchResult {
+        if response_kind == wire::ResponsePayload::SearchKernel_Wire_SearchResult {
             let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
             let result = envelope
-                .payload_as_search_kernel_v2_search_result()
+                .payload_as_search_kernel_wire_search_result()
                 .expect("search response payload");
             assert_eq!(result.total_hits().unwrap().value(), 12);
             assert_eq!(
@@ -956,11 +964,11 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
     for (fixture, response_kind) in [
         (
             "introspection.describe-index.skrq",
-            wire::ResponsePayload::SearchKernel_V2_DescribeResult,
+            wire::ResponsePayload::SearchKernel_Wire_DescribeResult,
         ),
         (
             "introspection.inspect-query.skrq",
-            wire::ResponsePayload::SearchKernel_V2_InspectQueryResult,
+            wire::ResponsePayload::SearchKernel_Wire_InspectQueryResult,
         ),
     ] {
         let request = fs::read(fixture_root.join(fixture)).unwrap();
@@ -987,10 +995,13 @@ fn rejects_update_type_errors_before_backend_execution() {
     let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     assert_eq!(
-        envelope.payload_as_search_kernel_v2_error().unwrap().code(),
+        envelope
+            .payload_as_search_kernel_wire_error()
+            .unwrap()
+            .code(),
         api::ErrorCode::InvalidArgument
     );
     assert!(
@@ -1002,7 +1013,7 @@ fn rejects_update_type_errors_before_backend_execution() {
 #[test]
 fn standard_flatbuffers_json_enters_the_canonical_dispatch_path() {
     let request = searchkernel_protocol::json::request_json_to_flatbuffer(
-        br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_DescribeRequest","payload":{}}"#,
+        br#"{"protocol_version":1,"payload_type":"SearchKernel_Wire_DescribeRequest","payload":{}}"#,
     )
     .expect("standard JSON request");
     let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
@@ -1013,7 +1024,7 @@ fn standard_flatbuffers_json_enters_the_canonical_dispatch_path() {
         root::<wire::ResponseEnvelope<'_>>(&response)
             .unwrap()
             .payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_DescribeResult
+        wire::ResponsePayload::SearchKernel_Wire_DescribeResult
     );
 }
 
@@ -1021,8 +1032,8 @@ fn standard_flatbuffers_json_enters_the_canonical_dispatch_path() {
 fn standard_flatbuffers_json_duplicate_document_fields_are_rejected_before_backend() {
     let request = searchkernel_protocol::json::request_json_to_flatbuffer(
         br#"{
-          "protocol_version": 2,
-          "payload_type": "SearchKernel_V2_InsertRequest",
+          "protocol_version": 1,
+          "payload_type": "SearchKernel_Wire_InsertRequest",
           "payload": {
             "document": {
               "id": "doc-duplicate",
@@ -1042,7 +1053,7 @@ fn standard_flatbuffers_json_duplicate_document_fields_are_rejected_before_backe
         .expect("semantic validation returns a portable error response");
     let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
     let error = envelope
-        .payload_as_search_kernel_v2_error()
+        .payload_as_search_kernel_wire_error()
         .expect("duplicate document fields must produce an error response");
     assert_eq!(error.code(), api::ErrorCode::InvalidArgument);
     assert_eq!(

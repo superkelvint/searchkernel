@@ -2,7 +2,7 @@
 mod m14;
 
 use crate::m14::load;
-use searchkernel_ir::{index_definition_to_ir, ErrorCode, PortableError};
+use searchkernel_ir::{wire::v1::index_definition_to_ir, ErrorCode, PortableError};
 use searchkernel_vespa_engine::{
     ConfigCompiler, DistanceMetric, Field, FieldType, HnswIndexConfig, Schema,
 };
@@ -106,15 +106,16 @@ fn parse(path: &Path) -> Result<searchkernel_ir::IndexDefinitionIr, PortableErro
             format!("failed to read portable definition: {error}"),
         )
     })?;
-    let root =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
-            .map_err(|error| {
-                PortableError::invalid(
-                    "malformed_flatbuffer",
-                    Some("definition"),
-                    error.to_string(),
-                )
-            })?;
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&bytes)
+    .map_err(|error| {
+        PortableError::invalid(
+            "malformed_flatbuffer",
+            Some("definition"),
+            error.to_string(),
+        )
+    })?;
     index_definition_to_ir(root)
 }
 

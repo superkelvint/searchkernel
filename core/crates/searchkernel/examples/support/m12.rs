@@ -182,8 +182,8 @@ pub fn portable_request_json(step: &Json) -> Vec<u8> {
         }));
     }
     serde_json::to_vec(&json!({
-        "protocol_version":2,
-        "payload_type":"SearchKernel_V2_SearchRequest",
+        "protocol_version":1,
+        "payload_type":"SearchKernel_Wire_SearchRequest",
         "payload":{
             "query":{
                 "source_type":"TypedQuery",
@@ -209,7 +209,7 @@ pub fn canonical_response_hits(bytes: &[u8]) -> Json {
     let printed = searchkernel_protocol::json::response_flatbuffer_to_json(bytes)
         .expect("standard FB response JSON");
     let response: Json = serde_json::from_slice(&printed).expect("response JSON");
-    assert_eq!(response["payload_type"], "SearchKernel_V2_SearchResult");
+    assert_eq!(response["payload_type"], "SearchKernel_Wire_SearchResult");
     let mut ids = Vec::new();
     fn visit(node: &Json, ids: &mut Vec<String>) {
         match node.get("node_type").and_then(Json::as_str) {

@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn bfbs_json_bridge_preserves_empty_portable_values_into_ir() {
-    use searchkernel_protocol::protocol::v2 as wire;
+    use searchkernel_protocol::protocol::v1 as wire;
 
     let json = br#"{
-      "protocol_version": 2,
-      "payload_type": "SearchKernel_V2_SearchRequest",
+      "protocol_version": 1,
+      "payload_type": "SearchKernel_Wire_SearchRequest",
       "payload": {
         "query": {
           "source_type": "MatchAllQuery",
@@ -36,7 +36,7 @@ fn bfbs_json_bridge_preserves_empty_portable_values_into_ir() {
     let envelope = crate::__flatbuffers::root::<wire::RequestEnvelope>(&bytes)
         .expect("request envelope must decode");
     let request = envelope
-        .payload_as_search_kernel_v2_search_request()
+        .payload_as_search_kernel_wire_search_request()
         .expect("search payload discriminator must match");
     let ir = context()
         .search_to_ir(request)

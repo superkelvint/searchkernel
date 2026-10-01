@@ -3,7 +3,7 @@ mod m12;
 
 use crate::m12::{canonical_response_hits, load, portable_request_json};
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexContext};
+use searchkernel_ir::{wire::v1::index_definition_to_ir, Backend, BackendSession, IndexContext};
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::request_json_to_flatbuffer;
 use std::{path::PathBuf, sync::Arc};
@@ -17,9 +17,9 @@ fn main() {
     assert!(a.next().is_none());
 
     let definition_bytes = std::fs::read(definition).expect("read portable index definition");
-    let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(
-        &definition_bytes,
-    )
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&definition_bytes)
     .expect("parse portable index definition");
     let definition_ir = index_definition_to_ir(root).expect("definition to IR");
     let context = Arc::new(IndexContext::from_definition_ir(definition_ir));

@@ -7,7 +7,7 @@ namespace SearchKernel;
 /**
  * Low-level portable client over canonical standard FlatBuffers JSON.
  *
- * Request/response payload arrays are table bodies from the canonical V2
+ * Request/response payload arrays are table bodies from the canonical schema
  * schema. This layer owns operation-to-union mapping only; Search Kernel
  * semantics remain server-owned.
  */

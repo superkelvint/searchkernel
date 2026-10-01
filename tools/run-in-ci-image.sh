@@ -11,11 +11,53 @@ KEEP_STATE=${SEARCHKERNEL_CI_KEEP_STATE:-0}
 EXACT_SOURCE=${SEARCHKERNEL_CI_EXACT_SOURCE:-0}
 COVERAGE_SNAPSHOT=0
 [[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1
+NATIVE_BASE_NEEDS_PRODUCER=0
+NATIVE_BASE_OUTPUT=
+NATIVE_BASE_VERIFY_ARCHIVE=
+VESPA_PRODUCER_INPUT=
+DEPS_PRODUCER_INPUT=
+container_args=("$@")
 
 die() {
     echo "error: $*" >&2
     exit 1
 }
+
+case "${1:-}:${2:-}" in
+    native-base:build)
+        [[ "$#" -ge 4 && "$#" -le 5 ]] ||
+            die "usage: ./dev native-base build <host|ci> <output-dir> [generation]"
+        NATIVE_BASE_NEEDS_PRODUCER=1
+        NATIVE_BASE_OUTPUT=$4
+        mkdir -p "$NATIVE_BASE_OUTPUT"
+        NATIVE_BASE_OUTPUT=$(cd -- "$NATIVE_BASE_OUTPUT" && pwd -P)
+        if find "$NATIVE_BASE_OUTPUT" -mindepth 1 -print -quit | grep -q .; then
+            die "native-base output directory must be empty: $NATIVE_BASE_OUTPUT"
+        fi
+        ;;
+    native-base:verify)
+        [[ "$#" -eq 6 ]] ||
+            die "usage: ./dev native-base verify <archive> <host|ci> <target> <vespa-commit>"
+        NATIVE_BASE_VERIFY_ARCHIVE=$3
+        [[ -f "$NATIVE_BASE_VERIFY_ARCHIVE" && -f "$NATIVE_BASE_VERIFY_ARCHIVE.sha256" ]] ||
+            die "native-base verification requires an archive and checksum sidecar: $NATIVE_BASE_VERIFY_ARCHIVE"
+        NATIVE_BASE_VERIFY_ARCHIVE=$(cd -- "$(dirname -- "$NATIVE_BASE_VERIFY_ARCHIVE")" && pwd -P)/$(basename -- "$NATIVE_BASE_VERIFY_ARCHIVE")
+        ;;
+    test:native-base-artifact)
+        NATIVE_BASE_NEEDS_PRODUCER=1
+        ;;
+esac
+
+if [[ "$NATIVE_BASE_NEEDS_PRODUCER" == "1" ]]; then
+    VESPA_PRODUCER_INPUT=${VESPA_ROOT:-}
+    DEPS_PRODUCER_INPUT=${VESPA_DEPS:-}
+    [[ -n "$VESPA_PRODUCER_INPUT" && -d "$VESPA_PRODUCER_INPUT" ]] ||
+        die "native-base container execution requires VESPA_ROOT to the configured pinned producer checkout"
+    [[ -n "$DEPS_PRODUCER_INPUT" && -d "$DEPS_PRODUCER_INPUT/include" ]] ||
+        die "native-base container execution requires VESPA_DEPS to the producer dependency installation"
+    VESPA_PRODUCER_INPUT=$(cd -- "$VESPA_PRODUCER_INPUT" && pwd -P)
+    DEPS_PRODUCER_INPUT=$(cd -- "$DEPS_PRODUCER_INPUT" && pwd -P)
+fi
 
 case "$EXACT_SOURCE" in
     0|1) ;;
@@ -128,6 +170,20 @@ artifact_volume=""
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
     artifact_volume="searchkernel-dev-artifacts-$invocation_id"
 fi
+producer_vespa_volume=""
+producer_deps_volume=""
+native_base_output_volume=""
+native_base_input_volume=""
+if [[ "$NATIVE_BASE_NEEDS_PRODUCER" == "1" ]]; then
+    producer_vespa_volume="searchkernel-native-base-vespa-$invocation_id"
+    producer_deps_volume="searchkernel-native-base-deps-$invocation_id"
+fi
+if [[ -n "$NATIVE_BASE_OUTPUT" ]]; then
+    native_base_output_volume="searchkernel-native-base-output-$invocation_id"
+fi
+if [[ -n "$NATIVE_BASE_VERIFY_ARCHIVE" ]]; then
+    native_base_input_volume="searchkernel-native-base-input-$invocation_id"
+fi
 container_name="searchkernel-dev-$invocation_id"
 lease_container="searchkernel-dev-lease-$invocation_id"
 docker_resource_labels=(
@@ -150,6 +206,10 @@ cleanup() {
         echo "  persistent target volume: $target_volume"
         echo "  immutable/download Cargo registry volume: $cargo_registry_volume"
         [[ -n "$artifact_volume" ]] && echo "  artifact volume: $artifact_volume"
+        [[ -n "$producer_vespa_volume" ]] && echo "  native-base Vespa producer volume: $producer_vespa_volume"
+        [[ -n "$producer_deps_volume" ]] && echo "  native-base dependency producer volume: $producer_deps_volume"
+        [[ -n "$native_base_output_volume" ]] && echo "  native-base output volume: $native_base_output_volume"
+        [[ -n "$native_base_input_volume" ]] && echo "  native-base input volume: $native_base_input_volume"
         return "$status"
     fi
 
@@ -159,6 +219,10 @@ cleanup() {
         docker volume rm -f "$cargo_registry_volume" >/dev/null 2>&1 || true
     fi
     [[ -z "$artifact_volume" ]] || docker volume rm -f "$artifact_volume" >/dev/null 2>&1 || true
+    [[ -z "$producer_vespa_volume" ]] || docker volume rm -f "$producer_vespa_volume" >/dev/null 2>&1 || true
+    [[ -z "$producer_deps_volume" ]] || docker volume rm -f "$producer_deps_volume" >/dev/null 2>&1 || true
+    [[ -z "$native_base_output_volume" ]] || docker volume rm -f "$native_base_output_volume" >/dev/null 2>&1 || true
+    [[ -z "$native_base_input_volume" ]] || docker volume rm -f "$native_base_input_volume" >/dev/null 2>&1 || true
     return "$status"
 }
 trap cleanup EXIT
@@ -190,18 +254,31 @@ if [[ -n "$artifact_volume" ]]; then
         "io.searchkernel.environment-id=$environment_id" \
         "io.searchkernel.invocation-id=$invocation_id" >/dev/null
 fi
+for special_volume in "$producer_vespa_volume" "$producer_deps_volume" "$native_base_output_volume" "$native_base_input_volume"; do
+    [[ -z "$special_volume" ]] && continue
+    ci_runtime_create_volume "$special_volume" native-base-io "$ephemeral_lifecycle" \
+        "io.searchkernel.environment-id=$environment_id" \
+        "io.searchkernel.invocation-id=$invocation_id" >/dev/null
+done
 
 # Pin every selected persistent generation before retiring older generations.
 # A stopped container still owns its volume references, closing the race between
 # "selected" and the later build-container mount.
+lease_volume_args=(
+    -v "$target_volume:/lease/target:ro"
+    -v "$cargo_registry_volume:/lease/cargo-registry:ro"
+    -v "$native_volume:/lease/native-sdk:ro"
+    -v "$sccache_binary_volume:/lease/sccache-bin:ro"
+    -v "$sccache_socket_volume:/lease/sccache-socket:ro"
+)
+[[ -z "$producer_vespa_volume" ]] || lease_volume_args+=(-v "$producer_vespa_volume:/lease/native-base-vespa:ro")
+[[ -z "$producer_deps_volume" ]] || lease_volume_args+=(-v "$producer_deps_volume:/lease/native-base-deps:ro")
+[[ -z "$native_base_output_volume" ]] || lease_volume_args+=(-v "$native_base_output_volume:/lease/native-base-output:ro")
+[[ -z "$native_base_input_volume" ]] || lease_volume_args+=(-v "$native_base_input_volume:/lease/native-base-input:ro")
 docker create \
     --name "$lease_container" \
     "${docker_resource_labels[@]}" \
-    -v "$target_volume:/lease/target:ro" \
-    -v "$cargo_registry_volume:/lease/cargo-registry:ro" \
-    -v "$native_volume:/lease/native-sdk:ro" \
-    -v "$sccache_binary_volume:/lease/sccache-bin:ro" \
-    -v "$sccache_socket_volume:/lease/sccache-socket:ro" \
+    "${lease_volume_args[@]}" \
     "$IMAGE_ID" /bin/true >/dev/null
 
 if [[ "$ephemeral_target" != "1" ]]; then
@@ -211,6 +288,31 @@ fi
 ci_runtime_prune_sccache_generations "$sccache_binary_volume" "$sccache_socket_volume"
 ci_runtime_prune_vespa_volumes "$native_volume"
 flock -u 8
+
+snapshot_native_base_input() {
+    local source=$1 volume=$2 label=$3
+    echo "==> dev: snapshotting native-base $label input"
+    tar -C "$source" -cf - . |
+        docker run --rm -i "${docker_resource_labels[@]}" \
+            -v "$volume:/snapshot" "$IMAGE_ID" tar -C /snapshot -xf -
+}
+
+if [[ "$NATIVE_BASE_NEEDS_PRODUCER" == "1" ]]; then
+    snapshot_native_base_input "$VESPA_PRODUCER_INPUT" "$producer_vespa_volume" "Vespa producer"
+    snapshot_native_base_input "$DEPS_PRODUCER_INPUT" "$producer_deps_volume" "dependency producer"
+fi
+if [[ -n "$NATIVE_BASE_VERIFY_ARCHIVE" ]]; then
+    archive_parent=$(dirname -- "$NATIVE_BASE_VERIFY_ARCHIVE")
+    archive_name=$(basename -- "$NATIVE_BASE_VERIFY_ARCHIVE")
+    tar -C "$archive_parent" -cf - "$archive_name" "$archive_name.sha256" |
+        docker run --rm -i "${docker_resource_labels[@]}" \
+            -v "$native_base_input_volume:/native-base-input" "$IMAGE_ID" \
+            tar -C /native-base-input -xf -
+    container_args[2]="/native-base-input/$archive_name"
+fi
+if [[ -n "$NATIVE_BASE_OUTPUT" ]]; then
+    container_args[3]="/native-base-output"
+fi
 
 head_sha=$(git -C "$ROOT" rev-parse HEAD)
 bundle="$tmp/repository.bundle"
@@ -322,7 +424,9 @@ docker_env=(
 
 # Preserve Search Kernel test knobs and diagnostics, but never forward host
 # native/toolchain overrides such as SK_NATIVE_SDK, VESPA_ROOT, or
-# CARGO_TARGET_DIR into the canonical image.
+# CARGO_TARGET_DIR into the canonical image. Native-base production is the
+# deliberate exception: declared producer trees are snapshotted into private
+# invocation volumes above and exposed at fixed container paths.
 while IFS= read -r name; do
     case "$name" in
         SEARCHKERNEL_MODEL_*|SEARCHKERNEL_VERIFY_*|RUST_BACKTRACE|RUST_LOG|CARGO_TERM_COLOR|CARGO_NET_OFFLINE)
@@ -330,6 +434,13 @@ while IFS= read -r name; do
             ;;
     esac
 done < <(compgen -e)
+
+if [[ "$NATIVE_BASE_NEEDS_PRODUCER" == "1" ]]; then
+    docker_env+=(
+        -e VESPA_ROOT=/native-base-producer/vespa
+        -e VESPA_DEPS=/native-base-producer/vespa-deps
+    )
+fi
 
 docker_volume_args=(
     -v "$source_volume:/work"
@@ -347,6 +458,10 @@ if [[ -n "$artifact_volume" ]]; then
         -e SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage
     )
 fi
+[[ -z "$producer_vespa_volume" ]] || docker_volume_args+=(-v "$producer_vespa_volume:/native-base-producer/vespa:ro")
+[[ -z "$producer_deps_volume" ]] || docker_volume_args+=(-v "$producer_deps_volume:/native-base-producer/vespa-deps:ro")
+[[ -z "$native_base_output_volume" ]] || docker_volume_args+=(-v "$native_base_output_volume:/native-base-output")
+[[ -z "$native_base_input_volume" ]] || docker_volume_args+=(-v "$native_base_input_volume:/native-base-input:ro")
 
 tty_args=(-i)
 if [[ -t 0 && -t 1 ]]; then
@@ -355,7 +470,21 @@ fi
 
 echo "==> dev: running in $IMAGE ($IMAGE_ID)"
 status=0
-docker run --rm     --name "$container_name"     "${docker_resource_labels[@]}"     --pids-limit=-1     "${tty_args[@]}"     "${docker_volume_args[@]}"     -w /work     "${docker_env[@]}"     "$IMAGE_ID"     ./dev "$@" || status=$?
+docker run --rm     --name "$container_name"     "${docker_resource_labels[@]}"     --pids-limit=-1     "${tty_args[@]}"     "${docker_volume_args[@]}"     -w /work     "${docker_env[@]}"     "$IMAGE_ID"     ./dev "${container_args[@]}" || status=$?
+
+if [[ -n "$NATIVE_BASE_OUTPUT" ]]; then
+    if [[ "$status" -eq 0 ]]; then
+        docker run --rm "${docker_resource_labels[@]}" \
+            -v "$native_base_output_volume:/native-base-output:ro" "$IMAGE_ID" \
+            tar -C /native-base-output -cf - . | tar -C "$NATIVE_BASE_OUTPUT" -xf -
+        if ! find "$NATIVE_BASE_OUTPUT" -mindepth 1 -print -quit | grep -q .; then
+            die "native-base build succeeded without producing exported artifacts"
+        fi
+        echo "==> dev: exported native-base artifacts to $NATIVE_BASE_OUTPUT"
+    else
+        echo "==> dev: native-base build failed; no artifacts were exported" >&2
+    fi
+fi
 
 if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
     rm -rf -- "$ROOT/coverage"

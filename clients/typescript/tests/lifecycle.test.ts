@@ -1,22 +1,23 @@
 import { ByteBuffer } from "flatbuffers";
 import { describe, expect, it } from "vitest";
 import { Index, type ClientTransport } from "../src/client/index.js";
-import { CreateIndexRequest } from "../src/generated/flatbuffers/search-kernel/v2/create-index-request.js";
-import { CreateIndexResultT } from "../src/generated/flatbuffers/search-kernel/v2/create-index-result.js";
-import { DeleteIndexRequest } from "../src/generated/flatbuffers/search-kernel/v2/delete-index-request.js";
-import { DeleteIndexResultT } from "../src/generated/flatbuffers/search-kernel/v2/delete-index-result.js";
-import { DescribeResultT } from "../src/generated/flatbuffers/search-kernel/v2/describe-result.js";
-import { ErrorCode } from "../src/generated/flatbuffers/search-kernel/v2/error-code.js";
-import { ErrorT } from "../src/generated/flatbuffers/search-kernel/v2/error.js";
-import { IndexDefinitionT } from "../src/generated/flatbuffers/search-kernel/v2/index-definition.js";
-import { IndexTarget } from "../src/generated/flatbuffers/search-kernel/v2/index-target.js";
-import { OpenIndexRequest } from "../src/generated/flatbuffers/search-kernel/v2/open-index-request.js";
-import { OpenIndexResultT } from "../src/generated/flatbuffers/search-kernel/v2/open-index-result.js";
-import { RequestEnvelope } from "../src/generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
-import { RequestPayload } from "../src/generated/flatbuffers/search-kernel/protocol/v2/request-payload.js";
-import { ResponseEnvelopeT } from "../src/generated/flatbuffers/search-kernel/protocol/v2/response-envelope.js";
-import { ResponsePayload } from "../src/generated/flatbuffers/search-kernel/protocol/v2/response-payload.js";
-import { packObject, PROTOCOL_VERSION } from "../src/protocol/envelope.js";
+import { CreateIndexRequest } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/create-index-request.js";
+import { CreateIndexResultT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/create-index-result.js";
+import { DeleteIndexRequest } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/delete-index-request.js";
+import { DeleteIndexResultT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/delete-index-result.js";
+import { DescribeResultT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/describe-result.js";
+import { ErrorCode } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/error-code.js";
+import { ErrorT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/error.js";
+import { IndexDefinitionT } from "../src/semantic.js";
+import { IndexDefinitionT as WireIndexDefinitionT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/index-definition.js";
+import { IndexTarget } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/index-target.js";
+import { OpenIndexRequest } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/open-index-request.js";
+import { OpenIndexResultT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/open-index-result.js";
+import { RequestEnvelope } from "../src/_wire/v1/generated/flatbuffers/search-kernel/protocol/request-envelope.js";
+import { RequestPayload } from "../src/_wire/v1/generated/flatbuffers/search-kernel/protocol/request-payload.js";
+import { ResponseEnvelopeT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/protocol/response-envelope.js";
+import { ResponsePayload } from "../src/_wire/v1/generated/flatbuffers/search-kernel/protocol/response-payload.js";
+import { packObject, PROTOCOL_VERSION } from "../src/_wire/v1/codec.js";
 
 function envelope(type: ResponsePayload, payload: object): Uint8Array {
   return packObject(new ResponseEnvelopeT(PROTOCOL_VERSION, type, payload as never), "SKRS");
@@ -36,9 +37,9 @@ describe("logical index lifecycle", () => {
       execute: async (request) => {
         requests.push(request);
         const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(request));
-        return decoded.payloadType() === RequestPayload.SearchKernel_V2_CreateIndexRequest
-          ? envelope(ResponsePayload.SearchKernel_V2_CreateIndexResult, new CreateIndexResultT(new IndexDefinitionT()))
-          : envelope(ResponsePayload.SearchKernel_V2_DescribeResult, new DescribeResultT(new IndexDefinitionT()));
+        return decoded.payloadType() === RequestPayload.SearchKernel_Wire_CreateIndexRequest
+          ? envelope(ResponsePayload.SearchKernel_Wire_CreateIndexResult, new CreateIndexResultT(new WireIndexDefinitionT()))
+          : envelope(ResponsePayload.SearchKernel_Wire_DescribeResult, new DescribeResultT(new WireIndexDefinitionT()));
       },
       close() {},
     };
@@ -47,7 +48,7 @@ describe("logical index lifecycle", () => {
 
     const lifecycle = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[0]!));
     expect(lifecycle.target(new IndexTarget())?.name()).toBe("products");
-    expect(lifecycle.payloadType()).toBe(RequestPayload.SearchKernel_V2_CreateIndexRequest);
+    expect(lifecycle.payloadType()).toBe(RequestPayload.SearchKernel_Wire_CreateIndexRequest);
     expect(lifecycle.payload(new CreateIndexRequest())?.unpack()).toBeDefined();
     const ordinary = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[1]!));
     expect(ordinary.target(new IndexTarget())?.name()).toBe("products");
@@ -59,8 +60,8 @@ describe("logical index lifecycle", () => {
       execute: async (request) => {
         openRequest = request;
         return envelope(
-          ResponsePayload.SearchKernel_V2_OpenIndexResult,
-          new OpenIndexResultT(new IndexDefinitionT()),
+          ResponsePayload.SearchKernel_Wire_OpenIndexResult,
+          new OpenIndexResultT(new WireIndexDefinitionT()),
         );
       },
       close() {},
@@ -72,19 +73,19 @@ describe("logical index lifecycle", () => {
     );
     expect(opened.client.target).toBe("products");
     const decodedOpen = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(openRequest!));
-    expect(decodedOpen.payloadType()).toBe(RequestPayload.SearchKernel_V2_OpenIndexRequest);
+    expect(decodedOpen.payloadType()).toBe(RequestPayload.SearchKernel_Wire_OpenIndexRequest);
     expect(decodedOpen.target(new IndexTarget())?.name()).toBe("products");
     expect(decodedOpen.payload(new OpenIndexRequest())?.unpack()).toBeDefined();
 
     const miss = envelope(
-      ResponsePayload.SearchKernel_V2_Error,
+      ResponsePayload.SearchKernel_Wire_Error,
       new ErrorT(ErrorCode.NotFound, "missing", [], false),
     );
     await expect(Index.open("unused", "missing", successfulTransport([miss])))
       .rejects.toMatchObject({ name: "SearchKernelError", code: "not_found" });
 
     const collision = envelope(
-      ResponsePayload.SearchKernel_V2_Error,
+      ResponsePayload.SearchKernel_Wire_Error,
       new ErrorT(ErrorCode.AlreadyExists, "exists", [], false),
     );
     await expect(Index.create("unused", "products", new IndexDefinitionT(), successfulTransport([collision])))
@@ -98,7 +99,7 @@ describe("logical index lifecycle", () => {
       execute: async (request) => {
         deleteRequest = request;
         return envelope(
-          ResponsePayload.SearchKernel_V2_DeleteIndexResult,
+          ResponsePayload.SearchKernel_Wire_DeleteIndexResult,
           new DeleteIndexResultT(),
         );
       },
@@ -108,7 +109,7 @@ describe("logical index lifecycle", () => {
     await expect(Index.delete("unused", "products", transport)).resolves.toBeUndefined();
 
     const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(deleteRequest!));
-    expect(decoded.payloadType()).toBe(RequestPayload.SearchKernel_V2_DeleteIndexRequest);
+    expect(decoded.payloadType()).toBe(RequestPayload.SearchKernel_Wire_DeleteIndexRequest);
     expect(decoded.target(new IndexTarget())?.name()).toBe("products");
     expect(decoded.payload(new DeleteIndexRequest())?.unpack()).toBeDefined();
     expect(closed).toBe(1);
@@ -117,7 +118,7 @@ describe("logical index lifecycle", () => {
   it("propagates canonical delete errors and still closes its temporary handle", async () => {
     let closed = 0;
     const missing = envelope(
-      ResponsePayload.SearchKernel_V2_Error,
+      ResponsePayload.SearchKernel_Wire_Error,
       new ErrorT(ErrorCode.NotFound, "missing", [], false),
     );
     await expect(Index.delete("unused", "missing", {
@@ -136,8 +137,8 @@ describe("logical index lifecycle", () => {
     });
     const second = Index.connect("unused", "products", {
       execute: async () => envelope(
-        ResponsePayload.SearchKernel_V2_DescribeResult,
-        new DescribeResultT(new IndexDefinitionT()),
+        ResponsePayload.SearchKernel_Wire_DescribeResult,
+        new DescribeResultT(new WireIndexDefinitionT()),
       ),
       close: () => { secondClosed += 1; },
     });

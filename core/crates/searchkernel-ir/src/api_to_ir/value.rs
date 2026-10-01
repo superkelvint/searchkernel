@@ -1,7 +1,7 @@
 use super::*;
 use crate::api_to_ir::resolve::{resolve_position_value, resolve_predicate_value};
 use crate::model::*;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 
 /// Convert the JSON value produced by the Rust facade into the same owned

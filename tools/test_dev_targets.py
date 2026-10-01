@@ -153,7 +153,7 @@ class DevTargetsTest(unittest.TestCase):
         for path in (
             "api/searchkernel.fbs",
             "core/crates/searchkernel-protocol/src/lib.rs",
-            "core/crates/searchkernel-protocol/src/generated/search_kernel/v2/search_result_generated.rs",
+            "core/crates/searchkernel-protocol/src/generated/search_kernel/wire/search_result_generated.rs",
             "core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs",
             "reference/result-response-conformance/coverage.json",
             "tools/check-flatbuffers-bfbs.sh",

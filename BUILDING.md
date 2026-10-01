@@ -230,6 +230,30 @@ verification, generation, and acceptance lanes:
 Use `./dev --help` for the supported command list. Direct underlying scripts
 are for focused debugging or when a contract explicitly names one.
 
+### Remote-only test and verifier execution
+
+An agent that cannot run the repository locally can still execute the canonical
+test/verifier surface against an exact pushed commit. If the agent has
+authorized GitHub pull-request comment access, post one top-level comment whose
+entire body is exactly one of:
+
+```text
+/searchkernel-verify ci <exact-40-character-sha>
+/searchkernel-verify test <scope> <exact-40-character-sha>
+/searchkernel-verify verify <lane> <exact-40-character-sha>
+```
+
+Choose `<scope>` and `<lane>` from `build/targets.json`. The resulting
+**On-demand verification** run executes the same canonical `./dev` operation
+through the trusted default-branch control plane and records exact-SHA evidence.
+Do not append prose or additional lines to the command comment, and do not reuse
+evidence after the reviewed head changes.
+
+Local-capable agents should continue to prefer `./dev test --remote <scope>`
+and `./dev verify --remote <lane>` when the checkout is available. See
+`docs/agent-workflow.md` for the remote-only comment/dispatch procedure and
+evidence requirements, and `docs/ci.md` for the trust-boundary design.
+
 ## Canonical toolchain authorities
 
 Repository tooling must not choose its own interpreter/compiler/runtime. Each
@@ -668,6 +692,25 @@ The published artifact contains the immutable Vespa/runtime base plus the
 read-only Vespa header/config/dependency-header toolchain required to compile
 Search Kernel's local `abi.cc` adapter. It never contains the Search Kernel
 adapter itself.
+
+Native-base release construction and archive qualification are canonical
+container operations even for the artifact namespace named `host`. Here
+`host` and `ci` identify consumer/cache compatibility namespaces; they do
+not authorize execution on the developer host. Release tooling uses:
+
+```bash
+./dev native-base build <host|ci> <output-dir> [generation]
+./dev native-base verify <archive> <host|ci> <target> <vespa-commit>
+```
+
+The launcher snapshots explicitly declared `VESPA_ROOT` and `VESPA_DEPS`
+producer inputs into invocation-private Docker volumes, builds and verifies with
+the canonical image/toolchain, and exports only the completed artifact bytes.
+The low-level builder and archive verifier fail closed when invoked outside that
+container path. The GitHub publisher remains host-side only for release
+orchestration and byte upload/download; it delegates every build and executable
+verification step to these `./dev` commands.
+
 `tools/package-native-base-artifact.sh` creates the bundle, and
 `.github/workflows/publish-native-base.yml` invokes
 `tools/publish-native-base.sh` from `main`. The publisher allocates the next

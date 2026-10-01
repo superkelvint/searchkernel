@@ -5,7 +5,7 @@
 //! behavior for adversarial FlatBuffers responses.
 
 use flatbuffers::FlatBufferBuilder;
-use searchkernel_protocol::{protocol::v2 as wire, PROTOCOL_VERSION};
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 
 fn address<'a>(
     builder: &mut FlatBufferBuilder<'a>,
@@ -171,7 +171,7 @@ fn encode(name: &'static str) -> Vec<u8> {
         &mut builder,
         &wire::ResponseEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
-            payload_type: wire::ResponsePayload::SearchKernel_V2_SearchResult,
+            payload_type: wire::ResponsePayload::SearchKernel_Wire_SearchResult,
             payload: Some(result.as_union_value()),
         },
     );
@@ -207,7 +207,7 @@ mod tests {
             let envelope = flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
                 .expect("malformed tensor fixture must be a valid response envelope");
             let result = envelope
-                .payload_as_search_kernel_v2_search_result()
+                .payload_as_search_kernel_wire_search_result()
                 .expect("malformed tensor fixture must contain a SearchResult");
             assert!(
                 result.root().is_some(),

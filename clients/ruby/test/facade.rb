@@ -58,7 +58,7 @@ class FacadeRecordingTransport
 
   def execute(request)
     @requests << request
-    request_type = request.fetch("payload_type").sub("SearchKernel_V2_", "")
+    request_type = request.fetch("payload_type").sub("SearchKernel_Wire_", "")
     operation, spec = SearchKernel::Protocol::OPERATIONS.find { |_name, item| item.fetch(:request) == request_type }
     raise "unknown request type #{request_type}" unless operation
 
@@ -97,8 +97,8 @@ class FacadeRecordingTransport
               end
 
     {
-      "protocol_version" => 2,
-      "payload_type" => "SearchKernel_V2_#{spec.fetch(:response)}",
+      "protocol_version" => 1,
+      "payload_type" => "SearchKernel_Wire_#{spec.fetch(:response)}",
       "payload" => payload
     }
   end
@@ -125,8 +125,8 @@ malformed_get_fields = {
 }
 malformed_get_fields.each do |label, fields|
   response = {
-    "protocol_version" => 2,
-    "payload_type" => "SearchKernel_V2_GetResult",
+    "protocol_version" => 1,
+    "payload_type" => "SearchKernel_Wire_GetResult",
     "payload" => { "document" => { "id" => "doc-1", "fields" => fields } }
   }
   malformed = SearchKernel::Index.new(
@@ -137,8 +137,8 @@ malformed_get_fields.each do |label, fields|
   end
 end
 valid_response = {
-  "protocol_version" => 2,
-  "payload_type" => "SearchKernel_V2_GetResult",
+  "protocol_version" => 1,
+  "payload_type" => "SearchKernel_Wire_GetResult",
   "payload" => {
     "document" => {
       "id" => "doc-1",
@@ -515,14 +515,14 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
         request = JSON.parse(socket.read(Integer(headers.fetch("content-length"), 10)))
         File.open(ENV.fetch("FAKE_HOST_REQUEST_LOG"), "a") { |file| file.puts(JSON.generate(request)) }
         response_name = case request.fetch("payload_type")
-                        when "SearchKernel_V2_CreateIndexRequest" then "CreateIndexResult"
-                        when "SearchKernel_V2_OpenIndexRequest" then "OpenIndexResult"
+                        when "SearchKernel_Wire_CreateIndexRequest" then "CreateIndexResult"
+                        when "SearchKernel_Wire_OpenIndexRequest" then "OpenIndexResult"
                         else raise "unexpected lifecycle request"
                         end
         body = JSON.generate(
-          "protocol_version" => 2,
-          "payload_type" => "SearchKernel_V2_#{response_name}",
-          "payload" => { "index" => {} }
+          "protocol_version" => 1,
+          "payload_type" => "SearchKernel_Wire_#{response_name}",
+          "payload" => { "index" => {}, "generation" => "fixture-generation" }
         )
         socket.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
         socket.close

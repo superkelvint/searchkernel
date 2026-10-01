@@ -173,13 +173,13 @@ def canonical_lifecycle_operations(root: Path = ROOT) -> tuple[str, ...]:
 
     request_operations = lifecycle_names(
         _reflected_union_payloads(
-            request_bfbs, "SearchKernel.Protocol.V2.RequestPayload"
+            request_bfbs, "SearchKernel.Protocol.RequestPayload"
         ),
         "Request",
     )
     response_operations = lifecycle_names(
         _reflected_union_payloads(
-            response_bfbs, "SearchKernel.Protocol.V2.ResponsePayload"
+            response_bfbs, "SearchKernel.Protocol.ResponsePayload"
         ),
         "Result",
     )
@@ -948,7 +948,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                     f"**{item['status']}**{issue}: {item['reason']}"
                 )
         lines.append("")
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def generated_documents(report: dict[str, Any]) -> dict[Path, str]:
