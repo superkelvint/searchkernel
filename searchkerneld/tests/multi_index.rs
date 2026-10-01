@@ -1603,9 +1603,7 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
         .expect_err("recreating A must not revive the stale Rust handle");
     assert_eq!(stale_error.code(), RustErrorCode::IndexClosed);
     replacement_a.close().expect("close replacement A");
-    client
-        .delete_index("rust-a")
-        .expect("delete recreated A");
+    client.delete_index("rust-a").expect("delete recreated A");
 
     let b = client.open_index("rust-b").expect("B survives A deletion");
     assert_eq!(

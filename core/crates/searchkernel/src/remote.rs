@@ -834,11 +834,7 @@ impl RemoteClient {
         })
     }
 
-    fn register_target_session(
-        &self,
-        target: &str,
-        session: &Arc<BackendSession>,
-    ) -> Result<()> {
+    fn register_target_session(&self, target: &str, session: &Arc<BackendSession>) -> Result<()> {
         let mut sessions = self.sessions.lock().map_err(|_| {
             crate::Error::from_ir(invalid_remote_response(
                 "remote client target-session registry is poisoned",
@@ -898,8 +894,7 @@ impl RemoteClient {
             )))
         })?;
         let context = IndexContext::from_definition_ir(definition);
-        let backend =
-            RemoteBackend::new(Arc::clone(&self.transport), Some(target.to_owned()));
+        let backend = RemoteBackend::new(Arc::clone(&self.transport), Some(target.to_owned()));
         let session = BackendSession::new(Box::new(backend));
         self.register_target_session(target, &session)?;
         Index::from_remote_session(context, session)
@@ -917,9 +912,8 @@ impl Index {
 
     /// Connect to a legacy single-index daemon with explicit transport options.
     pub fn connect_with(endpoint: impl AsRef<str>, options: RemoteOptions) -> Result<Self> {
-        let (backend, context) =
-            RemoteBackend::connect_legacy(endpoint.as_ref(), options)
-                .map_err(crate::Error::from_ir)?;
+        let (backend, context) = RemoteBackend::connect_legacy(endpoint.as_ref(), options)
+            .map_err(crate::Error::from_ir)?;
         Self::from_remote_session(context, BackendSession::new(Box::new(backend)))
     }
 }
