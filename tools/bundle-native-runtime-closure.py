@@ -97,6 +97,7 @@ def bundle(
                     f"{previous[1]} vs {payload}"
                 )
             bundled_sonames[needed_name] = (digest, payload)
+    trusted_source_roots = [root, *resolved_search_dirs, *(source_root for _, source_root in source_roots)]
     for extra in extra_elfs:
         try:
             resolved_extra = extra.resolve(strict=True)
@@ -202,6 +203,10 @@ def bundle(
                 queue.append(source)
                 continue
 
+            if not any(source.is_relative_to(source_root) for source_root in trusted_source_roots):
+                die(
+                    f"{resolved_payload.name}: runtime dependency {needed} resolved outside declared producer roots: {source}"
+                )
             digest = sha256_file(source)
             previous = selected.get(needed)
             if previous is not None and previous[0] != digest:

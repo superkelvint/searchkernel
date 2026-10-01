@@ -88,16 +88,17 @@ bash "$ROOT/tools/make-writable-tree.sh" "$BUNDLE/base"
 # non-baseline DT_NEEDED dependency itself so clean consumers do not inherit
 # accidental producer-host state.
 runtime_search_args=()
-runtime_source_args=(
-    --source-root "native-base=$BASE"
-    --source-root "vespa-build=$VESPA_ROOT"
-    --source-root "vespa-deps=$DEPS"
-)
 for runtime_dir in "$DEPS/lib64" "$DEPS/lib"; do
     if [[ -d "$runtime_dir" ]]; then
         runtime_search_args+=(--search-dir "$runtime_dir")
     fi
 done
+runtime_source_args=(
+    --source-root "native-base=$BASE"
+    --source-root "vespa-build=$VESPA_ROOT"
+    --source-root "vespa-deps=$DEPS"
+    --source-root "system=/usr"
+)
 "$PYTHON_BIN" "$ROOT/tools/bundle-native-runtime-closure.py" \
     "$BUNDLE/base/lib" "${runtime_search_args[@]}" "${runtime_source_args[@]}"
 "$PYTHON_BIN" "$ROOT/tools/check-native-runtime-closure.py" "$BUNDLE/base/lib" --require-provenance >&2

@@ -504,6 +504,13 @@ if [ "$BASE_ONLY" = 1 ]; then
         LINKER_ALIASES+=(--producer-root "$CONFIGURED_DEPS=$VESPA_DEPS")
     fi
     LINKER_ALIASES+=(--producer-root "/work/vespa=$VESPA_ROOT")
+    LINKER_ALIASES+=(--source-root "vespa-build=$VESPA_ROOT")
+    LINKER_ALIASES+=(--source-root "vespa-deps=$VESPA_DEPS")
+    LINKER_ALIASES+=(--source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR")
+    LINKER_ALIASES+=(--source-root "system=/usr")
+    if [ -n "$AWS_LIB_DIR" ]; then
+        LINKER_ALIASES+=(--source-root "vespa-aws=$AWS_LIB_DIR")
+    fi
     "$PYTHON_BIN" "$ROOT/tools/copy-native-base-link-shared-libraries.py" \
         "$LINK_FILE" "$SDK/lib" --cxx "$CXX" "${LINKER_ALIASES[@]}"
 elif [ "$VESPA_LIBRARY_ROOT" = "$VESPA_ROOT" ]; then
@@ -526,53 +533,65 @@ if [ "$BASE_ONLY" != 1 ]; then
         ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
         -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 fi
-if [ -f "$VESPA_EXTRA_LLVM" ]; then
-    if [ "$(readlink -f "$VESPA_EXTRA_LLVM")" != \
-         "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
-        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" \
-            "$VESPA_EXTRA_LLVM"
-    fi
-fi
 if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
     AWS_LIB_DIR=$VESPA_AWS_LIB_DIR
-elif [ -f "$VESPA_EXTRA_LIB_DIR/libffi.so.6" ]; then
-    AWS_LIB_DIR=$VESPA_EXTRA_LIB_DIR
 elif [ -f "$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6" ]; then
     AWS_LIB_DIR=$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist
-else
+elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
+    AWS_LIB_DIR=$DEPS_LIB_DIR
+elif [ "$BASE_ONLY" != 1 ] && [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
+    AWS_LIB_DIR=$SDK_PACKAGE/lib
+elif [ "$BASE_ONLY" != 1 ]; then
     AWS_LIB_DIR=$ROOT/target/native-sdk-package/lib
+else
+    AWS_LIB_DIR=
 fi
-if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
-    if [ "$(readlink -f "$AWS_LIB_DIR/libffi.so.6")" != "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
+if [ -n "$AWS_LIB_DIR" ] && [ -d "$AWS_LIB_DIR" ]; then
+    AWS_LIB_DIR=$(CDPATH= cd -- "$AWS_LIB_DIR" && pwd -P)
+fi
+if [ -n "$AWS_LIB_DIR" ] && [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
+    AWS_LIB_REAL=$(readlink -f "$AWS_LIB_DIR/libffi.so.6")
+    if [ "$BASE_ONLY" = 1 ] && [ -z "${VESPA_AWS_LIB_DIR:-}" ]; then
+        case "$AWS_LIB_REAL" in
+            "$VESPA_DEPS"/*|/usr/local/aws-cli/*) ;;
+            *)
+                echo "refusing undeclared libffi.so.6 source outside Vespa producer inputs: $AWS_LIB_REAL" >&2
+                echo "provide VESPA_AWS_LIB_DIR as an explicit producer input" >&2
+                exit 1
+                ;;
+        esac
+    fi
+    if [ "$BASE_ONLY" != 1 ] && [ "$AWS_LIB_REAL" != "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
         sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$AWS_LIB_DIR/libffi.so.6"
     fi
-elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
-    # LLVM in the pinned Vespa environment carries a libffi.so.6 dependency.
-    # Preserve it when rebuilding an existing SDK even if the AWS CLI bundle
-    # is not installed in this host environment.
-    sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$SDK_PACKAGE/lib/libffi.so.6"
-elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
+elif [ "$BASE_ONLY" != 1 ] && [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
     sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$DEPS_LIB_DIR/libffi.so.6"
 else
-    echo "libffi.so.6 required by the bundled LLVM runtime was not found" >&2
+    echo "libffi.so.6 required by the bundled LLVM runtime was not found in declared producer inputs" >&2
     echo "set VESPA_AWS_LIB_DIR or provide libffi.so.6 in $DEPS_LIB_DIR" >&2
     exit 1
 fi
 
 # A base object must be self-contained before it is admitted to the immutable
-# native cache. The configured Vespa DSOs may depend on producer-host libraries
-# outside the dependency install (for example libxxhash.so.0 from /lib64).
-# Bundle every non-baseline DT_NEEDED dependency now rather than allowing the
-# later artifact packager to repair an already-invalid cache object.
+# native cache. Runtime sources are restricted to explicitly named producer
+# roots so transitive symlinks cannot pull in another local SDK.
 if [ "$BASE_ONLY" = 1 ]; then
-    $PYTHON_BIN "$ROOT/tools/bundle-native-runtime-closure.py" \
+    AWS_SOURCE_ARGS=()
+    if [ -n "$AWS_LIB_DIR" ]; then
+        AWS_SOURCE_ARGS+=(--source-root "vespa-aws=$AWS_LIB_DIR")
+    fi
+    "$PYTHON_BIN" "$ROOT/tools/bundle-native-runtime-closure.py" \
         "$SDK/lib" \
+        --search-dir "$AWS_LIB_DIR" \
         --search-dir "$DEPS_LIB_DIR" \
         --search-dir "$VESPA_EXTRA_LIB_DIR" \
         --source-root "vespa-build=$VESPA_ROOT" \
         --source-root "vespa-deps=$VESPA_DEPS" \
-        --source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR"
+        --source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR" \
+        --source-root "system=/usr" \
+        "${AWS_SOURCE_ARGS[@]}"
 fi
+
 
 # Shared-library aliases are allowed only when they are simple relative names
 # resolving to regular files inside this SDK. Never publish producer absolute

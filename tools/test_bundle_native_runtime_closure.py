@@ -87,17 +87,22 @@ def main() -> int:
             str(COPY_LINK_INPUTS),
             str(link_file),
             str(link_stage),
-            "--cxx",
-            cc,
+            "--cxx", cc,
+            "--source-root", f"producer={producer}",
         )
         if not (link_stage / selected_name).is_file():
             raise SystemExit("native-base input resolver missed the selected configured shared library")
-        # Producer mount aliases are rewritten only for absolute link paths.
+        if (link_stage / unrelated.name).exists():
+            raise SystemExit("native-base input resolver copied an unrelated shared-library candidate")
+
         mounted_link = root / "mounted-link.txt"
         mounted_link.write_text("c++ -L/work/vespa/selected -lsearchkernel_fixture_selected\n", encoding="utf-8")
         mounted_stage = root / "mounted-stage"
-        run(sys.executable, str(COPY_LINK_INPUTS), str(mounted_link), str(mounted_stage),
-            "--cxx", cc, "--producer-root", f"/work/vespa={producer}")
+        run(
+            sys.executable, str(COPY_LINK_INPUTS), str(mounted_link), str(mounted_stage),
+            "--cxx", cc, "--producer-root", f"/work/vespa={producer}",
+            "--source-root", f"producer={producer}",
+        )
         if not (mounted_stage / selected_name).is_file():
             raise SystemExit("link input resolution failed after mounting Vespa at /vespa")
         if (link_stage / unrelated.name).exists():

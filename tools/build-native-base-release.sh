@@ -84,7 +84,6 @@ env -u SK_NATIVE_SDK -u SK_NATIVE_BASE_ARTIFACT_URL \
     -u SK_NATIVE_EXTRA_LINK_FLAGS -u SK_NATIVE_ENABLE_FAILPOINTS \
     -u SK_NATIVE_COVERAGE -u SK_NATIVE_SANITIZER -u SK_NATIVE_SKIP_ABI_AUTHORITIES \
     -u VESPA_LIBRARY_ROOT -u VESPA_DEPS_LIB_DIR -u VESPA_DEPS_INCLUDE_DIR \
-    -u VESPA_EXTRA_LIB_DIR -u VESPA_AWS_LIB_DIR -u CXX -u CC \
     -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u LD_LIBRARY_PATH -u LD_PRELOAD \
     SEARCHKERNEL_DEV_USE_CI_IMAGE=0 \
     SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
@@ -102,7 +101,6 @@ env -u SK_NATIVE_SDK -u SK_NATIVE_BASE_SDK -u SK_NATIVE_ADAPTER_ONLY \
     -u SK_NATIVE_ENABLE_FAILPOINTS -u SK_NATIVE_COVERAGE -u SK_NATIVE_SANITIZER \
     -u SK_NATIVE_SKIP_ABI_AUTHORITIES -u VESPA_LIBRARY_ROOT \
     -u VESPA_DEPS_LIB_DIR -u VESPA_DEPS_INCLUDE_DIR -u VESPA_EXTRA_LIB_DIR \
-    -u VESPA_AWS_LIB_DIR -u CXX -u CC -u CXXFLAGS -u CPPFLAGS -u LDFLAGS \
     -u LD_LIBRARY_PATH -u LD_PRELOAD \
     SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
     SK_NATIVE_TARGET="$TARGET" \
@@ -133,6 +131,7 @@ done
     --source-root "native-base=$BUNDLE/base" \
     --source-root "vespa-toolchain=$BUNDLE/toolchain/upstream/vespa" \
     --source-root "vespa-deps=$BUNDLE/toolchain/vespa-deps" \
+    --source-root "system=/usr" \
     "${runtime_search_args[@]}"
 "$PYTHON_BIN" "$ROOT/tools/write-native-base-manifest.py" \
     "$BUNDLE/manifest.json" \

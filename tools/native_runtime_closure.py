@@ -13,6 +13,7 @@ import hashlib
 # native target. Product/dependency DSOs are deliberately absent: if Vespa
 # needs one of those, the native-base artifact must carry it.
 SYSTEM_BASELINE = {
+    "ld-linux-x86-64.so.2",
     "libc.so.6",
     "libdl.so.2",
     "libgcc_s.so.1",

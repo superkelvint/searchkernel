@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import shlex
 import subprocess
@@ -101,8 +102,7 @@ def selected_shared_inputs(
                     continue
                 if not resolved.is_file() or not is_elf(resolved):
                     continue
-                soname = elf_soname(resolved, "readelf")
-                if soname in SYSTEM_BASELINE:
+                if elf_soname(resolved, "readelf") in SYSTEM_BASELINE:
                     continue
                 selected[resolved] = name
 
@@ -112,8 +112,7 @@ def selected_shared_inputs(
         except (OSError, RuntimeError) as exc:
             raise RuntimeError(f"configured adapter link input is missing: {path}") from exc
         if resolved.is_file() and is_elf(resolved):
-            soname = elf_soname(resolved, "readelf")
-            if soname not in SYSTEM_BASELINE:
+            if elf_soname(resolved, "readelf") not in SYSTEM_BASELINE:
                 selected[resolved] = path.name
 
     by_soname: dict[str, tuple[str, pathlib.Path]] = {}
@@ -126,12 +125,22 @@ def selected_shared_inputs(
         if previous and previous[0] != digest:
             raise RuntimeError(
                 f"configured adapter link resolves conflicting binaries for {soname}: "
-                f"{previous[1]} and {path} (link inputs {previous[1]} and {link_name})"
+                f"{previous[1]} and {path} (inputs {previous[1]} and {link_name})"
             )
         by_soname[soname] = (digest, path)
     if not by_soname:
         raise RuntimeError(f"configured adapter link command selected no producer shared libraries: {link_file}")
     return sorted((item[1] for item in by_soname.values()), key=str)
+
+
+def source_identity(path: pathlib.Path, roots: list[tuple[str, pathlib.Path]]) -> str:
+    resolved = path.resolve(strict=True)
+    for label, root in roots:
+        try:
+            return f"{label}/{resolved.relative_to(root)}"
+        except ValueError:
+            pass
+    raise RuntimeError(f"configured adapter link input escapes declared producer roots: {resolved}")
 
 
 def main() -> int:
@@ -141,6 +150,7 @@ def main() -> int:
     parser.add_argument("--cxx", default="c++")
     parser.add_argument("--linker-alias", action="append", default=[], metavar="NAME=PATH")
     parser.add_argument("--producer-root", action="append", default=[], metavar="SOURCE=DESTINATION")
+    parser.add_argument("--source-root", action="append", default=[], metavar="LABEL=PATH")
     args = parser.parse_args()
     aliases: dict[str, pathlib.Path] = {}
     for value in args.linker_alias:
@@ -154,14 +164,46 @@ def main() -> int:
         if not separator or not source or not destination:
             raise SystemExit(f"invalid producer root {value!r}; expected SOURCE=DESTINATION")
         producer_roots.append((source, destination))
+    source_roots: list[tuple[str, pathlib.Path]] = []
+    for value in args.source_root:
+        label, separator, raw_path = value.partition("=")
+        if not separator or not label or not raw_path:
+            raise SystemExit(f"invalid source root {value!r}; expected LABEL=PATH")
+        source_roots.append((label, pathlib.Path(raw_path).resolve(strict=True)))
     try:
         sources = selected_shared_inputs(
             args.link_file.resolve(strict=True), args.cxx, aliases, producer_roots
         )
+        copy_helper = pathlib.Path(__file__).with_name("copy-shared-library-into-sdk.sh")
+        subprocess.run(["sh", str(copy_helper), str(args.destination), *(str(path) for path in sources)], check=True)
+        source_by_hash = {
+            sha256_file(path): source_identity(path, source_roots)
+            for path in sources
+        }
+        readelf = "readelf"
+        entries = []
+        seen: set[pathlib.Path] = set()
+        destination = args.destination.resolve(strict=True)
+        for entry in sorted(destination.iterdir(), key=lambda item: item.name):
+            payload = entry.resolve(strict=True)
+            if payload in seen or not payload.is_file() or not is_elf(payload):
+                continue
+            seen.add(payload)
+            digest = sha256_file(payload)
+            entries.append({
+                "packaged_name": entry.name,
+                "soname": elf_soname(payload, readelf),
+                "sha256": digest,
+                "source_identity": source_by_hash[digest],
+                "required_by": ["configured-adapter-link"],
+            })
+        provenance = destination / ".searchkernel-runtime-provenance.json"
+        provenance.write_text(
+            json.dumps({"format_version": 1, "libraries": entries}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     except (OSError, RuntimeError) as exc:
         raise SystemExit(str(exc)) from exc
-    copy_helper = pathlib.Path(__file__).with_name("copy-shared-library-into-sdk.sh")
-    subprocess.run(["sh", str(copy_helper), str(args.destination), *(str(path) for path in sources)], check=True)
     print(f"staged {len(sources)} adapter link-selected runtime DSOs")
     return 0
 
