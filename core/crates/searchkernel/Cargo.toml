@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = []
+default = ["native"]
 native = ["dep:libc", "dep:searchkernel-vespa-bindings", "searchkernel-ir-adapter/native"]
 remote = [
     "dep:searchkernel-protocol",
@@ -24,12 +24,12 @@ internal-api = []
 m11-verifier-hardening = ["searchkernel-vespa-engine/hardening"]
 
 [dependencies]
-searchkernel-ir = { path = "../searchkernel-ir" }
-searchkernel-protocol = { path = "../searchkernel-protocol", optional = true }
-searchkernel-rpc = { path = "../searchkernel-rpc", optional = true }
-searchkernel-ir-adapter = { path = "../searchkernel-ir-adapter", default-features = false, optional = true }
+searchkernel-ir = { path = "../searchkernel-ir", version = "=0.1.0" }
+searchkernel-protocol = { path = "../searchkernel-protocol", version = "=0.1.0", optional = true }
+searchkernel-rpc = { path = "../searchkernel-rpc", version = "=0.1.0", optional = true }
+searchkernel-ir-adapter = { path = "../searchkernel-ir-adapter", version = "=0.1.0", default-features = false, optional = true }
 libc = { version = "0.2", optional = true }
-searchkernel-vespa-bindings = { path = "../searchkernel-vespa-bindings", default-features = false, optional = true }
+searchkernel-vespa-bindings = { path = "../searchkernel-vespa-bindings", version = "=0.1.0", default-features = false, optional = true }
 hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -38,14 +38,13 @@ tonic = { version = "0.12", features = ["transport"], optional = true }
 tower = { version = "0.4", default-features = false, features = ["util"], optional = true }
 
 [dev-dependencies]
-flatbuffers = "=25.12.19"
-searchkernel-dispatch = { path = "../searchkernel-dispatch" }
-searchkernel-ir = { path = "../searchkernel-ir", features = ["test"] }
-searchkernel-protocol = { path = "../searchkernel-protocol" }
-searchkernel-testkit = { path = "../searchkernel-testkit" }
+searchkernel-dispatch = { path = "../searchkernel-dispatch", version = "=0.1.0" }
+searchkernel-ir = { path = "../searchkernel-ir", version = "=0.1.0", features = ["test"] }
+searchkernel-protocol = { path = "../searchkernel-protocol", version = "=0.1.0" }
+searchkernel-testkit = { path = "../searchkernel-testkit", version = "=0.1.0" }
 tokio-stream = { version = "0.1", features = ["net"] }
 
-searchkernel-vespa-engine = { path = "../searchkernel-vespa-engine", default-features = false }
+searchkernel-vespa-engine = { path = "../searchkernel-vespa-engine", version = "=0.1.0", default-features = false }
 
 [[example]]
 name = "searchkernel-i-driver"
