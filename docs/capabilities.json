@@ -1245,7 +1245,7 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel_request.fbs",
-        "core/crates/searchkernel-ir/src/control_plane.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/control_plane.rs",
         "core/crates/searchkernel-protocol/tests/standard_json.rs",
         "searchkerneld/tests/multi_index.rs"
       ],
