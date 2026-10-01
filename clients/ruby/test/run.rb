@@ -628,6 +628,29 @@ end
     }))
   end
 end
+
+%w[FiniteRelevance PositiveInfinityRelevance NegativeInfinityRelevance].each do |kind|
+  raises(SearchKernel::ProtocolError, "#{kind} rejects missing union payload") do
+    SearchKernel::Results::SearchResults.new(canonical_search_result("root" => {
+      "node_type" => "Hit", "node" => {
+        "relevance" => { "value_type" => kind, "value" => nil }
+      }
+    }))
+  end
+end
+
+[
+  ["FiniteRelevance", { "value" => 2.5, "future_extension" => { "version" => 1 } }, 2.5],
+  ["PositiveInfinityRelevance", { "future_extension" => { "version" => 1 } }, Float::INFINITY],
+  ["NegativeInfinityRelevance", { "future_extension" => { "version" => 1 } }, -Float::INFINITY]
+].each do |kind, payload, expected|
+  result = SearchKernel::Results::SearchResults.new(canonical_search_result("root" => {
+    "node_type" => "Hit", "node" => {
+      "relevance" => { "value_type" => kind, "value" => payload }
+    }
+  }))
+  same(expected, result.hits.first.relevance, "#{kind} ignores unknown appended table fields")
+end
 raises(SearchKernel::ProtocolError, "unknown result node union rejects") do
   SearchKernel::Results::SearchResults.new(canonical_search_result("root" => {
     "node_type" => "FutureNode", "node" => {}
@@ -661,6 +684,90 @@ malformed_dense = {
 }
 raises(SearchKernel::ProtocolError, "tensor discriminator rejects mismatched payload shape") do
   portable.decode(malformed_dense)
+end
+
+tensor_value = lambda do |payload_type, payload, type_spec|
+  {
+    "kind_type" => "TensorValue",
+    "kind" => {
+      "type_spec" => type_spec,
+      "payload_type" => payload_type,
+      "payload" => payload
+    }
+  }
+end
+
+raises(SearchKernel::ProtocolError, "unknown tensor payload union rejects in Ruby decoder") do
+  portable.decode(tensor_value.call("FutureTensorValues", {}, "tensor<float>(x[1])"))
+end
+
+{
+  "DenseTensorValues" => [{ "cells" => [] }, "tensor<float>(x[1])"],
+  "SparseTensorCells" => [{ "blocks" => [] }, "tensor<float>(category{})"],
+  "MixedTensorBlocks" => [{ "values" => [] }, "tensor<float>(category{},x[1])"]
+}.each do |payload_type, (payload, type_spec)|
+  raises(SearchKernel::ProtocolError, "#{payload_type} rejects a known foreign variant field") do
+    portable.decode(tensor_value.call(payload_type, payload, type_spec))
+  end
+end
+
+[
+  [
+    "DenseTensorValues",
+    { "values" => [1.0], "future_extension" => { "version" => 1 } },
+    "tensor<float>(x[1])",
+    "dense",
+    [1.0]
+  ],
+  [
+    "SparseTensorCells",
+    { "cells" => [], "future_extension" => { "version" => 1 } },
+    "tensor<float>(category{})",
+    "sparse",
+    []
+  ],
+  [
+    "MixedTensorBlocks",
+    { "blocks" => [], "future_extension" => { "version" => 1 } },
+    "tensor<float>(category{},x[1])",
+    "mixed",
+    []
+  ]
+].each do |payload_type, payload, type_spec, decoded_key, expected|
+  decoded = portable.decode(tensor_value.call(payload_type, payload, type_spec))
+  same(
+    expected,
+    decoded.fetch("$searchkernel_tensor").fetch(decoded_key),
+    "#{payload_type} ignores unknown appended table fields"
+  )
+end
+
+valid_address = [{ "dimension" => "category", "label" => "books" }]
+[
+  [
+    "dense NaN",
+    tensor_value.call("DenseTensorValues", { "values" => [Float::NAN] }, "tensor<float>(x[1])")
+  ],
+  [
+    "sparse positive infinity",
+    tensor_value.call(
+      "SparseTensorCells",
+      { "cells" => [{ "address" => valid_address, "value" => Float::INFINITY }] },
+      "tensor<float>(category{})"
+    )
+  ],
+  [
+    "mixed negative infinity",
+    tensor_value.call(
+      "MixedTensorBlocks",
+      { "blocks" => [{ "address" => valid_address, "values" => [-Float::INFINITY] }] },
+      "tensor<float>(category{},x[1])"
+    )
+  ]
+].each do |label, malformed|
+  raises(SearchKernel::ProtocolError, "#{label} fails closed in Ruby decoder") do
+    portable.decode(malformed)
+  end
 end
 
 metadata_result = SearchKernel::Results::SearchResults.new(
