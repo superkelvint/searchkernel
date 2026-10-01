@@ -3,13 +3,14 @@ set -euo pipefail
 trap 'echo "real native-base clean-room regression failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
 RUSTC_BIN=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
 TARGET=${SK_NATIVE_TARGET:-$("$RUSTC_BIN" -vV | sed -n 's/^host: //p')}
 BUILD_ENV=${SEARCHKERNEL_BUILD_ENV:-ci}
 [[ -n "$TARGET" ]] || { echo "could not determine native target" >&2; exit 1; }
 if [[ -z "${VESPA_ROOT:-}" || -z "${VESPA_DEPS:-}" ]]; then
     PINNED_VESPA_COMMIT=$(
-        "$ROOT/tools/resolve-python.sh" - "$ROOT/core/native/vespa/manifest.json" <<'PY'
+        "$PYTHON_BIN" - "$ROOT/core/native/vespa/manifest.json" <<'PY'
 import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as stream:
