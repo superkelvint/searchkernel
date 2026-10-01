@@ -11,10 +11,16 @@ fn finish_request(
 ) -> Vec<u8> {
     let target = target.map(|name| {
         let name = builder.create_string(name);
-        api::IndexTarget::create(builder, &api::IndexTargetArgs { name: Some(name) })
+        let generation =
+            expected_index_generation.map(|generation| builder.create_string(generation));
+        api::IndexTarget::create(
+            builder,
+            &api::IndexTargetArgs {
+                name: Some(name),
+                generation,
+            },
+        )
     });
-    let expected_index_generation =
-        expected_index_generation.map(|generation| builder.create_string(generation));
     let root = wire::RequestEnvelope::create(
         builder,
         &wire::RequestEnvelopeArgs {
@@ -22,7 +28,6 @@ fn finish_request(
             target,
             payload_type,
             payload: Some(payload),
-            expected_index_generation,
         },
     );
     wire::finish_request_envelope_buffer(builder, root);
