@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,9 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUNDLER = ROOT / "tools" / "bundle-native-runtime-closure.py"
 CHECKER = ROOT / "tools" / "check-native-runtime-closure.py"
+PACKAGE = ROOT / "tools" / "package-native-base-artifact.sh"
+BUILD_SDK = ROOT / "core" / "native" / "vespa" / "build-sdk.sh"
+MAKE_WRITABLE_TREE = ROOT / "tools" / "make-writable-tree.sh"
 
 
 def run(*args: str, env: dict[str, str] | None = None) -> None:
@@ -111,6 +115,39 @@ def main() -> int:
             raise SystemExit(
                 "pre-bundle closure check failed for the wrong reason:\n" + before.stderr
             )
+
+        build_sdk_text = BUILD_SDK.read_text(encoding="utf-8")
+        if 'bundle-native-runtime-closure.py' not in build_sdk_text:
+            raise SystemExit(
+                "base-only SDK construction must close non-baseline runtime dependencies "
+                "before native-cache publication"
+            )
+        base_bundle = build_sdk_text.index('if [ "$BASE_ONLY" = 1 ]; then', build_sdk_text.index('libffi.so.6 required'))
+        closure_bundle = build_sdk_text.index('bundle-native-runtime-closure.py', base_bundle)
+        alias_validation = build_sdk_text.index('SDK_LIB_REAL=', closure_bundle)
+        if not base_bundle < closure_bundle < alias_validation:
+            raise SystemExit(
+                "base-only SDK runtime closure must be bundled before SDK alias validation/publication"
+            )
+
+        package_text = PACKAGE.read_text(encoding="utf-8")
+        copied_base = package_text.index('cp -aL "$BASE/." "$BUNDLE/base/"')
+        prepare_stage = package_text.find("make-writable-tree.sh", copied_base)
+        bundle_closure = package_text.index('"$BUNDLE/base/lib"', copied_base)
+        if not copied_base < prepare_stage < bundle_closure:
+            raise SystemExit(
+                "package staging must make its copied immutable base writable "
+                "before adding the runtime closure"
+            )
+
+        # Installed native-base objects are sealed read-only. The package
+        # staging copy must be writable before the bundler adds dependencies.
+        run("chmod", "-R", "a-w", str(bundle))
+        run("bash", str(MAKE_WRITABLE_TREE), str(bundle))
+        if not (bundle.stat().st_mode & stat.S_IWUSR):
+            raise SystemExit("staging lib directory remained read-only after preparation")
+        if not (consumer.stat().st_mode & stat.S_IWUSR):
+            raise SystemExit("staging runtime library remained read-only after preparation")
 
         env = os.environ.copy()
         env.pop("LD_PRELOAD", None)

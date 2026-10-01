@@ -2,13 +2,15 @@
   "source_file": "searchkernel-adversarial-audit-checklist-evidence-based.md",
   "source_sha256": "164b85f4687d25ce2449cac88644d032cdf6fdcf60c2c7a3b1b5f5e1a3a29848",
   "snapshot_archive_sha256": "bc439271338dc2f13945de9a34fbc9e63930a953556f49c5cda7cea416add3c1",
-  "stable_item_count": 990,
-  "stable_item_unique_count": 990,
+  "source_item_count": 908,
+  "source_item_ids_sha256": "7b3c34c7fd99e40c09b93f5d65ec11d4ad527f3ae04ba4e7a7cc9615b21db5a2",
+  "stable_item_count": 1040,
+  "stable_item_unique_count": 1040,
   "files": [
     {
       "file": "00-audit-method.md",
-      "sha256": "a9fcec90b59c5213e4a8c38352c6b1d4110f623d5d3b6a3b41cca6be444e5481",
-      "item_count": 46
+      "sha256": "7b98a78d64ebbe0755b20bc76e02c0f51dd117d661d4248414f1703e3de66192",
+      "item_count": 47
     },
     {
       "file": "01-api-portable-contract.md",
@@ -72,7 +74,7 @@
     },
     {
       "file": "13-searchkerneld.md",
-      "sha256": "8ed47d648c5bbd4c85cc8ef1b637d7ef9f64116e7ff8cc900fac163e3f61634e",
+      "sha256": "cc770504da27b997192b25854cc0eea6292091606fd0e1a48e64549be452d4b8",
       "item_count": 110
     },
     {
@@ -87,8 +89,8 @@
     },
     {
       "file": "16-tools.md",
-      "sha256": "5fb781e5e76f0a90f5dd18e5d718b7ecae99baf71a543201a9047d05964532a1",
-      "item_count": 29
+      "sha256": "d1570e4c4de641e41a02c096205cb8f8617e9802be33a571822bff69c31f969a",
+      "item_count": 32
     },
     {
       "file": "17-reference-verifiers.md",
@@ -97,7 +99,7 @@
     },
     {
       "file": "18-cross-cutting-gates.md",
-      "sha256": "312351c194ee0e273fd67ad929376393059fc174f2b0dccd5dfafe4d13a9e6bd",
+      "sha256": "8aac4c5207f6cee1b02f539cce524cbf4e7766fcffaa0dd5981fe5d6c95eef12",
       "item_count": 117
     },
     {
@@ -106,18 +108,109 @@
       "item_count": 17
     },
     {
+      "file": "28-client-php.md",
+      "sha256": "1c803689a864fe861ed279e63e77a5ef47c1245d269acf86ac7295f2db99b888",
+      "item_count": 22
+    },
+    {
+      "file": "29-client-ruby.md",
+      "sha256": "f63ad94859f01771463b9f74b7baf46b19c5c4b370f3fb8f5ade98c729ee13e9",
+      "item_count": 24
+    },
+    {
       "file": "README.md",
-      "sha256": "a99f4625ab74d017ef8e9a5c0b725a6383f2bbfcc533f0352bf0d4bf16a17062",
+      "sha256": "8cfce9ecdf076c5dc76697b677ec6aee888b602da749fccd0a33077d892ab0d2",
       "item_count": 0
     }
   ],
   "live_extensions": [
+    {
+      "date": "2026-09-24",
+      "files": [
+        "00-audit-method.md",
+        "16-tools.md"
+      ],
+      "trigger": "CODE_SCOPE_CHANGE: first-party transport contract reconciliation in issue #596 / PR #596",
+      "item_ranges": [
+        "SK-00-019..SK-00-019",
+        "SK-16-030..SK-16-030"
+      ],
+      "added_item_count": 2
+    },
     {
       "date": "2026-09-23",
       "file": "13-searchkerneld.md",
       "trigger": "CODE_SCOPE_CHANGE: public Search Endpoints introduced by issue #469 / PR #470",
       "added_item_range": "SK-13-029..SK-13-110",
       "added_item_count": 82
+    },
+    {
+      "date": "2026-09-30",
+      "files": [
+        "16-tools.md",
+        "28-client-php.md",
+        "29-client-ruby.md"
+      ],
+      "trigger": "CODE_SCOPE_CHANGE: current first-party PHP and Ruby clients identified by issue #935; affected existing gates SK-META-003, SK-META-010, SK-META-022, SK-20-001..SK-20-013, SK-21-013, SK-22-002, SK-22-004, SK-23-016, SK-23-019, SK-26-001, SK-26-004, SK-26-007, SK-27-001, SK-27-004, SK-27-006, SK-27-007, and SK-27-009",
+      "item_ranges": [
+        "SK-28-001..SK-28-022",
+        "SK-29-001..SK-29-024",
+        "SK-16-031..SK-16-032"
+      ],
+      "added_item_count": 48
     }
-  ]
+  ],
+  "client_audit_modules": {
+    "python": {
+      "module": "14-client-python.md",
+      "production_roots": [
+        "clients/python/searchkernel"
+      ],
+      "support_roots": [
+        "clients/python/tests",
+        "clients/python/examples",
+        "clients/python/pyproject.toml",
+        "clients/python/setup.py"
+      ]
+    },
+    "typescript": {
+      "module": "15-client-typescript.md",
+      "production_roots": [
+        "clients/typescript/src"
+      ],
+      "support_roots": [
+        "clients/typescript/tests",
+        "clients/typescript/examples",
+        "clients/typescript/scripts",
+        "clients/typescript/README.md",
+        "clients/typescript/package.json",
+        "clients/typescript/package-lock.json",
+        "clients/typescript/tsconfig.json"
+      ]
+    },
+    "php": {
+      "module": "28-client-php.md",
+      "production_roots": [
+        "clients/php/src",
+        "clients/php/composer.json"
+      ],
+      "support_roots": [
+        "clients/php/tests",
+        "clients/php/examples",
+        "clients/php/README.md"
+      ]
+    },
+    "ruby": {
+      "module": "29-client-ruby.md",
+      "production_roots": [
+        "clients/ruby/lib",
+        "clients/ruby/searchkernel.gemspec"
+      ],
+      "support_roots": [
+        "clients/ruby/test",
+        "clients/ruby/examples",
+        "clients/ruby/README.md"
+      ]
+    }
+  }
 }

@@ -1,4 +1,6 @@
-//! Portable multi-index target and lifecycle semantics.
+//! FlatBuffers-to-IR resolution for multi-index targets and lifecycle requests.
+//!
+//! Keep generated envelope and target views inside this API-to-IR boundary.
 
 use crate::{ErrorCode, ErrorDetail, PortableError};
 use searchkernel_protocol::{protocol::v2 as wire, v2 as api};
@@ -12,6 +14,7 @@ pub const MISSING_INDEX_DEFINITION_DETAIL_CODE: &str = "missing_index_definition
 pub const INDEX_ALREADY_EXISTS_DETAIL_CODE: &str = "index_already_exists";
 pub const INDEX_NOT_FOUND_DETAIL_CODE: &str = "index_not_found";
 pub const INDEX_IN_USE_DETAIL_CODE: &str = "index_in_use";
+pub const STALE_INDEX_HANDLE_DETAIL_CODE: &str = "stale_index_handle";
 pub const TARGET_PATH: &str = "target";
 pub const TARGET_NAME_PATH: &str = "target.name";
 pub const CREATE_INDEX_DEFINITION_PATH: &str = "payload.definition";
@@ -276,6 +279,15 @@ pub fn index_in_use_error() -> PortableError {
     )
 }
 
+pub fn stale_index_handle_error() -> PortableError {
+    control_error(
+        ErrorCode::FailedPrecondition,
+        STALE_INDEX_HANDLE_DETAIL_CODE,
+        Some(TARGET_PATH),
+        "Search Kernel index handle refers to an obsolete target incarnation".to_owned(),
+    )
+}
+
 fn missing_definition_error() -> PortableError {
     control_error(
         ErrorCode::InvalidArgument,
@@ -387,6 +399,15 @@ mod tests {
             );
             assert_eq!(error.details[0].message, error.message, "{value:?}");
         }
+    }
+
+    #[test]
+    fn stale_remote_handle_has_canonical_failed_precondition_error() {
+        let error = stale_index_handle_error();
+        assert_eq!(error.code, ErrorCode::FailedPrecondition);
+        assert_eq!(error.details[0].code, STALE_INDEX_HANDLE_DETAIL_CODE);
+        assert_eq!(error.details[0].path.as_deref(), Some(TARGET_PATH));
+        assert!(!error.retryable);
     }
 
     #[test]

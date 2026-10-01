@@ -13,6 +13,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER_PATH = ROOT / "docs" / "capabilities.json"
+RELEASE_SUPPORT_PATH = ROOT / "docs" / "release-support.json"
 CAPABILITIES_DOC = ROOT / "docs" / "CAPABILITIES.md"
 LIMITATIONS_DOC = ROOT / "LIMITATIONS.md"
 QUERY_SCHEMA_PATH = ROOT / "api" / "searchkernel.fbs"
@@ -49,6 +50,36 @@ def load_ledger(path: Path = LEDGER_PATH) -> dict[str, Any]:
         raise LedgerError(f"invalid JSON in {path}: {error}") from error
     if not isinstance(value, dict):
         raise LedgerError("ledger root must be an object")
+    return value
+
+
+
+def load_release_support(path: Path = RELEASE_SUPPORT_PATH) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise LedgerError(f"cannot read release support {path}: {error}") from error
+    except json.JSONDecodeError as error:
+        raise LedgerError(f"invalid JSON in {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise LedgerError("release support root must be an object")
+    if value.get("version") != 1:
+        raise LedgerError("release support version must be 1")
+    _require_string(value.get("release"), "release support release")
+    platform = value.get("platform")
+    if not isinstance(platform, dict):
+        raise LedgerError("release support platform must be an object")
+    for key in ("os", "arch", "libc"):
+        _require_string(platform.get(key), f"release support platform.{key}")
+    supported = value.get("supported")
+    if not isinstance(supported, list) or not supported:
+        raise LedgerError("release support supported must be a non-empty list")
+    for index, row in enumerate(supported):
+        if not isinstance(row, dict):
+            raise LedgerError(f"release support supported[{index}] must be an object")
+        _require_string(row.get("surface"), f"release support supported[{index}].surface")
+        _require_string(row.get("runtime"), f"release support supported[{index}].runtime")
+    _require_string_list(value.get("deferred"), "release support deferred")
     return value
 
 
@@ -391,9 +422,13 @@ def render_capabilities(ledger: dict[str, Any], capabilities: list[dict[str, Any
     return "\n".join(lines)
 
 
-def render_limitations(ledger: dict[str, Any], capabilities: list[dict[str, Any]]) -> str:
+def render_limitations(
+    ledger: dict[str, Any],
+    capabilities: list[dict[str, Any]],
+    release_support: dict[str, Any],
+) -> str:
     lines = [
-        "# Vespa compatibility limitations",
+        "# Search Kernel limitations",
         "",
         "This file is generated from [`docs/capabilities.json`](docs/capabilities.json).",
         "Search Kernel is a thin wrapper around the pinned Vespa engine, but its",
@@ -402,6 +437,23 @@ def render_limitations(ledger: dict[str, Any], capabilities: list[dict[str, Any]
         "approximated.",
         "",
         f"**Snapshot:** {ledger['snapshot']}",
+        "",
+        "## Release scope",
+        "",
+        f"- The `{release_support['release']}` release is qualified only for "
+        f"**{release_support['platform']['os']} {release_support['platform']['arch']} "
+        f"{release_support['platform']['libc']}**.",
+        "- Supported release surfaces: "
+        + ", ".join(
+            f"`{row['surface']}` (`{row['runtime']}`)"
+            for row in release_support["supported"]
+        )
+        + ".",
+        "- Deferred release surfaces: "
+        + ", ".join(f"`{surface}`" for surface in release_support["deferred"])
+        + ".",
+        "- Implementation presence outside this matrix is not a release-support promise; "
+        "see [`docs/release-support.md`](docs/release-support.md).",
         "",
     ]
     by_area: dict[str, list[dict[str, Any]]] = {}
@@ -443,9 +495,10 @@ def render_limitations(ledger: dict[str, Any], capabilities: list[dict[str, Any]
 
 def generated_documents(ledger: dict[str, Any]) -> dict[Path, str]:
     capabilities = validate_ledger(ledger)
+    release_support = load_release_support()
     return {
         CAPABILITIES_DOC: render_capabilities(ledger, capabilities),
-        LIMITATIONS_DOC: render_limitations(ledger, capabilities),
+        LIMITATIONS_DOC: render_limitations(ledger, capabilities, release_support),
     }
 
 

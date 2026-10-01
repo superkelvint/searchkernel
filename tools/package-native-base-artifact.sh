@@ -55,11 +55,20 @@ fi
 
 mkdir -p "$OUT_DIR"
 STAGE=$(mktemp -d "$OUT_DIR/.native-base.XXXXXX")
-cleanup() { rm -rf "$STAGE"; }
-trap cleanup EXIT INT TERM
+cleanup() {
+    local status=$?
+    trap - EXIT INT TERM
+    if ! bash "$ROOT/tools/remove-readonly-tree.sh" "$STAGE" && (( status == 0 )); then
+        status=1
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
 BUNDLE=$STAGE/searchkernel-vespa-base
 mkdir -p "$BUNDLE/base" "$BUNDLE/toolchain/upstream/vespa" "$BUNDLE/toolchain/vespa-deps/include" "$BUNDLE/toolchain/vespa-deps/lib64"
 cp -aL "$BASE/." "$BUNDLE/base/"
+# The installed cache is immutable; this copy is the mutable packaging stage.
+bash "$ROOT/tools/make-writable-tree.sh" "$BUNDLE/base"
 
 # The immutable base builder intentionally owns Vespa DSOs, but the producer
 # host may satisfy ordinary transitive dependencies (for example libxml2) from
@@ -143,16 +152,33 @@ PY
 # so the packaged toolchain remains relocatable on a fresh machine.
 python3 - "$BUNDLE/toolchain/upstream/vespa" "$VESPA_ROOT" "$DEPS" <<'PY'
 import pathlib
+import re
 import sys
 
 root = pathlib.Path(sys.argv[1])
-vespa_root = sys.argv[2]
-deps_root = sys.argv[3]
+vespa_root = sys.argv[2].rstrip("/")
+deps_root = sys.argv[3].rstrip("/")
+
+def normalize_absolute_root(text: str, source: str, destination: str) -> str:
+    # CMake link metadata contains both absolute producer paths and legitimate
+    # relative paths with a component named "vespa", for example
+    # ../../../vespa/searchcore/.... A blind string replacement corrupts the
+    # latter when the producer checkout itself is mounted at /vespa.
+    for prefix in ("-I", "-L", "-isystem"):
+        text = text.replace(prefix + source, prefix + destination)
+
+    # Rewrite only a true absolute-path occurrence. Relative path components
+    # are preceded by "." or "/", both intentionally excluded here.
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_./-])" + re.escape(source) + r"(?=/|$)"
+    )
+    return pattern.sub(destination, text)
+
 for name in ("flags.make", "link.txt"):
     for path in root.rglob(name):
         text = path.read_text(encoding="utf-8")
-        text = text.replace(vespa_root, "/work/vespa")
-        text = text.replace(deps_root, "/opt/vespa-deps")
+        text = normalize_absolute_root(text, vespa_root, "/work/vespa")
+        text = normalize_absolute_root(text, deps_root, "/opt/vespa-deps")
         path.write_text(text, encoding="utf-8")
 PY
 

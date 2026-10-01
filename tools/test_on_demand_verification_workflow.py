@@ -18,10 +18,12 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_uses_default_branch_repository_dispatch_and_read_only_permissions(self):
+    def test_uses_bounded_dispatch_and_pr_comment_ingress_with_read_only_permissions(self):
         text = self.text
         self.assertIn("repository_dispatch:", text)
         self.assertIn("types: [searchkernel-verification]", text)
+        self.assertIn("issue_comment:", text)
+        self.assertIn("types: [created]", text)
         self.assertNotIn("workflow_dispatch:", text)
         self.assertNotRegex(text, r"(?m)^\s+pull_request:")
         self.assertNotRegex(text, r"(?m)^\s+push:")
@@ -40,9 +42,12 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
 
     def test_revision_is_exact_sha_and_checkout_is_proven(self):
         text = self.text
-        self.assertIn("^[0-9a-fA-F]{40}$", text)
+        request = (ROOT / "tools" / "normalize-verification-request.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("^[0-9a-fA-F]{40}$", request)
         self.assertIn(
-            "ref: ${{ github.event.client_payload.revision }}",
+            "ref: ${{ steps.request.outputs.revision }}",
             text,
         )
         self.assertIn("persist-credentials: false", text)
@@ -59,20 +64,38 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
 
     def test_remote_surface_is_bounded_to_ci_test_and_verify(self):
         text = self.text
-        self.assertIn('case "${OPERATION}" in', text)
-        self.assertIn("ci)", text)
-        self.assertIn("test|verify)", text)
-        self.assertIn('operation not in {"test", "verify"}', text)
-        self.assertIn('if [[ -n "${REQUESTED_TARGET}" ]]', text)
-        self.assertIn(
-            'REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}$',
-            text,
+        request = (ROOT / "tools" / "normalize-verification-request.sh").read_text(
+            encoding="utf-8"
         )
+        self.assertIn('case "$operation" in', request)
+        self.assertIn("ci)", request)
+        self.assertIn("test|verify)", request)
+        self.assertIn('target" =~ ^[A-Za-z0-9._-]{1,128}$', request)
+        self.assertIn('operation not in {"test", "verify"}', text)
         self.assertIn(
             'canonical}" =~ ^[A-Za-z0-9._-]{1,128}$',
             text,
         )
         self.assertNotIn("eval ", text)
+        self.assertNotIn("eval ", request)
+
+    def test_comment_ingress_is_prefiltered_and_uses_trusted_normalizer(self):
+        text = self.text
+        job = text[text.index("  verify:"):text.index("    runs-on:", text.index("  verify:"))]
+        self.assertIn("github.event.issue.pull_request", job)
+        self.assertIn("github.event.comment.author_association == 'OWNER'", job)
+        self.assertIn("github.event.comment.author_association == 'MEMBER'", job)
+        self.assertIn("github.event.comment.author_association == 'COLLABORATOR'", job)
+        self.assertIn("startsWith(github.event.comment.body, '/searchkernel-verify ')", job)
+        control = text.index("Check out trusted control plane")
+        normalize = text.index("Normalize and validate authorized request")
+        subject = text.index("Check out requested revision as untrusted subject")
+        self.assertLess(control, normalize)
+        self.assertLess(normalize, subject)
+        self.assertIn(
+            'bash "${GITHUB_WORKSPACE}/control/tools/normalize-verification-request.sh"',
+            text,
+        )
 
     def test_ci_has_no_target_and_test_verify_keep_git_object_validation(self):
         text = self.text
@@ -202,12 +225,13 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         policy = " ".join(TRUST_POLICY.read_text(encoding="utf-8").split())
         for fragment in (
             "authenticated repository dispatch",
+            "authorized pull-request comments",
+            "OWNER, MEMBER, or COLLABORATOR",
             "exact commit SHAs available from this repository",
             "fork-only or",
             "read-only GitHub repository permissions",
             "no release, deployment, or write secrets",
             "no arbitrary",
-            "separate actor allowlist",
         ):
             self.assertIn(fragment, policy)
 

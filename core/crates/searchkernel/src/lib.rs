@@ -22,8 +22,8 @@ pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};
 pub use filter::{field, FieldRef, Filter, FilterBindings, Range, SearchFilterInput};
 pub use grouping::{
-    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOrder, GroupingOutput,
-    GroupingPlan,
+    GroupingAggregation, GroupingExpression, GroupingFilter, GroupingLevel, GroupingOrder,
+    GroupingOutput, GroupingPlan,
 };
 pub use index::{Index, IndexRuntime};
 pub use patch::Patch;
@@ -32,7 +32,7 @@ pub use query::{
     WeightedQueryItem,
 };
 #[cfg(feature = "remote")]
-pub use remote::RemoteOptions;
+pub use remote::{RemoteClient, RemoteOptions};
 pub use result::{
     Coverage, CoverageDegraded, FacetResult, FacetValue, FeatureSet, FeatureValue, GroupingResult,
     HighlightFragment, HighlightResult, HighlightSpan, Hit, NonFiniteFloat, ResultGroup, ResultHit,
@@ -53,7 +53,7 @@ pub use search::{
     SearchBuilder, Sort, SortDirection, YqlBuilder,
 };
 pub use tensor::Tensor;
-pub use update::Update;
+pub use update::{Update, UpdateBuilder};
 
 /// Build clause-local typed values for a textual filter.
 #[macro_export]
