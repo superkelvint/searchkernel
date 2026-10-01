@@ -18,7 +18,8 @@ use searchkernel_rpc::{
 #[cfg(unix)]
 use std::path::PathBuf;
 use std::{
-    sync::{mpsc as std_mpsc, Arc, Mutex},
+    collections::HashMap,
+    sync::{mpsc as std_mpsc, Arc, Mutex, Weak},
     thread,
     time::Duration,
 };
@@ -451,12 +452,40 @@ fn status_error(status: tonic::Status, retry_safe: bool) -> PortableError {
 
 struct RemoteBackend {
     transport: Arc<RemoteTransport>,
-    target: String,
+    target: Option<String>,
 }
 
 impl RemoteBackend {
-    fn new(transport: Arc<RemoteTransport>, target: String) -> Self {
+    fn new(transport: Arc<RemoteTransport>, target: Option<String>) -> Self {
         Self { transport, target }
+    }
+
+    fn connect_legacy(endpoint: &str, options: RemoteOptions) -> ir::Result<(Self, IndexContext)> {
+        let address = RemoteAddress::parse(endpoint)?;
+        let transport = Arc::new(RemoteTransport::connect(address, options)?);
+        let backend = Self::new(transport, None);
+        let response = backend.call(ir::encode_describe_request(), true)?;
+        let envelope = expected_response(
+            &response,
+            wire::ResponsePayload::SearchKernel_V2_DescribeResult,
+        )?;
+        let describe = envelope
+            .payload_as_search_kernel_v2_describe_result()
+            .ok_or_else(|| invalid_remote_response("describe response payload is missing"))?;
+        let definition = describe.index().ok_or_else(|| {
+            invalid_remote_response("describe response index definition is missing")
+        })?;
+        let definition = ir::index_definition_to_ir(definition).map_err(|error| {
+            invalid_remote_response(format!(
+                "describe response contains an invalid index definition: {}",
+                error.message
+            ))
+        })?;
+        Ok((backend, IndexContext::from_definition_ir(definition)))
+    }
+
+    fn target(&self) -> Option<&str> {
+        self.target.as_deref()
     }
 
     fn call(&self, payload: Vec<u8>, retry_safe: bool) -> ir::Result<Vec<u8>> {
@@ -542,7 +571,7 @@ fn response_error(envelope: wire::ResponseEnvelope<'_>) -> ir::Result<Option<Por
 impl Backend for RemoteBackend {
     fn insert(&self, request: ir::InsertRequestIr) -> ir::Result<ir::InsertResult> {
         let payload = self.call(
-            ir::encode_insert_request_for_target(&request, Some(&self.target))?,
+            ir::encode_insert_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope = expected_response(
@@ -560,7 +589,7 @@ impl Backend for RemoteBackend {
 
     fn upsert(&self, request: ir::UpsertRequestIr) -> ir::Result<ir::UpsertResult> {
         let payload = self.call(
-            ir::encode_upsert_request_for_target(&request, Some(&self.target))?,
+            ir::encode_upsert_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope = expected_response(
@@ -578,7 +607,7 @@ impl Backend for RemoteBackend {
 
     fn patch(&self, request: ir::PatchRequestIr) -> ir::Result<ir::PatchResult> {
         let payload = self.call(
-            ir::encode_patch_request_for_target(&request, Some(&self.target))?,
+            ir::encode_patch_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope =
@@ -594,7 +623,7 @@ impl Backend for RemoteBackend {
 
     fn update(&self, request: ir::UpdateRequestIr) -> ir::Result<ir::UpdateResult> {
         let payload = self.call(
-            ir::encode_update_request_for_target(&request, Some(&self.target))?,
+            ir::encode_update_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope = expected_response(
@@ -612,7 +641,7 @@ impl Backend for RemoteBackend {
 
     fn delete(&self, request: ir::DeleteRequestIr) -> ir::Result<ir::DeleteResult> {
         let payload = self.call(
-            ir::encode_delete_request_for_target(&request, Some(&self.target))?,
+            ir::encode_delete_request_for_target(&request, self.target())?,
             false,
         )?;
         let envelope = expected_response(
@@ -630,7 +659,7 @@ impl Backend for RemoteBackend {
 
     fn get(&self, request: ir::GetRequestIr) -> ir::Result<ir::GetResult> {
         let payload = self.call(
-            ir::encode_get_request_for_target(&request, Some(&self.target))?,
+            ir::encode_get_request_for_target(&request, self.target())?,
             true,
         )?;
         let envelope =
@@ -648,7 +677,7 @@ impl Backend for RemoteBackend {
 
     fn search(&self, request: ir::SearchRequestIr) -> ir::Result<ir::SearchResult> {
         let payload = self.call(
-            ir::encode_search_request_for_target(&request, Some(&self.target))?,
+            ir::encode_search_request_for_target(&request, self.target())?,
             true,
         )?;
         let envelope = expected_response(
@@ -664,7 +693,7 @@ impl Backend for RemoteBackend {
 
     fn analyze(&self, request: ir::AnalyzeRequestIr) -> ir::Result<ir::AnalyzeResult> {
         let payload = self.call(
-            ir::encode_analyze_request_for_target(&request, Some(&self.target))?,
+            ir::encode_analyze_request_for_target(&request, self.target())?,
             true,
         )?;
         let envelope = expected_response(
@@ -690,6 +719,8 @@ impl Backend for RemoteBackend {
 #[derive(Clone)]
 pub struct RemoteClient {
     transport: Arc<RemoteTransport>,
+    sessions: Arc<Mutex<HashMap<String, Vec<Weak<BackendSession>>>>>,
+    lifecycle_lock: Arc<Mutex<()>>,
 }
 
 impl RemoteClient {
@@ -709,6 +740,8 @@ impl RemoteClient {
             RemoteTransport::connect(address, options).map_err(crate::Error::from_ir)?;
         Ok(Self {
             transport: Arc::new(transport),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            lifecycle_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -718,6 +751,7 @@ impl RemoteClient {
         target: impl AsRef<str>,
         definition: IndexDefinition,
     ) -> Result<Index> {
+        let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
         let input = crate::schema::index_definition_to_input(&definition)?;
         let request = ir::encode_create_index_request(target, &input);
@@ -744,6 +778,7 @@ impl RemoteClient {
 
     /// Open an existing logical target and return an index handle bound to it.
     pub fn open_index(&self, target: impl AsRef<str>) -> Result<Index> {
+        let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
         let request = ir::encode_open_index_request(target);
         let response = self
@@ -769,7 +804,9 @@ impl RemoteClient {
 
     /// Delete one logical target from the daemon registry.
     pub fn delete_index(&self, target: impl AsRef<str>) -> Result<()> {
-        let request = ir::encode_delete_index_request(target.as_ref());
+        let _lifecycle = self.lifecycle_guard()?;
+        let target = target.as_ref();
+        let request = ir::encode_delete_index_request(target);
         let response = self
             .transport
             .call(request, false)
@@ -785,7 +822,60 @@ impl RemoteClient {
                     "delete-index result payload is missing",
                 ))
             })?;
+        self.invalidate_target_sessions(target)?;
         Ok(())
+    }
+
+    fn lifecycle_guard(&self) -> Result<std::sync::MutexGuard<'_, ()>> {
+        self.lifecycle_lock.lock().map_err(|_| {
+            crate::Error::from_ir(invalid_remote_response(
+                "remote client lifecycle lock is poisoned",
+            ))
+        })
+    }
+
+    fn register_target_session(
+        &self,
+        target: &str,
+        session: &Arc<BackendSession>,
+    ) -> Result<()> {
+        let mut sessions = self.sessions.lock().map_err(|_| {
+            crate::Error::from_ir(invalid_remote_response(
+                "remote client target-session registry is poisoned",
+            ))
+        })?;
+        let target_sessions = sessions.entry(target.to_owned()).or_default();
+        target_sessions.retain(|session| session.strong_count() > 0);
+        target_sessions.push(Arc::downgrade(session));
+        Ok(())
+    }
+
+    fn invalidate_target_sessions(&self, target: &str) -> Result<()> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| {
+                crate::Error::from_ir(invalid_remote_response(
+                    "remote client target-session registry is poisoned",
+                ))
+            })?
+            .remove(target)
+            .unwrap_or_default();
+
+        let mut first_error = None;
+        for session in sessions {
+            if let Some(session) = session.upgrade() {
+                if let Err(error) = session.close() {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+        match first_error {
+            Some(error) => Err(crate::Error::from_ir(error)),
+            None => Ok(()),
+        }
     }
 
     fn response<'a>(
@@ -808,52 +898,35 @@ impl RemoteClient {
             )))
         })?;
         let context = IndexContext::from_definition_ir(definition);
-        let backend = RemoteBackend::new(Arc::clone(&self.transport), target.to_owned());
-        Index::from_remote_session(context, BackendSession::new(Box::new(backend)))
+        let backend =
+            RemoteBackend::new(Arc::clone(&self.transport), Some(target.to_owned()));
+        let session = BackendSession::new(Box::new(backend));
+        self.register_target_session(target, &session)?;
+        Index::from_remote_session(context, session)
     }
 }
 
 impl Index {
-    /// Deprecated: a daemon endpoint no longer identifies a logical index.
-    /// Use [`RemoteClient::connect`] followed by `open_index(target)`.
-    #[deprecated(
-        note = "use RemoteClient::connect(endpoint)?.open_index(target); daemon endpoints no longer select an index"
-    )]
-    pub fn connect(_endpoint: impl AsRef<str>) -> Result<Self> {
-        Err(legacy_connect_error())
+    /// Connect to a legacy single-index `searchkerneld` using the ergonomic Rust API.
+    ///
+    /// Multi-index daemons require [`RemoteClient::connect`] followed by
+    /// `create_index(target, definition)` or `open_index(target)`.
+    pub fn connect(endpoint: impl AsRef<str>) -> Result<Self> {
+        Self::connect_with(endpoint, RemoteOptions::default())
     }
 
-    /// Deprecated: a daemon endpoint no longer identifies a logical index.
-    #[deprecated(note = "use RemoteClient::connect_with(endpoint, options)?.open_index(target)")]
-    pub fn connect_with(_endpoint: impl AsRef<str>, _options: RemoteOptions) -> Result<Self> {
-        Err(legacy_connect_error())
+    /// Connect to a legacy single-index daemon with explicit transport options.
+    pub fn connect_with(endpoint: impl AsRef<str>, options: RemoteOptions) -> Result<Self> {
+        let (backend, context) =
+            RemoteBackend::connect_legacy(endpoint.as_ref(), options)
+                .map_err(crate::Error::from_ir)?;
+        Self::from_remote_session(context, BackendSession::new(Box::new(backend)))
     }
-}
-
-fn legacy_connect_error() -> crate::Error {
-    crate::Error::from_ir(PortableError::invalid(
-        "missing_index_target",
-        None::<String>,
-        "Index::connect cannot select an index on a multi-index daemon; use RemoteClient::connect(endpoint)?.open_index(target)",
-    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    #[allow(deprecated)]
-    fn legacy_index_connect_refuses_to_choose_a_daemon_target() {
-        let error = Index::connect("127.0.0.1:50051")
-            .err()
-            .expect("endpoint alone cannot identify an index on a multi-index daemon");
-        assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
-        assert!(error
-            .details()
-            .iter()
-            .any(|detail| detail.code == "missing_index_target"));
-    }
 
     #[test]
     fn cancelled_status_is_not_misreported_as_deadline() {
