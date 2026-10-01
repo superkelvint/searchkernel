@@ -85,9 +85,9 @@ fn run_portable(
     mutation: &Json,
 ) -> Result<&'static str, Box<dyn std::error::Error>> {
     let definition_bytes = fs::read(definition)?;
-    let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(
-        &definition_bytes,
-    )?;
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&definition_bytes)?;
     let context = Arc::new(IndexContext::from_definition_ir(index_definition_to_ir(
         root,
     )?));
@@ -116,7 +116,7 @@ fn run_portable(
         .map_err(|error| format!("portable dispatch failed: {error:?}"))?;
     let printed = response_flatbuffer_to_json(&response)?;
     let response: Json = serde_json::from_slice(&printed)?;
-    if response["payload_type"] != "SearchKernel_V2_Error" {
+    if response["payload_type"] != "SearchKernel_Wire_Error" {
         return Err("negative portable request unexpectedly succeeded".into());
     }
     let detail = response["payload"]["details"][0]["code"]

@@ -252,7 +252,7 @@ mod tests {
         }"#;
         let bytes = index_definition_json_to_flatbuffer(json)
             .expect("canonical IndexDefinition JSON should encode");
-        let definition = flatbuffers::root::<crate::v2::IndexDefinition>(&bytes)
+        let definition = flatbuffers::root::<crate::wire::v1::IndexDefinition>(&bytes)
             .expect("encoded definition must be a valid standalone FlatBuffer");
         let fields = definition.fields().expect("definition fields");
         assert_eq!(fields.len(), 1);

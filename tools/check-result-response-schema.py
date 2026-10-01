@@ -285,9 +285,9 @@ class ReflectedSchema:
 
     def _result_closure(self) -> dict[str, tuple[str, dict[str, Any]]]:
         bt = self.base.BaseType()
-        start = self.object_names.get("SearchKernel.V2.SearchResult")
+        start = self.object_names.get("SearchKernel.Wire.SearchResult")
         if start is None:
-            raise ValueError("BFBS has no SearchKernel.V2.SearchResult root type")
+            raise ValueError("BFBS has no SearchKernel.Wire.SearchResult root type")
         pending: list[tuple[str, int]] = [("object", start)]
         found: dict[str, tuple[str, dict[str, Any]]] = {}
         while pending:
@@ -387,7 +387,7 @@ class ReflectedSchema:
                                 if arm_index is not None:
                                     visit_object(arm_index, item)
 
-        root = self.object_names.get("SearchKernel.V2.SearchResult")
+        root = self.object_names.get("SearchKernel.Wire.SearchResult")
         if root is not None:
             visit_object(root, result_payload)
         return found

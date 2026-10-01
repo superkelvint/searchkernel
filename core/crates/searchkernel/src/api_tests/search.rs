@@ -469,7 +469,7 @@ fn public_rust_omitted_typed_query_defaults_match_portable_requests() {
                 "title",
                 searchkernel_ir::QueryExprKindIr::Near {
                     children: vec![term()],
-                    distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
+                    distance: searchkernel_ir::DEFAULT_PROXIMITY_DISTANCE,
                 },
             ),
         ),
@@ -479,9 +479,9 @@ fn public_rust_omitted_typed_query_defaults_match_portable_requests() {
                 "title",
                 searchkernel_ir::QueryExprKindIr::Fuzzy {
                     value: searchkernel_ir::RequestValueIr::String("value".to_owned()),
-                    max_edit_distance: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
-                    prefix_length: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
-                    prefix: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX,
+                    max_edit_distance: searchkernel_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+                    prefix_length: searchkernel_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
+                    prefix: searchkernel_ir::DEFAULT_FUZZY_PREFIX,
                 },
             ),
         ),
@@ -719,7 +719,7 @@ fn fluent_search_and_portable_request_share_one_canonical_search_snapshot() {
         .offset(2);
 
     let direct = expected_search(&context, &rust_request);
-    let bytes = searchkernel_ir::search_request_ir_to_api(&direct);
+    let bytes = searchkernel_ir::wire::v1::search_request_ir_to_api(&direct);
     let portable = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
         .expect("canonical search request should decode");
     let portable = context

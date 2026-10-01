@@ -221,8 +221,11 @@ and evidence requirements.
 
 For either ingress, confirm the workflow evidence identifies the
 requested/observed revision, operation, canonical target/command, result, run
-ID, and run URL. Never treat a successfully posted comment or accepted dispatch
-as proof that the test itself passed.
+ID, and run URL. For a PR comment request, also confirm the trusted reporter
+posts the PASS/FAIL result back to that PR with a clickable Actions run link.
+Inspect failed-step logs when the result is not successful. Never treat a
+successfully posted request comment or accepted dispatch as proof that the test
+itself passed.
 
 ### Evidence freshness
 

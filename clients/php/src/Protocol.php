@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 final class Protocol
 {
-    public const VERSION = 2;
+    public const VERSION = 1;
 
     /** @var array<string,array{0:string,1:string}> */
     private const OPERATIONS = [
@@ -51,7 +51,7 @@ final class Protocol
     {
         $envelope = [
             'protocol_version' => self::VERSION,
-            'payload_type' => 'SearchKernel_V2_' . $payloadType,
+            'payload_type' => 'SearchKernel_Wire_' . $payloadType,
             'payload' => $payload,
         ];
         if ($target !== null) {
@@ -223,15 +223,15 @@ final class Protocol
             throw new ProtocolException('Search Kernel response is missing its union payload');
         }
 
-        if ($type === 'SearchKernel_V2_Error') {
+        if ($type === 'SearchKernel_Wire_Error') {
             throw SearchKernelException::fromPayload($payload);
         }
 
-        if ($type !== 'SearchKernel_V2_' . $expectedType) {
+        if ($type !== 'SearchKernel_Wire_' . $expectedType) {
             throw new ProtocolException(sprintf(
                 'unexpected Search Kernel response type %s (expected %s)',
                 is_string($type) ? $type : '<missing>',
-                'SearchKernel_V2_' . $expectedType,
+                'SearchKernel_Wire_' . $expectedType,
             ));
         }
 

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Index } from "../src/client/index.js";
 import { float64, int64, uint64 } from "../src/client/values.js";
-import { packObject } from "../src/protocol/envelope.js";
+import { packObject } from "../src/_wire/v1/codec.js";
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
 const parityEnabled =
   Boolean(process.env.SEARCHKERNEL_PARITY_CORPUS) &&

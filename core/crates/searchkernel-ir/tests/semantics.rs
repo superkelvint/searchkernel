@@ -1,4 +1,6 @@
-use searchkernel_ir::{api, *};
+use searchkernel_ir::wire::v1::schema as api;
+use searchkernel_ir::wire::v1::*;
+use searchkernel_ir::*;
 use std::collections::BTreeMap;
 
 fn index_context() -> IndexContext {
@@ -99,7 +101,7 @@ fn index_context() -> IndexContext {
     builder.finish(definition, None);
     let definition =
         searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(builder.finished_data())
-            .expect("valid V2 index definition");
+            .expect("valid index definition");
     IndexContext::from_api(definition).expect("valid index context")
 }
 
@@ -763,7 +765,7 @@ fn v2_index_definition_and_text_search_convert_to_ir() {
     builder.finish(request, None);
     let request =
         searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
-            .expect("valid V2 search request");
+            .expect("valid search request");
     let converted = context.search_to_ir(request).expect("search converts");
     assert_eq!(converted.query(), &QueryIr::Text("headphones".to_owned()));
     assert_eq!(converted.limit(), 7);
@@ -851,7 +853,7 @@ fn v2_structured_filter_sort_and_ranking_convert_to_ir() {
     builder.finish(request, None);
     let request =
         searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
-            .expect("valid V2 search request");
+            .expect("valid search request");
     let converted = context.search_to_ir(request).expect("search converts");
     assert!(converted.filter().is_some());
     assert_eq!(converted.sort().len(), 1);
@@ -988,7 +990,7 @@ fn v2_request_controls_and_structured_grouping_are_preserved_in_ir() {
     builder.finish(request, None);
     let request =
         searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
-            .expect("valid V2 search request");
+            .expect("valid search request");
 
     let converted = context.search_to_ir(request).expect("all controls resolve");
     assert!(matches!(converted.query(), QueryIr::Yql { .. }));
@@ -1122,9 +1124,9 @@ fn v2_search_result_encoding_uses_result_tree_and_relevance() {
         )]))),
         metadata: BTreeMap::from([("request_id".to_owned(), Value::String("req-1".to_owned()))]),
     };
-    let bytes = search_result_to_api(&result).expect("valid V2 search result");
+    let bytes = search_result_to_api(&result).expect("valid search result");
     let encoded = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes)
-        .expect("valid V2 search result");
+        .expect("valid search result");
     let root = encoded.root().expect("result root");
     let group = root.node_as_result_group().expect("result group root");
     assert_eq!(group.id(), Some("root"));
@@ -1602,6 +1604,7 @@ fn v2_result_direct_hit_and_nonfinite_value_variants_are_encoded() {
         .expect("direct hit root");
     assert_eq!(hit.id(), Some("direct-hit"));
     let fields = hit.fields().expect("hit fields");
+    assert_eq!(fields.len(), 7);
     assert_eq!(
         fields
             .get(0)
@@ -1641,15 +1644,25 @@ fn v2_result_direct_hit_and_nonfinite_value_variants_are_encoded() {
             .kind(),
         api::NonFiniteFloatKind::NaN
     );
+    assert_eq!(
+        fields
+            .get(4)
+            .value()
+            .unwrap()
+            .kind_as_non_finite_float_value()
+            .unwrap()
+            .kind(),
+        api::NonFiniteFloatKind::NegativeInfinity
+    );
     assert!(fields
-        .get(4)
+        .get(5)
         .value()
         .unwrap()
         .kind_as_value_object()
         .is_some());
     assert_eq!(
         fields
-            .get(5)
+            .get(6)
             .value()
             .unwrap()
             .kind_as_tensor_value()
@@ -1736,8 +1749,7 @@ fn v2_result_validation_rejects_nonportable_doubles_and_tensor_cells_without_pan
 fn v2_error_encoding_remains_portable() {
     let error = PortableError::new(ErrorCode::InvalidArgument, "bad request");
     let bytes = error_to_api(&error);
-    let encoded =
-        searchkernel_ir::__flatbuffers::root::<api::Error>(&bytes).expect("valid V2 error");
+    let encoded = searchkernel_ir::__flatbuffers::root::<api::Error>(&bytes).expect("valid error");
     assert_eq!(encoded.code(), api::ErrorCode::InvalidArgument);
     assert_eq!(encoded.message(), Some("bad request"));
 }

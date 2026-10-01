@@ -692,6 +692,25 @@ The published artifact contains the immutable Vespa/runtime base plus the
 read-only Vespa header/config/dependency-header toolchain required to compile
 Search Kernel's local `abi.cc` adapter. It never contains the Search Kernel
 adapter itself.
+
+Native-base release construction and archive qualification are canonical
+container operations even for the artifact namespace named `host`. Here
+`host` and `ci` identify consumer/cache compatibility namespaces; they do
+not authorize execution on the developer host. Release tooling uses:
+
+```bash
+./dev native-base build <host|ci> <output-dir> [generation]
+./dev native-base verify <archive> <host|ci> <target> <vespa-commit>
+```
+
+The launcher snapshots explicitly declared `VESPA_ROOT` and `VESPA_DEPS`
+producer inputs into invocation-private Docker volumes, builds and verifies with
+the canonical image/toolchain, and exports only the completed artifact bytes.
+The low-level builder and archive verifier fail closed when invoked outside that
+container path. The GitHub publisher remains host-side only for release
+orchestration and byte upload/download; it delegates every build and executable
+verification step to these `./dev` commands.
+
 `tools/package-native-base-artifact.sh` creates the bundle, and
 `.github/workflows/publish-native-base.yml` invokes
 `tools/publish-native-base.sh` from `main`. The publisher allocates the next

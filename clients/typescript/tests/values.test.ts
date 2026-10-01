@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { Tensor, ValueDecodeError, float64, fromValue, int64, uint64, value } from "../src/client/values.js";
-import { DenseTensorValuesT } from "../src/generated/flatbuffers/search-kernel/v2/dense-tensor-values.js";
-import { MixedTensorBlocksT } from "../src/generated/flatbuffers/search-kernel/v2/mixed-tensor-blocks.js";
-import { NonFiniteFloatKind } from "../src/generated/flatbuffers/search-kernel/v2/non-finite-float-kind.js";
-import { NonFiniteFloatValueT } from "../src/generated/flatbuffers/search-kernel/v2/non-finite-float-value.js";
-import { SparseTensorCellsT } from "../src/generated/flatbuffers/search-kernel/v2/sparse-tensor-cells.js";
-import { TensorAddressEntryT } from "../src/generated/flatbuffers/search-kernel/v2/tensor-address-entry.js";
-import { TensorBlockT } from "../src/generated/flatbuffers/search-kernel/v2/tensor-block.js";
-import { TensorCellT } from "../src/generated/flatbuffers/search-kernel/v2/tensor-cell.js";
-import { TensorPayloadKind } from "../src/generated/flatbuffers/search-kernel/v2/tensor-payload-kind.js";
-import { TensorValueT } from "../src/generated/flatbuffers/search-kernel/v2/tensor-value.js";
-import { ValueEntryT } from "../src/generated/flatbuffers/search-kernel/v2/value-entry.js";
-import { ValueKind } from "../src/generated/flatbuffers/search-kernel/v2/value-kind.js";
-import { ValueObjectT } from "../src/generated/flatbuffers/search-kernel/v2/value-object.js";
-import { ValueT } from "../src/generated/flatbuffers/search-kernel/v2/value.js";
+import { DenseTensorValuesT } from "../src/semantic.js";
+import { MixedTensorBlocksT } from "../src/semantic.js";
+import { NonFiniteFloatKind } from "../src/semantic.js";
+import { NonFiniteFloatValueT } from "../src/semantic.js";
+import { SparseTensorCellsT } from "../src/semantic.js";
+import { TensorAddressEntryT } from "../src/semantic.js";
+import { TensorBlockT } from "../src/semantic.js";
+import { TensorCellT } from "../src/semantic.js";
+import { TensorPayloadKind } from "../src/semantic.js";
+import { TensorValueT } from "../src/semantic.js";
+import { ValueEntryT } from "../src/semantic.js";
+import { ValueKind } from "../src/semantic.js";
+import { ValueObjectT } from "../src/semantic.js";
+import { ValueT } from "../src/semantic.js";
 
 describe("portable values", () => {
   it("encodes and decodes scalar values losslessly", () => {

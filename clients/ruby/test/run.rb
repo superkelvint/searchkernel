@@ -217,15 +217,15 @@ same(expected_operations.keys.sort, SearchKernel::Protocol::OPERATIONS.keys.sort
 expected_operations.each do |operation, (request_type, response_type)|
   payload = { "marker" => operation.to_s }
   envelope = SearchKernel::Protocol.request_envelope(operation, payload)
-  same(2, envelope["protocol_version"], "#{operation} request protocol version")
-  same("SearchKernel_V2_#{request_type}", envelope["payload_type"], "#{operation} request discriminator")
+  same(1, envelope["protocol_version"], "#{operation} request protocol version")
+  same("SearchKernel_Wire_#{request_type}", envelope["payload_type"], "#{operation} request discriminator")
   same(payload, envelope["payload"], "#{operation} request payload")
 
   result = SearchKernel::Protocol.expect_response(
     operation,
     {
-      "protocol_version" => 2,
-      "payload_type" => "SearchKernel_V2_#{response_type}",
+      "protocol_version" => 1,
+      "payload_type" => "SearchKernel_Wire_#{response_type}",
       "payload" => { "ok" => operation.to_s }
     }
   )
@@ -255,19 +255,19 @@ end
 raises(SearchKernel::ProtocolError, "future protocol rejects") do
   SearchKernel::Protocol.expect_response(
     :search,
-    { "protocol_version" => 3, "payload_type" => "SearchKernel_V2_SearchResult", "payload" => {} }
+    { "protocol_version" => 3, "payload_type" => "SearchKernel_Wire_SearchResult", "payload" => {} }
   )
 end
 raises(SearchKernel::ProtocolError, "missing union payload rejects") do
   SearchKernel::Protocol.expect_response(
     :search,
-    { "protocol_version" => 2, "payload_type" => "SearchKernel_V2_SearchResult" }
+    { "protocol_version" => 1, "payload_type" => "SearchKernel_Wire_SearchResult" }
   )
 end
 raises(SearchKernel::ProtocolError, "wrong response union rejects") do
   SearchKernel::Protocol.expect_response(
     :search,
-    { "protocol_version" => 2, "payload_type" => "SearchKernel_V2_GetResult", "payload" => {} }
+    { "protocol_version" => 1, "payload_type" => "SearchKernel_Wire_GetResult", "payload" => {} }
   )
 end
 
@@ -275,8 +275,8 @@ portable_error = raises(SearchKernel::SearchKernelError, "canonical Error is por
   SearchKernel::Protocol.expect_response(
     :search,
     {
-      "protocol_version" => 2,
-      "payload_type" => "SearchKernel_V2_Error",
+      "protocol_version" => 1,
+      "payload_type" => "SearchKernel_Wire_Error",
       "payload" => {
         "code" => "InvalidArgument",
         "message" => "bad query",
@@ -293,8 +293,8 @@ default_error = raises(SearchKernel::SearchKernelError, "FlatBuffers default Err
   SearchKernel::Protocol.expect_response(
     :search,
     {
-      "protocol_version" => 2,
-      "payload_type" => "SearchKernel_V2_Error",
+      "protocol_version" => 1,
+      "payload_type" => "SearchKernel_Wire_Error",
       "payload" => { "message" => "default fields" }
     }
   )
@@ -306,8 +306,8 @@ raises(SearchKernel::ProtocolError, "malformed portable Error fails closed") do
   SearchKernel::Protocol.expect_response(
     :search,
     {
-      "protocol_version" => 2,
-      "payload_type" => "SearchKernel_V2_Error",
+      "protocol_version" => 1,
+      "payload_type" => "SearchKernel_Wire_Error",
       "payload" => { "message" => "bad retryable", "retryable" => "false" }
     }
   )
@@ -347,8 +347,8 @@ end
     SearchKernel::Protocol.expect_response(
       :search,
       {
-        "protocol_version" => 2,
-        "payload_type" => "SearchKernel_V2_Error",
+        "protocol_version" => 1,
+        "payload_type" => "SearchKernel_Wire_Error",
         "payload" => payload
       }
     )
@@ -361,8 +361,8 @@ class RecordingTransport
   def execute(request)
     @last_request = request
     {
-      "protocol_version" => 2,
-      "payload_type" => "SearchKernel_V2_SearchResult",
+      "protocol_version" => 1,
+      "payload_type" => "SearchKernel_Wire_SearchResult",
       "payload" => canonical_search_result
     }
   end
@@ -810,24 +810,24 @@ same("trace-token", metadata_result.trace, "trace value decodes")
 same({ "origin" => "fixture" }, metadata_result.metadata, "result metadata decodes")
 same("opaque-token", metadata_result.continuations.first.value, "continuation remains opaque")
 same("fixture issue", metadata_result.issues.first.message, "result issues decode")
-same("SearchKernel_V2_SearchRequest", recording.last_request["payload_type"], "client uses centralized operation mapping")
-raw = { "protocol_version" => 2, "payload_type" => "Custom", "payload" => {} }
+same("SearchKernel_Wire_SearchRequest", recording.last_request["payload_type"], "client uses centralized operation mapping")
+raw = { "protocol_version" => 1, "payload_type" => "Custom", "payload" => {} }
 same(recording.execute(raw), client.execute_raw(raw), "raw envelope escape hatch delegates unchanged")
 
 success_response = JSON.generate(
-  "protocol_version" => 2,
-  "payload_type" => "SearchKernel_V2_SearchResult",
+  "protocol_version" => 1,
+  "payload_type" => "SearchKernel_Wire_SearchResult",
   "payload" => { "total_hits" => { "value" => "0", "relation" => "Exact" } }
 )
 with_http_server(body: success_response) do |base_url, state|
   transport = SearchKernel::HttpTransport.new(base_url, timeout: 1)
   response = transport.execute(SearchKernel::Protocol.request_envelope(:search, { "query" => {} }))
-  same(2, response["protocol_version"], "HTTP response decoded")
+  same(1, response["protocol_version"], "HTTP response decoded")
   same("POST /v1/execute HTTP/1.1", state[:request_line], "HTTP execute path")
   same("application/json", state[:headers]["content-type"], "HTTP request content type")
   same("application/json", state[:headers]["accept"], "HTTP request accept")
   request_json = JSON.parse(state[:body])
-  same("SearchKernel_V2_SearchRequest", request_json["payload_type"], "HTTP body preserves canonical envelope")
+  same("SearchKernel_Wire_SearchRequest", request_json["payload_type"], "HTTP body preserves canonical envelope")
 end
 
 with_http_server(status: 503, body: "backend unavailable", content_type: "text/plain") do |base_url, _state|

@@ -1,6 +1,6 @@
 use super::super::support::*;
 use super::super::*;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 
 macro_rules! fixture_field {
     (
@@ -62,7 +62,7 @@ pub(in crate::index::api_tests) fn canonical_fixture_ir_named(
     let bytes = canonical_schema_fixture_named(name, title_weight, tags_weight);
     let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("canonical fixture should parse");
-    searchkernel_ir::index_definition_to_ir(root)
+    searchkernel_ir::wire::v1::index_definition_to_ir(root)
         .expect("canonical fixture should resolve through FlatBuffers")
 }
 

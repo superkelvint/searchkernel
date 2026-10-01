@@ -53,7 +53,7 @@ emit_case("request", "portable-values-request", SearchKernel::Protocol.request_e
   "document" => { "id" => "id:values", "fields" => portable_fields }
 }))
 emit_case("response", "portable-values-response", {
-  "protocol_version" => 2, "payload_type" => "SearchKernel_V2_GetResult",
+  "protocol_version" => 1, "payload_type" => "SearchKernel_Wire_GetResult",
   "payload" => { "document" => { "id" => "id:values", "fields" => portable_fields + [
     { "key" => "nan", "value" => { "kind_type" => "NonFiniteFloatValue", "kind" => { "kind" => "NaN" } } },
     { "key" => "pos_inf", "value" => { "kind_type" => "NonFiniteFloatValue", "kind" => { "kind" => "PositiveInfinity" } } }
@@ -65,8 +65,8 @@ def result_node(kind, payload)
 end
 
 emit_case("response", "recursive-search-response", {
-  "protocol_version" => 2,
-  "payload_type" => "SearchKernel_V2_SearchResult",
+  "protocol_version" => 1,
+  "payload_type" => "SearchKernel_Wire_SearchResult",
   "payload" => {
     "root" => result_node("ResultGroup", {
       "id" => "root", "fields" => [{ "key" => "count", "value" => value.encode(3) }], "metadata" => [], "children" => [

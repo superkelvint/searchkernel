@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "wire_format": "SearchKernel V2 ResponseEnvelope / SearchResult",
+  "wire_format": "SearchKernel.Protocol v1 ResponseEnvelope / SearchKernel.Wire SearchResult",
   "trace_format": "search-result-trace-v1",
   "valid": [
     {

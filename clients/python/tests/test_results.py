@@ -6,17 +6,17 @@ from pathlib import Path
 from searchkernel.client import value
 from searchkernel.ergonomic import Hit, SearchBuilder, SearchResults
 from searchkernel.protocol import unpack_response
-from SearchKernel.V2.Hit import HitT
-from SearchKernel.V2.Int64Value import Int64ValueT
-from SearchKernel.V2.ResultNodeKind import ResultNodeKind
-from SearchKernel.V2.RelevanceKind import RelevanceKind
-from SearchKernel.V2.ResultGroup import ResultGroupT
-from SearchKernel.V2.ResultNode import ResultNodeT
-from SearchKernel.V2.UInt64Value import UInt64ValueT
-from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation
-from SearchKernel.V2.Value import ValueT
-from SearchKernel.V2.ValueEntry import ValueEntryT
-from SearchKernel.V2.ValueKind import ValueKind
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Hit import HitT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Int64Value import Int64ValueT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNodeKind import ResultNodeKind
+from searchkernel._wire.v1.generated.SearchKernel.Wire.RelevanceKind import RelevanceKind
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultGroup import ResultGroupT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNode import ResultNodeT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.UInt64Value import UInt64ValueT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHitsRelation import TotalHitsRelation
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Value import ValueT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry import ValueEntryT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueKind import ValueKind
 
 CONFORMANCE_FIXTURE_ROOT = (
     Path(__file__).resolve().parents[3]

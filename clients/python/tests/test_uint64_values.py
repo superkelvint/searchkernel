@@ -3,9 +3,10 @@ import unittest
 from searchkernel import uint64
 from searchkernel.client import value
 from searchkernel.protocol import pack_object
-from SearchKernel.V2.UInt64Value import UInt64ValueT
-from SearchKernel.V2.Value import ValueT
-from SearchKernel.V2.ValueKind import ValueKind
+from searchkernel._semantic import is_semantic_table
+from searchkernel._wire.v1.generated.SearchKernel.Wire.UInt64Value import UInt64ValueT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Value import ValueT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueKind import ValueKind
 
 
 class UInt64ValueTest(unittest.TestCase):
@@ -17,7 +18,7 @@ class UInt64ValueTest(unittest.TestCase):
             with self.subTest(number=number):
                 encoded = value(uint64(number))
                 self.assertEqual(encoded.kindType, ValueKind.UInt64Value)
-                self.assertIsInstance(encoded.kind, UInt64ValueT)
+                self.assertTrue(is_semantic_table(encoded.kind, "UInt64Value"))
                 self.assertEqual(encoded.kind.value, number)
 
                 decoded = ValueT.InitFromPackedBuf(pack_object(encoded))

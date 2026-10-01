@@ -1,5 +1,5 @@
 use super::*;
-use searchkernel_protocol::{protocol::v2 as wire, PROTOCOL_VERSION};
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use std::collections::BTreeMap;
 
 fn finish_request(
@@ -134,7 +134,7 @@ pub fn encode_insert_request_for_target(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_InsertRequest,
+        wire::RequestPayload::SearchKernel_Wire_InsertRequest,
         request.as_union_value(),
         target,
     ))
@@ -162,7 +162,7 @@ pub fn encode_upsert_request_for_target(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_UpsertRequest,
+        wire::RequestPayload::SearchKernel_Wire_UpsertRequest,
         request.as_union_value(),
         target,
     ))
@@ -221,7 +221,7 @@ pub fn encode_patch_request_for_target(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_PatchRequest,
+        wire::RequestPayload::SearchKernel_Wire_PatchRequest,
         request.as_union_value(),
         logical_target,
     ))
@@ -330,7 +330,7 @@ pub fn encode_update_request_for_target(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_UpdateRequest,
+        wire::RequestPayload::SearchKernel_Wire_UpdateRequest,
         request.as_union_value(),
         logical_target,
     ))
@@ -358,7 +358,7 @@ pub fn encode_delete_request_for_target(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_DeleteRequest,
+        wire::RequestPayload::SearchKernel_Wire_DeleteRequest,
         request.as_union_value(),
         logical_target,
     ))
@@ -399,7 +399,7 @@ pub fn encode_get_request_for_target(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_GetRequest,
+        wire::RequestPayload::SearchKernel_Wire_GetRequest,
         request.as_union_value(),
         logical_target,
     ))
@@ -417,7 +417,7 @@ pub fn encode_search_request_for_target(
     let request = super::search::search_request_offset(&mut builder, request);
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_SearchRequest,
+        wire::RequestPayload::SearchKernel_Wire_SearchRequest,
         request.as_union_value(),
         logical_target,
     ))
@@ -456,7 +456,7 @@ pub fn encode_analyze_request_for_target(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_AnalyzeRequest,
+        wire::RequestPayload::SearchKernel_Wire_AnalyzeRequest,
         request.as_union_value(),
         logical_target,
     ))
@@ -471,7 +471,7 @@ pub fn encode_describe_request_for_target(logical_target: Option<&str>) -> Vec<u
     let request = api::DescribeRequest::create(&mut builder, &api::DescribeRequestArgs {});
     finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_DescribeRequest,
+        wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
         request.as_union_value(),
         logical_target,
     )
@@ -491,7 +491,7 @@ pub fn encode_create_index_request(
     );
     finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
         request.as_union_value(),
         Some(target),
     )
@@ -500,7 +500,7 @@ pub fn encode_create_index_request(
 pub fn encode_open_index_request(target: &str) -> Vec<u8> {
     encode_lifecycle_empty_request(
         target,
-        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
         |builder| {
             api::OpenIndexRequest::create(builder, &api::OpenIndexRequestArgs {}).as_union_value()
         },
@@ -510,7 +510,7 @@ pub fn encode_open_index_request(target: &str) -> Vec<u8> {
 pub fn encode_delete_index_request(target: &str) -> Vec<u8> {
     encode_lifecycle_empty_request(
         target,
-        wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest,
+        wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest,
         |builder| {
             api::DeleteIndexRequest::create(builder, &api::DeleteIndexRequestArgs {})
                 .as_union_value()

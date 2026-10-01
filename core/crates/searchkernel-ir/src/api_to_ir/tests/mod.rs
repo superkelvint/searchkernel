@@ -1,7 +1,7 @@
 use super::*;
 use crate::model::*;
 use crate::ErrorCode;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 use std::time::Duration;
 

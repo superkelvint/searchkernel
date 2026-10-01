@@ -27,6 +27,11 @@ jobs:
          github.event.comment.author_association == 'COLLABORATOR') &&
         startsWith(github.event.comment.body, '/searchkernel-verify ')
       )
+    outputs:
+      requested_revision: ${{ steps.request.outputs.revision }}
+      observed_revision: ${{ steps.subject.outputs.sha }}
+      request_id: ${{ steps.request.outputs.request_id }}
+      canonical_command: ${{ steps.evidence.outputs.canonical_command }}
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 120
 
@@ -207,6 +212,7 @@ jobs:
           fi
 
       - name: Write structured evidence
+        id: evidence
         if: always()
         shell: bash
         env:
@@ -259,6 +265,15 @@ jobs:
           print(path.read_text(encoding="utf-8"))
           PY
 
+          if [[ "${OPERATION}" == "ci" ]]; then
+            canonical_command="./dev ci"
+          elif [[ -n "${CANONICAL_TARGET}" ]]; then
+            canonical_command="./dev ${OPERATION} ${CANONICAL_TARGET}"
+          else
+            canonical_command=
+          fi
+          printf 'canonical_command=%s\n' "${canonical_command}" >> "${GITHUB_OUTPUT}"
+
           {
             echo '### On-demand verification evidence'
             echo
@@ -275,3 +290,62 @@ jobs:
           path: ${{ runner.temp }}/searchkernel-verification/evidence.json
           if-no-files-found: error
           retention-days: 14
+
+  report-comment:
+    name: report exact-SHA verification
+    needs: verify
+    if: >-
+      always() &&
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR') &&
+      startsWith(github.event.comment.body, '/searchkernel-verify ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Post verification result
+        uses: actions/github-script@v9
+        env:
+          REQUESTED_REVISION: ${{ needs.verify.outputs.requested_revision }}
+          OBSERVED_REVISION: ${{ needs.verify.outputs.observed_revision }}
+          REQUEST_ID: ${{ needs.verify.outputs.request_id }}
+          CANONICAL_COMMAND: ${{ needs.verify.outputs.canonical_command }}
+          VERIFICATION_RESULT: ${{ needs.verify.result }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const result = process.env.VERIFICATION_RESULT;
+            const passed = result === "success";
+            const status = passed ? "PASS" : "FAIL";
+            const icon = passed ? "✅" : "❌";
+            const requested = process.env.REQUESTED_REVISION || "unavailable";
+            const observed = process.env.OBSERVED_REVISION || "unavailable";
+            const command = process.env.CANONICAL_COMMAND;
+            const requestId = process.env.REQUEST_ID || "unavailable";
+            const runId = process.env.RUN_ID;
+            const runUrl = process.env.RUN_URL;
+            const code = (value) => "`" + value + "`";
+
+            const body = [
+              `### ${icon} Exact-head verification ${status}`,
+              "",
+              `- Command: ${command ? code(command) : "_not resolved_"}`,
+              `- Requested SHA: ${code(requested)}`,
+              `- Observed SHA: ${code(observed)}`,
+              `- Request: ${code(requestId)}`,
+              `- Run: [View Actions run](${runUrl}) (run ${runId})`,
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+

@@ -13,7 +13,7 @@ fi
 [[ -x "$FLATC" ]] || fail_verification "flatc is required"
 out="${1:-$M13/fixture/generated}"
 mkdir -p "$out"
-"$FLATC" --binary --raw-binary --root-type SearchKernel.V2.IndexDefinition -o "$out" \
+"$FLATC" --binary --raw-binary --root-type SearchKernel.Wire.IndexDefinition -o "$out" \
   "$ROOT/api/searchkernel.fbs" "$M13/fixture/index-definition.json"
 file="$(find "$out" -maxdepth 1 -type f \( -name '*.bin' -o -name '*.bfbs' \) | head -1)"
 [[ -n "$file" ]] || fail_verification "flatc did not produce an IndexDefinition binary"

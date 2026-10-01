@@ -27,8 +27,8 @@ fn document_identity_resolution_preserves_public_intent_across_ingress_paths() {
         let bytes = crate::portable_definition::encode_portable_definition(&definition);
         let portable = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
             .expect("portable schema parses");
-        let portable =
-            searchkernel_ir::index_definition_to_ir(portable).expect("portable schema resolves");
+        let portable = searchkernel_ir::wire::v1::index_definition_to_ir(portable)
+            .expect("portable schema resolves");
         assert_eq!(portable, direct);
         assert_eq!(portable.document_type(), document_type);
         assert_eq!(portable.resolved_document_type(), expected_identity);
