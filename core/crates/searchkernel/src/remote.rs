@@ -784,7 +784,7 @@ impl Backend for RemoteBackend {
 pub struct RemoteClient {
     transport: Arc<RemoteTransport>,
     sessions: Arc<Mutex<HashMap<String, Vec<Weak<BackendSession>>>>>,
-    lifecycle_lock: Arc<Mutex<()>>,
+    lifecycle_locks: Arc<Mutex<HashMap<String, Weak<Mutex<()>>>>>,
 }
 
 impl RemoteClient {
@@ -805,7 +805,7 @@ impl RemoteClient {
         Ok(Self {
             transport: Arc::new(transport),
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            lifecycle_lock: Arc::new(Mutex::new(())),
+            lifecycle_locks: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -815,8 +815,13 @@ impl RemoteClient {
         target: impl AsRef<str>,
         definition: IndexDefinition,
     ) -> Result<Index> {
-        let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
+        let transition = self.lifecycle_lock(target)?;
+        let _lifecycle = transition.lock().map_err(|_| {
+            crate::Error::from_ir(invalid_remote_response(
+                "remote client target lifecycle lock is poisoned",
+            ))
+        })?;
         let input = crate::schema::index_definition_to_input(&definition)?;
         let request = ir::encode_create_index_request(target, &input);
         let response = self
@@ -900,12 +905,21 @@ impl RemoteClient {
         Ok(())
     }
 
-    fn lifecycle_guard(&self) -> Result<std::sync::MutexGuard<'_, ()>> {
-        self.lifecycle_lock.lock().map_err(|_| {
+    fn lifecycle_lock(&self, target: &str) -> Result<Arc<Mutex<()>>> {
+        let mut locks = self.lifecycle_locks.lock().map_err(|_| {
             crate::Error::from_ir(invalid_remote_response(
-                "remote client lifecycle lock is poisoned",
+                "remote client lifecycle-lock registry is poisoned",
             ))
-        })
+        })?;
+        if let Some(lock) = locks.get(target).and_then(Weak::upgrade) {
+            return Ok(lock);
+        }
+
+        // Keep coordination bounded when callers touch many distinct targets.
+        locks.retain(|_, lock| lock.strong_count() != 0);
+        let lock = Arc::new(Mutex::new(()));
+        locks.insert(target.to_owned(), Arc::downgrade(&lock));
+        Ok(lock)
     }
 
     fn register_target_session(&self, target: &str, session: &Arc<BackendSession>) -> Result<()> {
