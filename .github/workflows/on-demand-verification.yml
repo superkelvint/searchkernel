@@ -29,6 +29,13 @@ jobs:
       )
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 120
+    outputs:
+      requested_revision: ${{ steps.request.outputs.revision }}
+      request_id: ${{ steps.request.outputs.request_id }}
+      observed_revision: ${{ steps.subject.outputs.sha }}
+      operation: ${{ steps.request.outputs.operation }}
+      canonical_target: ${{ steps.target.outputs.target }}
+      verification_outcome: ${{ steps.execute.outcome }}
 
     steps:
       - name: Prove trusted default-branch control plane
@@ -275,3 +282,75 @@ jobs:
           path: ${{ runner.temp }}/searchkernel-verification/evidence.json
           if-no-files-found: error
           retention-days: 14
+
+  report-comment:
+    name: report verification result
+    needs: verify
+    if: >-
+      always() &&
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR') &&
+      startsWith(github.event.comment.body, '/searchkernel-verify ')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Comment verification result
+        uses: actions/github-script@v9
+        env:
+          REQUESTED_REVISION: ${{ needs.verify.outputs.requested_revision }}
+          REQUEST_ID: ${{ needs.verify.outputs.request_id }}
+          OBSERVED_REVISION: ${{ needs.verify.outputs.observed_revision }}
+          OPERATION: ${{ needs.verify.outputs.operation }}
+          CANONICAL_TARGET: ${{ needs.verify.outputs.canonical_target }}
+          VERIFICATION_OUTCOME: ${{ needs.verify.outputs.verification_outcome }}
+          VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+        with:
+          script: |
+            const requested = process.env.REQUESTED_REVISION || '';
+            const observed = process.env.OBSERVED_REVISION || '';
+            const operation = process.env.OPERATION || '';
+            const target = process.env.CANONICAL_TARGET || '';
+            const verification = process.env.VERIFICATION_OUTCOME || 'not-run';
+            const workflow = process.env.VERIFY_JOB_RESULT || 'unknown';
+
+            let command = '';
+            if (operation === 'ci') {
+              command = './dev ci';
+            } else if ((operation === 'test' || operation === 'verify') && target) {
+              command = `./dev ${operation} ${target}`;
+            }
+
+            let status;
+            if (verification === 'success' && workflow === 'success') {
+              status = '✅ PASS';
+            } else if (verification === 'failure') {
+              status = '❌ FAIL';
+            } else {
+              status = '❌ ERROR';
+            }
+
+            const runUrl =
+              `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const fmt = value => value ? `\`${value}\`` : '_not resolved_';
+            const body = [
+              `### Search Kernel verification: ${status}`,
+              '',
+              `- Command: ${command ? fmt(command) : '_not resolved_'}`,
+              `- Requested SHA: ${fmt(requested)}`,
+              `- Observed SHA: ${fmt(observed)}`,
+              `- Canonical verification: ${fmt(verification)}`,
+              `- Workflow job: ${fmt(workflow)}`,
+              `- Run: [open logs and evidence](${runUrl})`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
