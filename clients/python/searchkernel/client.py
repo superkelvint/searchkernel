@@ -368,7 +368,9 @@ def _managed_root_error(data_root: Path) -> ClientError:
     return ClientError(f"managed-local data root is not owned by Search Kernel: {data_root}")
 
 
-def _validate_managed_data_root(data_root: Path) -> None:
+def _validate_managed_data_root(
+    data_root: Path, *, allow_inflight_publication: bool = False
+) -> bool:
     marker = data_root / _MANAGED_ROOT_MARKER_NAME
     try:
         root_stat = data_root.lstat()
@@ -383,12 +385,19 @@ def _validate_managed_data_root(data_root: Path) -> None:
         marker_value = marker.read_text(encoding="utf-8")
     except OSError as exc:
         raise _managed_root_error(data_root) from exc
-    if marker_value not in (
+    if marker_value in (
         _MANAGED_ROOT_MARKER_VALUE,
         _MANAGED_ROOT_MARKER_VALUE + "\n",
         _MANAGED_ROOT_MARKER_VALUE + "\r\n",
     ):
-        raise _managed_root_error(data_root)
+        return True
+    # Exclusive creation publishes the marker inode before Python flushes the
+    # small buffered payload. A same-process/process contender may therefore
+    # observe an empty regular file for a short interval. Only that exact empty
+    # state is retryable; any non-empty mismatch still fails closed.
+    if allow_inflight_publication and marker_value == "":
+        return False
+    raise _managed_root_error(data_root)
 
 
 def _prepare_managed_data_root(data_root: Path) -> None:
@@ -448,11 +457,18 @@ def _prepare_managed_data_root(data_root: Path) -> None:
                 raise _managed_root_error(data_root)
             time.sleep(0.025)
             continue
-        _validate_managed_data_root(data_root)
-        return
+        if _validate_managed_data_root(
+            data_root, allow_inflight_publication=True
+        ):
+            return
+        if time.monotonic() >= deadline:
+            raise _managed_root_error(data_root)
+        time.sleep(0.025)
 
 
-def _managed_target_marker_matches(path: Path, target: str) -> bool:
+def _managed_target_marker_matches(
+    path: Path, target: str, *, allow_inflight_publication: bool = False
+) -> bool:
     marker = _managed_marker(path)
     try:
         marker_stat = marker.lstat()
@@ -463,12 +479,14 @@ def _managed_target_marker_matches(path: Path, target: str) -> bool:
     if stat.S_ISLNK(marker_stat.st_mode) or not stat.S_ISREG(marker_stat.st_mode):
         raise ClientError(f"unsafe managed-local marker: {marker}")
     try:
-        value = marker.read_text(encoding="utf-8").strip()
+        marker_value = marker.read_text(encoding="utf-8")
     except OSError as exc:
         raise ClientError(f"cannot read managed-local marker: {marker}") from exc
-    if value != target:
-        raise ClientError(f"managed-local marker target mismatch at {marker}")
-    return True
+    if marker_value.strip() == target:
+        return True
+    if allow_inflight_publication and marker_value == "":
+        return False
+    raise ClientError(f"managed-local marker target mismatch at {marker}")
 
 
 def _write_managed_marker(path: Path, target: str) -> None:
@@ -484,13 +502,26 @@ def _write_managed_marker(path: Path, target: str) -> None:
             raise ClientError(f"managed-local identity path is not a real directory: {path}")
 
     marker = _managed_marker(path)
+    created = False
     try:
         with marker.open("x", encoding="utf-8") as stream:
             stream.write(target + "\n")
+        created = True
     except FileExistsError:
         pass
-    if not _managed_target_marker_matches(path, target):
-        raise ClientError(f"managed-local identity path is not owned by Search Kernel: {path}")
+    if created:
+        _managed_target_marker_matches(path, target)
+        return
+
+    deadline = time.monotonic() + 2.0
+    while True:
+        if _managed_target_marker_matches(
+            path, target, allow_inflight_publication=True
+        ):
+            return
+        if time.monotonic() >= deadline:
+            raise ClientError(f"managed-local marker target mismatch at {marker}")
+        time.sleep(0.025)
 
 
 def _reserve_managed_path(path: Path, target: str) -> None:
