@@ -18,6 +18,19 @@
       "evidence_roots": [
         "core/crates/searchkernel/tests",
         "core/crates/searchkernel/examples"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "native"
+          ],
+          "path": "core/crates/searchkernel/tests/native_e2e.rs",
+          "command": [
+            "./dev",
+            "test",
+            "rust-native-e2e"
+          ]
+        }
       ]
     },
     "python": {
