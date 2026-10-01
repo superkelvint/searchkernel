@@ -149,44 +149,6 @@ function embedding(array $values): Tensor
     return Tensor::dense(VECTOR_TYPE, $values);
 }
 
-function corpusValue(string $field, mixed $value): mixed
-{
-    global $e2eCorpus;
-    $type = $e2eCorpus['schema']['fields'][$field]['type'] ?? null;
-    if ($type === 'float64' && (is_int($value) || is_float($value))) {
-        return (float) $value;
-    }
-    if (is_string($type) && str_starts_with($type, 'tensor<') && is_array($value)) {
-        return embedding($value);
-    }
-    return $value;
-}
-
-/** @param array<string,mixed> $document @return array<string,mixed> */
-function corpusDocument(array $document): array
-{
-    $converted = [];
-    foreach ($document as $field => $value) {
-        $converted[$field] = corpusValue((string) $field, $value);
-    }
-    return $converted;
-}
-
-/** @param array<string,mixed> $bindings @return array<string,mixed> */
-function corpusFilterBindings(string $source, array $bindings): array
-{
-    $converted = [];
-    foreach ($bindings as $name => $value) {
-        $field = null;
-        $quotedName = preg_quote((string) $name, '/');
-        if (preg_match('/([A-Za-z_][A-Za-z0-9_.]*)\\s*(?:<=|>=|=|<|>|IN\\s*\\(\\s*):' . $quotedName . '\\b/i', $source, $matches) === 1) {
-            $field = $matches[1];
-        }
-        $converted[$name] = $field === null ? $value : corpusValue($field, $value);
-    }
-    return $converted;
-}
-
 /** @return list<string> */
 function ids($results): array
 {
@@ -244,6 +206,7 @@ function detailCodes(SearchKernelException $error): array
 /** @param array<string,mixed> $spec @return array<string,mixed> */
 function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
 {
+    global $e2eCorpus;
     $field = $intent['field'] ?? null;
     return match ($scenario) {
         'typed_query_term' => Query::term($field, $intent['value']),
@@ -253,10 +216,10 @@ function typedQueryForScenario(string $scenario, ConsumedIntent $intent): array
         'typed_query_ordered_near' => Query::contains($field, Query::onear(...$intent['terms'])),
         'typed_query_range', 'typed_query_range_exclusive' => Query::range(
             $field,
-            gte: $intent['include_lower'] ? corpusValue($field, $intent['lower']) : null,
-            gt: $intent['include_lower'] ? null : corpusValue($field, $intent['lower']),
-            lte: $intent['include_upper'] ? corpusValue($field, $intent['upper']) : null,
-            lt: $intent['include_upper'] ? null : corpusValue($field, $intent['upper']),
+            gte: $intent['include_lower'] ? searchkernelPhpClientApiE2eQueryValue($e2eCorpus, $field, $intent['lower']) : null,
+            gt: $intent['include_lower'] ? null : searchkernelPhpClientApiE2eQueryValue($e2eCorpus, $field, $intent['lower']),
+            lte: $intent['include_upper'] ? searchkernelPhpClientApiE2eQueryValue($e2eCorpus, $field, $intent['upper']) : null,
+            lt: $intent['include_upper'] ? null : searchkernelPhpClientApiE2eQueryValue($e2eCorpus, $field, $intent['upper']),
         ),
         'typed_query_boolean' => Query::allOf(
             Query::anyOf(
@@ -407,13 +370,13 @@ function captureRealEngineParity(Index $index): array
     $stemmingSpec = $intents['stemming'];
     $stemming = $index->search($stemmingSpec['query'])->limit($stemmingSpec['limit'])->execute();
     $bindingSpec = $intents['text_filter_binding'];
-    $textBinding = $index->search($bindingSpec['query'])->filter($bindingSpec['filter'], corpusFilterBindings($bindingSpec['filter'], $bindingSpec['bindings']))->sort($bindingSpec['sort'][0]['field'], $bindingSpec['sort'][0]['direction'])->limit($bindingSpec['limit'])->execute();
+    $textBinding = $index->search($bindingSpec['query'])->filter($bindingSpec['filter'], $bindingSpec['bindings'])->sort($bindingSpec['sort'][0]['field'], $bindingSpec['sort'][0]['direction'])->limit($bindingSpec['limit'])->execute();
     $repeatedSpec = $intents['repeated_filters'];
     $repeatedBuilder = $index->search($repeatedSpec['query']);
-    foreach ($repeatedSpec['filters'] as $filterSpec) $repeatedBuilder = $repeatedBuilder->filter($filterSpec['source'], corpusFilterBindings($filterSpec['source'], $filterSpec['bindings']));
+    foreach ($repeatedSpec['filters'] as $filterSpec) $repeatedBuilder = $repeatedBuilder->filter($filterSpec['source'], $filterSpec['bindings']);
     $repeated = $repeatedBuilder->sort($repeatedSpec['sort'][0]['field'], $repeatedSpec['sort'][0]['direction'])->limit($repeatedSpec['limit'])->execute();
     $booleanSpec = $intents['boolean_filter_grammar'];
-    $booleanFilter = $index->search($booleanSpec['query'])->filter($booleanSpec['filter'], corpusFilterBindings($booleanSpec['filter'], $booleanSpec['bindings']))->sort($booleanSpec['sort'][0]['field'], $booleanSpec['sort'][0]['direction'])->limit($booleanSpec['limit'])->execute();
+    $booleanFilter = $index->search($booleanSpec['query'])->filter($booleanSpec['filter'], $booleanSpec['bindings'])->sort($booleanSpec['sort'][0]['field'], $booleanSpec['sort'][0]['direction'])->limit($booleanSpec['limit'])->execute();
     $projectionSpec = $intents['sorting_projection'];
     $projection = $index->search($projectionSpec['query'])->sort($projectionSpec['sort'][0]['field'], $projectionSpec['sort'][0]['direction'])->fields(...$projectionSpec['projection'])->limit($projectionSpec['limit'])->execute();
     $allSorted = $index->search($orderedSpec['query'])->sort($orderedSpec['sort'][0]['field'], $orderedSpec['sort'][0]['direction'])->limit($orderedSpec['all_limit'])->execute();
@@ -421,7 +384,7 @@ function captureRealEngineParity(Index $index): array
     $filteredFacet = $index->search($filteredSpec['query'])->filter($filteredSpec['filter'])->facet($filteredSpec['field'], limit: $filteredSpec['limit'], sort: $filteredSpec['sort'])->limit($filteredSpec['page_limit'])->execute();
     $nestedSpec = $intents['nested_grouping'];
     if ($nestedSpec['kind'] !== 'browse') throw new RuntimeException('nested_grouping requires browse intent');
-    $nested = $index->browse()->filter($nestedSpec['filter']['source'], corpusFilterBindings($nestedSpec['filter']['source'], $nestedSpec['filter']['bindings']))->group(
+    $nested = $index->browse()->filter($nestedSpec['filter']['source'], $nestedSpec['filter']['bindings'])->group(
         Group::by($nestedSpec['group_by'])->limit($nestedSpec['limit'])->output(...array_map(parityAggregationOutput(...), $nestedSpec['outputs']))
             ->subgroup(Group::by($nestedSpec['nested']['group_by'])->limit($nestedSpec['nested']['limit'])->output(...array_map(parityAggregationOutput(...), $nestedSpec['nested']['outputs'])))
     )->execute();
@@ -454,7 +417,7 @@ function captureRealEngineParity(Index $index): array
     $rankProperty = $rankPropertyBuilder->limit($rankPropertySpec['limit'])->execute();
     $degradedSpec = $intents['coverage_degradation'];
     if ($degradedSpec['kind'] !== 'browse') throw new RuntimeException('coverage_degradation requires browse intent');
-    $degradedBuilder = $index->browse()->filter($degradedSpec['filter']['source'], corpusFilterBindings($degradedSpec['filter']['source'], $degradedSpec['filter']['bindings']))->sort($degradedSpec['sort'][0]['field'], $degradedSpec['sort'][0]['direction']);
+    $degradedBuilder = $index->browse()->filter($degradedSpec['filter']['source'], $degradedSpec['filter']['bindings'])->sort($degradedSpec['sort'][0]['field'], $degradedSpec['sort'][0]['direction']);
     foreach ($degradedSpec['rank_properties'] as $key => $value) $degradedBuilder = $degradedBuilder->rankProperty($key, $value);
     $degraded = $degradedBuilder->limit($degradedSpec['limit'])->execute();
     $yqlSpec = $intents['yql'];
@@ -472,7 +435,7 @@ function captureRealEngineParity(Index $index): array
 
     $groups = groupingGroups($grouped);
     $updateSpec = $intents['advanced_update'];
-    $index->insert(corpusDocument(['_id' => $updateSpec['document_id'], ...$updateSpec['initial']]));
+    $index->insert(searchkernelPhpClientApiE2eDocument($corpus, ['_id' => $updateSpec['document_id'], ...$updateSpec['initial']]));
     $updateBuilder = $index->update($updateSpec['document_id']);
     foreach ($updateSpec['set'] as $field => $value) $updateBuilder = $updateBuilder->set($field, $value);
     foreach ($updateSpec['unset'] as $field) $updateBuilder = $updateBuilder->unset($field);
@@ -613,8 +576,10 @@ if ($phase === 'initial') {
     $firstHandle = Index::open($url, $target);
     $secondHandle = Index::open($url, $target);
     $firstHandle->close();
-    $siblingDescription = $secondHandle->describe();
-    check(is_array($siblingDescription['fields'] ?? null), 'closing one PHP handle leaves an already-open sibling usable');
+    check(
+        $secondHandle->describe()['fields'] === $index->describe()['fields'],
+        'closing one PHP handle leaves an already-open sibling usable'
+    );
     $secondHandle->close();
 
     $otherTarget = $target . '-other';
@@ -731,22 +696,30 @@ heading('1. INDEX SCHEMA + RANK PROFILES PREPARED BY CANONICAL HARNESS');
 echo "PHP executes the same product corpus through the HTTP/FlatBuffers-JSON edge.\n";
 
 heading('2. INSERT DOCUMENTS');
-$documents = array_map('corpusDocument', $e2eCorpus['documents']);
+$documents = array_map(static function (array $document) use ($e2eCorpus): array {
+    $document = searchkernelPhpClientApiE2eDocument($e2eCorpus, $document);
+    if (isset($document['embedding']) && is_array($document['embedding'])) {
+        $document['embedding'] = embedding($document['embedding']);
+    }
+    return $document;
+}, $e2eCorpus['documents']);
 foreach ($documents as $document) {
     same($document['_id'], $index->insert($document), 'insert returns document id');
 }
 $probeSpec = $e2eCorpus['coverage_probes'];
 for ($probe = 0; $probe < $probeSpec['count']; $probe++) {
-    $document = corpusDocument($probeSpec['document']);
+    $document = $probeSpec['document'];
     $document['_id'] = "degraded-{$probe}";
+    $document = searchkernelPhpClientApiE2eDocument($e2eCorpus, $document);
+    $document['embedding'] = embedding($document['embedding']);
     $index->insert($document);
 }
 
 $parity = captureRealEngineParity($index);
 $patchSpec = $parityIntents['patch'];
-$index->insert(corpusDocument(['_id' => $patchSpec['document_id'], ...$patchSpec['initial']]));
+$index->insert(searchkernelPhpClientApiE2eDocument($e2eCorpus, ['_id' => $patchSpec['document_id'], ...$patchSpec['initial']]));
 $patchBuilder = $index->patch($patchSpec['document_id']);
-foreach ($patchSpec['set'] as $field => $value) $patchBuilder = $patchBuilder->set($field, corpusValue($field, $value));
+foreach (searchkernelPhpClientApiE2eDocument($e2eCorpus, $patchSpec['set']) as $field => $value) $patchBuilder = $patchBuilder->set($field, $value);
 foreach ($patchSpec['unset'] as $field) $patchBuilder = $patchBuilder->unset($field);
 $patchBuilder->execute();
 $mutated = $index->get($patchSpec['document_id']);
@@ -755,7 +728,7 @@ $deleteSpec = $parityIntents['delete'];
 $parityMutationDeleted = $index->delete($deleteSpec['document_id']);
 $parity['delete'] = ['deleted' => $parityMutationDeleted, 'absent_after_delete' => $index->get($deleteSpec['document_id']) === null];
 $reopenSpec = $parityIntents['reopen_persistence'];
-$index->insert(corpusDocument(['_id' => $reopenSpec['marker_id'], ...$reopenSpec['marker']]));
+$index->insert(searchkernelPhpClientApiE2eDocument($e2eCorpus, ['_id' => $reopenSpec['marker_id'], ...$reopenSpec['marker']]));
 
 heading('3. GET BY ID');
 $doc = $index->get('shoe-1');
@@ -1235,7 +1208,7 @@ $upsertSpec = $parityIntents['upsert_replacement'];
 $replacement = $upsertSpec['replacement'];
 $vectorDocumentId = $replacement['vector_document_id'];
 unset($replacement['vector_document_id']);
-$index->upsert(corpusDocument(['_id' => $upsertSpec['document_id'], ...$replacement, 'embedding' => embedding(corpusVector($vectorDocumentId))]));
+$index->upsert(searchkernelPhpClientApiE2eDocument($e2eCorpus, ['_id' => $upsertSpec['document_id'], ...$replacement, 'embedding' => embedding(corpusVector($vectorDocumentId))]));
 $doc = $index->get($upsertSpec['document_id']);
 same(119.0, $doc['price'], 'upsert replacement price');
 check(str_contains($doc['title'], 'Updated Edition'), 'upsert replacement title');

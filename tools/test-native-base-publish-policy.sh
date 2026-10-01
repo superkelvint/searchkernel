@@ -4,9 +4,20 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 PUBLISH="$ROOT/tools/publish-native-base.sh"
 REPAIR="$ROOT/tools/repair-native-base.sh"
+PACKAGE="$ROOT/tools/package-native-base-artifact.sh"
+REMOVE_READONLY_TREE="$ROOT/tools/remove-readonly-tree.sh"
 
 bash -n "$PUBLISH"
 bash -n "$REPAIR"
+bash -n "$PACKAGE"
+bash -n "$REMOVE_READONLY_TREE"
+
+for script in "$PUBLISH" "$PACKAGE"; do
+    grep -Fq 'remove-readonly-tree.sh' "$script" || {
+        echo "$script must clean staged read-only native-base files safely" >&2
+        exit 1
+    }
+done
 
 if grep -Fq -- "--clobber" "$REPAIR"; then
     echo "native-base repair must never clobber an existing published generation" >&2
@@ -56,6 +67,17 @@ PY
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-native-publish-policy.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
+
+readonly_tree="$tmp/read-only-tree"
+mkdir -p "$readonly_tree/base/lib/nested"
+printf 'fixture\n' >"$readonly_tree/base/lib/nested/runtime.so"
+chmod -R a-w "$readonly_tree"
+bash "$REMOVE_READONLY_TREE" "$readonly_tree"
+[[ ! -e "$readonly_tree" ]] || {
+    echo "read-only native-base staging tree was not removed" >&2
+    exit 1
+}
+
 mkdir -p "$tmp/tools"
 cp "$REPAIR" "$tmp/tools/repair-native-base.sh"
 cat >"$tmp/tools/publish-native-base.sh" <<'SH'

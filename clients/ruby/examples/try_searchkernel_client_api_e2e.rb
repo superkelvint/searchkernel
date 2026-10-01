@@ -3,6 +3,7 @@
 require "fileutils"
 require "json"
 require "tmpdir"
+require_relative "client_real_e2e_parity_helpers"
 
 unless ENV["SEARCHKERNEL_RUBY_USE_INSTALLED_GEM"] == "1"
   $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
@@ -96,28 +97,6 @@ def embedding(*values)
   SearchKernel::Tensor.dense(VECTOR_TYPE, values)
 end
 
-def corpus_value(field, value)
-  type = E2E_CORPUS.fetch("schema").fetch("fields").fetch(field, {})["type"]
-  return Float(value) if type == "float64" && value.is_a?(Numeric)
-  return embedding(*value) if type&.start_with?("tensor<") && value.is_a?(Array)
-
-  value
-end
-
-def corpus_document(source)
-  source.each_with_object({}) do |(field, value), document|
-    document[field.to_s] = corpus_value(field.to_s, value)
-  end
-end
-
-def corpus_filter_bindings(source, bindings)
-  bindings.each_with_object({}) do |(name, value), converted|
-    field_match = source.match(/([A-Za-z_][A-Za-z0-9_.]*)\s*(?:<=|>=|=|<|>|IN\s*\(\s*):#{Regexp.escape(name.to_s)}\b/i)
-    field = field_match && field_match[1]
-    converted[name] = field ? corpus_value(field, value) : value
-  end
-end
-
 PARITY_OBSERVATIONS = {}
 
 def typed_query_for_scenario(scenario, intent)
@@ -131,10 +110,10 @@ def typed_query_for_scenario(scenario, intent)
   when "typed_query_range", "typed_query_range_exclusive"
     SearchKernel::Query.range(
       field,
-      gte: intent.fetch("include_lower") ? corpus_value(field, intent.fetch("lower")) : nil,
-      gt: intent.fetch("include_lower") ? nil : corpus_value(field, intent.fetch("lower")),
-      lte: intent.fetch("include_upper") ? corpus_value(field, intent.fetch("upper")) : nil,
-      lt: intent.fetch("include_upper") ? nil : corpus_value(field, intent.fetch("upper"))
+      gte: intent.fetch("include_lower") ? ClientRealE2EParityHelpers.query_value(E2E_CORPUS, field, intent.fetch("lower")) : nil,
+      gt: intent.fetch("include_lower") ? nil : ClientRealE2EParityHelpers.query_value(E2E_CORPUS, field, intent.fetch("lower")),
+      lte: intent.fetch("include_upper") ? ClientRealE2EParityHelpers.query_value(E2E_CORPUS, field, intent.fetch("upper")) : nil,
+      lt: intent.fetch("include_upper") ? nil : ClientRealE2EParityHelpers.query_value(E2E_CORPUS, field, intent.fetch("upper"))
     )
   when "typed_query_boolean"
     left, right = intent.fetch("or_terms")
@@ -269,13 +248,13 @@ def capture_real_engine_parity(index)
   stemming_spec = intents.fetch("stemming")
   stemming = index.search(stemming_spec.fetch("query")).limit(stemming_spec.fetch("limit")).execute
   binding_spec = intents.fetch("text_filter_binding")
-  text_binding = index.search(binding_spec.fetch("query")).filter(binding_spec.fetch("filter"), corpus_filter_bindings(binding_spec.fetch("filter"), binding_spec.fetch("bindings"))).sort(binding_spec.fetch("sort")[0].fetch("field"), binding_spec.fetch("sort")[0].fetch("direction")).limit(binding_spec.fetch("limit")).execute
+  text_binding = index.search(binding_spec.fetch("query")).filter(binding_spec.fetch("filter"), binding_spec.fetch("bindings")).sort(binding_spec.fetch("sort")[0].fetch("field"), binding_spec.fetch("sort")[0].fetch("direction")).limit(binding_spec.fetch("limit")).execute
   repeated_spec = intents.fetch("repeated_filters")
   repeated_builder = index.search(repeated_spec.fetch("query"))
-  repeated_spec.fetch("filters").each { |filter_spec| repeated_builder = repeated_builder.filter(filter_spec.fetch("source"), corpus_filter_bindings(filter_spec.fetch("source"), filter_spec.fetch("bindings"))) }
+  repeated_spec.fetch("filters").each { |filter_spec| repeated_builder = repeated_builder.filter(filter_spec.fetch("source"), filter_spec.fetch("bindings")) }
   repeated = repeated_builder.sort(repeated_spec.fetch("sort")[0].fetch("field"), repeated_spec.fetch("sort")[0].fetch("direction")).limit(repeated_spec.fetch("limit")).execute
   boolean_spec = intents.fetch("boolean_filter_grammar")
-  boolean_filter = index.search(boolean_spec.fetch("query")).filter(boolean_spec.fetch("filter"), corpus_filter_bindings(boolean_spec.fetch("filter"), boolean_spec.fetch("bindings"))).sort(boolean_spec.fetch("sort")[0].fetch("field"), boolean_spec.fetch("sort")[0].fetch("direction")).limit(boolean_spec.fetch("limit")).execute
+  boolean_filter = index.search(boolean_spec.fetch("query")).filter(boolean_spec.fetch("filter"), boolean_spec.fetch("bindings")).sort(boolean_spec.fetch("sort")[0].fetch("field"), boolean_spec.fetch("sort")[0].fetch("direction")).limit(boolean_spec.fetch("limit")).execute
   projection_spec = intents.fetch("sorting_projection")
   projection = index.search(projection_spec.fetch("query")).sort(projection_spec.fetch("sort")[0].fetch("field"), projection_spec.fetch("sort")[0].fetch("direction")).fields(*projection_spec.fetch("projection")).limit(projection_spec.fetch("limit")).execute
   all_sorted = index.search(ordered_spec.fetch("query")).sort(ordered_spec.fetch("sort")[0].fetch("field"), ordered_spec.fetch("sort")[0].fetch("direction")).limit(ordered_spec.fetch("all_limit")).execute
@@ -283,7 +262,7 @@ def capture_real_engine_parity(index)
   filtered_facet = index.search(filtered_spec.fetch("query")).filter(filtered_spec.fetch("filter")).facet(filtered_spec.fetch("field"), limit: filtered_spec.fetch("limit"), sort: filtered_spec.fetch("sort")).limit(filtered_spec.fetch("page_limit")).execute
   nested_spec = intents.fetch("nested_grouping")
   raise "nested_grouping requires browse intent" unless nested_spec.fetch("kind") == "browse"
-  nested = index.browse.filter(nested_spec.fetch("filter").fetch("source"), corpus_filter_bindings(nested_spec.fetch("filter").fetch("source"), nested_spec.fetch("filter").fetch("bindings"))).group(
+  nested = index.browse.filter(nested_spec.fetch("filter").fetch("source"), nested_spec.fetch("filter").fetch("bindings")).group(
     SearchKernel::Group.by(nested_spec.fetch("group_by")).limit(nested_spec.fetch("limit")).output(*nested_spec.fetch("outputs").map { |output| parity_aggregation_output(output) })
       .subgroup(SearchKernel::Group.by(nested_spec.fetch("nested").fetch("group_by")).limit(nested_spec.fetch("nested").fetch("limit")).output(*nested_spec.fetch("nested").fetch("outputs").map { |output| parity_aggregation_output(output) }))
   ).execute
@@ -318,7 +297,7 @@ def capture_real_engine_parity(index)
   rank_property = rank_property_builder.limit(rank_property_spec.fetch("limit")).execute
   degraded_spec = intents.fetch("coverage_degradation")
   raise "coverage_degradation requires browse intent" unless degraded_spec.fetch("kind") == "browse"
-  degraded_builder = index.browse.filter(degraded_spec.fetch("filter").fetch("source"), corpus_filter_bindings(degraded_spec.fetch("filter").fetch("source"), degraded_spec.fetch("filter").fetch("bindings"))).sort(degraded_spec.fetch("sort")[0].fetch("field"), degraded_spec.fetch("sort")[0].fetch("direction"))
+  degraded_builder = index.browse.filter(degraded_spec.fetch("filter").fetch("source"), degraded_spec.fetch("filter").fetch("bindings")).sort(degraded_spec.fetch("sort")[0].fetch("field"), degraded_spec.fetch("sort")[0].fetch("direction"))
   degraded_spec.fetch("rank_properties").each { |key, value| degraded_builder = degraded_builder.rank_property(key, value) }
   degraded = degraded_builder.limit(degraded_spec.fetch("limit")).execute
   yql_spec = intents.fetch("yql")
@@ -361,9 +340,9 @@ def capture_real_engine_parity(index)
   check(negative_limit_rejected && negative_offset_rejected && page_and_limit_rejected && page_and_offset_rejected,
         "builder misuse inputs are rejected")
   update_spec = intents.fetch("advanced_update")
-  index.insert(corpus_document(update_spec.fetch("initial").merge("_id" => update_spec.fetch("document_id"))))
+  index.insert(ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, update_spec.fetch("initial").merge("_id" => update_spec.fetch("document_id"))))
   update_builder = index.update(update_spec.fetch("document_id"))
-  update_spec.fetch("set").each { |key, value| update_builder = update_builder.set(key, corpus_value(key, value)) }
+  update_spec.fetch("set").each { |key, value| update_builder = update_builder.set(key, value) }
   update_spec.fetch("unset").each { |field| update_builder = update_builder.unset(field) }
   update_spec.fetch("increments").each { |key, value| update_builder = update_builder.increment(key, value) }
   update_builder.execute
@@ -488,22 +467,26 @@ end
 index = SearchKernel::Index.create(index_path, fields: fields, rank_profiles: rank_profiles)
 begin
   E2E_CORPUS.fetch("documents").each do |source|
-    document = corpus_document(source)
+    document = ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, source)
+    document["embedding"] = embedding(*document.fetch("embedding")) if document["embedding"]
     index.insert(document)
   end
 
   probe_spec = E2E_CORPUS.fetch("coverage_probes")
   probe_spec.fetch("count").times do |probe|
-    document = corpus_document(probe_spec.fetch("document"))
+    document = ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, probe_spec.fetch("document"))
     document["_id"] = "degraded-#{probe}"
+    document["embedding"] = embedding(*document.fetch("embedding"))
     index.insert(document)
   end
 
   PARITY_OBSERVATIONS.merge!(capture_real_engine_parity(index))
   patch_spec = PARITY_INTENTS.fetch("patch")
-  index.insert(corpus_document(patch_spec.fetch("initial").merge("_id" => patch_spec.fetch("document_id"))))
+  index.insert(ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, patch_spec.fetch("initial").merge("_id" => patch_spec.fetch("document_id"))))
   patch_builder = index.patch(patch_spec.fetch("document_id"))
-  patch_spec.fetch("set").each { |key, value| patch_builder = patch_builder.set(key, corpus_value(key, value)) }
+  ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, patch_spec.fetch("set")).each do |key, value|
+    patch_builder = patch_builder.set(key, value)
+  end
   patch_spec.fetch("unset").each { |field| patch_builder = patch_builder.unset(field) }
   patch_builder.execute
   mutated = index.get(patch_spec.fetch("document_id"))
@@ -512,7 +495,7 @@ begin
   parity_mutation_deleted = index.delete(delete_spec.fetch("document_id"))
   PARITY_OBSERVATIONS["delete"] = {"deleted" => parity_mutation_deleted, "absent_after_delete" => index.get(delete_spec.fetch("document_id")).nil?}
   reopen_spec = PARITY_INTENTS.fetch("reopen_persistence")
-  index.insert(corpus_document(reopen_spec.fetch("marker").merge("_id" => reopen_spec.fetch("marker_id"))))
+  index.insert(ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, reopen_spec.fetch("marker").merge("_id" => reopen_spec.fetch("marker_id"))))
 
   results = index.search("shoes")
     .filter("price <= :max", "max" => 100.0)
@@ -794,8 +777,7 @@ begin
   upsert_spec = PARITY_INTENTS.fetch("upsert_replacement")
   replacement = upsert_spec.fetch("replacement").reject { |key, _value| key == "vector_document_id" }
   replacement["embedding"] = embedding(*corpus_vector(upsert_spec.fetch("replacement").fetch("vector_document_id")))
-  replacement = corpus_document(replacement)
-  index.upsert(upsert_spec.fetch("document_id"), replacement)
+  index.upsert(upsert_spec.fetch("document_id"), ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, replacement))
   upserted_shoe2 = index.get(upsert_spec.fetch("document_id"))
   same(119.0, upserted_shoe2.fetch("price"), "upsert replacement")
   PARITY_OBSERVATIONS["upsert_replacement"] = {"price" => upserted_shoe2.fetch("price"), "updated_title_matches" => upserted_shoe2.fetch("title").include?("Updated"), "search_ids" => ids(index.search(upsert_spec.fetch("search_query")).execute)}

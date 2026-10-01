@@ -1,17 +1,24 @@
-import { readFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { EventEmitter } from "node:events";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { environmentForHost } from "../src/node/managed-local-host.js";
 
 let sdkLib: string | undefined;
 let loaderPath: string | undefined;
 let localHost: string | undefined;
+let legacyIndexPath: string | undefined;
+let legacyDefinition: string | undefined;
+let legacyDefinitionJson: string | undefined;
 
 beforeEach(() => {
   sdkLib = process.env.SEARCHKERNEL_SDK_LIB;
   loaderPath = process.env.LD_LIBRARY_PATH;
   localHost = process.env.SEARCHKERNEL_LOCAL_HOST;
+  legacyIndexPath = process.env.SEARCHKERNEL_INDEX_PATH;
+  legacyDefinition = process.env.SEARCHKERNEL_INDEX_DEFINITION;
+  legacyDefinitionJson = process.env.SEARCHKERNEL_INDEX_DEFINITION_JSON;
 });
 
 afterEach(() => {
@@ -21,6 +28,12 @@ afterEach(() => {
   else process.env.LD_LIBRARY_PATH = loaderPath;
   if (localHost === undefined) delete process.env.SEARCHKERNEL_LOCAL_HOST;
   else process.env.SEARCHKERNEL_LOCAL_HOST = localHost;
+  if (legacyIndexPath === undefined) delete process.env.SEARCHKERNEL_INDEX_PATH;
+  else process.env.SEARCHKERNEL_INDEX_PATH = legacyIndexPath;
+  if (legacyDefinition === undefined) delete process.env.SEARCHKERNEL_INDEX_DEFINITION;
+  else process.env.SEARCHKERNEL_INDEX_DEFINITION = legacyDefinition;
+  if (legacyDefinitionJson === undefined) delete process.env.SEARCHKERNEL_INDEX_DEFINITION_JSON;
+  else process.env.SEARCHKERNEL_INDEX_DEFINITION_JSON = legacyDefinitionJson;
   vi.resetModules();
   vi.useRealTimers();
   vi.unmock("node:fs");
@@ -44,6 +57,19 @@ describe("managed-local native runtime contract", () => {
     process.env.LD_LIBRARY_PATH = "/existing";
 
     expect(environmentForHost().LD_LIBRARY_PATH).toBe("/existing");
+  });
+
+  it("scrubs obsolete legacy single-index mode selectors from the child environment", () => {
+    process.env.SEARCHKERNEL_INDEX_PATH = "/legacy/index";
+    process.env.SEARCHKERNEL_INDEX_DEFINITION = "/legacy/definition.fb";
+    process.env.SEARCHKERNEL_INDEX_DEFINITION_JSON = "/legacy/definition.json";
+
+    const environment = environmentForHost();
+
+    expect(environment.SEARCHKERNEL_INDEX_PATH).toBeUndefined();
+    expect(environment.SEARCHKERNEL_INDEX_DEFINITION).toBeUndefined();
+    expect(environment.SEARCHKERNEL_INDEX_DEFINITION_JSON).toBeUndefined();
+    expect(process.env.SEARCHKERNEL_INDEX_PATH).toBe("/legacy/index");
   });
 
   it("prepends the exact explicit adapter path without mutating process env", () => {
@@ -229,6 +255,49 @@ describe("managed-local host binary resolution", () => {
     }).child;
     replacementChild.exitCode = 0;
     await replacement.close();
+  });
+
+  it("does not commandeer a pre-existing empty unowned managed root", async () => {
+    const root = mkdtempSync(join(tmpdir(), "searchkernel-ts-unowned-root-"));
+    try {
+      const dataRoot = join(root, ".searchkernel-managed");
+      mkdirSync(dataRoot);
+      const inode = lstatSync(dataRoot).ino;
+
+      const { Index } = await import("../src/node/index.js");
+      const { IndexDefinitionT } = await import(
+        "../src/generated/flatbuffers/search-kernel/v2/index-definition.js"
+      );
+      await expect(
+        Index.create(join(root, "index"), { fields: new IndexDefinitionT() }),
+      ).rejects.toThrow(/not owned by Search Kernel/);
+
+      expect(lstatSync(dataRoot).ino).toBe(inode);
+      expect(readdirSync(dataRoot)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a symlink legacy source before spawning the migration helper", async () => {
+    const root = mkdtempSync(join(tmpdir(), "searchkernel-ts-migrate-symlink-"));
+    try {
+      const real = join(root, "real-index");
+      const source = join(root, "legacy-index");
+      const dataRoot = join(root, ".searchkernel-managed");
+      mkdirSync(real);
+      mkdirSync(dataRoot);
+      symlinkSync(real, source, "dir");
+
+      const { ManagedLocalHost } = await import("../src/node/managed-local-host.js");
+      await expect(
+        ManagedLocalHost.migrateLegacy(source, dataRoot, "local-test"),
+      ).rejects.toThrow(/real directory/);
+      expect(lstatSync(source).isSymbolicLink()).toBe(true);
+      expect(lstatSync(real).isDirectory()).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("fails closed outside a Search Kernel source checkout when no host is configured or bundled", async () => {
