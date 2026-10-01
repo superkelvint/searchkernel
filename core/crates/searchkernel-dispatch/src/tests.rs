@@ -135,7 +135,7 @@ fn context() -> Arc<IndexContext> {
     );
     builder.finish(definition, None);
     Arc::new(
-        IndexContext::from_api(root::<api::IndexDefinition<'_>>(builder.finished_data()).unwrap())
+        searchkernel_ir::wire::v1::index_context_from_api(root::<api::IndexDefinition<'_>>(builder.finished_data()).unwrap())
             .unwrap(),
     )
 }
