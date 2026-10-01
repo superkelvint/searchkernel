@@ -1,4 +1,6 @@
 use crate::*;
+use crate::wire::v1::*;
+use crate::wire::v1::schema as api;
 use std::collections::BTreeMap;
 
 const CASES: u64 = 192;
