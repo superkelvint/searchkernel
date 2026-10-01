@@ -11,12 +11,13 @@ on:
   issue_comment:
     types: [created]
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   verify:
     name: exact-SHA verification
+    permissions:
+      contents: read
     if: >-
       github.event_name == 'repository_dispatch' ||
       (
@@ -309,6 +310,9 @@ jobs:
           CANONICAL_TARGET: ${{ needs.verify.outputs.canonical_target }}
           VERIFICATION_OUTCOME: ${{ needs.verify.outputs.verification_outcome }}
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         with:
           script: |
             const requested = process.env.REQUESTED_REVISION || '';
@@ -335,7 +339,7 @@ jobs:
             }
 
             const runUrl =
-              `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              `${process.env.SERVER_URL}/${process.env.REPOSITORY}/actions/runs/${process.env.RUN_ID}`;
             const fmt = value => value ? `\`${value}\`` : '_not resolved_';
             const body = [
               `### Search Kernel verification: ${status}`,
