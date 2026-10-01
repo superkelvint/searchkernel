@@ -170,25 +170,62 @@ remote checks.
 
 ### Remote-only agent
 
-No local Search Kernel environment is required. Through an authorized GitHub
-UI/API/CLI/connector:
+No local Search Kernel environment is required. A remote-only agent may use
+either of the bounded GitHub ingresses below. In both cases, first inspect
+`build/targets.json` at the revision under test and identify the exact pushed
+40-character commit SHA.
 
-1. inspect `build/targets.json` at the revision you intend to test;
-2. identify an exact pushed 40-character commit SHA;
-3. dispatch the repository's **On-demand verification** workflow with one
-   bounded operation:
-   - `ci` with no target;
-   - `test` with one registered test scope;
-   - `verify` with one registered verifier lane;
-4. confirm the workflow evidence identifies the requested/observed revision,
-   operation, canonical target/command, result, run ID, and run URL;
-5. for a pull-request comment request, confirm the trusted reporter posts the
-   PASS/FAIL result back to that PR with a clickable Actions-run link;
-6. inspect failed-step logs when the result is not successful.
+#### Pull-request comment ingress
 
-The trusted default-branch workflow/control plane executes the requested revision
-as untrusted subject code. The request may not supply arbitrary shell commands
-or redefine the runner/permission boundary.
+This is the normal path for connector-only agents that can read/write GitHub
+pull-request comments but cannot issue `repository_dispatch`.
+
+Post a new top-level comment on the pull request whose **entire body is exactly
+one line** in one of these forms:
+
+```text
+/searchkernel-verify ci <exact-40-character-sha>
+/searchkernel-verify test <scope> <exact-40-character-sha>
+/searchkernel-verify verify <lane> <exact-40-character-sha>
+```
+
+Rules:
+
+- use the exact pushed SHA being reviewed, never a branch name or abbreviated SHA;
+- use only a registered `test` scope or `verify` lane from
+  `build/targets.json`;
+- do not add explanatory prose, Markdown, a second line, or another command to
+  the same comment;
+- the comment author must be accepted by the repository's bounded authorization
+  policy (`OWNER`, `MEMBER`, or `COLLABORATOR`);
+- after posting, locate the resulting **On-demand verification** workflow run
+  and inspect its structured evidence and failed-step logs when applicable.
+
+The PR comment is only a request envelope. It cannot supply arbitrary shell
+text, workflow YAML, runner configuration, or secrets. The trusted default-
+branch control plane validates the request and executes the exact requested
+revision as untrusted subject code.
+
+#### Repository-dispatch ingress
+
+If the caller can issue the repository's bounded `repository_dispatch`, it may
+instead dispatch the **On-demand verification** workflow with one operation:
+
+- `ci` with no target;
+- `test` with one registered test scope;
+- `verify` with one registered verifier lane.
+
+The dispatch path and PR-comment path normalize into the same exact-SHA verifier
+and have the same target-registry, repository-membership, checkout, execution,
+and evidence requirements.
+
+For either ingress, confirm the workflow evidence identifies the
+requested/observed revision, operation, canonical target/command, result, run
+ID, and run URL. For a PR comment request, also confirm the trusted reporter
+posts the PASS/FAIL result back to that PR with a clickable Actions run link.
+Inspect failed-step logs when the result is not successful. Never treat a
+successfully posted request comment or accepted dispatch as proof that the test
+itself passed.
 
 ### Evidence freshness
 

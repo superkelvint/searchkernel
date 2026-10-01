@@ -230,6 +230,30 @@ verification, generation, and acceptance lanes:
 Use `./dev --help` for the supported command list. Direct underlying scripts
 are for focused debugging or when a contract explicitly names one.
 
+### Remote-only test and verifier execution
+
+An agent that cannot run the repository locally can still execute the canonical
+test/verifier surface against an exact pushed commit. If the agent has
+authorized GitHub pull-request comment access, post one top-level comment whose
+entire body is exactly one of:
+
+```text
+/searchkernel-verify ci <exact-40-character-sha>
+/searchkernel-verify test <scope> <exact-40-character-sha>
+/searchkernel-verify verify <lane> <exact-40-character-sha>
+```
+
+Choose `<scope>` and `<lane>` from `build/targets.json`. The resulting
+**On-demand verification** run executes the same canonical `./dev` operation
+through the trusted default-branch control plane and records exact-SHA evidence.
+Do not append prose or additional lines to the command comment, and do not reuse
+evidence after the reviewed head changes.
+
+Local-capable agents should continue to prefer `./dev test --remote <scope>`
+and `./dev verify --remote <lane>` when the checkout is available. See
+`docs/agent-workflow.md` for the remote-only comment/dispatch procedure and
+evidence requirements, and `docs/ci.md` for the trust-boundary design.
+
 ## Canonical toolchain authorities
 
 Repository tooling must not choose its own interpreter/compiler/runtime. Each
