@@ -107,7 +107,7 @@ fn parse(path: &Path) -> Result<searchkernel_ir::IndexDefinitionIr, PortableErro
         )
     })?;
     let root =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
+        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(&bytes)
             .map_err(|error| {
                 PortableError::invalid(
                     "malformed_flatbuffer",
