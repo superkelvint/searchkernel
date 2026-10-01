@@ -209,6 +209,9 @@ mod showcase {
 
     fn corpus_documents() -> Result<Vec<(String, Value)>, Box<dyn std::error::Error>> {
         let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let schema_fields = corpus["schema"]["fields"]
+            .as_object()
+            .ok_or("corpus schema fields missing")?;
         let mut documents = Vec::new();
         for source in corpus["documents"]
             .as_array()
@@ -220,6 +223,7 @@ mod showcase {
                 .as_object_mut()
                 .ok_or("corpus document must be an object")?
                 .remove("_id");
+            normalize_float64_fields(&mut document, schema_fields);
             if let Some(cells) = document.get("embedding").and_then(Value::as_array) {
                 let values = cells
                     .iter()
@@ -230,6 +234,19 @@ mod showcase {
             documents.push((id.to_owned(), document));
         }
         Ok(documents)
+    }
+
+    fn normalize_float64_fields(
+        document: &mut Value,
+        schema_fields: &serde_json::Map<String, Value>,
+    ) {
+        for (field, definition) in schema_fields {
+            if definition["type"] == "float64" {
+                if let Some(value) = document.get(field).and_then(Value::as_f64) {
+                    document[field] = json!(value);
+                }
+            }
+        }
     }
 
     fn corpus_vector(document_id: &str) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
@@ -556,10 +573,14 @@ mod showcase {
             println!("insert: {id}");
         }
         let corpus: Value = serde_json::from_str(E2E_CORPUS)?;
+        let corpus_schema_fields = corpus["schema"]["fields"]
+            .as_object()
+            .ok_or("corpus schema fields missing")?;
         let probe_count = corpus["coverage_probes"]["count"]
             .as_u64()
             .ok_or("coverage probe count missing")?;
-        let probe_template = &corpus["coverage_probes"]["document"];
+        let mut probe_template = corpus["coverage_probes"]["document"].clone();
+        normalize_float64_fields(&mut probe_template, corpus_schema_fields);
         let probe_vector = probe_template["embedding"]
             .as_array()
             .ok_or("coverage probe embedding missing")?
@@ -1076,10 +1097,10 @@ mod showcase {
                     .ok_or("YQL ranking profile missing")?,
             ))
             .page(
-                yql_intent["page"].as_u64().ok_or("YQL page missing")? as u32,
+                yql_intent["page"].as_u64().ok_or("YQL page missing")? as i64,
                 yql_intent["page_size"]
                     .as_u64()
-                    .ok_or("YQL page size missing")? as u32,
+                    .ok_or("YQL page size missing")? as i64,
             )
             .execute::<Value>()?;
         let misuse_intent = intent!("builder_misuse");
@@ -1106,13 +1127,13 @@ mod showcase {
         }
         let page_limit_rejected = index
             .search(misuse_query)
-            .page(page_number, page_size)
+            .page(i64::from(page_number), i64::from(page_size))
             .limit(misuse_limit)
             .execute::<Value>()
             .is_err();
         let page_offset_rejected = index
             .search(misuse_query)
-            .page(page_number, page_size)
+            .page(i64::from(page_number), i64::from(page_size))
             .offset(page_size)
             .execute::<Value>()
             .is_err();
@@ -2193,11 +2214,13 @@ mod showcase {
         heading("22. PATCH SET / UNSET");
 
         let patch_intent = intent!("patch");
+        let mut patch_initial = patch_intent["initial"].clone();
+        normalize_float64_fields(&mut patch_initial, corpus_schema_fields);
         index.insert(
             patch_intent["document_id"]
                 .as_str()
                 .ok_or("patch document id missing")?,
-            &patch_intent["initial"],
+            &patch_initial,
         )?;
         let patch_field = patch_intent["set"]
             .as_object()
@@ -2242,11 +2265,13 @@ mod showcase {
             "absent_after_delete": index.get::<Value>(delete_intent["document_id"].as_str().ok_or("delete document id missing")?)?.is_none()
         });
         let update_intent = intent!("advanced_update");
+        let mut update_initial = update_intent["initial"].clone();
+        normalize_float64_fields(&mut update_initial, corpus_schema_fields);
         index.insert(
             update_intent["document_id"]
                 .as_str()
                 .ok_or("update document id missing")?,
-            &update_intent["initial"],
+            &update_initial,
         )?;
         let set_field = update_intent["set"]
             .as_object()
@@ -2326,11 +2351,13 @@ mod showcase {
             "sale_price_present": advanced_update.get("sale_price").is_some()
         });
         let reopen_intent = intent!("reopen_persistence");
+        let mut reopen_marker = reopen_intent["marker"].clone();
+        normalize_float64_fields(&mut reopen_marker, corpus_schema_fields);
         index.insert(
             reopen_intent["marker_id"]
                 .as_str()
                 .ok_or("reopen marker id missing")?,
-            &reopen_intent["marker"],
+            &reopen_marker,
         )?;
 
         println!("before: {:#}", index.get::<Value>("shoe-1")?.unwrap());
@@ -2386,6 +2413,7 @@ mod showcase {
             .as_str()
             .ok_or("upsert vector id missing")?;
         let mut replacement = upsert_intent["replacement"].clone();
+        normalize_float64_fields(&mut replacement, corpus_schema_fields);
         let replacement_object = replacement
             .as_object_mut()
             .ok_or("upsert replacement must be an object")?;
@@ -2519,9 +2547,9 @@ mod showcase {
                 .get_mut(scenario)
                 .ok_or_else(|| format!("missing parity observation for {scenario}"))?;
             if value.get("observation").is_some() && value.get("capabilities").is_some() {
-                value["observation"]["intent"] = intent.clone();
+                value["observation"]["intent"] = Value::Object(intent.clone());
             } else if let Some(observation) = value.as_object_mut() {
-                observation.insert("intent".to_owned(), intent.clone());
+                observation.insert("intent".to_owned(), Value::Object(intent.clone()));
             } else {
                 *value = json!({"intent": intent, "result": value.clone()});
             }
