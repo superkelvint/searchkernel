@@ -402,7 +402,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn stale_remote_handle_has_canonical_failed_precondition_error() {
         let error = stale_index_handle_error();
         assert_eq!(error.code, ErrorCode::FailedPrecondition);

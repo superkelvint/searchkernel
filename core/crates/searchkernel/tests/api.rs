@@ -445,20 +445,19 @@ fn update_builder_matches_portable_dispatcher_ir_for_full_executable_union() {
             .last_call()
             .unwrap_or_else(|| panic!("{name}: direct Rust update IR"));
 
-        let mut request_json = serde_json::json!({
-            "protocol_version": 2,
-            "payload_type": "SearchKernel_Wire_UpdateRequest",
-            "payload": {
+        let mut payload = serde_json::json!({
                 "id": "sku-42",
                 "operations": [operation]
-            }
         });
         if let Some(create) = create {
-            request_json["payload"]["create"] = serde_json::json!({"value": create});
+            payload["create"] = serde_json::json!({"value": create});
         }
-        let request_json =
-            serde_json::to_vec(&request_json).expect("serialize canonical portable update");
-        let request = searchkernel_protocol::json::request_json_to_flatbuffer(&request_json)
+        let payload_json =
+            serde_json::to_string(&payload).expect("serialize canonical portable update payload");
+        let request_json = format!(
+            "{{\"protocol_version\":1,\"payload_type\":\"SearchKernel_Wire_UpdateRequest\",\"payload\":{payload_json}}}"
+        );
+        let request = searchkernel_protocol::json::request_json_to_flatbuffer(request_json.as_bytes())
             .unwrap_or_else(|error| panic!("{name}: canonical portable update request: {error}"));
         dispatcher.dispatch(&request).unwrap_or_else(|error| {
             panic!("{name}: dispatcher must encode backend errors: {error:?}")
