@@ -15,11 +15,11 @@ find "$output" -depth -type d -empty -delete
     --python-typing \
     --python-decode-obj-api-strings \
     --gen-object-api \
-    -I "$repo_root/api" \
+    -I "$repo_root/api/wire/v1" \
     -o "$output" \
-    "$repo_root/api/searchkernel.fbs" \
-    "$repo_root/api/searchkernel_request.fbs" \
-    "$repo_root/api/searchkernel_response.fbs"
+    "$repo_root/api/wire/v1/searchkernel.fbs" \
+    "$repo_root/api/wire/v1/searchkernel_request.fbs" \
+    "$repo_root/api/wire/v1/searchkernel_response.fbs"
 
 PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" \
     "$python" "$repo_root/tools/patch-python-flatbuffers-object-api.py" "$output"
