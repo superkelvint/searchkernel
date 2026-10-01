@@ -884,21 +884,37 @@ class Client:
     def __init__(self, transport: GrpcTransport, *, target: str | None = None):
         self.transport = transport
         self.target = target
+        self.index_generation: str | None = None
 
-    def execute(self, operation: str, request: Any) -> Any:
+    def _execute_envelope(self, operation: str, request: Any) -> Any:
         try:
+            expected_generation = (
+                None
+                if operation in {"create_index", "open_index", "delete_index"}
+                else self.index_generation
+            )
             envelope = unpack_response(
-                self.transport.call(pack_request(operation, request, target=self.target)),
+                self.transport.call(
+                    pack_request(
+                        operation,
+                        request,
+                        target=self.target,
+                        expected_index_generation=expected_generation,
+                    )
+                ),
                 operation,
             )
             if envelope.payloadType == ERROR_TYPE:
                 error = envelope.payload
                 raise ClientError(error.message or "Search Kernel request failed", error=error)
-            return envelope.payload
+            return envelope
         except ClientError:
             raise
         except (GrpcTransportError, ValueError, TypeError) as exc:
             raise ClientError(str(exc), cause=exc) from exc
+
+    def execute(self, operation: str, request: Any) -> Any:
+        return self._execute_envelope(operation, request).payload
 
     def insert(self, document: DocumentT) -> Any:
         return self.execute("insert", InsertRequestT(document=document))
@@ -937,15 +953,27 @@ class Client:
         return self.execute("inspect_query", InspectQueryRequestT(request=request))
 
     def create_index(self, definition: IndexDefinitionT) -> Any:
-        result = self.execute("create_index", CreateIndexRequestT(definition=definition))
+        envelope = self._execute_envelope(
+            "create_index", CreateIndexRequestT(definition=definition)
+        )
+        result = envelope.payload
         if getattr(result, "index", None) is None:
             raise ClientError("CreateIndexResult.index is missing")
+        generation = getattr(envelope, "indexGeneration", None)
+        if not isinstance(generation, str) or not generation:
+            raise ClientError("CreateIndexResult is missing canonical index generation")
+        self.index_generation = generation
         return result
 
     def open_index(self) -> Any:
-        result = self.execute("open_index", OpenIndexRequestT())
+        envelope = self._execute_envelope("open_index", OpenIndexRequestT())
+        result = envelope.payload
         if getattr(result, "index", None) is None:
             raise ClientError("OpenIndexResult.index is missing")
+        generation = getattr(envelope, "indexGeneration", None)
+        if not isinstance(generation, str) or not generation:
+            raise ClientError("OpenIndexResult is missing canonical index generation")
+        self.index_generation = generation
         return result
 
     def delete_index(self) -> Any:
