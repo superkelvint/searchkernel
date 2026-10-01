@@ -1651,7 +1651,8 @@ mod expanded_canonical_corpus {
                     expected_kind
                 );
             }
-            let bytes = searchkernel_ir::wire::v1::search_result_to_api(&relevance_result(None)).unwrap();
+            let bytes =
+                searchkernel_ir::wire::v1::search_result_to_api(&relevance_result(None)).unwrap();
             let encoded =
                 searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
             assert!(encoded
