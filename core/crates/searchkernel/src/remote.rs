@@ -380,14 +380,12 @@ async fn run_worker(
                     };
                     let result = match result {
                         Some(result) => result,
-                        None => match tokio::time::timeout(
-                            request_timeout,
-                            client.execute(request),
-                        )
-                        .await
-                        {
-                            Ok(Ok(response)) => {
-                                let generation = response
+                        None => {
+                            match tokio::time::timeout(request_timeout, client.execute(request))
+                                .await
+                            {
+                                Ok(Ok(response)) => {
+                                    let generation = response
                                     .metadata()
                                     .get(INDEX_GENERATION_METADATA_KEY)
                                     .map(|value| {
@@ -398,22 +396,23 @@ async fn run_worker(
                                         })
                                     })
                                     .transpose();
-                                match generation {
-                                    Ok(generation) => Ok(RemoteReply {
-                                        payload: response.into_inner().payload,
-                                        generation,
-                                    }),
-                                    Err(error) => Err(error),
+                                    match generation {
+                                        Ok(generation) => Ok(RemoteReply {
+                                            payload: response.into_inner().payload,
+                                            generation,
+                                        }),
+                                        Err(error) => Err(error),
+                                    }
                                 }
+                                Ok(Err(status)) => Err(status_error(status, retry_safe)),
+                                Err(_) => Err(request_transport_error(
+                                    ErrorCode::DeadlineExceeded,
+                                    retry_safe,
+                                    !retry_safe,
+                                    "remote Search Kernel request timed out",
+                                )),
                             }
-                            Ok(Err(status)) => Err(status_error(status, retry_safe)),
-                            Err(_) => Err(request_transport_error(
-                                ErrorCode::DeadlineExceeded,
-                                retry_safe,
-                                !retry_safe,
-                                "remote Search Kernel request timed out",
-                            )),
-                        },
+                        }
                     };
                     let _ = reply.send(result);
                 });
