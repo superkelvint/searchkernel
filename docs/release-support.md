@@ -20,6 +20,8 @@ and other operating-system/CPU combinations are explicitly unsupported for this
 release. Their presence in source, generated bindings, or development tooling
 must not be interpreted as a distribution promise.
 
+Node managed-local cache locking uses the standard util-linux `flock` executable. The qualified clean-consumer environment includes and exercises `flock`; minimal Linux images must provide it to use Node managed-local mode.
+
 Release qualification is invoked through the canonical `./dev` test/verify
 targets recorded in `release-support.json` and registered in
 `build/targets.json`. `tools/check-release-support.py` validates those live
