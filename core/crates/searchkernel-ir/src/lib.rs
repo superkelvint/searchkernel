@@ -46,11 +46,11 @@ pub use api_to_ir::{
     QuerySourceInput, RankingInput, RustAnalyzerInput, RustFieldInput, RustFieldKind,
     RustIndexDefinitionInput, RustRankProfileInput, RustSearchFieldInput, SearchFieldInput,
     SearchInput, SearchIntent, SortInput, SortTargetInput, TextualFilterInput,
-    UnresolvedFieldInput, UnresolvedRankProfileInput, UpdateOperationInput, DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
-    DEFAULT_FUZZY_PREFIX, DEFAULT_FUZZY_PREFIX_LENGTH, DEFAULT_NEAREST_APPROXIMATE,
-    DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS, DEFAULT_PROXIMITY_DISTANCE,
-    DEFAULT_SEARCH_LIMIT, DEFAULT_WAND_SCORE_THRESHOLD, DEFAULT_WAND_THRESHOLD_BOOST_FACTOR,
-    DEFAULT_WEAK_AND_TARGET_HITS,
+    UnresolvedFieldInput, UnresolvedRankProfileInput, UpdateOperationInput,
+    DEFAULT_FUZZY_MAX_EDIT_DISTANCE, DEFAULT_FUZZY_PREFIX, DEFAULT_FUZZY_PREFIX_LENGTH,
+    DEFAULT_NEAREST_APPROXIMATE, DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS,
+    DEFAULT_PROXIMITY_DISTANCE, DEFAULT_SEARCH_LIMIT, DEFAULT_WAND_SCORE_THRESHOLD,
+    DEFAULT_WAND_THRESHOLD_BOOST_FACTOR, DEFAULT_WEAK_AND_TARGET_HITS,
 };
 pub use backend::Backend;
 pub use error::{ErrorCode, ErrorDetail, PortableError, Result};
@@ -60,7 +60,6 @@ pub use filter_expression::{
 };
 pub use model::*;
 pub use session::{BackendSession, SessionError};
-
 
 /// Test and contract clients use the same FlatBuffers parser as this crate.
 #[doc(hidden)]

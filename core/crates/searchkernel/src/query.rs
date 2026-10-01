@@ -115,8 +115,7 @@ impl Default for NearestNeighborOptions {
             target_hits: searchkernel_ir::DEFAULT_WEAK_AND_TARGET_HITS,
             approximate: searchkernel_ir::DEFAULT_NEAREST_APPROXIMATE,
             distance_threshold: None,
-            explore_additional_hits:
-                searchkernel_ir::DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS,
+            explore_additional_hits: searchkernel_ir::DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS,
         }
     }
 }
@@ -854,8 +853,7 @@ impl Query {
                 prefix,
             } => {
                 let mut fuzzy_annotations = BTreeMap::new();
-                if max_edit_distance != searchkernel_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE
-                {
+                if max_edit_distance != searchkernel_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE {
                     fuzzy_annotations.insert(
                         "maxEditDistance".to_owned(),
                         RequestValueIr::UInt64(u64::from(max_edit_distance)),
@@ -874,8 +872,7 @@ impl Query {
                     &field,
                     QueryExprKindIr::Fuzzy {
                         value: value.into_ir()?,
-                        max_edit_distance:
-                            searchkernel_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+                        max_edit_distance: searchkernel_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
                         prefix_length: searchkernel_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
                         prefix: searchkernel_ir::DEFAULT_FUZZY_PREFIX,
                     },
@@ -1118,9 +1115,7 @@ fn wand_annotations(options: WandOptions) -> BTreeMap<String, RequestValueIr> {
             RequestValueIr::Int64(options.score_threshold),
         );
     }
-    if options.threshold_boost_factor
-        != searchkernel_ir::DEFAULT_WAND_THRESHOLD_BOOST_FACTOR
-    {
+    if options.threshold_boost_factor != searchkernel_ir::DEFAULT_WAND_THRESHOLD_BOOST_FACTOR {
         annotations.insert(
             "thresholdBoostFactor".to_owned(),
             RequestValueIr::Float64(options.threshold_boost_factor),
@@ -1149,9 +1144,7 @@ fn nearest_annotations(options: NearestNeighborOptions) -> BTreeMap<String, Requ
             RequestValueIr::Float64(distance_threshold),
         );
     }
-    if options.explore_additional_hits
-        != searchkernel_ir::DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS
-    {
+    if options.explore_additional_hits != searchkernel_ir::DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS {
         annotations.insert(
             "exploreAdditionalHits".to_owned(),
             RequestValueIr::UInt64(u64::from(options.explore_additional_hits)),
