@@ -174,6 +174,8 @@ describe("ergonomic facade", () => {
     expect(filters?.bb?.__offset(filters.bb_pos, 6)).toBe(0);
     expect(filters?.bb?.__offset(filters.bb_pos, 8)).toBe(0);
     expect(filters?.bb?.__offset(filters.bb_pos, 10)).not.toBe(0);
+    expect(filters?.textualLength()).toBe(1);
+    expect(filters?.textual(0)?.source()).toBe("price <= :max");
   });
 
   // SKC: query.nearest_neighbor/basic kinds=ergonomic runtime=shared

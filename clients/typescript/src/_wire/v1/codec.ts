@@ -95,6 +95,10 @@ function toGenerated(value: any): any {
 }
 
 class TextualFilterRequest extends FilterRequestT {
+  constructor(textual: Semantic.FilterClauseT[]) {
+    super([], [], [], textual);
+  }
+
   override pack(builder: Builder): Offset {
     const textual = FilterRequest.createTextualVector(
       builder,

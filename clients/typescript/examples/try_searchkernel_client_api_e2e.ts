@@ -299,7 +299,10 @@ async function captureRealEngineParity(index: Index): Promise<Record<string, unk
     await index.search(errorSpec.query).filter(errorSpec.filter).execute();
     throw new Error("unknown field filter unexpectedly succeeded");
   } catch (error) {
-    assert(error instanceof SearchKernelError);
+    assert(
+      error instanceof SearchKernelError,
+      `expected SearchKernelError, received ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`,
+    );
     errorCodes = error.details.map((detail) => (detail as { code: string }).code).sort();
   }
   const document = await index.get(intents.document_crud.document_id);
