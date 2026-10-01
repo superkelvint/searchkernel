@@ -28,7 +28,7 @@ def selected_shared_inputs(
     cxx: str,
     linker_aliases: dict[str, pathlib.Path],
     producer_roots: list[tuple[str, str]],
-) -> list[pathlib.Path]:
+) -> dict[pathlib.Path, set[str]]:
     tokens = shlex.split(link_file.read_text(encoding="utf-8"))
     search_args: list[str] = []
     library_names: list[str] = []
@@ -60,7 +60,7 @@ def selected_shared_inputs(
             direct_paths.append(pathlib.Path(direct_path))
         index += 1
 
-    selected: dict[pathlib.Path, str] = {}
+    selected: dict[pathlib.Path, set[str]] = {}
     with tempfile.TemporaryDirectory(prefix="searchkernel-link-inputs.") as raw:
         probe = pathlib.Path(raw) / "probe.so"
         for name in library_names:
@@ -104,7 +104,10 @@ def selected_shared_inputs(
                     continue
                 if elf_soname(resolved, "readelf") in SYSTEM_BASELINE:
                     continue
-                selected[resolved] = name
+                # Preserve the name used by the configured linker command.
+                # Resolving the input symlink gives us the exact ELF payload,
+                # but loses e.g. libfoo.so when the payload is libfoo.so.3.4.
+                selected.setdefault(resolved, set()).add(f"lib{name}.so")
 
     for path in direct_paths:
         try:
@@ -113,10 +116,11 @@ def selected_shared_inputs(
             raise RuntimeError(f"configured adapter link input is missing: {path}") from exc
         if resolved.is_file() and is_elf(resolved):
             if elf_soname(resolved, "readelf") not in SYSTEM_BASELINE:
-                selected[resolved] = path.name
+                selected.setdefault(resolved, set()).add(path.name)
 
     by_soname: dict[str, tuple[str, pathlib.Path]] = {}
-    for path, link_name in selected.items():
+    aliases_by_path: dict[pathlib.Path, set[str]] = {}
+    for path, aliases in selected.items():
         soname = elf_soname(path, "readelf")
         if not soname:
             raise RuntimeError(f"configured shared link input has no DT_SONAME: {path}")
@@ -125,12 +129,16 @@ def selected_shared_inputs(
         if previous and previous[0] != digest:
             raise RuntimeError(
                 f"configured adapter link resolves conflicting binaries for {soname}: "
-                f"{previous[1]} and {path} (inputs {previous[1]} and {link_name})"
+                f"{previous[1]} and {path}"
             )
         by_soname[soname] = (digest, path)
+        aliases_by_path.setdefault(path, set()).update(aliases)
     if not by_soname:
         raise RuntimeError(f"configured adapter link command selected no producer shared libraries: {link_file}")
-    return sorted((item[1] for item in by_soname.values()), key=str)
+    result: dict[pathlib.Path, set[str]] = {}
+    for _, path in by_soname.values():
+        result[path] = set(aliases_by_path[path])
+    return result
 
 
 def source_identity(path: pathlib.Path, roots: list[tuple[str, pathlib.Path]]) -> str:
@@ -171,11 +179,32 @@ def main() -> int:
             raise SystemExit(f"invalid source root {value!r}; expected LABEL=PATH")
         source_roots.append((label, pathlib.Path(raw_path).resolve(strict=True)))
     try:
-        sources = selected_shared_inputs(
+        aliases_by_path = selected_shared_inputs(
             args.link_file.resolve(strict=True), args.cxx, aliases, producer_roots
         )
+        sources = sorted(aliases_by_path, key=str)
         copy_helper = pathlib.Path(__file__).with_name("copy-shared-library-into-sdk.sh")
         subprocess.run(["sh", str(copy_helper), str(args.destination), *(str(path) for path in sources)], check=True)
+        # The adapter is rebuilt from this package and needs the same linker
+        # names selected from link.txt. Keep each as a package-local alias to
+        # the exact ELF already staged under its SONAME.
+        for source in sources:
+            soname = elf_soname(source, "readelf")
+            for alias in sorted(aliases_by_path.get(source, ())):
+                if pathlib.Path(alias).name != alias or alias in {"", ".", ".."}:
+                    raise RuntimeError(f"unsafe configured linker alias: {alias!r}")
+                alias_path = args.destination / alias
+                target_path = args.destination / soname
+                if alias == soname:
+                    continue
+                if alias_path.exists() or alias_path.is_symlink():
+                    try:
+                        if alias_path.resolve(strict=True) == target_path.resolve(strict=True):
+                            continue
+                    except (OSError, RuntimeError):
+                        pass
+                    raise RuntimeError(f"conflicting staged linker alias {alias_path}")
+                alias_path.symlink_to(soname)
         source_by_hash = {
             sha256_file(path): source_identity(path, source_roots)
             for path in sources

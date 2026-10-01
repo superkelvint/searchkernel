@@ -92,6 +92,8 @@ def main() -> int:
         )
         if not (link_stage / selected_name).is_file():
             raise SystemExit("native-base input resolver missed the selected configured shared library")
+        if not (link_stage / "libsearchkernel_fixture_selected.so").is_file():
+            raise SystemExit("native-base input resolver omitted the selected -l linker alias")
         if (link_stage / unrelated.name).exists():
             raise SystemExit("native-base input resolver copied an unrelated shared-library candidate")
 
