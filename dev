@@ -698,6 +698,19 @@ test_target() {
     local requested=${1:-} target
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
+        protocol-regen-dump)
+            bash "$ROOT/tools/generate-searchkernel-protocol.sh"
+            bash "$ROOT/tools/generate-flatbuffers-bfbs.sh"
+            bash "$ROOT/tools/generate-python-flatbuffers.sh"
+            echo 'SEARCHKERNEL_GENERATED_DIFF_BEGIN'
+            while IFS= read -r generated; do
+                [[ -n "$generated" ]] || continue
+                printf 'SEARCHKERNEL_GENERATED_FILE %s\n' "$generated"
+                base64 -w0 "$ROOT/$generated"
+                printf '\nSEARCHKERNEL_GENERATED_END %s\n' "$generated"
+            done < <(git -C "$ROOT" diff --name-only)
+            echo 'SEARCHKERNEL_GENERATED_DIFF_END'
+            ;;
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
