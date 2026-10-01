@@ -21,9 +21,12 @@ for cmd in gh git sha256sum tar; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 1; }
 done
 PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
-RUSTC_BIN=$(bash "$ROOT/tools/resolve-rust.sh" rustc)
 SOURCE_COMMIT=$(git rev-parse HEAD)
-TARGET=${SK_NATIVE_TARGET:-$("$RUSTC_BIN" -vV | sed -n 's/^host: //p')}
+TARGET=${SK_NATIVE_TARGET:-x86_64-unknown-linux-gnu}
+[[ "$TARGET" == "x86_64-unknown-linux-gnu" ]] || {
+    echo "native-base publication currently supports only x86_64-unknown-linux-gnu, found $TARGET" >&2
+    exit 1
+}
 PINNED_VESPA_COMMIT=$("$PYTHON_BIN" - "$ROOT/core/native/vespa/manifest.json" <<'PY'
 import json
 import sys
@@ -81,12 +84,9 @@ for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     OUT=$TMP/artifacts-$BUILD_ENV
     mkdir -p "$OUT"
     env -u SK_NATIVE_SDK -u LD_LIBRARY_PATH -u LD_PRELOAD \
-        SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
+        SEARCHKERNEL_DEV_USE_CI_IMAGE=1 \
         SK_NATIVE_TARGET="$TARGET" \
-        SK_NATIVE_BASE_GENERATION="$GENERATION" \
-        SK_NATIVE_BASE_SOURCE_COMMIT="$SOURCE_COMMIT" \
-        bash "$ROOT/tools/build-native-base-release.sh" \
-        "$BUILD_ENV" "$OUT" "$GENERATION"
+        "$ROOT/dev" native-base build "$BUILD_ENV" "$OUT" "$GENERATION"
 
     ASSET="searchkernel-vespa-base-v${GENERATION}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
     TAG="vespa-base-v${GENERATION}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}"
@@ -132,7 +132,6 @@ for BUILD_ENV in "${BUILD_ENVS[@]}"; do
     TAG=${TAGS[$BUILD_ENV]}
     ASSET=${ASSETS[$BUILD_ENV]}
     REMOTE=$TMP/remote-$BUILD_ENV
-    VERIFY=$TMP/remote-consumer-$BUILD_ENV
     mkdir -p "$REMOTE"
     section "Verifying uploaded draft bytes $TAG"
     gh release download "$TAG" --repo "$REPO" --dir "$REMOTE" \
@@ -145,9 +144,9 @@ for BUILD_ENV in "${BUILD_ENVS[@]}"; do
         exit 1
     }
     env -u SK_NATIVE_SDK -u LD_LIBRARY_PATH -u LD_PRELOAD \
-        SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" SK_NATIVE_TARGET="$TARGET" \
-        bash "$ROOT/tools/verify-native-base-archive.sh" \
-        "$REMOTE/$ASSET" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" "$VERIFY"
+        SEARCHKERNEL_DEV_USE_CI_IMAGE=1 SK_NATIVE_TARGET="$TARGET" \
+        "$ROOT/dev" native-base verify \
+        "$REMOTE/$ASSET" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT"
     [[ "$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq '.isDraft')" == true ]] || {
         echo "$TAG draft state changed before verification completed" >&2
         exit 1
