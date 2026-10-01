@@ -40,28 +40,36 @@ def main() -> int:
         executable(tools / "resolve-python.sh", "#!/usr/bin/env bash\ncommand -v python3\n")
         executable(tools / "resolve-rust.sh", "#!/usr/bin/env bash\ncommand -v rustc\n")
         executable(
-            tools / "build-native-base-release.sh",
+            repo / "dev",
             f'''#!/usr/bin/env bash
 set -euo pipefail
-build_env=$1
-out=$2
-generation=$3
-target=$SK_NATIVE_TARGET
-commit=$(git rev-parse HEAD)
-pin={VESPA_COMMIT}
-asset="searchkernel-vespa-base-v${{generation}}-${{build_env}}-${{target}}-${{pin}}.tar.gz"
-mkdir -p "$out"
-printf 'verified bytes %s %s' "$build_env" "$commit" >"$out/$asset"
-sha256sum "$out/$asset" >"$out/$asset.sha256"
-printf 'build:%s:%s\\n' "$build_env" "$(sha256sum "$out/$asset" | awk '{{print $1}}')" >>"$PUBLISH_EVENTS"
-''',
-        )
-        executable(
-            tools / "verify-native-base-archive.sh",
-            '''#!/usr/bin/env bash
-set -euo pipefail
-hash=$(sha256sum "$1" | awk '{print $1}')
-printf 'verify:%s\\n' "$hash" >>"$PUBLISH_EVENTS"
+if [[ "$1" != native-base ]]; then
+    echo "unexpected dev command: $*" >&2
+    exit 2
+fi
+case "$2" in
+    build)
+        build_env=$3
+        out=$4
+        generation=$5
+        target=${{SK_NATIVE_TARGET:-x86_64-unknown-linux-gnu}}
+        commit=$(git rev-parse HEAD)
+        pin={VESPA_COMMIT}
+        asset="searchkernel-vespa-base-v${{generation}}-${{build_env}}-${{target}}-${{pin}}.tar.gz"
+        mkdir -p "$out"
+        printf 'verified bytes %s %s' "$build_env" "$commit" >"$out/$asset"
+        sha256sum "$out/$asset" >"$out/$asset.sha256"
+        printf 'build:%s:%s\\n' "$build_env" "$(sha256sum "$out/$asset" | awk '{{print $1}}')" >>"$PUBLISH_EVENTS"
+        ;;
+    verify)
+        hash=$(sha256sum "$3" | awk '{{print $1}}')
+        printf 'verify:%s\\n' "$hash" >>"$PUBLISH_EVENTS"
+        ;;
+    *)
+        echo "unexpected native-base dev command: $*" >&2
+        exit 2
+        ;;
+esac
 ''',
         )
         executable(
