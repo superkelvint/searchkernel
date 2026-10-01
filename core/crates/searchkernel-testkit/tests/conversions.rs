@@ -1,5 +1,6 @@
 use searchkernel_ir::__flatbuffers::{root, FlatBufferBuilder};
-use searchkernel_ir::{api, IndexContext, QueryIr};
+use searchkernel_ir::wire::v1::schema as api;
+use searchkernel_ir::{IndexContext, QueryIr};
 
 fn context() -> IndexContext {
     let mut builder = FlatBufferBuilder::new();

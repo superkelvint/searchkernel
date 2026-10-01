@@ -1,5 +1,8 @@
 use super::*;
-use searchkernel_ir::{api, OperationIr};
+use crate::wire::v1::encode_result;
+use flatbuffers::root;
+use searchkernel_ir::{wire::v1::schema as api, OperationIr};
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use searchkernel_testkit::{
     assert_api_search_result_matches, canonical_result_fixtures, representative_search_result,
     ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,

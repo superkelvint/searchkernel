@@ -1,6 +1,7 @@
 use flatbuffers::root;
+use searchkernel_ir::wire::v1::schema as api;
 use searchkernel_ir::{
-    api, snapshot, IndexContext, PresentationInput, QueryInputIr, QueryModelInput,
+    snapshot, IndexContext, PresentationInput, QueryInputIr, QueryModelInput,
     QuerySourceInput, RankingInput, RequestValueIr, SearchInput, TextualFilterInput, Value,
 };
 use serde::Deserialize;

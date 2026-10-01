@@ -1,6 +1,7 @@
 use searchkernel_ir::__flatbuffers::{root, FlatBufferBuilder};
+use searchkernel_ir::wire::v1::schema as api;
 use searchkernel_ir::{
-    api, AnalyzeRequestIr, DeleteRequestIr, DeleteResult, GetRequestIr, GetResult, IndexContext,
+    AnalyzeRequestIr, DeleteRequestIr, DeleteResult, GetRequestIr, GetResult, IndexContext,
     InsertRequestIr, InsertResult, OperationIr, PatchRequestIr, PatchResult, SearchRequestIr,
     SearchResult, UpdateRequestIr, UpdateResult, UpsertRequestIr, UpsertResult,
 };
