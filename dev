@@ -345,7 +345,7 @@ run_ruby_tests() {
             ruby -S gem install --local --install-dir "$gem_home" \
                 "$package_dir/searchkernel.gem" --no-document >/dev/null
         GEM_HOME="$gem_home" GEM_PATH="$gem_home" \
-            ruby -e 'require "rubygems"; Gem.use_paths(ENV.fetch("GEM_HOME"), [ENV.fetch("GEM_HOME")]); Gem::Specification.reset; gem "searchkernel"; require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 2;
+            ruby -e 'require "rubygems"; Gem.use_paths(ENV.fetch("GEM_HOME"), [ENV.fetch("GEM_HOME")]); Gem::Specification.reset; gem "searchkernel"; require "searchkernel"; abort unless SearchKernel::Protocol::VERSION == 1;
               v = SearchKernel::Value; abort unless v.decode(v.encode(v.uint64(2**64 - 1))) == 2**64 - 1;
               root = {"node_type" => "ResultGroup", "node" => {"children" => [
                 {"node_type" => "Hit", "node" => {"id" => "from-installed-gem"}}]}};
