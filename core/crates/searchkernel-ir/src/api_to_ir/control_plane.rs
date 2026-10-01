@@ -1,4 +1,6 @@
-//! Portable multi-index target and lifecycle semantics.
+//! FlatBuffers-to-IR resolution for multi-index targets and lifecycle requests.
+//!
+//! Keep generated envelope and target views inside this API-to-IR boundary.
 
 use crate::{ErrorCode, ErrorDetail, PortableError};
 use searchkernel_protocol::{protocol::v2 as wire, v2 as api};

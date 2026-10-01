@@ -53,7 +53,7 @@ pub use search::{
     SearchBuilder, Sort, SortDirection, YqlBuilder,
 };
 pub use tensor::Tensor;
-pub use update::Update;
+pub use update::{Update, UpdateBuilder};
 
 /// Build clause-local typed values for a textual filter.
 #[macro_export]

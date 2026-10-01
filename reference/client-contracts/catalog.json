@@ -81,6 +81,17 @@
       "e2e_lanes": [
         {
           "runtimes": [
+            "native"
+          ],
+          "path": "core/crates/searchkernel/tests/native_e2e.rs",
+          "command": [
+            "./dev",
+            "test",
+            "rust-native-e2e"
+          ]
+        },
+        {
+          "runtimes": [
             "grpc"
           ],
           "path": "searchkerneld/tests/multi_index.rs",
