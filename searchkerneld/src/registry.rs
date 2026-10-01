@@ -277,9 +277,7 @@ impl IndexRegistry {
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let definition_ir = match searchkernel_ir::index_definition_to_ir(definition) {
             Ok(definition) => definition,
-            Err(error) => {
-                return Ok(RegistryDispatchResult::payload(encode_error(error)))
-            }
+            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
         let definition_bytes = searchkernel_ir::index_definition_ir_to_api(&definition_ir);
 
@@ -301,9 +299,7 @@ impl IndexRegistry {
 
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => {
-                return Ok(RegistryDispatchResult::payload(encode_error(error)))
-            }
+            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
         let index = match Index::create_from_definition_bytes(&path, &definition_bytes) {
             Ok(index) => index,
@@ -361,9 +357,7 @@ impl IndexRegistry {
 
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => {
-                return Ok(RegistryDispatchResult::payload(encode_error(error)))
-            }
+            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
         let index = match Index::open(&path) {
             Ok(index) => index,
@@ -397,19 +391,14 @@ impl IndexRegistry {
         ))
     }
 
-    fn delete_index(
-        &self,
-        target: &str,
-    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+    fn delete_index(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let transition = self.transition_lock(target)?;
         let _transition = transition
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => {
-                return Ok(RegistryDispatchResult::payload(encode_error(error)))
-            }
+            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
 
         let entry = self

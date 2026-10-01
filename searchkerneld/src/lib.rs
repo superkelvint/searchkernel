@@ -73,8 +73,8 @@ use rpc::{
     FlatBufferFrame,
 };
 
-pub use searchkernel_rpc::MAX_GRPC_MESSAGE_SIZE;
 use searchkernel_rpc::INDEX_GENERATION_METADATA_KEY;
+pub use searchkernel_rpc::MAX_GRPC_MESSAGE_SIZE;
 
 /// HTTP/JSON edge endpoint carrying standard FlatBuffers JSON envelopes.
 pub const JSON_EXECUTE_PATH: &str = "/v1/execute";
@@ -319,10 +319,9 @@ impl SearchKernel for SearchKernelTransport {
             .metadata()
             .get(INDEX_GENERATION_METADATA_KEY)
             .map(|value| {
-                value
-                    .to_str()
-                    .map(str::to_owned)
-                    .map_err(|_| Status::invalid_argument("invalid Search Kernel index generation metadata"))
+                value.to_str().map(str::to_owned).map_err(|_| {
+                    Status::invalid_argument("invalid Search Kernel index generation metadata")
+                })
             })
             .transpose()?;
         let payload = request.into_inner().payload;
