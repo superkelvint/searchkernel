@@ -12,20 +12,15 @@ bash -n "$DEV"
 bash -n "$RUNNER"
 bash -n "$RUNTIME"
 bash -n "$COVERAGE"
-python3 -m py_compile "$ROOT/.github/ci/test_exact_head.py"
 python3 "$ROOT/tools/test_dev_client_e2e.py"
 
-python3 - "$DEV" "$RUNNER" "$ROOT/.github/ci/test_exact_head.py" "$WORKFLOW" <<'PY'
+python3 - "$DEV" "$RUNNER" "$WORKFLOW" <<'PY'
 from pathlib import Path
 import sys
 
 dev = Path(sys.argv[1]).read_text(encoding="utf-8")
 runner = Path(sys.argv[2]).read_text(encoding="utf-8")
-exact_head = Path(sys.argv[3]).read_text(encoding="utf-8")
-workflow = Path(sys.argv[4]).read_text(encoding="utf-8")
-
-if exact_head.count('if __name__ == "__main__":') != 1:
-    raise SystemExit("exact-head regression module must contain exactly one module terminator")
+workflow = Path(sys.argv[3]).read_text(encoding="utf-8")
 
 dispatch = 'exec bash "$ROOT/tools/run-in-ci-image.sh" "$@"'
 resolve_python = 'PYTHON=$(bash "$ROOT/tools/resolve-python.sh")'

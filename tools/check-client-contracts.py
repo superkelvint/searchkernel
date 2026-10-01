@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import re
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,7 @@ STRENGTH_RANK = {"builder": 0, "conformance": 1, "runtime": 2}
 SOURCE_SUFFIXES = {
     ".rs", ".py", ".php", ".rb", ".ts", ".tsx", ".js", ".mjs", ".c", ".cc", ".cpp", ".h", ".sh"
 }
+LIFECYCLE_EVIDENCE_KINDS = {"public", "wire"}
 ANNOTATION_RE = re.compile(
     r"SKC:\s*(?P<capability>[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+)/"
     r"(?P<scenario>[a-z0-9_.-]+)\s+"
@@ -61,6 +64,245 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RegistryError("client contract catalog root must be an object")
     return value
+
+
+_REFLECTION_TEMP: tempfile.TemporaryDirectory[str] | None = None
+_REFLECTION_MODULES: dict[str, Any] | None = None
+
+
+def _reflection_modules() -> dict[str, Any]:
+    """Generate official FlatBuffers reflection accessors with the pinned flatc."""
+    global _REFLECTION_TEMP, _REFLECTION_MODULES
+    if _REFLECTION_MODULES is None:
+        flatc = subprocess.check_output(
+            ["bash", str(ROOT / "tools" / "resolve-flatbuffers.sh"), "flatc"],
+            text=True,
+        ).strip()
+        _REFLECTION_TEMP = tempfile.TemporaryDirectory(
+            prefix="searchkernel-client-contract-bfbs-"
+        )
+        subprocess.run(
+            [
+                flatc,
+                "--python",
+                "-o",
+                _REFLECTION_TEMP.name,
+                str(ROOT / "tools" / "flatbuffers" / "reflection.fbs"),
+            ],
+            cwd=ROOT,
+            check=True,
+        )
+        sys.path.insert(0, _REFLECTION_TEMP.name)
+        _REFLECTION_MODULES = {
+            "Schema": importlib.import_module("reflection.Schema"),
+        }
+    return _REFLECTION_MODULES
+
+
+def _reflected_union_payloads(path: Path, union_name: str) -> tuple[str, ...]:
+    """Return fully-qualified object payload names from one reflected BFBS union."""
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        raise RegistryError(f"cannot read canonical BFBS schema {path}: {error}") from error
+
+    schema_type = _reflection_modules()["Schema"].Schema
+    if not schema_type.SchemaBufferHasIdentifier(data, 0):
+        raise RegistryError(f"canonical BFBS schema has invalid identifier: {path}")
+    schema = schema_type.GetRootAs(data, 0)
+    objects = [schema.Objects(i) for i in range(schema.ObjectsLength())]
+    for i in range(schema.EnumsLength()):
+        enum = schema.Enums(i)
+        raw_name = enum.Name()
+        name = raw_name.decode("utf-8") if raw_name else ""
+        if name != union_name:
+            continue
+        if not enum.IsUnion():
+            raise RegistryError(f"reflected declaration is not a union: {union_name}")
+        payloads: list[str] = []
+        for value_index in range(enum.ValuesLength()):
+            value = enum.Values(value_index)
+            raw_value_name = value.Name()
+            value_name = raw_value_name.decode("utf-8") if raw_value_name else ""
+            if value_name == "NONE":
+                continue
+            union_type = value.UnionType()
+            if union_type is None:
+                raise RegistryError(
+                    f"reflected union arm has no payload type: {union_name}.{value_name}"
+                )
+            object_index = union_type.Index()
+            if object_index < 0 or object_index >= len(objects):
+                raise RegistryError(
+                    f"reflected union arm payload is out of range: {union_name}.{value_name}"
+                )
+            reflected_object = objects[object_index]
+            raw_object_name = reflected_object.Name()
+            object_name = raw_object_name.decode("utf-8") if raw_object_name else ""
+            if not object_name:
+                raise RegistryError(
+                    f"reflected union arm has unnamed payload: {union_name}.{value_name}"
+                )
+            payloads.append(object_name)
+        return tuple(payloads)
+    raise RegistryError(f"canonical BFBS schema has no union {union_name}: {path}")
+
+
+def canonical_lifecycle_operations(root: Path = ROOT) -> tuple[str, ...]:
+    """Read index lifecycle operations from the canonical BFBS reflection metadata."""
+    bfbs_root = root / "core" / "crates" / "searchkernel-protocol" / "bfbs"
+    request_bfbs = bfbs_root / "searchkernel_request.bfbs"
+    response_bfbs = bfbs_root / "searchkernel_response.bfbs"
+    missing = [
+        path.relative_to(root).as_posix()
+        for path in (request_bfbs, response_bfbs)
+        if not path.is_file()
+    ]
+    if missing:
+        raise RegistryError(
+            "canonical BFBS lifecycle metadata is missing: " + ", ".join(missing)
+        )
+
+    def lifecycle_names(payloads: tuple[str, ...], suffix: str) -> tuple[str, ...]:
+        result: list[str] = []
+        for payload in payloads:
+            name = payload.rsplit(".", 1)[-1]
+            if name.endswith(suffix) and name[:-len(suffix)].endswith("Index"):
+                result.append(name[:-len(suffix)])
+        return tuple(result)
+
+    request_operations = lifecycle_names(
+        _reflected_union_payloads(
+            request_bfbs, "SearchKernel.Protocol.V2.RequestPayload"
+        ),
+        "Request",
+    )
+    response_operations = lifecycle_names(
+        _reflected_union_payloads(
+            response_bfbs, "SearchKernel.Protocol.V2.ResponsePayload"
+        ),
+        "Result",
+    )
+    request_set = set(request_operations)
+    response_set = set(response_operations)
+    if request_set != response_set:
+        details = []
+        missing_results = sorted(request_set - response_set)
+        missing_requests = sorted(response_set - request_set)
+        if missing_results:
+            details.append("missing result(s): " + ", ".join(missing_results))
+        if missing_requests:
+            details.append("missing request(s): " + ", ".join(missing_requests))
+        raise RegistryError(
+            "canonical BFBS lifecycle request/result unions disagree: "
+            + "; ".join(details)
+        )
+    if not request_operations:
+        raise RegistryError("canonical BFBS lifecycle unions contain no index operations")
+    return request_operations
+
+
+def validate_client_lifecycle_parity(
+    catalog: dict[str, Any],
+    root: Path = ROOT,
+) -> None:
+    """Require public API and wire evidence for every canonical lifecycle operation."""
+    operations = canonical_lifecycle_operations(root)
+    raw_surfaces = catalog.get("surfaces")
+    if not isinstance(raw_surfaces, dict):
+        raise RegistryError("client contract catalog must define surfaces")
+
+    lifecycle_surfaces = catalog.get("lifecycle_surfaces")
+    if (
+        not isinstance(lifecycle_surfaces, list)
+        or not lifecycle_surfaces
+        or not all(isinstance(item, str) and item for item in lifecycle_surfaces)
+    ):
+        raise RegistryError(
+            "client contract catalog lifecycle_surfaces must be a non-empty string list"
+        )
+    if len(set(lifecycle_surfaces)) != len(lifecycle_surfaces):
+        raise RegistryError("client contract catalog lifecycle_surfaces contains duplicates")
+
+    canonical_set = set(operations)
+    source_cache: dict[Path, str] = {}
+    for surface_name in lifecycle_surfaces:
+        surface = raw_surfaces.get(surface_name)
+        if not isinstance(surface, dict):
+            raise RegistryError(
+                f"lifecycle surface {surface_name} is not a configured client surface"
+            )
+        contract = surface.get("lifecycle_contract")
+        if not isinstance(contract, dict) or not contract:
+            raise RegistryError(f"surface {surface_name} must define lifecycle_contract")
+
+        contract_set = set(contract)
+        if contract_set != canonical_set:
+            details = []
+            missing_operations = sorted(canonical_set - contract_set)
+            unknown_operations = sorted(contract_set - canonical_set)
+            if missing_operations:
+                details.append("missing operation(s): " + ", ".join(missing_operations))
+            if unknown_operations:
+                details.append("unknown operation(s): " + ", ".join(unknown_operations))
+            raise RegistryError(
+                f"surface {surface_name} lifecycle contract does not match canonical operations: "
+                + "; ".join(details)
+            )
+
+        for operation in operations:
+            evidence = contract.get(operation)
+            if not isinstance(evidence, list) or not evidence:
+                raise RegistryError(
+                    f"surface {surface_name} lifecycle {operation} must define evidence"
+                )
+            kinds: set[str] = set()
+            for evidence_index, item in enumerate(evidence):
+                label = (
+                    f"surface {surface_name} lifecycle {operation} "
+                    f"evidence[{evidence_index}]"
+                )
+                if not isinstance(item, dict):
+                    raise RegistryError(f"{label} must be a table")
+                kind = item.get("kind")
+                relative = item.get("path")
+                needle = item.get("contains")
+                if kind not in LIFECYCLE_EVIDENCE_KINDS:
+                    raise RegistryError(
+                        f"{label}.kind must be one of: "
+                        + ", ".join(sorted(LIFECYCLE_EVIDENCE_KINDS))
+                    )
+                if not isinstance(relative, str) or not relative:
+                    raise RegistryError(f"{label}.path must be a non-empty string")
+                path = Path(relative)
+                if path.is_absolute() or ".." in path.parts:
+                    raise RegistryError(f"{label}.path must be repository-relative")
+                if not isinstance(needle, str) or not needle:
+                    raise RegistryError(f"{label}.contains must be a non-empty string")
+
+                absolute = root / path
+                if absolute not in source_cache:
+                    try:
+                        source_cache[absolute] = absolute.read_text(encoding="utf-8")
+                    except OSError as error:
+                        raise RegistryError(
+                            f"cannot read {label}.path {relative}: {error}"
+                        ) from error
+                if needle not in source_cache[absolute]:
+                    raise RegistryError(
+                        f"{label} is missing required source evidence "
+                        f"{needle!r} in {relative}"
+                    )
+                kinds.add(kind)
+
+            missing_kinds = LIFECYCLE_EVIDENCE_KINDS - kinds
+            if missing_kinds:
+                raise RegistryError(
+                    f"surface {surface_name} lifecycle {operation} "
+                    "is missing evidence kind(s): "
+                    + ", ".join(sorted(missing_kinds))
+                )
+
 
 def validate_catalog(
     catalog: dict[str, Any],
@@ -731,6 +973,7 @@ def check_documents(documents: dict[Path, str]) -> list[str]:
 def build_current_report(root: Path = ROOT) -> dict[str, Any]:
     global_capabilities = load_global_capabilities(root / "docs" / "capabilities.json")
     catalog = load_catalog(root / "reference" / "client-contracts" / "catalog.json")
+    validate_client_lifecycle_parity(catalog, root)
     surfaces, scenarios, overrides = validate_catalog(catalog, global_capabilities, root)
     evidence = collect_evidence(surfaces, scenarios, root)
     validate_facade_support(global_capabilities, surfaces, evidence)
@@ -750,6 +993,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.run_e2e or args.run_e2e_surface:
             global_capabilities = load_global_capabilities()
             catalog = load_catalog()
+            validate_client_lifecycle_parity(catalog)
             surfaces, scenarios, _overrides = validate_catalog(
                 catalog, global_capabilities
             )

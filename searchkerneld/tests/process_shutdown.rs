@@ -5,14 +5,14 @@ use std::{
     io::Read,
     net::{SocketAddr, TcpListener, TcpStream},
     os::unix::process::ExitStatusExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use flatbuffers::root;
-use searchkernel::{Field, Index, IndexDefinition};
+use searchkernel::{Field, IndexDefinition, RemoteClient};
 use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
 use searchkerneld::rpc;
 use tonic::Request;
@@ -38,11 +38,11 @@ impl Drop for TempDir {
     }
 }
 
-fn wait_for_daemon(child: &mut Child, endpoint: &str) -> Index {
+fn wait_for_daemon(child: &mut Child, endpoint: &str) -> RemoteClient {
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
-        if let Ok(index) = Index::connect(endpoint) {
-            return index;
+        if let Ok(client) = RemoteClient::connect(endpoint) {
+            return client;
         }
         if let Some(status) = child.try_wait().unwrap() {
             let mut stderr = String::new();
@@ -185,7 +185,7 @@ fn assert_response_kind(bytes: &[u8], expected: wire::ResponsePayload) {
     assert_eq!(envelope.payload_type(), expected);
 }
 
-fn spawn_multi_daemon(data_root: &PathBuf, address: SocketAddr) -> Child {
+fn spawn_multi_daemon(data_root: &Path, address: SocketAddr) -> Child {
     Command::new(env!("CARGO_BIN_EXE_searchkerneld"))
         .args([
             "--data-root",
@@ -266,20 +266,11 @@ fn sigint_gracefully_closes_index_and_cleans_owned_uds() {
 
 fn assert_graceful_shutdown(signal: libc::c_int, signal_name: &str) {
     let temp = TempDir::new();
-    let index = temp.0.join("index");
     let socket = temp.0.join("daemon.sock");
-    Index::create(
-        &index,
-        IndexDefinition::new().field(Field::text("title").stored(true).searchable(true)),
-    )
-    .expect("create test index")
-    .close()
-    .expect("close test index before daemon startup");
-
     let mut child = Command::new(env!("CARGO_BIN_EXE_searchkerneld"))
         .args([
-            "--index",
-            index.to_str().unwrap(),
+            "--data-root",
+            temp.0.to_str().unwrap(),
             "--listen",
             &format!("unix://{}", socket.display()),
         ])
@@ -288,13 +279,22 @@ fn assert_graceful_shutdown(signal: libc::c_int, signal_name: &str) {
         .spawn()
         .unwrap();
     let endpoint = format!("unix://{}", socket.display());
-    let daemon = wait_for_daemon(&mut child, &endpoint);
+    let client = wait_for_daemon(&mut child, &endpoint);
+    let daemon = client
+        .create_index(
+            "shutdown-index",
+            IndexDefinition::new().field(Field::text("title").stored(true).searchable(true)),
+        )
+        .expect("create logical target through daemon lifecycle");
     let id = "persisted-before-sigterm";
     let document = serde_json::json!({"title": "written through the daemon"});
     daemon
         .insert(id, &document)
         .expect("daemon must accept a real document mutation");
-    daemon.close().expect("close remote client before shutdown");
+    daemon
+        .close()
+        .expect("close remote index handle before shutdown");
+    drop(client);
 
     assert_eq!(unsafe { libc::kill(child.id() as i32, signal) }, 0);
     let status = wait_for_exit(&mut child);
@@ -305,11 +305,35 @@ fn assert_graceful_shutdown(signal: libc::c_int, signal_name: &str) {
     );
     assert!(!socket.exists(), "owned UDS was not cleaned up");
 
-    let reopened = Index::open(&index).expect("SIGTERM must leave a reopenable index");
+    let mut restarted = Command::new(env!("CARGO_BIN_EXE_searchkerneld"))
+        .args([
+            "--data-root",
+            temp.0.to_str().unwrap(),
+            "--listen",
+            &format!("unix://{}", socket.display()),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("restart multi-index daemon");
+    let client = wait_for_daemon(&mut restarted, &endpoint);
+    let reopened = client
+        .open_index("shutdown-index")
+        .expect("SIGTERM must leave a reopenable logical index");
     let persisted = reopened
         .get::<serde_json::Value>(id)
         .expect("read document after reopening the index")
         .expect("graceful shutdown must preserve the document written through the daemon");
     assert_eq!(persisted, document);
-    reopened.close().unwrap();
+    reopened.close().expect("close reopened index handle");
+    drop(client);
+    assert_eq!(
+        unsafe { libc::kill(restarted.id() as i32, libc::SIGTERM) },
+        0
+    );
+    assert!(wait_for_exit(&mut restarted).success());
+    assert!(
+        !socket.exists(),
+        "restarted daemon must clean up its owned UDS"
+    );
 }

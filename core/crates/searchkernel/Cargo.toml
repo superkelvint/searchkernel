@@ -38,6 +38,7 @@ tonic = { version = "0.12", features = ["transport"], optional = true }
 tower = { version = "0.4", default-features = false, features = ["util"], optional = true }
 
 [dev-dependencies]
+flatbuffers = "=25.12.19"
 searchkernel-dispatch = { path = "../searchkernel-dispatch" }
 searchkernel-ir = { path = "../searchkernel-ir", features = ["test"] }
 searchkernel-protocol = { path = "../searchkernel-protocol" }

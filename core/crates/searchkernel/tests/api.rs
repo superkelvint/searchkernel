@@ -1,6 +1,7 @@
 use searchkernel::{
-    field, DocumentId, Error, ErrorCode, Facet, FacetSort, Field, Filter, Index, IndexDefinition,
-    Patch, Range, RankProfile, Ranking, Sort,
+    field, DocumentId, Error, ErrorCode, Facet, FacetSort, Field, Filter, GroupingAggregation,
+    GroupingExpression, GroupingFilter, GroupingOrder, GroupingOutput, GroupingPlan, Index,
+    IndexDefinition, Patch, Range, RankProfile, Ranking, Sort,
 };
 use searchkernel_ir::{
     Backend, FieldName, FilterIr, GetResult, GroupingAggregationIr, GroupingAllIr,
@@ -29,6 +30,32 @@ fn public_schema_signatures_use_searchkernel_owned_types() {
     let _: &[FieldSet] = definition.fieldsets();
     let _: Option<IndexConfig> = None;
     let _: SchemaValue = SchemaValue::Null;
+}
+
+#[test]
+fn query_model_and_yql_types_remain_public_at_the_crate_root() {
+    use searchkernel::{QueryModelType, YqlBuilder};
+
+    let _ = QueryModelType::default();
+    fn accepts_yql_builder(_: Option<YqlBuilder>) {}
+    accepts_yql_builder(None);
+}
+
+#[test]
+fn grouping_order_variants_remain_source_compatible() {
+    fn descending(order: GroupingOrder) -> bool {
+        match order {
+            GroupingOrder::Field(_, descending) | GroupingOrder::Aggregation(_, descending) => {
+                descending
+            }
+        }
+    }
+
+    let field_order = GroupingOrder::Field(GroupingExpression::attribute("brand"), true);
+    assert!(descending(field_order));
+
+    let aggregation_order = GroupingOrder::Aggregation(GroupingAggregation::count(), false);
+    assert!(!descending(aggregation_order));
 }
 
 #[test]
@@ -228,6 +255,307 @@ fn fluent_requests_cross_the_core_boundary() {
             searchkernel_ir::GroupingOperationIr::Each(_)
         ] if field == "brand"
     ));
+}
+
+#[test]
+fn update_builder_crosses_the_same_canonical_ir_boundary() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend.clone());
+
+    assert!(index
+        .update_builder("sku-42")
+        .assign("title", "Updated headphones")
+        .clear("brand")
+        .increment("price", 5.0)
+        .create(true)
+        .execute()
+        .is_err());
+
+    let OperationIr::Update(request) = backend.last_call().expect("recorded update") else {
+        panic!("expected update operation");
+    };
+    assert_eq!(request.id().as_str(), "sku-42");
+    assert_eq!(request.create(), Some(true));
+    assert_eq!(request.condition(), None);
+    assert!(matches!(
+        request.operations(),
+        [
+            searchkernel_ir::UpdateOperationIr::Assign { target, .. },
+            searchkernel_ir::UpdateOperationIr::Clear { target: clear_target },
+            searchkernel_ir::UpdateOperationIr::Arithmetic {
+                target: arithmetic_target,
+                operator: searchkernel_ir::UpdateArithmeticOperatorIr::Increment,
+                operand: 5.0,
+            },
+        ] if target.as_str() == "title"
+            && clear_target.as_str() == "brand"
+            && arithmetic_target.as_str() == "price"
+    ));
+
+    for (builder, expected) in [
+        (
+            index.update_builder("sku-42").decrement("price", 2_i64),
+            searchkernel_ir::UpdateArithmeticOperatorIr::Decrement,
+        ),
+        (
+            index.update_builder("sku-42").multiply("price", 3_u32),
+            searchkernel_ir::UpdateArithmeticOperatorIr::Multiply,
+        ),
+        (
+            index.update_builder("sku-42").divide("price", 4.0_f64),
+            searchkernel_ir::UpdateArithmeticOperatorIr::Divide,
+        ),
+    ] {
+        assert!(builder.execute().is_err());
+        let OperationIr::Update(request) = backend.last_call().expect("recorded arithmetic update")
+        else {
+            panic!("expected update operation");
+        };
+        assert!(matches!(
+            request.operations(),
+            [searchkernel_ir::UpdateOperationIr::Arithmetic { operator, .. }] if *operator == expected
+        ));
+    }
+}
+
+#[test]
+fn update_builder_matches_portable_dispatcher_ir_for_full_executable_union() {
+    let direct_backend = Arc::new(RecordingBackend::new());
+    let index = index_with(direct_backend.clone());
+
+    let field = |name: &str, kind| searchkernel_ir::RustFieldInput {
+        name: name.to_owned(),
+        kind,
+        multi: false,
+        stored: None,
+        searchable: None,
+        filterable: None,
+        sortable: None,
+        facetable: None,
+        analyzer: None,
+        distance_metric: None,
+        hnsw: None,
+    };
+    let definition =
+        searchkernel_ir::resolve_rust_index_definition(searchkernel_ir::RustIndexDefinitionInput {
+            name: Some("products".to_owned()),
+            fields: vec![
+                field("title", searchkernel_ir::RustFieldKind::Text),
+                field("brand", searchkernel_ir::RustFieldKind::Keyword),
+                field("price", searchkernel_ir::RustFieldKind::Float64),
+                field("in_stock", searchkernel_ir::RustFieldKind::Bool),
+            ],
+            default_search_fields: None,
+        })
+        .expect("portable parity schema");
+    let portable_backend = Arc::new(RecordingBackend::new());
+    let dispatcher = searchkernel_dispatch::Dispatcher::from_backend(
+        Arc::new(searchkernel_ir::IndexContext::from_definition_ir(
+            definition,
+        )),
+        portable_backend.clone(),
+    );
+
+    let cases = [
+        (
+            "assign/create-absent",
+            index.update_builder("sku-42").assign("brand", "Sony"),
+            serde_json::json!({
+                "target": {"path": "brand"},
+                "operation_type": "AssignUpdate",
+                "operation": {
+                    "value": {"kind_type": "StringValue", "kind": {"value": "Sony"}}
+                }
+            }),
+            None,
+        ),
+        (
+            "clear/create-false",
+            index.update_builder("sku-42").clear("brand").create(false),
+            serde_json::json!({
+                "target": {"path": "brand"},
+                "operation_type": "ClearUpdate",
+                "operation": {}
+            }),
+            Some(false),
+        ),
+        (
+            "increment/create-true",
+            index
+                .update_builder("sku-42")
+                .increment("price", 2.5_f64)
+                .create(true),
+            serde_json::json!({
+                "target": {"path": "price"},
+                "operation_type": "ArithmeticUpdate",
+                "operation": {
+                    "operator": "Increment",
+                    "operand": {"kind_type": "Float64Value", "kind": {"value": 2.5}}
+                }
+            }),
+            Some(true),
+        ),
+        (
+            "decrement",
+            index.update_builder("sku-42").decrement("price", 2.0_f64),
+            serde_json::json!({
+                "target": {"path": "price"},
+                "operation_type": "ArithmeticUpdate",
+                "operation": {
+                    "operator": "Decrement",
+                    "operand": {"kind_type": "Float64Value", "kind": {"value": 2.0}}
+                }
+            }),
+            None,
+        ),
+        (
+            "multiply",
+            index.update_builder("sku-42").multiply("price", 3.0_f64),
+            serde_json::json!({
+                "target": {"path": "price"},
+                "operation_type": "ArithmeticUpdate",
+                "operation": {
+                    "operator": "Multiply",
+                    "operand": {"kind_type": "Float64Value", "kind": {"value": 3.0}}
+                }
+            }),
+            None,
+        ),
+        (
+            "divide",
+            index.update_builder("sku-42").divide("price", 4.0_f64),
+            serde_json::json!({
+                "target": {"path": "price"},
+                "operation_type": "ArithmeticUpdate",
+                "operation": {
+                    "operator": "Divide",
+                    "operand": {"kind_type": "Float64Value", "kind": {"value": 4.0}}
+                }
+            }),
+            None,
+        ),
+    ];
+
+    for (name, builder, operation, create) in cases {
+        assert!(
+            builder.execute().is_err(),
+            "{name}: recording backend returns an error"
+        );
+        let direct = direct_backend
+            .last_call()
+            .unwrap_or_else(|| panic!("{name}: direct Rust update IR"));
+
+        let mut request_json = serde_json::json!({
+            "protocol_version": 2,
+            "payload_type": "SearchKernel_V2_UpdateRequest",
+            "payload": {
+                "id": "sku-42",
+                "operations": [operation]
+            }
+        });
+        if let Some(create) = create {
+            request_json["payload"]["create"] = serde_json::json!({"value": create});
+        }
+        let request_json =
+            serde_json::to_vec(&request_json).expect("serialize canonical portable update");
+        let request = searchkernel_protocol::json::request_json_to_flatbuffer(&request_json)
+            .unwrap_or_else(|error| panic!("{name}: canonical portable update request: {error}"));
+        dispatcher.dispatch(&request).unwrap_or_else(|error| {
+            panic!("{name}: dispatcher must encode backend errors: {error:?}")
+        });
+        let portable = portable_backend
+            .last_call()
+            .unwrap_or_else(|| panic!("{name}: portable dispatcher update IR"));
+
+        assert_eq!(
+            direct, portable,
+            "{name}: direct and portable update IR differ"
+        );
+    }
+}
+
+#[test]
+fn reusable_update_entry_point_remains_compatible() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend.clone());
+
+    assert!(index
+        .update(
+            "sku-42",
+            searchkernel::Update::new()
+                .set("brand", "Sony")
+                .increment("price", 2.5),
+        )
+        .is_err());
+
+    let OperationIr::Update(request) = backend.last_call().expect("recorded reusable update")
+    else {
+        panic!("expected update operation");
+    };
+    assert_eq!(request.id().as_str(), "sku-42");
+    assert_eq!(request.create(), None);
+    assert!(matches!(
+        request.operations(),
+        [
+            searchkernel_ir::UpdateOperationIr::Assign { target, .. },
+            searchkernel_ir::UpdateOperationIr::Arithmetic {
+                target: arithmetic_target,
+                operator: searchkernel_ir::UpdateArithmeticOperatorIr::Increment,
+                operand: 2.5,
+            },
+        ] if target.as_str() == "brand" && arithmetic_target.as_str() == "price"
+    ));
+}
+
+#[test]
+fn update_builder_defers_semantic_validation_to_the_canonical_resolver() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend.clone());
+
+    let empty = index
+        .update_builder("sku-42")
+        .execute()
+        .expect_err("empty update");
+    assert_eq!(empty.code(), ErrorCode::InvalidArgument);
+    assert_eq!(empty.details()[0].code, "empty_update");
+    assert!(backend.calls().is_empty());
+
+    let wrong_type = index
+        .update_builder("sku-42")
+        .increment("brand", 1_i64)
+        .execute()
+        .expect_err("arithmetic on a keyword field");
+    assert_eq!(wrong_type.code(), ErrorCode::InvalidArgument);
+    assert_eq!(
+        wrong_type.details()[0].code,
+        "arithmetic_requires_numeric_field"
+    );
+    assert!(backend.calls().is_empty());
+
+    let duplicate = index
+        .update_builder("sku-42")
+        .set("price", 100.0)
+        .unset("price")
+        .execute()
+        .expect_err("multiple operations on one target remain unsupported");
+    assert_eq!(duplicate.code(), ErrorCode::Unsupported);
+    assert_eq!(
+        duplicate.details()[0].code,
+        "multiple_updates_per_target_not_supported"
+    );
+    assert!(backend.calls().is_empty());
+
+    assert!(index
+        .update_builder("sku-42")
+        .set("price", 100.0)
+        .create(false)
+        .execute()
+        .is_err());
+    let OperationIr::Update(request) = backend.last_call().expect("recorded create=false update")
+    else {
+        panic!("expected update operation");
+    };
+    assert_eq!(request.create(), Some(false));
 }
 
 #[test]
@@ -942,4 +1270,193 @@ fn public_helper_types_and_errors_have_stable_behavior() {
         "document deserialization failed: bad result"
     );
     assert_eq!(Error::Infrastructure("broken".into()).to_string(), "broken");
+}
+
+#[test]
+fn advanced_grouping_facade_matches_independent_portable_request_ir() {
+    let definition = IndexDefinition::new()
+        .name("grouping-products")
+        .field(Field::keyword("brand").facetable(true))
+        .field(Field::float64("price").facetable(true));
+    let direct_backend = Arc::new(RecordingBackend::new());
+    let index = Index::from_backend(definition, direct_backend.clone()).unwrap();
+    let grouping = GroupingPlan::new().level(
+        GroupingPlan::by_expression(GroupingExpression::function(
+            "lowercase",
+            [GroupingExpression::attribute("brand")],
+        ))
+        .alias("total", GroupingAggregation::sum("price"))
+        .max_groups(5)
+        .precision(9)
+        .order_by([GroupingOrder::descending_alias("total")])
+        .filter(GroupingFilter::range(
+            "price",
+            GroupingExpression::literal(10_i64),
+            GroupingExpression::literal(100_i64),
+        ))
+        .output(GroupingOutput::alias("total").label("revenue"))
+        .output(GroupingAggregation::stddev("price")),
+    );
+    assert!(index
+        .browse()
+        .grouping(grouping)
+        .execute::<serde_json::Value>()
+        .is_err());
+    let direct = direct_backend.last_call().expect("direct Rust grouping IR");
+
+    let field = |name: &str, kind, facetable| searchkernel_ir::RustFieldInput {
+        name: name.to_owned(),
+        kind,
+        multi: false,
+        stored: None,
+        searchable: None,
+        filterable: None,
+        sortable: None,
+        facetable,
+        analyzer: None,
+        distance_metric: None,
+        hnsw: None,
+    };
+    let definition =
+        searchkernel_ir::resolve_rust_index_definition(searchkernel_ir::RustIndexDefinitionInput {
+            name: Some("grouping-products".to_owned()),
+            fields: vec![
+                field("brand", searchkernel_ir::RustFieldKind::Keyword, Some(true)),
+                field("price", searchkernel_ir::RustFieldKind::Float64, Some(true)),
+            ],
+            default_search_fields: None,
+        })
+        .expect("portable parity schema");
+    let portable_backend = Arc::new(RecordingBackend::new());
+    let dispatcher = searchkernel_dispatch::Dispatcher::from_backend(
+        Arc::new(searchkernel_ir::IndexContext::from_definition_ir(
+            definition,
+        )),
+        portable_backend.clone(),
+    );
+    let request = searchkernel_protocol::json::request_json_to_flatbuffer(
+        br#"{
+          "protocol_version": 2,
+          "payload_type": "SearchKernel_V2_SearchRequest",
+          "payload": {
+            "query": {"source_type": "MatchAllQuery", "source": {}},
+            "grouping": [{
+              "source_type": "StructuredGroupingSource",
+              "source": {"root": {"operations": [
+                {
+                  "operation_type": "GroupingGroupOperation",
+                  "operation": {"expression": {
+                    "expr_type": "GroupingFunctionExpression",
+                    "expr": {
+                      "name": "lowercase",
+                      "arguments": [{
+                        "expr_type": "GroupingAttributeExpression",
+                        "expr": {"field": "brand"}
+                      }]
+                    }
+                  }}
+                },
+                {
+                  "operation_type": "GroupingEachOperation",
+                  "operation": {"operations": [
+                    {
+                      "operation_type": "GroupingAliasOperation",
+                      "operation": {"name": "total", "expression": {
+                        "expr_type": "GroupingAggregationExpression",
+                        "expr": {
+                          "aggregation_type": "SumAggregation",
+                          "aggregation": {"expression": {
+                            "expr_type": "GroupingAttributeExpression",
+                            "expr": {"field": "price"}
+                          }}
+                        }
+                      }}
+                    },
+                    {
+                      "operation_type": "GroupingMaxOperation",
+                      "operation": {
+                        "value_type": "FiniteGroupingMax",
+                        "value": {"value": 5}
+                      }
+                    },
+                    {
+                      "operation_type": "GroupingPrecisionOperation",
+                      "operation": {"value": 9}
+                    },
+                    {
+                      "operation_type": "GroupingOrderOperation",
+                      "operation": {"expressions": [{"expression": {
+                        "expr_type": "GroupingUnaryExpression",
+                        "expr": {
+                          "op": "Negative",
+                          "expression": {
+                            "expr_type": "GroupingAliasReference",
+                            "expr": {"name": "total"}
+                          }
+                        }
+                      }}]}
+                    },
+                    {
+                      "operation_type": "GroupingFilterOperation",
+                      "operation": {"filter": {
+                        "expr_type": "GroupingFilterRange",
+                        "expr": {
+                          "expression": {
+                            "expr_type": "GroupingAttributeExpression",
+                            "expr": {"field": "price"}
+                          },
+                          "lower": {
+                            "expr_type": "GroupingLiteralExpression",
+                            "expr": {"value": {
+                              "kind_type": "Int64Value",
+                              "kind": {"value": "10"}
+                            }}
+                          },
+                          "upper": {
+                            "expr_type": "GroupingLiteralExpression",
+                            "expr": {"value": {
+                              "kind_type": "Int64Value",
+                              "kind": {"value": "100"}
+                            }}
+                          }
+                        }
+                      }}
+                    },
+                    {
+                      "operation_type": "GroupingOutputOperation",
+                      "operation": {"outputs": [
+                        {
+                          "label": "revenue",
+                          "expression": {
+                            "expr_type": "GroupingAliasReference",
+                            "expr": {"name": "total"}
+                          }
+                        },
+                        {
+                          "expression": {
+                            "expr_type": "GroupingAggregationExpression",
+                            "expr": {
+                              "aggregation_type": "StdDevAggregation",
+                              "aggregation": {"expression": {
+                                "expr_type": "GroupingAttributeExpression",
+                                "expr": {"field": "price"}
+                              }}
+                            }
+                          }
+                        }
+                      ]}
+                    }
+                  ]}
+                }
+              ]}}
+            }]
+          }
+        }"#,
+    )
+    .expect("canonical portable grouping request");
+    dispatcher
+        .dispatch(&request)
+        .expect("recording backend error is encoded as a portable response");
+    let portable = portable_backend.last_call().expect("portable grouping IR");
+    assert_eq!(direct, portable);
 }

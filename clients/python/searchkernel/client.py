@@ -30,6 +30,7 @@ from SearchKernel.V2.BytesValue import BytesValueT
 from SearchKernel.V2.DataType import DataTypeT
 from SearchKernel.V2.DataTypeKind import DataTypeKind
 from SearchKernel.V2.DeleteRequest import DeleteRequestT
+from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT
 from SearchKernel.V2.DescribeRequest import DescribeRequestT
 from SearchKernel.V2.Document import DocumentT
 from SearchKernel.V2.ErrorCode import ErrorCode
@@ -367,7 +368,9 @@ def _managed_root_error(data_root: Path) -> ClientError:
     return ClientError(f"managed-local data root is not owned by Search Kernel: {data_root}")
 
 
-def _validate_managed_data_root(data_root: Path) -> None:
+def _validate_managed_data_root(
+    data_root: Path, *, allow_inflight_publication: bool = False
+) -> bool:
     marker = data_root / _MANAGED_ROOT_MARKER_NAME
     try:
         root_stat = data_root.lstat()
@@ -382,12 +385,19 @@ def _validate_managed_data_root(data_root: Path) -> None:
         marker_value = marker.read_text(encoding="utf-8")
     except OSError as exc:
         raise _managed_root_error(data_root) from exc
-    if marker_value not in (
+    if marker_value in (
         _MANAGED_ROOT_MARKER_VALUE,
         _MANAGED_ROOT_MARKER_VALUE + "\n",
         _MANAGED_ROOT_MARKER_VALUE + "\r\n",
     ):
-        raise _managed_root_error(data_root)
+        return True
+    # Exclusive creation publishes the marker inode before Python flushes the
+    # small buffered payload. A same-process/process contender may therefore
+    # observe an empty regular file for a short interval. Only that exact empty
+    # state is retryable; any non-empty mismatch still fails closed.
+    if allow_inflight_publication and marker_value == "":
+        return False
+    raise _managed_root_error(data_root)
 
 
 def _prepare_managed_data_root(data_root: Path) -> None:
@@ -401,14 +411,28 @@ def _prepare_managed_data_root(data_root: Path) -> None:
         pass
 
     if created:
+        temporary_marker = None
+        published = False
         try:
-            with marker.open("x", encoding="utf-8") as stream:
+            descriptor, temporary_marker = tempfile.mkstemp(
+                prefix=f".{marker.name}.", dir=data_root
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 stream.write(_MANAGED_ROOT_MARKER_VALUE + "\n")
+            # Publish complete marker contents atomically without replacing a
+            # path that another process may have created in the meantime.
+            os.link(temporary_marker, marker)
+            published = True
+            os.unlink(temporary_marker)
+            temporary_marker = None
             _validate_managed_data_root(data_root)
             return
         except Exception:
             try:
-                marker.unlink(missing_ok=True)
+                if published:
+                    marker.unlink(missing_ok=True)
+                if temporary_marker is not None:
+                    os.unlink(temporary_marker)
                 data_root.rmdir()
             except OSError:
                 pass
@@ -433,11 +457,18 @@ def _prepare_managed_data_root(data_root: Path) -> None:
                 raise _managed_root_error(data_root)
             time.sleep(0.025)
             continue
-        _validate_managed_data_root(data_root)
-        return
+        if _validate_managed_data_root(
+            data_root, allow_inflight_publication=True
+        ):
+            return
+        if time.monotonic() >= deadline:
+            raise _managed_root_error(data_root)
+        time.sleep(0.025)
 
 
-def _managed_target_marker_matches(path: Path, target: str) -> bool:
+def _managed_target_marker_matches(
+    path: Path, target: str, *, allow_inflight_publication: bool = False
+) -> bool:
     marker = _managed_marker(path)
     try:
         marker_stat = marker.lstat()
@@ -448,12 +479,14 @@ def _managed_target_marker_matches(path: Path, target: str) -> bool:
     if stat.S_ISLNK(marker_stat.st_mode) or not stat.S_ISREG(marker_stat.st_mode):
         raise ClientError(f"unsafe managed-local marker: {marker}")
     try:
-        value = marker.read_text(encoding="utf-8").strip()
+        marker_value = marker.read_text(encoding="utf-8")
     except OSError as exc:
         raise ClientError(f"cannot read managed-local marker: {marker}") from exc
-    if value != target:
-        raise ClientError(f"managed-local marker target mismatch at {marker}")
-    return True
+    if marker_value.strip() == target:
+        return True
+    if allow_inflight_publication and marker_value == "":
+        return False
+    raise ClientError(f"managed-local marker target mismatch at {marker}")
 
 
 def _write_managed_marker(path: Path, target: str) -> None:
@@ -469,13 +502,26 @@ def _write_managed_marker(path: Path, target: str) -> None:
             raise ClientError(f"managed-local identity path is not a real directory: {path}")
 
     marker = _managed_marker(path)
+    created = False
     try:
         with marker.open("x", encoding="utf-8") as stream:
             stream.write(target + "\n")
+        created = True
     except FileExistsError:
         pass
-    if not _managed_target_marker_matches(path, target):
-        raise ClientError(f"managed-local identity path is not owned by Search Kernel: {path}")
+    if created:
+        _managed_target_marker_matches(path, target)
+        return
+
+    deadline = time.monotonic() + 2.0
+    while True:
+        if _managed_target_marker_matches(
+            path, target, allow_inflight_publication=True
+        ):
+            return
+        if time.monotonic() >= deadline:
+            raise ClientError(f"managed-local marker target mismatch at {marker}")
+        time.sleep(0.025)
 
 
 def _reserve_managed_path(path: Path, target: str) -> None:
@@ -910,6 +956,9 @@ class Client:
             raise ClientError("OpenIndexResult.index is missing")
         return result
 
+    def delete_index(self) -> Any:
+        return self.execute("delete_index", DeleteIndexRequestT())
+
     def close(self) -> None:
         self.transport.close()
 
@@ -991,6 +1040,44 @@ class Index:
             owner.close()
             raise
         return cls(client, owner, ergonomic=True)
+
+    @classmethod
+    def delete_index(
+        cls,
+        endpoint_or_path: str | os.PathLike[str],
+        *,
+        target: str | None = None,
+    ) -> None:
+        """Delete a logical target, resolving managed-local path identity when needed."""
+        if target is not None:
+            client = Client(GrpcTransport(os.fspath(endpoint_or_path)), target=target)
+            try:
+                client.delete_index()
+            finally:
+                client.close()
+            return
+
+        canonical_path, data_root, local_target = _managed_location(Path(endpoint_or_path))
+        _prepare_managed_data_root(data_root)
+        _migrate_legacy_managed_path(canonical_path, data_root, local_target)
+        if (data_root / local_target).is_dir() and not canonical_path.exists():
+            _write_managed_marker(canonical_path, local_target)
+
+        owner = _ManagedLocalHost.acquire(data_root)
+        client = Client(GrpcTransport(owner.endpoint), target=local_target)
+        deleted = False
+        try:
+            client.delete_index()
+            deleted = True
+        finally:
+            try:
+                client.close()
+            finally:
+                try:
+                    owner.close()
+                finally:
+                    if deleted:
+                        _cleanup_managed_reservation(canonical_path, local_target)
 
     def insert(self, identifier: str | Mapping[str, Any], fields: Mapping[str, Any] | None = None) -> Any:
         if self._ergonomic and isinstance(identifier, Mapping):
