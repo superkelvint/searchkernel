@@ -60,6 +60,28 @@ class ConsumerReleaseTests(unittest.TestCase):
             (ROOT / "tools/package-consumer-release.py").read_text(encoding="utf-8"),
         )
 
+    def test_python_wheel_uses_lazy_runtime_descriptor_not_embedded_closure(self) -> None:
+        project = tomllib.loads((ROOT / "clients/python/pyproject.toml").read_text(encoding="utf-8"))
+        package_data = project["tool"]["setuptools"]["package-data"]["searchkernel"]
+        self.assertIn("runtime.json", package_data)
+        self.assertNotIn("lib/*", package_data)
+        self.assertNotIn("bin/*", package_data)
+
+    def test_node_and_ruby_packages_do_not_embed_runtime_closure(self) -> None:
+        node = __import__("json").loads((ROOT / "clients/typescript/package.json").read_text())
+        self.assertNotIn("bin", node["files"]); self.assertNotIn("lib", node["files"]); self.assertIn("runtime.json", node["files"])
+        gemspec = (ROOT / "clients/ruby/searchkernel.gemspec").read_text()
+        self.assertIn('"lib/**/*.json"', gemspec)
+
+    def test_python_runtime_descriptor_uses_exact_artifact_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            archive = Path(raw) / "runtime.tar.gz"
+            archive.write_bytes(b"runtime artifact")
+            identity = {"runtime_identity": "skrt-v1-test", "platform": "linux-x86_64-glibc"}
+            descriptor = MODULE.runtime_descriptor(identity, archive)
+            self.assertEqual(descriptor["artifact_sha256"], MODULE.sha(archive))
+            self.assertIn("skrt-v1-test", descriptor["artifact_url"])
+
     def test_target_dir_uses_cargo_target_dir_override(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             target = Path(tempdir) / "cargo-target"

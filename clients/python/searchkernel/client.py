@@ -645,9 +645,17 @@ def _host_binary() -> Path:
     configured = os.environ.get("SEARCHKERNEL_LOCAL_HOST")
     if configured:
         return Path(configured)
-    package_binary = Path(__file__).resolve().parent / "bin" / "searchkerneld"
-    if package_binary.is_file():
-        return package_binary
+    package_root = Path(__file__).resolve().parent
+    descriptor = package_root / "runtime.json"
+    if descriptor.is_file():
+        try:
+            from ._runtime import ensure_runtime, load_descriptor
+            runtime = ensure_runtime(load_descriptor(descriptor))
+        except Exception as exc:
+            raise ClientError(f"managed-local runtime resolution failed: {exc}") from exc
+        return runtime / "bin" / "searchkerneld"
+    # Source-tree development retains the normal debug daemon authority. Installed
+    # wheels always carry runtime.json and therefore never take this path.
     return Path(__file__).resolve().parents[3] / "target" / "debug" / "searchkerneld"
 
 

@@ -31,8 +31,5 @@ include = ["searchkernel*"]
 searchkernel = [
     "_wire_generated/**/*.py",
     "_wire_generated/**/*.pyi",
-    "bin/*",
-    "bin/.searchkernel-native/*",
-    "lib/*",
-    "manifest.json",
+    "runtime.json",
 ]

@@ -312,6 +312,26 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[s
         validate_runtime_manifest(stage, identity)
 
 
+def runtime_descriptor(identity: dict[str, object], archive: Path) -> dict[str, object]:
+    return {
+        "format_version": RUNTIME_MANIFEST_FORMAT,
+        **identity,
+        "artifact_url": f"https://github.com/superkelvint/searchkernel/releases/download/runtime-{identity['runtime_identity']}/{archive.name}",
+        "artifact_sha256": sha(archive),
+    }
+
+
+def stage_python_runtime_support(package_root: Path, descriptor: dict[str, object]) -> list[Path]:
+    created = []
+    runtime_module = package_root / "_runtime.py"
+    shutil.copy2(ROOT / "tools/consumer_runtime.py", runtime_module)
+    created.append(runtime_module)
+    descriptor_path = package_root / "runtime.json"
+    descriptor_path.write_text(json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    created.append(descriptor_path)
+    return created
+
+
 def copy_runtime_into(package_root: Path, stage: Path) -> list[Path]:
     created: list[Path] = []
     for name in ("bin", "lib"):
@@ -374,14 +394,13 @@ def main() -> None:
         # closure as the standalone distribution. A tiny POSIX launcher sets a
         # package-relative library path before execing the real ELF, so installed
         # packages require no SEARCHKERNEL_SDK_LIB/LD_LIBRARY_PATH.
-        package_roots = (
-            ROOT / "clients/python/searchkernel",
-            ROOT / "clients/typescript",
-        )
         created: list[Path] = []
         try:
-            for package_root in package_roots:
-                created.extend(copy_runtime_into(package_root, stage))
+            descriptor = runtime_descriptor(identity, daemon_bundle)
+            created.extend(stage_python_runtime_support(ROOT / "clients/python/searchkernel", descriptor))
+            ts_descriptor = ROOT / "clients/typescript/runtime.json"
+            ts_descriptor.write_text(json.dumps(descriptor, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            created.append(ts_descriptor)
             run(
                 sys.executable,
                 "-m",
