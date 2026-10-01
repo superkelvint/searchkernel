@@ -155,21 +155,28 @@ Local-capable callers may use convenience wrappers:
 
 Remote-only agents may dispatch the same bounded workflow through an authorized
 GitHub UI/API/CLI/connector without having a Search Kernel development
-environment. Connectors that cannot issue `repository_dispatch` may use an
-authorized pull-request comment as a second ingress to the same verifier:
+environment. For connector-only agents that can write pull-request comments but
+cannot issue `repository_dispatch`, the supported remote execution surface is a
+new top-level PR comment whose entire body is exactly one command:
 
 ```text
-/searchkernel-verify ci <exact-sha>
-/searchkernel-verify test <scope> <exact-sha>
-/searchkernel-verify verify <lane> <exact-sha>
+/searchkernel-verify ci <exact-40-character-sha>
+/searchkernel-verify test <scope> <exact-40-character-sha>
+/searchkernel-verify verify <lane> <exact-40-character-sha>
 ```
 
-Comment requests are accepted only on pull requests and only from GitHub actors
-whose `author_association` is `OWNER`, `MEMBER`, or `COLLABORATOR`. The
-comment is only a request envelope: it does not supply shell text or redefine
-the verifier. The exact SHA and target still pass through the same repository
-membership, target-registry, trusted-control-plane, and exact-checkout checks as
-`repository_dispatch`.
+The scope/lane must come from `build/targets.json`. Do not append prose,
+Markdown, or a second line to the command comment. Comment requests are accepted
+only on pull requests and only from GitHub actors whose `author_association` is
+`OWNER`, `MEMBER`, or `COLLABORATOR`. The comment is only a request
+envelope: it does not supply shell text or redefine the verifier. The exact SHA
+and target still pass through the same repository membership, target-registry,
+trusted-control-plane, and exact-checkout checks as `repository_dispatch`.
+
+Agents should treat the resulting structured workflow evidence—not successful
+comment creation—as the verification result, and must rerun required checks
+after the head SHA changes. The operational agent procedure is documented in
+`docs/agent-workflow.md`.
 
 ### Remote evidence requirements
 
