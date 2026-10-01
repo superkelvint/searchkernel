@@ -401,6 +401,10 @@ ci_gate() {
     echo "== Docker lifecycle contract =="
     bash "$ROOT/tools/test-ci-runtime-lifecycle.sh"
 
+    echo "== on-demand verification control-plane contract =="
+    "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
+    "$PYTHON" "$ROOT/tools/test_verification_request_normalizer.py"
+
     echo "== bookkeeping contract =="
     bookkeeping_command check
 
