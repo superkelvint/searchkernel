@@ -6,6 +6,10 @@ pub use abi::EXPECTED_ABI;
 
 include!("bindings.rs");
 
+#[cfg(test)]
+#[path = "consumer_runtime.rs"]
+mod consumer_runtime_tests;
+
 #[cfg(feature = "hardening")]
 pub mod hardening;
 
