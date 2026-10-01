@@ -743,7 +743,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
-              "line": 385
+              "line": 402
             },
             {
               "capability": "query.prefix_suffix_substring",
