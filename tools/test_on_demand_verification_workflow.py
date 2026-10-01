@@ -18,7 +18,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_uses_bounded_dispatch_and_pr_comment_ingress_with_read_only_permissions(self):
+    def test_uses_bounded_dispatch_and_pr_comment_ingress_with_read_only_verification_permissions(self):
         text = self.text
         self.assertIn("repository_dispatch:", text)
         self.assertIn("types: [searchkernel-verification]", text)
@@ -96,6 +96,38 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
             'bash "${GITHUB_WORKSPACE}/control/tools/normalize-verification-request.sh"',
             text,
         )
+
+    def test_result_comment_is_isolated_in_trusted_reporting_job(self):
+        text = self.text
+        verify_start = text.index("  verify:")
+        report_start = text.index("  report-comment:")
+        verify = text[verify_start:report_start]
+        report = text[report_start:]
+
+        self.assertNotIn("pull-requests: write", verify)
+        self.assertIn("permissions:\\n      pull-requests: write\\n", report)
+        self.assertIn("needs: verify", report)
+        self.assertIn("always() &&", report)
+        self.assertIn("github.event_name == 'issue_comment'", report)
+        self.assertIn("github.event.issue.pull_request", report)
+        self.assertIn("startsWith(github.event.comment.body, '/searchkernel-verify ')", report)
+        self.assertIn("runs-on: ubuntu-latest", report)
+        self.assertNotIn("actions/checkout", report)
+        self.assertNotIn("run-in-ci-image.sh", report)
+        self.assertIn("github.rest.issues.createComment", report)
+        self.assertIn("issue_number: context.issue.number", report)
+        self.assertIn("needs.verify.outputs.requested_revision", report)
+        self.assertIn("needs.verify.outputs.observed_revision", report)
+        self.assertIn("needs.verify.outputs.operation", report)
+        self.assertIn("needs.verify.outputs.canonical_target", report)
+        self.assertIn("needs.verify.outputs.verification_outcome", report)
+        self.assertIn("needs.verify.result", report)
+        self.assertIn("command = './dev ci'", report)
+        self.assertIn("`./dev ${operation} ${target}`", report)
+        self.assertIn("✅ PASS", report)
+        self.assertIn("❌ FAIL", report)
+        self.assertIn("❌ ERROR", report)
+        self.assertIn("open logs and evidence", report)
 
     def test_ci_has_no_target_and_test_verify_keep_git_object_validation(self):
         text = self.text
@@ -229,7 +261,9 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
             "OWNER, MEMBER, or COLLABORATOR",
             "exact commit SHAs available from this repository",
             "fork-only or",
-            "read-only GitHub repository permissions",
+            "verification job has read-only repository contents permission",
+            "separate trusted reporting job",
+            "pull-requests: write",
             "no release, deployment, or write secrets",
             "no arbitrary",
         ):
