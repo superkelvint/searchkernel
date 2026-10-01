@@ -491,7 +491,7 @@ pub fn encode_create_index_request(
     );
     finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
         request.as_union_value(),
         Some(target),
     )
@@ -500,7 +500,7 @@ pub fn encode_create_index_request(
 pub fn encode_open_index_request(target: &str) -> Vec<u8> {
     encode_lifecycle_empty_request(
         target,
-        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
         |builder| {
             api::OpenIndexRequest::create(builder, &api::OpenIndexRequestArgs {}).as_union_value()
         },
@@ -510,7 +510,7 @@ pub fn encode_open_index_request(target: &str) -> Vec<u8> {
 pub fn encode_delete_index_request(target: &str) -> Vec<u8> {
     encode_lifecycle_empty_request(
         target,
-        wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest,
+        wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest,
         |builder| {
             api::DeleteIndexRequest::create(builder, &api::DeleteIndexRequestArgs {})
                 .as_union_value()

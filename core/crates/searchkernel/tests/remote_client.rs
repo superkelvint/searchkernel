@@ -197,7 +197,7 @@ impl SearchKernel for TestService {
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
         let request = request.into_inner().payload;
-        let envelope = searchkernel_protocol::protocol::v2::root_as_request_envelope(&request)
+        let envelope = searchkernel_protocol::protocol::v1::root_as_request_envelope(&request)
             .map_err(|_| Status::invalid_argument("invalid request envelope"))?;
         let target = envelope
             .target()
@@ -209,18 +209,18 @@ impl SearchKernel for TestService {
             .push(target.to_owned());
         if target == "slow-create"
             && envelope.payload_type()
-                == searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest
+                == searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
         {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         let payload = match envelope.payload_type() {
-            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
                 lifecycle_definition_response(&self.definition, true)
             }
-            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_OpenIndexRequest => {
                 lifecycle_definition_response(&self.definition, target == "wrong-response")
             }
-            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
+            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_DeleteIndexRequest => {
                 lifecycle_delete_response()
             }
             _ => {
@@ -235,8 +235,8 @@ impl SearchKernel for TestService {
         let mut response = Response::new(FlatBufferFrame { payload });
         if matches!(
             envelope.payload_type(),
-            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest
-                | searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_OpenIndexRequest
+            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
+                | searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_OpenIndexRequest
         ) {
             response.metadata_mut().insert(
                 INDEX_GENERATION_METADATA_KEY,
@@ -251,7 +251,7 @@ fn lifecycle_definition_response(
     definition: &searchkernel_ir::IndexDefinitionIr,
     create: bool,
 ) -> Vec<u8> {
-    use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+    use searchkernel_protocol::{protocol::v1 as wire, v2 as api, PROTOCOL_VERSION};
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
     let (payload_type, payload) = if create {
@@ -260,7 +260,7 @@ fn lifecycle_definition_response(
             &api::CreateIndexResultArgs { index: Some(index) },
         );
         (
-            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
             result.as_union_value(),
         )
     } else {
@@ -269,7 +269,7 @@ fn lifecycle_definition_response(
             &api::OpenIndexResultArgs { index: Some(index) },
         );
         (
-            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
             result.as_union_value(),
         )
     };
@@ -286,14 +286,14 @@ fn lifecycle_definition_response(
 }
 
 fn lifecycle_delete_response() -> Vec<u8> {
-    use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+    use searchkernel_protocol::{protocol::v1 as wire, v2 as api, PROTOCOL_VERSION};
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let result = api::DeleteIndexResult::create(&mut builder, &api::DeleteIndexResultArgs {});
     let envelope = wire::ResponseEnvelope::create(
         &mut builder,
         &wire::ResponseEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
-            payload_type: wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+            payload_type: wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
             payload: Some(result.as_union_value()),
         },
     );

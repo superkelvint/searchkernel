@@ -447,7 +447,7 @@ fn update_builder_matches_portable_dispatcher_ir_for_full_executable_union() {
 
         let mut request_json = serde_json::json!({
             "protocol_version": 2,
-            "payload_type": "SearchKernel_V2_UpdateRequest",
+            "payload_type": "SearchKernel_Wire_UpdateRequest",
             "payload": {
                 "id": "sku-42",
                 "operations": [operation]

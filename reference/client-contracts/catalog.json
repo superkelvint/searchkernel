@@ -32,12 +32,12 @@
           {
             "kind": "wire",
             "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
-            "contains": "RequestPayload::SearchKernel_V2_CreateIndexRequest"
+            "contains": "RequestPayload::SearchKernel_Wire_CreateIndexRequest"
           },
           {
             "kind": "wire",
             "path": "core/crates/searchkernel/src/remote.rs",
-            "contains": "ResponsePayload::SearchKernel_V2_CreateIndexResult"
+            "contains": "ResponsePayload::SearchKernel_Wire_CreateIndexResult"
           }
         ],
         "OpenIndex": [
@@ -49,12 +49,12 @@
           {
             "kind": "wire",
             "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
-            "contains": "RequestPayload::SearchKernel_V2_OpenIndexRequest"
+            "contains": "RequestPayload::SearchKernel_Wire_OpenIndexRequest"
           },
           {
             "kind": "wire",
             "path": "core/crates/searchkernel/src/remote.rs",
-            "contains": "ResponsePayload::SearchKernel_V2_OpenIndexResult"
+            "contains": "ResponsePayload::SearchKernel_Wire_OpenIndexResult"
           }
         ],
         "DeleteIndex": [
@@ -66,12 +66,12 @@
           {
             "kind": "wire",
             "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
-            "contains": "RequestPayload::SearchKernel_V2_DeleteIndexRequest"
+            "contains": "RequestPayload::SearchKernel_Wire_DeleteIndexRequest"
           },
           {
             "kind": "wire",
             "path": "core/crates/searchkernel/src/remote.rs",
-            "contains": "ResponsePayload::SearchKernel_V2_DeleteIndexResult"
+            "contains": "ResponsePayload::SearchKernel_Wire_DeleteIndexResult"
           }
         ]
       },
@@ -153,12 +153,12 @@
           {
             "kind": "wire",
             "path": "clients/python/searchkernel/protocol.py",
-            "contains": "SearchKernel_V2_CreateIndexRequest"
+            "contains": "SearchKernel_Wire_CreateIndexRequest"
           },
           {
             "kind": "wire",
             "path": "clients/python/searchkernel/protocol.py",
-            "contains": "SearchKernel_V2_CreateIndexResult"
+            "contains": "SearchKernel_Wire_CreateIndexResult"
           }
         ],
         "OpenIndex": [
@@ -170,12 +170,12 @@
           {
             "kind": "wire",
             "path": "clients/python/searchkernel/protocol.py",
-            "contains": "SearchKernel_V2_OpenIndexRequest"
+            "contains": "SearchKernel_Wire_OpenIndexRequest"
           },
           {
             "kind": "wire",
             "path": "clients/python/searchkernel/protocol.py",
-            "contains": "SearchKernel_V2_OpenIndexResult"
+            "contains": "SearchKernel_Wire_OpenIndexResult"
           }
         ],
         "DeleteIndex": [
@@ -187,12 +187,12 @@
           {
             "kind": "wire",
             "path": "clients/python/searchkernel/protocol.py",
-            "contains": "SearchKernel_V2_DeleteIndexRequest"
+            "contains": "SearchKernel_Wire_DeleteIndexRequest"
           },
           {
             "kind": "wire",
             "path": "clients/python/searchkernel/protocol.py",
-            "contains": "SearchKernel_V2_DeleteIndexResult"
+            "contains": "SearchKernel_Wire_DeleteIndexResult"
           }
         ]
       }
@@ -238,12 +238,12 @@
           {
             "kind": "wire",
             "path": "clients/typescript/src/protocol/envelope.ts",
-            "contains": "createIndex: RequestPayload.SearchKernel_V2_CreateIndexRequest"
+            "contains": "createIndex: RequestPayload.SearchKernel_Wire_CreateIndexRequest"
           },
           {
             "kind": "wire",
             "path": "clients/typescript/src/protocol/envelope.ts",
-            "contains": "createIndex: ResponsePayload.SearchKernel_V2_CreateIndexResult"
+            "contains": "createIndex: ResponsePayload.SearchKernel_Wire_CreateIndexResult"
           }
         ],
         "OpenIndex": [
@@ -260,12 +260,12 @@
           {
             "kind": "wire",
             "path": "clients/typescript/src/protocol/envelope.ts",
-            "contains": "openIndex: RequestPayload.SearchKernel_V2_OpenIndexRequest"
+            "contains": "openIndex: RequestPayload.SearchKernel_Wire_OpenIndexRequest"
           },
           {
             "kind": "wire",
             "path": "clients/typescript/src/protocol/envelope.ts",
-            "contains": "openIndex: ResponsePayload.SearchKernel_V2_OpenIndexResult"
+            "contains": "openIndex: ResponsePayload.SearchKernel_Wire_OpenIndexResult"
           }
         ],
         "DeleteIndex": [
@@ -282,12 +282,12 @@
           {
             "kind": "wire",
             "path": "clients/typescript/src/protocol/envelope.ts",
-            "contains": "deleteIndex: RequestPayload.SearchKernel_V2_DeleteIndexRequest"
+            "contains": "deleteIndex: RequestPayload.SearchKernel_Wire_DeleteIndexRequest"
           },
           {
             "kind": "wire",
             "path": "clients/typescript/src/protocol/envelope.ts",
-            "contains": "deleteIndex: ResponsePayload.SearchKernel_V2_DeleteIndexResult"
+            "contains": "deleteIndex: ResponsePayload.SearchKernel_Wire_DeleteIndexResult"
           }
         ]
       }

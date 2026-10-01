@@ -966,7 +966,7 @@ impl RemoteClient {
     fn index_from_api_definition(
         &self,
         target: &str,
-        definition: searchkernel_protocol::v2::IndexDefinition<'_>,
+        definition: wire::IndexDefinition<'_>,
         generation: String,
     ) -> Result<Index> {
         let definition = ir::index_definition_to_ir(definition).map_err(|error| {
