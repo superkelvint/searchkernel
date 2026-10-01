@@ -16,6 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUNDLER = ROOT / "tools" / "bundle-native-runtime-closure.py"
 CHECKER = ROOT / "tools" / "check-native-runtime-closure.py"
 PACKAGE = ROOT / "tools" / "package-native-base-artifact.sh"
+BUILD_SDK = ROOT / "core" / "native" / "vespa" / "build-sdk.sh"
 MAKE_WRITABLE_TREE = ROOT / "tools" / "make-writable-tree.sh"
 
 
@@ -113,6 +114,20 @@ def main() -> int:
         if mid_name not in before.stderr:
             raise SystemExit(
                 "pre-bundle closure check failed for the wrong reason:\n" + before.stderr
+            )
+
+        build_sdk_text = BUILD_SDK.read_text(encoding="utf-8")
+        if 'bundle-native-runtime-closure.py' not in build_sdk_text:
+            raise SystemExit(
+                "base-only SDK construction must close non-baseline runtime dependencies "
+                "before native-cache publication"
+            )
+        base_bundle = build_sdk_text.index('if [ "$BASE_ONLY" = 1 ]; then', build_sdk_text.index('libffi.so.6 required'))
+        closure_bundle = build_sdk_text.index('bundle-native-runtime-closure.py', base_bundle)
+        alias_validation = build_sdk_text.index('SDK_LIB_REAL=', closure_bundle)
+        if not base_bundle < closure_bundle < alias_validation:
+            raise SystemExit(
+                "base-only SDK runtime closure must be bundled before SDK alias validation/publication"
             )
 
         package_text = PACKAGE.read_text(encoding="utf-8")
