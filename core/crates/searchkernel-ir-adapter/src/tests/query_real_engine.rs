@@ -955,8 +955,7 @@ fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
             searchkernel_ir::wire::v1::schema::SearchRequest,
         >(&bytes)
         .expect("portable same-element request");
-        IndexContext::from_definition_ir(definition)
-            .search_to_ir(api_request)
+        searchkernel_ir::wire::v1::search_to_ir(&IndexContext::from_definition_ir(definition), api_request)
             .expect("relative portable fields resolve after parent context")
             .query()
             .clone()
