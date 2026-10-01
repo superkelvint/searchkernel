@@ -34,7 +34,6 @@ table RequestEnvelope {
   // #848 establishes this field at the current slot as the forward-compatibility
   // baseline; future fields append rather than shifting existing slots.
   target:SearchKernel.V2.IndexTarget;
-  expected_index_generation:string;
 }
 
 root_type RequestEnvelope;
