@@ -9,6 +9,10 @@ fi
 
 ROOT=$(git rev-parse --show-toplevel)
 ROOT=$(cd -- "$ROOT" && pwd -P)
+if [[ "${SEARCHKERNEL_IN_CI_IMAGE:-0}" != "1" && ! -f /opt/searchkernel/native-validation-pass ]]; then
+    echo "native-base release construction must run through './dev native-base build ...'" >&2
+    exit 1
+fi
 BUILD_ENV=$1
 OUTPUT=$(mkdir -p "$2" && cd "$2" && pwd -P)
 ARTIFACT_GENERATION=${3:-${SK_NATIVE_BASE_GENERATION:-1}}
@@ -87,7 +91,6 @@ env -u SK_NATIVE_SDK -u SK_NATIVE_BASE_ARTIFACT_URL \
     -u VESPA_LIBRARY_ROOT -u VESPA_DEPS_LIB_DIR -u VESPA_DEPS_INCLUDE_DIR \
     -u VESPA_EXTRA_LIB_DIR -u VESPA_AWS_LIB_DIR \
     -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u LD_LIBRARY_PATH -u LD_PRELOAD \
-    SEARCHKERNEL_DEV_USE_CI_IMAGE=0 \
     SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
     SK_NATIVE_TARGET="$TARGET" \
     SK_NATIVE_DISABLE_PUBLISHED_BASE=1 \
