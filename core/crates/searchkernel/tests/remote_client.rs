@@ -222,7 +222,11 @@ impl SearchKernel for TestService {
                 lifecycle_delete_response()
             }
             _ => {
-                if envelope.expected_index_generation() != Some("probe-generation") {
+                if envelope
+                    .target()
+                    .and_then(|target| target.generation())
+                    != Some("probe-generation")
+                {
                     return Err(Status::failed_precondition(
                         "target-bound request is missing the canonical expected generation",
                     ));
@@ -242,32 +246,38 @@ fn lifecycle_definition_response(
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
     let (payload_type, payload) = if create {
+        let generation = builder.create_string("probe-generation");
         let result = api::CreateIndexResult::create(
             &mut builder,
-            &api::CreateIndexResultArgs { index: Some(index) },
+            &api::CreateIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         );
         (
             wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
             result.as_union_value(),
         )
     } else {
+        let generation = builder.create_string("probe-generation");
         let result = api::OpenIndexResult::create(
             &mut builder,
-            &api::OpenIndexResultArgs { index: Some(index) },
+            &api::OpenIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         );
         (
             wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
             result.as_union_value(),
         )
     };
-    let index_generation = builder.create_string("probe-generation");
     let envelope = wire::ResponseEnvelope::create(
         &mut builder,
         &wire::ResponseEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             payload_type,
             payload: Some(payload),
-            index_generation: Some(index_generation),
         },
     );
     wire::finish_response_envelope_buffer(&mut builder, envelope);
@@ -284,7 +294,6 @@ fn lifecycle_delete_response() -> Vec<u8> {
             protocol_version: PROTOCOL_VERSION,
             payload_type: wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
             payload: Some(result.as_union_value()),
-            index_generation: None,
         },
     );
     wire::finish_response_envelope_buffer(&mut builder, envelope);
