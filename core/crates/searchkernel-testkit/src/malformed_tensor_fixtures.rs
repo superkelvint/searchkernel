@@ -152,10 +152,18 @@ fn encode(name: &'static str) -> Vec<u8> {
             node: Some(group.as_union_value()),
         },
     );
+    let total_hits = wire::TotalHits::create(
+        &mut builder,
+        &wire::TotalHitsArgs {
+            value: 1,
+            relation: wire::TotalHitsRelation::Exact,
+        },
+    );
     let result = wire::SearchResult::create(
         &mut builder,
         &wire::SearchResultArgs {
             root: Some(root),
+            total_hits: Some(total_hits),
             ..Default::default()
         },
     );
@@ -187,4 +195,28 @@ pub fn malformed_tensor_response_fixtures() -> Vec<(&'static str, Vec<u8>)> {
     .into_iter()
     .map(|(encoding, filename)| (filename, encode(encoding)))
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_tensor_responses_keep_required_search_result_fields() {
+        for (name, bytes) in malformed_tensor_response_fixtures() {
+            let envelope = flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
+                .expect("malformed tensor fixture must be a valid response envelope");
+            let result = envelope
+                .payload_as_search_kernel_v2_search_result()
+                .expect("malformed tensor fixture must contain a SearchResult");
+            assert!(
+                result.root().is_some(),
+                "{name} must retain SearchResult.root"
+            );
+            assert!(
+                result.total_hits().is_some(),
+                "{name} must retain SearchResult.total_hits"
+            );
+        }
+    }
 }
