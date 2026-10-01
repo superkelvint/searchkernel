@@ -182,7 +182,9 @@ UI/API/CLI/connector:
    - `verify` with one registered verifier lane;
 4. confirm the workflow evidence identifies the requested/observed revision,
    operation, canonical target/command, result, run ID, and run URL;
-5. inspect failed-step logs when the result is not successful.
+5. for a pull-request comment request, confirm the trusted reporter posts the
+   PASS/FAIL result back to that PR with a clickable Actions-run link;
+6. inspect failed-step logs when the result is not successful.
 
 The trusted default-branch workflow/control plane executes the requested revision
 as untrusted subject code. The request may not supply arbitrary shell commands
