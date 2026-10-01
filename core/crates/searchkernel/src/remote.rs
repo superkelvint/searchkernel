@@ -827,7 +827,7 @@ impl RemoteClient {
                 "create result index definition is missing",
             ))
         })?;
-        let generation = envelope.index_generation().ok_or_else(|| {
+        let generation = result.generation().ok_or_else(|| {
             crate::Error::from_ir(invalid_remote_response(
                 "create-index response is missing canonical index generation",
             ))
@@ -868,7 +868,7 @@ impl RemoteClient {
                 "open result index definition is missing",
             ))
         })?;
-        let generation = envelope.index_generation().ok_or_else(|| {
+        let generation = result.generation().ok_or_else(|| {
             crate::Error::from_ir(invalid_remote_response(
                 "open-index response is missing canonical index generation",
             ))
@@ -1045,7 +1045,7 @@ mod tests {
             worker: Mutex::new(None),
         };
 
-        let caller = thread::spawn(move || transport.call(vec![0], false, None));
+        let caller = thread::spawn(move || transport.call(vec![0], false));
         match receiver
             .blocking_recv()
             .expect("transport call must enqueue an execute command")
