@@ -959,7 +959,7 @@ class Client:
         result = envelope.payload
         if getattr(result, "index", None) is None:
             raise ClientError("CreateIndexResult.index is missing")
-        generation = getattr(envelope, "indexGeneration", None)
+        generation = getattr(result, "generation", None)
         if not isinstance(generation, str) or not generation:
             raise ClientError("CreateIndexResult is missing canonical index generation")
         self.index_generation = generation
@@ -970,7 +970,7 @@ class Client:
         result = envelope.payload
         if getattr(result, "index", None) is None:
             raise ClientError("OpenIndexResult.index is missing")
-        generation = getattr(envelope, "indexGeneration", None)
+        generation = getattr(result, "generation", None)
         if not isinstance(generation, str) or not generation:
             raise ClientError("OpenIndexResult is missing canonical index generation")
         self.index_generation = generation
