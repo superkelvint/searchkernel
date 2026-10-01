@@ -6,8 +6,8 @@ generated_root=${TYPESCRIPT_GENERATED_DIR:-"$root/clients/typescript/src/_wire/v
 out="$generated_root/flatbuffers"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-"$flatc_bin" --ts --gen-object-api --gen-all -I "$root/api" -o "$tmp" \
-  "$root/api/searchkernel.fbs" "$root/api/searchkernel_request.fbs" "$root/api/searchkernel_response.fbs"
+"$flatc_bin" --ts --gen-object-api --gen-all -I "$root/api/wire/v1" -o "$tmp" \
+  "$root/api/wire/v1/searchkernel.fbs" "$root/api/wire/v1/searchkernel_request.fbs" "$root/api/wire/v1/searchkernel_response.fbs"
 rm -rf "$out"
 mkdir -p "$(dirname "$out")"
 mv "$tmp" "$out"
