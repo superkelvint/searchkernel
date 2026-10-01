@@ -146,7 +146,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
             .get::<serde_json::Value>("absent")
             .expect("get absent bool document")
             .expect("absent bool document exists")["active"],
-        serde_json::Value::Null
+        json!(false)
     );
 
     index
@@ -157,7 +157,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
             .get::<serde_json::Value>("true")
             .expect("get cleared bool document")
             .expect("cleared bool document exists")["active"],
-        serde_json::Value::Null
+        json!(false)
     );
     index.close().expect("close native bool index");
     let reopened = searchkernel::Index::open(&path).expect("reopen native bool index");
@@ -169,6 +169,97 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
     assert_eq!(reopened_false_hits.total_hits.value, 3);
     reopened.close().expect("close reopened native bool index");
     std::fs::remove_dir_all(path).expect("remove native bool index");
+}
+
+// SKC: update.arithmetic/basic kinds=ergonomic,e2e runtime=native
+// SKC: update.create_if_nonexistent/basic kinds=ergonomic,e2e runtime=native
+#[test]
+fn native_update_builder_executes_arithmetic_create_and_persists() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-native-update-builder-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true))
+        .field(Field::keyword("brand").stored(true))
+        .field(Field::int64("inventory").stored(true))
+        .field(Field::float64("ratio").stored(true));
+    let index = IndexRuntime::create(&path, definition).expect("create native update index");
+
+    index
+        .upsert(
+            "sku-42",
+            &json!({
+                "title": "Original",
+                "brand": "Acme",
+                "inventory": 10_i64,
+                "ratio": 8.0,
+            }),
+        )
+        .expect("seed update document");
+    index
+        .update_builder("sku-42")
+        .assign("title", "Updated")
+        .clear("brand")
+        .increment("inventory", 5_i64)
+        .multiply("ratio", 2.0)
+        .execute()
+        .expect("execute mixed advanced update");
+    index
+        .update_builder("sku-42")
+        .decrement("inventory", 3_i64)
+        .execute()
+        .expect("decrement inventory");
+    index
+        .update_builder("sku-42")
+        .divide("ratio", 4.0)
+        .execute()
+        .expect("divide ratio");
+
+    index
+        .update_builder("created-by-update")
+        .set("title", "Created")
+        .set("inventory", 7_i64)
+        .set("ratio", 1.5)
+        .create(true)
+        .execute()
+        .expect("create missing document through update");
+
+    let updated = index
+        .get::<serde_json::Value>("sku-42")
+        .expect("read updated document")
+        .expect("updated document exists");
+    assert_eq!(updated["title"], json!("Updated"));
+    assert_eq!(updated["brand"], serde_json::Value::Null);
+    assert_eq!(updated["inventory"], json!(12_i64));
+    assert_eq!(updated["ratio"], json!(4.0));
+
+    let created = index
+        .get::<serde_json::Value>("created-by-update")
+        .expect("read create-if-missing document")
+        .expect("create-if-missing document exists");
+    assert_eq!(created["title"], json!("Created"));
+    assert_eq!(created["inventory"], json!(7_i64));
+    assert_eq!(created["ratio"], json!(1.5));
+
+    index.close().expect("close native update index");
+    let reopened = searchkernel::Index::open(&path).expect("reopen native update index");
+    let persisted = reopened
+        .get::<serde_json::Value>("sku-42")
+        .expect("read persisted updated document")
+        .expect("persisted updated document exists");
+    assert_eq!(persisted["title"], json!("Updated"));
+    assert_eq!(persisted["brand"], serde_json::Value::Null);
+    assert_eq!(persisted["inventory"], json!(12_i64));
+    assert_eq!(persisted["ratio"], json!(4.0));
+    let persisted_created = reopened
+        .get::<serde_json::Value>("created-by-update")
+        .expect("read persisted create-if-missing document")
+        .expect("persisted create-if-missing document exists");
+    assert_eq!(persisted_created["inventory"], json!(7_i64));
+    reopened.close().expect("close reopened update index");
+    std::fs::remove_dir_all(path).expect("remove native update index");
 }
 
 #[test]

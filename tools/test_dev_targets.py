@@ -75,6 +75,10 @@ class DevTargetsTest(unittest.TestCase):
     def test_aliases_resolve_to_canonical_targets(self):
         out = subprocess.check_output([TOOL, "resolve", "test", "rust"], text=True).strip()
         self.assertEqual(out, "rust-api")
+        out = subprocess.check_output(
+            [TOOL, "resolve", "test", "rust-native-e2e"], text=True
+        ).strip()
+        self.assertEqual(out, "rust-native-e2e")
         out = subprocess.check_output([TOOL, "resolve", "verify", "m14"], text=True).strip()
         self.assertEqual(out, "milestone.m14")
 

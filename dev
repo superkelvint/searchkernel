@@ -153,6 +153,7 @@ Search Kernel development commands
   ./dev test --remote <scope> Dispatch exact-HEAD test through GitHub Actions
   ./dev test ir               Test the portable semantic IR
   ./dev test rust-api         Test the public Rust API
+  ./dev test rust-native-e2e  Test the Rust API against the native Vespa engine
   ./dev test client-real-e2e-parity Compare first-party real-engine showcases
   ./dev test native-crud      Test native Vespa engine CRUD
   ./dev test python           Test the Python client, including real E2E
@@ -701,6 +702,9 @@ test_target() {
             ;;
         rust-api)
             "$CARGO" test -p searchkernel --all-targets --no-default-features
+            ;;
+        rust-native-e2e)
+            "$CARGO" test -p searchkernel --test native_e2e --features native
             ;;
         client-real-e2e-parity)
             "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"

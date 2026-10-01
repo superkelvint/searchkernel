@@ -17,7 +17,6 @@ mod filter_parameter_expansion;
 
 pub mod api_to_ir;
 pub mod backend;
-pub mod control_plane;
 pub mod error;
 pub mod filter_expression;
 pub mod ir_to_api;
@@ -25,6 +24,8 @@ pub mod model;
 pub mod session;
 pub mod snapshot;
 
+pub use api_to_ir::control_plane;
+pub use api_to_ir::control_plane::*;
 pub use api_to_ir::{
     analyze_result_from_api, analyzer_to_ir, delete_result_from_api, facet_grouping_input,
     field_to_ir, filter_binding_value_from_json, get_result_from_api, index_definition_to_ir,
@@ -43,7 +44,6 @@ pub use api_to_ir::{
     UnresolvedRankProfileInput, UpdateOperationInput, WriteRequestRef, DEFAULT_SEARCH_LIMIT,
 };
 pub use backend::Backend;
-pub use control_plane::*;
 pub use error::{ErrorCode, ErrorDetail, PortableError, Result};
 pub use filter_expression::{
     bind_filter_expression, bind_filter_expression_with_references, BoundFilter, FilterBindings,
