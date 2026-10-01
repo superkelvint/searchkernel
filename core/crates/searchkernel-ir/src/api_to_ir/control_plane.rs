@@ -454,13 +454,14 @@ mod tests {
     fn direct_target_resolution_returns_the_canonical_error() {
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let name = builder.create_string("Products");
-        let target = api::IndexTarget::create(
-            &mut builder,
-            &api::IndexTargetArgs {
-                name: Some(name),
-                generation: None,
-            },
-        );
+        let target =
+            api::IndexTarget::create(
+                &mut builder,
+                &api::IndexTargetArgs {
+                    name: Some(name),
+                    generation: None,
+                },
+            );
         builder.finish(target, None);
         let target = flatbuffers::root::<api::IndexTarget<'_>>(builder.finished_data())
             .expect("valid target view");

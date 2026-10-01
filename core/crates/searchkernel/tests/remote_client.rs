@@ -28,10 +28,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{
-    net::TcpListener,
-    sync::{oneshot, Notify},
-};
+use tokio::{net::TcpListener, sync::{oneshot, Notify}};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
 
@@ -621,8 +618,9 @@ async fn unrelated_remote_lifecycle_operations_do_not_share_one_client_lock() {
     let definition = IndexDefinition::new().field(Field::text("title").stored(true));
 
     let slow_client = client.clone();
-    let slow =
-        tokio::task::spawn_blocking(move || slow_client.create_index("slow-create", definition));
+    let slow = tokio::task::spawn_blocking(move || {
+        slow_client.create_index("slow-create", definition)
+    });
     server.slow_create_started.notified().await;
 
     let fast_client = client.clone();
@@ -640,9 +638,7 @@ async fn unrelated_remote_lifecycle_operations_do_not_share_one_client_lock() {
     slow_index.close().expect("close slow-created index");
 
     let fast_index = match completed_before_release {
-        Ok(result) => result
-            .expect("unrelated open task")
-            .expect("unrelated open"),
+        Ok(result) => result.expect("unrelated open task").expect("unrelated open"),
         Err(_) => {
             let _ = fast.await;
             panic!("slow lifecycle operation for target A blocked unrelated target B");
