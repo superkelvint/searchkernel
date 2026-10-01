@@ -400,6 +400,15 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn stale_remote_handle_has_canonical_failed_precondition_error() {
+        let error = stale_index_handle_error();
+        assert_eq!(error.code, ErrorCode::FailedPrecondition);
+        assert_eq!(error.details[0].code, STALE_INDEX_HANDLE_DETAIL_CODE);
+        assert_eq!(error.details[0].path.as_deref(), Some(TARGET_PATH));
+        assert!(!error.retryable);
+    }
+
     fn missing_target_and_definition_have_canonical_portable_errors() {
         let missing_target = resolve_index_target(None).unwrap_err();
         assert_eq!(missing_target.code, ErrorCode::InvalidArgument);
