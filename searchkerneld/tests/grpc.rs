@@ -1642,15 +1642,19 @@ async fn ergonomic_remote_result_matches_embedded_public_projection_exactly() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn ergonomic_rust_remote_client_multiplexes_concurrent_calls() {
     let backend = BlockingBackend::new();
-    let (_local, dispatcher, lifecycle_definition) = dispatcher_with_definition(backend.clone());
-    let server = RemoteTestServer::tcp(dispatcher, lifecycle_definition).await;
-    let endpoint = server.endpoint.clone();
+    let (local, dispatcher) = dispatcher(backend.clone());
+    let server = start(
+        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address"))
+            .with_execution_limit(2)
+            .with_admission_limit(2),
+        dispatcher,
+    )
+    .await
+    .expect("start production searchkerneld transport");
+    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
 
     let remote = tokio::task::spawn_blocking(move || {
-        let client = RemoteClient::connect(endpoint).expect("connect Rust remote daemon");
-        client
-            .open_index("grpc-test")
-            .expect("open Rust remote index")
+        Index::connect(endpoint).expect("connect legacy single-index Rust remote client")
     })
     .await
     .expect("connect blocking task");
@@ -1676,7 +1680,7 @@ async fn ergonomic_rust_remote_client_multiplexes_concurrent_calls() {
         }
     })
     .await
-    .expect("both remote calls must reach the daemon concurrently");
+    .expect("both remote calls must reach the production daemon concurrently");
     backend.release();
 
     let first_error = first_call.await.expect("first blocking task");
@@ -1684,6 +1688,10 @@ async fn ergonomic_rust_remote_client_multiplexes_concurrent_calls() {
     assert_eq!(first_error.code(), PublicErrorCode::Unsupported);
     assert_eq!(second_error.code(), PublicErrorCode::Unsupported);
 
-    remote.close().expect("close remote client");
-    server.shutdown().await;
+    remote.close().expect("close legacy remote client");
+    server
+        .shutdown()
+        .await
+        .expect("shutdown production searchkerneld transport");
+    local.close().expect("close hosted test index");
 }
