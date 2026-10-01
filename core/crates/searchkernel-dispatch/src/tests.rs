@@ -155,6 +155,7 @@ fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
         &mut builder,
         &api::IndexTargetArgs {
             name: Some(target_name),
+            generation: None,
         },
     );
     let payload = match kind {
