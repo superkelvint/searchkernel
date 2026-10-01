@@ -713,6 +713,11 @@ test_target() {
             bash "$ROOT/tools/test-native-sdk-cache.sh"
             bash "$ROOT/tools/test-native-base-artifact-real.sh"
             ;;
+        native-base-policy)
+            bash "$ROOT/tools/check-shell-syntax.sh"
+            bash "$ROOT/tools/test-dev-ci-image.sh"
+            bash "$ROOT/tools/test-native-base-publish-policy.sh"
+            ;;
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
