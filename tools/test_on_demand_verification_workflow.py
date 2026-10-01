@@ -2,6 +2,7 @@
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -189,6 +190,25 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("FAIL", reporter)
         self.assertNotIn("actions/checkout", reporter)
         self.assertNotIn("path: subject", reporter)
+
+    def test_reporter_github_script_is_valid_javascript(self):
+        text = self.text
+        reporter_start = text.index("  report-comment:")
+        marker = "          script: |\n"
+        script_start = text.index(marker, reporter_start) + len(marker)
+        script = textwrap.dedent(text[script_start:])
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "node is required to syntax-check the reporter github-script")
+        with tempfile.TemporaryDirectory(prefix="searchkernel-reporter-script.") as raw_tmp:
+            path = pathlib.Path(raw_tmp) / "reporter.mjs"
+            path.write_text(script, encoding="utf-8")
+            result = subprocess.run(
+                [node, "--check", str(path)],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_structured_evidence_is_always_published(self):
         text = self.text
