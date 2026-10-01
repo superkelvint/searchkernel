@@ -1,23 +1,76 @@
 name: On-demand verification
 
 run-name: >-
-  ${{ github.event.client_payload.operation }} ${{ github.event.client_payload.target }} @ ${{ github.event.client_payload.revision }} [${{ github.event.client_payload.request_id }}]
+  ${{ github.event_name == 'repository_dispatch'
+      && format('{0} {1} @ {2} [{3}]', github.event.client_payload.operation, github.event.client_payload.target, github.event.client_payload.revision, github.event.client_payload.request_id)
+      || format('comment verification #{0} [{1}]', github.event.issue.number, github.event.comment.id) }}
 
 on:
   repository_dispatch:
     types: [searchkernel-verification]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    name: exact-SHA ${{ github.event.client_payload.operation }} ${{ github.event.client_payload.target }}
+    name: exact-SHA verification
+    if: >-
+      github.event_name == 'repository_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        (github.event.comment.author_association == 'OWNER' ||
+         github.event.comment.author_association == 'MEMBER' ||
+         github.event.comment.author_association == 'COLLABORATOR') &&
+        startsWith(github.event.comment.body, '/searchkernel-verify ')
+      )
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 120
 
     steps:
-      - name: Prove trusted default-branch control plane
+      - name: Normalize and validate authorized request
+        id: request
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_REVISION: ${{ github.event.client_payload.revision }}
+          DISPATCH_OPERATION: ${{ github.event.client_payload.operation }}
+          DISPATCH_TARGET: ${{ github.event.client_payload.target }}
+          DISPATCH_REQUEST_ID: ${{ github.event.client_payload.request_id }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+          PULL_REQUEST_URL: ${{ github.event.issue.pull_request.url }}
+        run: |
+          set -euo pipefail
+
+          case "${EVENT_NAME}" in
+            repository_dispatch)
+              revision=${DISPATCH_REVISION}
+              operation=${DISPATCH_OPERATION}
+              target=${DISPATCH_TARGET}
+              request_id=${DISPATCH_REQUEST_ID}
+              ;;
+            issue_comment)
+              if [[ -z "${PULL_REQUEST_URL}" ]]; then
+                echo "error: comment verification requests must be made on a pull request" >&2
+                exit 2
+              fi
+              case "${COMMENT_ASSOCIATION}" in
+                OWNER|MEMBER|COLLABORATOR) ;;
+                *)
+                  echo "error: comment author is not authorized to request verification" >&2
+                  exit 2
+                  ;;
+              esac
+              if [[ ! "${COMMENT_ID}" =~ ^[0-9]+$ ]]; then
+                echo "error: comment id must be numeric" >&2
+                exit 2
+              fi
+              if [[ "${COMMENT_BODY}" == *
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -25,43 +78,7 @@ jobs:
           set -euo pipefail
           expected="refs/heads/${DEFAULT_BRANCH}"
           if [[ "${GITHUB_REF}" != "${expected}" ]]; then
-            echo "error: repository_dispatch control plane is not running from ${expected}: ${GITHUB_REF}" >&2
-            exit 2
-          fi
-
-      - name: Validate bounded dispatch inputs
-        shell: bash
-        env:
-          REVISION: ${{ github.event.client_payload.revision }}
-          OPERATION: ${{ github.event.client_payload.operation }}
-          REQUESTED_TARGET: ${{ github.event.client_payload.target }}
-          REQUEST_ID: ${{ github.event.client_payload.request_id }}
-        run: |
-          set -euo pipefail
-          if [[ ! "${REVISION}" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "error: revision must be an exact 40-character commit SHA" >&2
-            exit 2
-          fi
-          case "${OPERATION}" in
-            ci)
-              if [[ -n "${REQUESTED_TARGET}" ]]; then
-                echo "error: ci does not accept a target" >&2
-                exit 2
-              fi
-              ;;
-            test|verify)
-              if [[ ! "${REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
-                echo "error: target must be 1-128 characters from [A-Za-z0-9._-]" >&2
-                exit 2
-              fi
-              ;;
-            *)
-              echo "error: operation must be ci, test, or verify" >&2
-              exit 2
-              ;;
-          esac
-          if [[ ! "${REQUEST_ID}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]; then
-            echo "error: request_id must be 1-80 characters from [A-Za-z0-9._-]" >&2
+            echo "error: on-demand control plane is not running from ${expected}: ${GITHUB_REF}" >&2
             exit 2
           fi
 
@@ -76,7 +93,7 @@ jobs:
       - name: Verify requested commit belongs to this repository
         uses: actions/github-script@v9
         env:
-          REVISION: ${{ github.event.client_payload.revision }}
+          REVISION: ${{ steps.request.outputs.revision }}
         with:
           script: |
             const revision = process.env.REVISION.toLowerCase();
@@ -96,7 +113,7 @@ jobs:
       - name: Check out requested revision as untrusted subject
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.client_payload.revision }}
+          ref: ${{ steps.request.outputs.revision }}
           path: subject
           # The canonical launcher bundles the exact subject commit for Docker;
           # parent objects are needed, so fetch full history instead of a
@@ -109,7 +126,7 @@ jobs:
         shell: bash
         working-directory: subject
         env:
-          REVISION: ${{ github.event.client_payload.revision }}
+          REVISION: ${{ steps.request.outputs.revision }}
         run: |
           set -euo pipefail
           requested=$(printf '%s' "${REVISION}" | tr '[:upper:]' '[:lower:]')
@@ -125,8 +142,8 @@ jobs:
         shell: bash
         working-directory: subject
         env:
-          OPERATION: ${{ github.event.client_payload.operation }}
-          REQUESTED_TARGET: ${{ github.event.client_payload.target }}
+          OPERATION: ${{ steps.request.outputs.operation }}
+          REQUESTED_TARGET: ${{ steps.request.outputs.target }}
         run: |
           set -euo pipefail
           if [[ "${OPERATION}" == "ci" ]]; then
@@ -197,7 +214,7 @@ jobs:
         id: execute
         shell: bash
         env:
-          OPERATION: ${{ github.event.client_payload.operation }}
+          OPERATION: ${{ steps.request.outputs.operation }}
           CANONICAL_TARGET: ${{ steps.target.outputs.target }}
           SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject
           SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"
@@ -216,10 +233,612 @@ jobs:
         if: always()
         shell: bash
         env:
-          REQUESTED_REVISION: ${{ github.event.client_payload.revision }}
-          REQUEST_ID: ${{ github.event.client_payload.request_id }}
+          REQUESTED_REVISION: ${{ steps.request.outputs.revision }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
           OBSERVED_REVISION: ${{ steps.subject.outputs.sha }}
-          OPERATION: ${{ github.event.client_payload.operation }}
+          OPERATION: ${{ steps.request.outputs.operation }}
+          CANONICAL_TARGET: ${{ steps.target.outputs.target }}
+          RESULT: ${{ steps.execute.outcome }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/searchkernel-verification"
+          mkdir -p "${evidence_dir}"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          operation = os.environ["OPERATION"]
+          target = os.environ.get("CANONICAL_TARGET", "")
+          if operation == "ci":
+              canonical_command = "./dev ci"
+          elif target:
+              canonical_command = f"./dev {operation} {target}"
+          else:
+              canonical_command = ""
+          evidence = {
+              "requested_revision": os.environ["REQUESTED_REVISION"].lower(),
+              "request_id": os.environ["REQUEST_ID"],
+              "revision": os.environ.get("OBSERVED_REVISION", ""),
+              "operation": operation,
+              "target": target,
+              "canonical_command": canonical_command,
+              "result": os.environ.get("RESULT") or "not-run",
+              "actor": os.environ["ACTOR"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "run_url": (
+                  f"{os.environ['SERVER_URL']}/{os.environ['REPOSITORY']}"
+                  f"/actions/runs/{os.environ['RUN_ID']}"
+              ),
+          }
+          path = Path(os.environ["RUNNER_TEMP"]) / "searchkernel-verification" / "evidence.json"
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(path.read_text(encoding="utf-8"))
+          PY
+
+          {
+            echo '### On-demand verification evidence'
+            echo
+            echo '~~~json'
+            cat "${evidence_dir}/evidence.json"
+            echo '~~~'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload structured evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/searchkernel-verification/evidence.json
+          if-no-files-found: error
+          retention-days: 14
+\n'* || "${COMMENT_BODY}" == *
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          expected="refs/heads/${DEFAULT_BRANCH}"
+          if [[ "${GITHUB_REF}" != "${expected}" ]]; then
+            echo "error: repository_dispatch control plane is not running from ${expected}: ${GITHUB_REF}" >&2
+            exit 2
+          fi
+
+      - name: Validate bounded dispatch inputs
+        shell: bash
+        env:
+          REVISION: ${{ steps.request.outputs.revision }}
+          OPERATION: ${{ steps.request.outputs.operation }}
+          REQUESTED_TARGET: ${{ steps.request.outputs.target }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${REVISION}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "error: revision must be an exact 40-character commit SHA" >&2
+            exit 2
+          fi
+          case "${OPERATION}" in
+            ci)
+              if [[ -n "${REQUESTED_TARGET}" ]]; then
+                echo "error: ci does not accept a target" >&2
+                exit 2
+              fi
+              ;;
+            test|verify)
+              if [[ ! "${REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+                echo "error: target must be 1-128 characters from [A-Za-z0-9._-]" >&2
+                exit 2
+              fi
+              ;;
+            *)
+              echo "error: operation must be ci, test, or verify" >&2
+              exit 2
+              ;;
+          esac
+          if [[ ! "${REQUEST_ID}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]; then
+            echo "error: request_id must be 1-80 characters from [A-Za-z0-9._-]" >&2
+            exit 2
+          fi
+
+      - name: Check out trusted control plane
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify requested commit belongs to this repository
+        uses: actions/github-script@v9
+        env:
+          REVISION: ${{ steps.request.outputs.revision }}
+        with:
+          script: |
+            const revision = process.env.REVISION.toLowerCase();
+            try {
+              const { data: commit } = await github.rest.repos.getCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: revision,
+              });
+              if (commit.sha.toLowerCase() !== revision) {
+                core.setFailed(`requested commit ${revision} resolved to ${commit.sha}`);
+              }
+            } catch (error) {
+              core.setFailed(`requested revision ${revision} is unavailable from this repository: ${error.message}`);
+            }
+
+      - name: Check out requested revision as untrusted subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.request.outputs.revision }}
+          path: subject
+          # The canonical launcher bundles the exact subject commit for Docker;
+          # parent objects are needed, so fetch full history instead of a
+          # shallow checkout.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove checked-out revision
+        id: subject
+        shell: bash
+        working-directory: subject
+        env:
+          REVISION: ${{ steps.request.outputs.revision }}
+        run: |
+          set -euo pipefail
+          requested=$(printf '%s' "${REVISION}" | tr '[:upper:]' '[:lower:]')
+          observed=$(git rev-parse HEAD)
+          if [[ "${observed}" != "${requested}" ]]; then
+            echo "error: requested revision ${requested}, checked out ${observed}" >&2
+            exit 2
+          fi
+          printf 'sha=%s\n' "${observed}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate target against repository authority
+        id: target
+        shell: bash
+        working-directory: subject
+        env:
+          OPERATION: ${{ steps.request.outputs.operation }}
+          REQUESTED_TARGET: ${{ steps.request.outputs.target }}
+        run: |
+          set -euo pipefail
+          if [[ "${OPERATION}" == "ci" ]]; then
+            printf 'target=\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          # Never dereference a path from the untrusted checkout on the host.
+          # Read the registry directly from the proven Git tree and require the
+          # tree entry to be an ordinary file rather than a symlink.
+          tree_entry=$(git ls-tree HEAD -- build/targets.json)
+          read -r registry_mode registry_type registry_object registry_path <<< "${tree_entry}"
+          if [[ "${registry_mode}" != "100644" ||
+                "${registry_type}" != "blob" ||
+                "${registry_path}" != "build/targets.json" ]]; then
+            echo "error: build/targets.json must be an ordinary tracked file" >&2
+            exit 2
+          fi
+          registry_size=$(git cat-file -s "${registry_object}")
+          if (( registry_size > 1048576 )); then
+            echo "error: build/targets.json exceeds the 1 MiB dispatch-validation limit" >&2
+            exit 2
+          fi
+
+          canonical=$(
+            git show HEAD:build/targets.json |
+              python3 -c '
+          import json
+          import os
+          import sys
+
+          operation = os.environ["OPERATION"]
+          requested = os.environ["REQUESTED_TARGET"]
+          if operation not in {"test", "verify"}:
+              raise SystemExit(f"unsupported operation: {operation}")
+
+          def reject_duplicates(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError(f"duplicate key: {key}")
+                  result[key] = value
+              return result
+
+          registry = json.load(sys.stdin, object_pairs_hook=reject_duplicates)
+          entries = registry.get(operation)
+          if not isinstance(entries, dict):
+              raise SystemExit(f"registry has no {operation!r} target map")
+
+          for target, metadata in entries.items():
+              aliases = metadata.get("aliases", []) if isinstance(metadata, dict) else []
+              if requested == target or requested in aliases:
+                  print(target)
+                  break
+          else:
+              raise SystemExit(
+                  f"unknown {operation} target: {requested}; "
+                  f"inspect build/targets.json for supported targets"
+              )
+          '
+          )
+          if [[ ! "${canonical}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+            echo "error: resolved target is not a safe canonical identifier" >&2
+            exit 2
+          fi
+          printf 'target=%s\n' "${canonical}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run canonical verification
+        id: execute
+        shell: bash
+        env:
+          OPERATION: ${{ steps.request.outputs.operation }}
+          CANONICAL_TARGET: ${{ steps.target.outputs.target }}
+          SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject
+          SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"
+          SEARCHKERNEL_CI_EXACT_SOURCE: "1"
+        run: |
+          set -euo pipefail
+          if [[ "${OPERATION}" == "ci" ]]; then
+            echo 'canonical command: ./dev ci'
+            bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" ci
+          else
+            printf 'canonical command: ./dev %q %q\n' "${OPERATION}" "${CANONICAL_TARGET}"
+            bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"
+          fi
+
+      - name: Write structured evidence
+        if: always()
+        shell: bash
+        env:
+          REQUESTED_REVISION: ${{ steps.request.outputs.revision }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          OBSERVED_REVISION: ${{ steps.subject.outputs.sha }}
+          OPERATION: ${{ steps.request.outputs.operation }}
+          CANONICAL_TARGET: ${{ steps.target.outputs.target }}
+          RESULT: ${{ steps.execute.outcome }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/searchkernel-verification"
+          mkdir -p "${evidence_dir}"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          operation = os.environ["OPERATION"]
+          target = os.environ.get("CANONICAL_TARGET", "")
+          if operation == "ci":
+              canonical_command = "./dev ci"
+          elif target:
+              canonical_command = f"./dev {operation} {target}"
+          else:
+              canonical_command = ""
+          evidence = {
+              "requested_revision": os.environ["REQUESTED_REVISION"].lower(),
+              "request_id": os.environ["REQUEST_ID"],
+              "revision": os.environ.get("OBSERVED_REVISION", ""),
+              "operation": operation,
+              "target": target,
+              "canonical_command": canonical_command,
+              "result": os.environ.get("RESULT") or "not-run",
+              "actor": os.environ["ACTOR"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "run_url": (
+                  f"{os.environ['SERVER_URL']}/{os.environ['REPOSITORY']}"
+                  f"/actions/runs/{os.environ['RUN_ID']}"
+              ),
+          }
+          path = Path(os.environ["RUNNER_TEMP"]) / "searchkernel-verification" / "evidence.json"
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(path.read_text(encoding="utf-8"))
+          PY
+
+          {
+            echo '### On-demand verification evidence'
+            echo
+            echo '~~~json'
+            cat "${evidence_dir}/evidence.json"
+            echo '~~~'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload structured evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/searchkernel-verification/evidence.json
+          if-no-files-found: error
+          retention-days: 14
+\r'* ]]; then
+                echo "error: verification comment must be exactly one line" >&2
+                exit 2
+              fi
+
+              read -r -a fields <<< "${COMMENT_BODY}"
+              if [[ "${fields[0]:-}" != "/searchkernel-verify" ]]; then
+                echo "error: verification comment must begin with /searchkernel-verify" >&2
+                exit 2
+              fi
+
+              operation=${fields[1]:-}
+              case "${operation}" in
+                ci)
+                  if [[ "${#fields[@]}" -ne 3 ]]; then
+                    echo "error: usage: /searchkernel-verify ci <exact-sha>" >&2
+                    exit 2
+                  fi
+                  target=
+                  revision=${fields[2]}
+                  ;;
+                test|verify)
+                  if [[ "${#fields[@]}" -ne 4 ]]; then
+                    echo "error: usage: /searchkernel-verify {test|verify} <target> <exact-sha>" >&2
+                    exit 2
+                  fi
+                  target=${fields[2]}
+                  revision=${fields[3]}
+                  ;;
+                *)
+                  echo "error: comment operation must be ci, test, or verify" >&2
+                  exit 2
+                  ;;
+              esac
+              request_id="comment-${COMMENT_ID}"
+              ;;
+            *)
+              echo "error: unsupported verification event: ${EVENT_NAME}" >&2
+              exit 2
+              ;;
+          esac
+
+          if [[ ! "${revision}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "error: revision must be an exact 40-character commit SHA" >&2
+            exit 2
+          fi
+          case "${operation}" in
+            ci)
+              if [[ -n "${target}" ]]; then
+                echo "error: ci does not accept a target" >&2
+                exit 2
+              fi
+              ;;
+            test|verify)
+              if [[ ! "${target}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+                echo "error: target must be 1-128 characters from [A-Za-z0-9._-]" >&2
+                exit 2
+              fi
+              ;;
+            *)
+              echo "error: operation must be ci, test, or verify" >&2
+              exit 2
+              ;;
+          esac
+          if [[ ! "${request_id}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]; then
+            echo "error: request_id must be 1-80 characters from [A-Za-z0-9._-]" >&2
+            exit 2
+          fi
+
+          printf 'revision=%s\n' "${revision}" >> "${GITHUB_OUTPUT}"
+          printf 'operation=%s\n' "${operation}" >> "${GITHUB_OUTPUT}"
+          printf 'target=%s\n' "${target}" >> "${GITHUB_OUTPUT}"
+          printf 'request_id=%s\n' "${request_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Prove trusted default-branch control plane
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          expected="refs/heads/${DEFAULT_BRANCH}"
+          if [[ "${GITHUB_REF}" != "${expected}" ]]; then
+            echo "error: repository_dispatch control plane is not running from ${expected}: ${GITHUB_REF}" >&2
+            exit 2
+          fi
+
+      - name: Validate bounded dispatch inputs
+        shell: bash
+        env:
+          REVISION: ${{ steps.request.outputs.revision }}
+          OPERATION: ${{ steps.request.outputs.operation }}
+          REQUESTED_TARGET: ${{ steps.request.outputs.target }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${REVISION}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "error: revision must be an exact 40-character commit SHA" >&2
+            exit 2
+          fi
+          case "${OPERATION}" in
+            ci)
+              if [[ -n "${REQUESTED_TARGET}" ]]; then
+                echo "error: ci does not accept a target" >&2
+                exit 2
+              fi
+              ;;
+            test|verify)
+              if [[ ! "${REQUESTED_TARGET}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+                echo "error: target must be 1-128 characters from [A-Za-z0-9._-]" >&2
+                exit 2
+              fi
+              ;;
+            *)
+              echo "error: operation must be ci, test, or verify" >&2
+              exit 2
+              ;;
+          esac
+          if [[ ! "${REQUEST_ID}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]; then
+            echo "error: request_id must be 1-80 characters from [A-Za-z0-9._-]" >&2
+            exit 2
+          fi
+
+      - name: Check out trusted control plane
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify requested commit belongs to this repository
+        uses: actions/github-script@v9
+        env:
+          REVISION: ${{ steps.request.outputs.revision }}
+        with:
+          script: |
+            const revision = process.env.REVISION.toLowerCase();
+            try {
+              const { data: commit } = await github.rest.repos.getCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: revision,
+              });
+              if (commit.sha.toLowerCase() !== revision) {
+                core.setFailed(`requested commit ${revision} resolved to ${commit.sha}`);
+              }
+            } catch (error) {
+              core.setFailed(`requested revision ${revision} is unavailable from this repository: ${error.message}`);
+            }
+
+      - name: Check out requested revision as untrusted subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.request.outputs.revision }}
+          path: subject
+          # The canonical launcher bundles the exact subject commit for Docker;
+          # parent objects are needed, so fetch full history instead of a
+          # shallow checkout.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove checked-out revision
+        id: subject
+        shell: bash
+        working-directory: subject
+        env:
+          REVISION: ${{ steps.request.outputs.revision }}
+        run: |
+          set -euo pipefail
+          requested=$(printf '%s' "${REVISION}" | tr '[:upper:]' '[:lower:]')
+          observed=$(git rev-parse HEAD)
+          if [[ "${observed}" != "${requested}" ]]; then
+            echo "error: requested revision ${requested}, checked out ${observed}" >&2
+            exit 2
+          fi
+          printf 'sha=%s\n' "${observed}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate target against repository authority
+        id: target
+        shell: bash
+        working-directory: subject
+        env:
+          OPERATION: ${{ steps.request.outputs.operation }}
+          REQUESTED_TARGET: ${{ steps.request.outputs.target }}
+        run: |
+          set -euo pipefail
+          if [[ "${OPERATION}" == "ci" ]]; then
+            printf 'target=\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          # Never dereference a path from the untrusted checkout on the host.
+          # Read the registry directly from the proven Git tree and require the
+          # tree entry to be an ordinary file rather than a symlink.
+          tree_entry=$(git ls-tree HEAD -- build/targets.json)
+          read -r registry_mode registry_type registry_object registry_path <<< "${tree_entry}"
+          if [[ "${registry_mode}" != "100644" ||
+                "${registry_type}" != "blob" ||
+                "${registry_path}" != "build/targets.json" ]]; then
+            echo "error: build/targets.json must be an ordinary tracked file" >&2
+            exit 2
+          fi
+          registry_size=$(git cat-file -s "${registry_object}")
+          if (( registry_size > 1048576 )); then
+            echo "error: build/targets.json exceeds the 1 MiB dispatch-validation limit" >&2
+            exit 2
+          fi
+
+          canonical=$(
+            git show HEAD:build/targets.json |
+              python3 -c '
+          import json
+          import os
+          import sys
+
+          operation = os.environ["OPERATION"]
+          requested = os.environ["REQUESTED_TARGET"]
+          if operation not in {"test", "verify"}:
+              raise SystemExit(f"unsupported operation: {operation}")
+
+          def reject_duplicates(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError(f"duplicate key: {key}")
+                  result[key] = value
+              return result
+
+          registry = json.load(sys.stdin, object_pairs_hook=reject_duplicates)
+          entries = registry.get(operation)
+          if not isinstance(entries, dict):
+              raise SystemExit(f"registry has no {operation!r} target map")
+
+          for target, metadata in entries.items():
+              aliases = metadata.get("aliases", []) if isinstance(metadata, dict) else []
+              if requested == target or requested in aliases:
+                  print(target)
+                  break
+          else:
+              raise SystemExit(
+                  f"unknown {operation} target: {requested}; "
+                  f"inspect build/targets.json for supported targets"
+              )
+          '
+          )
+          if [[ ! "${canonical}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+            echo "error: resolved target is not a safe canonical identifier" >&2
+            exit 2
+          fi
+          printf 'target=%s\n' "${canonical}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run canonical verification
+        id: execute
+        shell: bash
+        env:
+          OPERATION: ${{ steps.request.outputs.operation }}
+          CANONICAL_TARGET: ${{ steps.target.outputs.target }}
+          SEARCHKERNEL_CI_SOURCE_ROOT: ${{ github.workspace }}/subject
+          SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"
+          SEARCHKERNEL_CI_EXACT_SOURCE: "1"
+        run: |
+          set -euo pipefail
+          if [[ "${OPERATION}" == "ci" ]]; then
+            echo 'canonical command: ./dev ci'
+            bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" ci
+          else
+            printf 'canonical command: ./dev %q %q\n' "${OPERATION}" "${CANONICAL_TARGET}"
+            bash "${GITHUB_WORKSPACE}/control/tools/run-in-ci-image.sh" "${OPERATION}" "${CANONICAL_TARGET}"
+          fi
+
+      - name: Write structured evidence
+        if: always()
+        shell: bash
+        env:
+          REQUESTED_REVISION: ${{ steps.request.outputs.revision }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          OBSERVED_REVISION: ${{ steps.subject.outputs.sha }}
+          OPERATION: ${{ steps.request.outputs.operation }}
           CANONICAL_TARGET: ${{ steps.target.outputs.target }}
           RESULT: ${{ steps.execute.outcome }}
           RUN_ID: ${{ github.run_id }}
