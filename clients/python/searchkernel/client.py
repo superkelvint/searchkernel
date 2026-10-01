@@ -402,14 +402,28 @@ def _prepare_managed_data_root(data_root: Path) -> None:
         pass
 
     if created:
+        temporary_marker = None
+        published = False
         try:
-            with marker.open("x", encoding="utf-8") as stream:
+            descriptor, temporary_marker = tempfile.mkstemp(
+                prefix=f".{marker.name}.", dir=data_root
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 stream.write(_MANAGED_ROOT_MARKER_VALUE + "\n")
+            # Publish complete marker contents atomically without replacing a
+            # path that another process may have created in the meantime.
+            os.link(temporary_marker, marker)
+            published = True
+            os.unlink(temporary_marker)
+            temporary_marker = None
             _validate_managed_data_root(data_root)
             return
         except Exception:
             try:
-                marker.unlink(missing_ok=True)
+                if published:
+                    marker.unlink(missing_ok=True)
+                if temporary_marker is not None:
+                    os.unlink(temporary_marker)
                 data_root.rmdir()
             except OSError:
                 pass
