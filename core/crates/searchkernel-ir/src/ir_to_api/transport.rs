@@ -6,12 +6,17 @@ fn finish_request(
     builder: &mut flatbuffers::FlatBufferBuilder<'_>,
     payload_type: wire::RequestPayload,
     payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+    target: Option<&str>,
 ) -> Vec<u8> {
+    let target = target.map(|name| {
+        let name = builder.create_string(name);
+        api::IndexTarget::create(builder, &api::IndexTargetArgs { name: Some(name) })
+    });
     let root = wire::RequestEnvelope::create(
         builder,
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
-            target: None,
+            target,
             payload_type,
             payload: Some(payload),
         },
@@ -112,6 +117,13 @@ fn document_offset<'a>(
 }
 
 pub fn encode_insert_request(request: &ir::InsertRequestIr) -> Result<Vec<u8>, PortableError> {
+    encode_insert_request_for_target(request, None)
+}
+
+pub fn encode_insert_request_for_target(
+    request: &ir::InsertRequestIr,
+    target: Option<&str>,
+) -> Result<Vec<u8>, PortableError> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let document = document_offset(&mut builder, request.document())?;
     let request = api::InsertRequest::create(
@@ -124,10 +136,18 @@ pub fn encode_insert_request(request: &ir::InsertRequestIr) -> Result<Vec<u8>, P
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_InsertRequest,
         request.as_union_value(),
+        target,
     ))
 }
 
 pub fn encode_upsert_request(request: &ir::UpsertRequestIr) -> Result<Vec<u8>, PortableError> {
+    encode_upsert_request_for_target(request, None)
+}
+
+pub fn encode_upsert_request_for_target(
+    request: &ir::UpsertRequestIr,
+    target: Option<&str>,
+) -> Result<Vec<u8>, PortableError> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let document = document_offset(&mut builder, request.document())?;
     let condition = request
@@ -144,10 +164,18 @@ pub fn encode_upsert_request(request: &ir::UpsertRequestIr) -> Result<Vec<u8>, P
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_UpsertRequest,
         request.as_union_value(),
+        target,
     ))
 }
 
 pub fn encode_patch_request(request: &ir::PatchRequestIr) -> Result<Vec<u8>, PortableError> {
+    encode_patch_request_for_target(request, None)
+}
+
+pub fn encode_patch_request_for_target(
+    request: &ir::PatchRequestIr,
+    logical_target: Option<&str>,
+) -> Result<Vec<u8>, PortableError> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let id = builder.create_string(request.id().as_str());
     let mut operations = Vec::with_capacity(request.operations().len());
@@ -195,10 +223,18 @@ pub fn encode_patch_request(request: &ir::PatchRequestIr) -> Result<Vec<u8>, Por
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_PatchRequest,
         request.as_union_value(),
+        logical_target,
     ))
 }
 
 pub fn encode_update_request(request: &ir::UpdateRequestIr) -> Result<Vec<u8>, PortableError> {
+    encode_update_request_for_target(request, None)
+}
+
+pub fn encode_update_request_for_target(
+    request: &ir::UpdateRequestIr,
+    logical_target: Option<&str>,
+) -> Result<Vec<u8>, PortableError> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let id = builder.create_string(request.id().as_str());
     let mut operations = Vec::with_capacity(request.operations().len());
@@ -296,10 +332,18 @@ pub fn encode_update_request(request: &ir::UpdateRequestIr) -> Result<Vec<u8>, P
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_UpdateRequest,
         request.as_union_value(),
+        logical_target,
     ))
 }
 
 pub fn encode_delete_request(request: &ir::DeleteRequestIr) -> Result<Vec<u8>, PortableError> {
+    encode_delete_request_for_target(request, None)
+}
+
+pub fn encode_delete_request_for_target(
+    request: &ir::DeleteRequestIr,
+    logical_target: Option<&str>,
+) -> Result<Vec<u8>, PortableError> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let id = builder.create_string(request.id().as_str());
     let condition = request
@@ -316,10 +360,18 @@ pub fn encode_delete_request(request: &ir::DeleteRequestIr) -> Result<Vec<u8>, P
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_DeleteRequest,
         request.as_union_value(),
+        logical_target,
     ))
 }
 
 pub fn encode_get_request(request: &ir::GetRequestIr) -> Result<Vec<u8>, PortableError> {
+    encode_get_request_for_target(request, None)
+}
+
+pub fn encode_get_request_for_target(
+    request: &ir::GetRequestIr,
+    logical_target: Option<&str>,
+) -> Result<Vec<u8>, PortableError> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let id = builder.create_string(request.id().as_str());
     // Resolved IR always carries an explicit effective projection. Encoding it
@@ -349,20 +401,36 @@ pub fn encode_get_request(request: &ir::GetRequestIr) -> Result<Vec<u8>, Portabl
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_GetRequest,
         request.as_union_value(),
+        logical_target,
     ))
 }
 
 pub fn encode_search_request(request: &ir::SearchRequestIr) -> Result<Vec<u8>, PortableError> {
+    encode_search_request_for_target(request, None)
+}
+
+pub fn encode_search_request_for_target(
+    request: &ir::SearchRequestIr,
+    logical_target: Option<&str>,
+) -> Result<Vec<u8>, PortableError> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let request = super::search::search_request_offset(&mut builder, request);
     Ok(finish_request(
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_SearchRequest,
         request.as_union_value(),
+        logical_target,
     ))
 }
 
 pub fn encode_analyze_request(request: &ir::AnalyzeRequestIr) -> Result<Vec<u8>, PortableError> {
+    encode_analyze_request_for_target(request, None)
+}
+
+pub fn encode_analyze_request_for_target(
+    request: &ir::AnalyzeRequestIr,
+    logical_target: Option<&str>,
+) -> Result<Vec<u8>, PortableError> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let name = builder.create_string("standard");
     let analyzer = api::Analyzer::create(
@@ -390,15 +458,74 @@ pub fn encode_analyze_request(request: &ir::AnalyzeRequestIr) -> Result<Vec<u8>,
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_AnalyzeRequest,
         request.as_union_value(),
+        logical_target,
     ))
 }
 
 pub fn encode_describe_request() -> Vec<u8> {
+    encode_describe_request_for_target(None)
+}
+
+pub fn encode_describe_request_for_target(logical_target: Option<&str>) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let request = api::DescribeRequest::create(&mut builder, &api::DescribeRequestArgs {});
     finish_request(
         &mut builder,
         wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
         request.as_union_value(),
+        logical_target,
     )
+}
+
+pub fn encode_create_index_request(
+    target: &str,
+    definition: &crate::IndexDefinitionInput,
+) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let definition = super::schema::index_definition_input_offset(&mut builder, definition);
+    let request = api::CreateIndexRequest::create(
+        &mut builder,
+        &api::CreateIndexRequestArgs {
+            definition: Some(definition),
+        },
+    );
+    finish_request(
+        &mut builder,
+        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+        request.as_union_value(),
+        Some(target),
+    )
+}
+
+pub fn encode_open_index_request(target: &str) -> Vec<u8> {
+    encode_lifecycle_empty_request(
+        target,
+        wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+        |builder| {
+            api::OpenIndexRequest::create(builder, &api::OpenIndexRequestArgs {}).as_union_value()
+        },
+    )
+}
+
+pub fn encode_delete_index_request(target: &str) -> Vec<u8> {
+    encode_lifecycle_empty_request(
+        target,
+        wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest,
+        |builder| {
+            api::DeleteIndexRequest::create(builder, &api::DeleteIndexRequestArgs {})
+                .as_union_value()
+        },
+    )
+}
+
+fn encode_lifecycle_empty_request(
+    target: &str,
+    payload_type: wire::RequestPayload,
+    create: impl FnOnce(
+        &mut flatbuffers::FlatBufferBuilder<'_>,
+    ) -> flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload = create(&mut builder);
+    finish_request(&mut builder, payload_type, payload, Some(target))
 }

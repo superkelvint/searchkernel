@@ -36,6 +36,7 @@ import { TransportError, type ExecuteOptions } from "../transport/types.js";
 import { decodeValueEntries, value, type ValueInput } from "./values.js";
 import { comparePortableKeys } from "../internal/scalars.js";
 import { PatchBuilder, SearchBuilder, UpdateBuilder, YqlBuilder } from "../ergonomic/builders.js";
+import { DeleteIndexRequestT, DeleteIndexResultT } from "../semantic.js";
 import type { TypedQuery } from "../ergonomic/query.js";
 
 const ERROR_CODE_NAMES: Record<number, string> = {
@@ -98,6 +99,7 @@ export interface OperationResponseMap {
   inspectQuery: InspectQueryResultT;
   createIndex: CreateIndexResultT;
   openIndex: OpenIndexResultT;
+  deleteIndex: DeleteIndexResultT;
 }
 
 export interface ClientTransport {
@@ -197,6 +199,10 @@ export class Client {
     return this.execute("openIndex", new OpenIndexRequestT(), options);
   }
 
+  deleteIndex(options?: ExecuteOptions): Promise<DeleteIndexResultT> {
+    return this.execute("deleteIndex", new DeleteIndexRequestT(), options);
+  }
+
   async close(): Promise<void> {
     await this.transport.close?.();
   }
@@ -253,6 +259,28 @@ export class Index {
       await client.close();
       throw error;
     }
+  }
+
+  static async delete(
+    endpoint: string,
+    target: string,
+    transport?: ClientTransport,
+  ): Promise<void> {
+    const client = new Client(transport ?? new GrpcWebTransport(endpoint), target);
+    let failed = false;
+    let requestError: unknown;
+    try {
+      await client.deleteIndex();
+    } catch (error) {
+      failed = true;
+      requestError = error;
+    }
+    try {
+      await client.close();
+    } catch (closeError) {
+      if (!failed) throw closeError;
+    }
+    if (failed) throw requestError;
   }
 
   insert(id: string, fields: Record<string, ValueInput>, options?: ExecuteOptions): Promise<InsertResultT>;

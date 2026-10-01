@@ -64,6 +64,15 @@ grep -Fq 'provision_native_base "$BUILD_ENV"' "$PUBLISH" || {
     exit 1
 }
 
+grep -Fq 'normalize_absolute_root' "$PACKAGE" || {
+    echo "native-base packager must normalize producer roots without corrupting relative CMake paths" >&2
+    exit 1
+}
+if grep -Fq 'text.replace(vespa_root, "/work/vespa")' "$PACKAGE"; then
+    echo "native-base packager must not blindly replace the Vespa root substring" >&2
+    exit 1
+fi
+
 python3 - "$PUBLISH" <<'PY'
 import pathlib
 import sys

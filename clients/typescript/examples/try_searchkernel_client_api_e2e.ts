@@ -1065,9 +1065,51 @@ async function main(): Promise<void> {
       await reopened.close();
     }
 
+    heading("32. MANAGED-LOCAL INDEX DELETE");
+    const siblingPath = join(WORKSPACE_PATH, "sibling-index");
+    const sibling = await Index.create(siblingPath, {
+      fields: fieldsFromCorpus(),
+      rankProfiles: rankProfilesFromCorpus(),
+    });
+    try {
+      await sibling.upsert({
+        _id: "sibling-doc",
+        title: "Sibling shoes",
+        category: "shoes",
+        price: float64(10),
+        inventory: 1n,
+      });
+    } finally {
+      await sibling.close();
+    }
+
+    await Index.delete(INDEX_PATH);
+    try {
+      await Index.open(INDEX_PATH);
+      throw new Error("deleted managed-local index unexpectedly reopened");
+    } catch (error) {
+      assert(error instanceof SearchKernelError && error.code === "not_found");
+    }
+
+    const survivingSibling = await Index.open(siblingPath);
+    try {
+      assert((await survivingSibling.get("sibling-doc"))?.title === "Sibling shoes");
+    } finally {
+      await survivingSibling.close();
+    }
+
+    try {
+      await Index.delete(INDEX_PATH);
+      throw new Error("missing managed-local index unexpectedly deleted");
+    } catch (error) {
+      assert(error instanceof SearchKernelError && error.code === "not_found");
+    }
+
+    await Index.delete(siblingPath);
+
     writeRealEngineParity(PARITY_OBSERVATIONS);
 
-    heading("32. ALL CLIENT API E2E CHECKS PASSED");
+    heading("33. ALL CLIENT API E2E CHECKS PASSED");
     console.log(`
 Successfully demonstrated through the public TypeScript/Node facade:
 

@@ -566,6 +566,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 name = "searchkernel"
 version = "0.1.0"
 dependencies = [
+ "flatbuffers",
  "hyper-util",
  "libc",
  "searchkernel-dispatch",
@@ -686,6 +687,7 @@ dependencies = [
  "searchkernel-protocol",
  "searchkernel-rpc",
  "searchkernel-testkit",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-stream",

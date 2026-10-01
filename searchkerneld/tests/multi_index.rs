@@ -4,10 +4,12 @@ use flatbuffers::root;
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, Request as HttpRequest};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use searchkernel::{ErrorCode as RustErrorCode, Field, IndexDefinition, RemoteClient};
 use searchkernel_ir::{
     CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE, INDEX_NOT_FOUND_DETAIL_CODE,
     INVALID_INDEX_TARGET_DETAIL_CODE, MISSING_INDEX_DEFINITION_DETAIL_CODE,
-    MISSING_INDEX_TARGET_DETAIL_CODE, TARGET_NAME_PATH, TARGET_PATH,
+    MISSING_INDEX_TARGET_DETAIL_CODE, STALE_INDEX_HANDLE_DETAIL_CODE, TARGET_NAME_PATH,
+    TARGET_PATH,
 };
 use searchkernel_protocol::{
     json::{request_flatbuffer_to_json, request_json_to_flatbuffer, response_json_to_flatbuffer},
@@ -1439,4 +1441,206 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
 
     server.shutdown().await.expect("shutdown daemon");
     registry.close_all().expect("close registry");
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+struct RemoteLifecycleDocument {
+    title: String,
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+// SKC: daemon.multi_index_lifecycle/basic kinds=ergonomic,e2e runtime=grpc
+async fn rust_remote_client_targets_independent_indexes_across_restart_and_delete() {
+    let temp = TempDir::new("rust-remote-client-lifecycle");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address")),
+        registry.clone(),
+    )
+    .await
+    .expect("start real multi-index daemon");
+    let endpoint = server.tcp_addr().expect("gRPC listener").to_string();
+    let client = RemoteClient::connect(&endpoint).expect("connect Rust remote client");
+    let invalid = client
+        .open_index("../invalid")
+        .err()
+        .expect("daemon rejects an invalid logical target");
+    assert_eq!(invalid.code(), RustErrorCode::InvalidArgument);
+    assert_eq!(invalid.details()[0].code, INVALID_INDEX_TARGET_DETAIL_CODE);
+    let definition = |name: &str| {
+        IndexDefinition::new()
+            .name(name)
+            .field(Field::text("title").stored(true).searchable(true))
+            .default_search_fields(["title"])
+    };
+
+    let a = client
+        .create_index("rust-a", definition("schema_a"))
+        .expect("create A");
+    let b = client
+        .create_index("rust-b", definition("schema_b"))
+        .expect("create B");
+    let duplicate = client
+        .create_index("rust-a", definition("schema_a"))
+        .err()
+        .expect("duplicate create error");
+    assert_eq!(duplicate.code(), RustErrorCode::AlreadyExists);
+    assert_eq!(
+        duplicate.details()[0].code,
+        INDEX_ALREADY_EXISTS_DETAIL_CODE
+    );
+    a.insert(
+        "a-doc",
+        &RemoteLifecycleDocument {
+            title: "keyboard alpha".into(),
+        },
+    )
+    .expect("insert A document");
+    b.insert(
+        "b-doc",
+        &RemoteLifecycleDocument {
+            title: "keyboard beta".into(),
+        },
+    )
+    .expect("insert B document");
+    a.close().expect("close A handle");
+    b.close().expect("close B handle");
+    drop(client);
+
+    server.shutdown().await.expect("shutdown first daemon");
+    registry.close_all().expect("close first registry");
+
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("reopen persisted registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address")),
+        registry.clone(),
+    )
+    .await
+    .expect("restart multi-index daemon");
+    let endpoint = server.tcp_addr().expect("gRPC listener").to_string();
+    let client = RemoteClient::connect(&endpoint).expect("reconnect Rust remote client");
+
+    let a = client.open_index("rust-a").expect("open A after restart");
+    let b = client.open_index("rust-b").expect("open B after restart");
+    assert_eq!(
+        a.get::<RemoteLifecycleDocument>("a-doc").expect("get A"),
+        Some(RemoteLifecycleDocument {
+            title: "keyboard alpha".into()
+        })
+    );
+    assert_eq!(
+        b.get::<RemoteLifecycleDocument>("b-doc").expect("get B"),
+        Some(RemoteLifecycleDocument {
+            title: "keyboard beta".into()
+        })
+    );
+    assert_eq!(
+        a.get::<RemoteLifecycleDocument>("b-doc")
+            .expect("A cannot read B"),
+        None
+    );
+    assert_eq!(
+        b.get::<RemoteLifecycleDocument>("a-doc")
+            .expect("B cannot read A"),
+        None
+    );
+    let a_hits = a
+        .search("keyboard alpha")
+        .execute::<RemoteLifecycleDocument>()
+        .expect("search A");
+    let b_hits = b
+        .search("keyboard beta")
+        .execute::<RemoteLifecycleDocument>()
+        .expect("search B");
+    assert_eq!(
+        a_hits
+            .hits
+            .iter()
+            .map(|hit| hit.id.as_str())
+            .collect::<Vec<_>>(),
+        ["a-doc"]
+    );
+    assert_eq!(
+        b_hits
+            .hits
+            .iter()
+            .map(|hit| hit.id.as_str())
+            .collect::<Vec<_>>(),
+        ["b-doc"]
+    );
+    a.close().expect("close reopened A");
+    b.close().expect("close reopened B");
+
+    // A handle opened through one RemoteClient must never silently retarget a
+    // later incarnation created through another client.
+    let stale_a = client
+        .open_index("rust-a")
+        .expect("open A handle before cross-client delete");
+    let other_client =
+        RemoteClient::connect(&endpoint).expect("connect independent Rust remote client");
+    other_client.delete_index("rust-a").expect("delete A");
+
+    let missing = stale_a
+        .get::<RemoteLifecycleDocument>("a-doc")
+        .expect_err("deleted target must no longer route the stale handle");
+    assert_eq!(missing.code(), RustErrorCode::NotFound);
+
+    let missing = client
+        .open_index("rust-a")
+        .err()
+        .expect("deleted target error");
+    assert_eq!(missing.code(), RustErrorCode::NotFound);
+    assert_eq!(missing.details()[0].code, INDEX_NOT_FOUND_DETAIL_CODE);
+    let repeated_delete = other_client
+        .delete_index("rust-a")
+        .err()
+        .expect("repeated delete error");
+    assert_eq!(repeated_delete.code(), RustErrorCode::NotFound);
+    assert_eq!(
+        repeated_delete.details()[0].code,
+        INDEX_NOT_FOUND_DETAIL_CODE
+    );
+
+    let replacement_a = other_client
+        .create_index("rust-a", definition("schema_a_recreated"))
+        .expect("recreate A through another client");
+    let stale_error = stale_a
+        .get::<RemoteLifecycleDocument>("a-doc")
+        .expect_err("old generation must not address the recreated target");
+    assert_eq!(stale_error.code(), RustErrorCode::FailedPrecondition);
+    assert_eq!(
+        stale_error.details()[0].code,
+        STALE_INDEX_HANDLE_DETAIL_CODE
+    );
+    stale_a.close().expect("close stale A handle");
+    replacement_a.close().expect("close replacement A");
+    other_client
+        .delete_index("rust-a")
+        .expect("delete recreated A");
+    drop(other_client);
+
+    let b = client.open_index("rust-b").expect("B survives A deletion");
+    assert_eq!(
+        b.get::<RemoteLifecycleDocument>("b-doc")
+            .expect("B document remains"),
+        Some(RemoteLifecycleDocument {
+            title: "keyboard beta".into()
+        })
+    );
+    b.close().expect("close surviving B");
+
+    // A successful delete through the same RemoteClient additionally closes
+    // its local sessions immediately.
+    let stale_b = client
+        .open_index("rust-b")
+        .expect("open B handle that local delete must invalidate");
+    client.delete_index("rust-b").expect("delete B");
+    let stale_error = stale_b
+        .describe()
+        .expect_err("same-client delete must close live local handles");
+    assert_eq!(stale_error.code(), RustErrorCode::IndexClosed);
+
+    drop(client);
+    server.shutdown().await.expect("shutdown restarted daemon");
+    registry.close_all().expect("close restarted registry");
 }

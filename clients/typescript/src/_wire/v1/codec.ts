@@ -15,6 +15,7 @@ import { SearchRequestT } from "./generated/flatbuffers/search-kernel/wire/searc
 import { UpdateRequestT } from "./generated/flatbuffers/search-kernel/wire/update-request.js";
 import { UpsertRequestT } from "./generated/flatbuffers/search-kernel/wire/upsert-request.js";
 import { CreateIndexRequestT } from "./generated/flatbuffers/search-kernel/wire/create-index-request.js";
+import { DeleteIndexRequestT } from "./generated/flatbuffers/search-kernel/wire/delete-index-request.js";
 import { OpenIndexRequestT } from "./generated/flatbuffers/search-kernel/wire/open-index-request.js";
 import { FilterRequest, FilterRequestT } from "./generated/flatbuffers/search-kernel/wire/filter-request.js";
 import type { FilterClauseT as WireFilterClauseT } from "./generated/flatbuffers/search-kernel/wire/filter-clause.js";
@@ -26,7 +27,7 @@ export const PROTOCOL_VERSION = 1;
 export const REQUEST_IDENTIFIER = "SKRQ";
 export const RESPONSE_IDENTIFIER = "SKRS";
 
-export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex";
+export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex" | "deleteIndex";
 
 export interface OperationRequestMap {
   insert: Semantic.InsertRequestT;
@@ -41,6 +42,7 @@ export interface OperationRequestMap {
   inspectQuery: Semantic.InspectQueryRequestT;
   createIndex: Semantic.CreateIndexRequestT;
   openIndex: Semantic.OpenIndexRequestT;
+  deleteIndex: Semantic.DeleteIndexRequestT;
 }
 
 const requestTypes: Record<Operation, RequestPayload> = {
@@ -56,6 +58,7 @@ const requestTypes: Record<Operation, RequestPayload> = {
   inspectQuery: RequestPayload.SearchKernel_Wire_InspectQueryRequest,
   createIndex: RequestPayload.SearchKernel_Wire_CreateIndexRequest,
   openIndex: RequestPayload.SearchKernel_Wire_OpenIndexRequest,
+  deleteIndex: RequestPayload.SearchKernel_Wire_DeleteIndexRequest,
 };
 
 const responseTypes: Record<Operation, ResponsePayload> = {
@@ -71,6 +74,7 @@ const responseTypes: Record<Operation, ResponsePayload> = {
   inspectQuery: ResponsePayload.SearchKernel_Wire_InspectQueryResult,
   createIndex: ResponsePayload.SearchKernel_Wire_CreateIndexResult,
   openIndex: ResponsePayload.SearchKernel_Wire_OpenIndexResult,
+  deleteIndex: ResponsePayload.SearchKernel_Wire_DeleteIndexResult,
 };
 
 export class ProtocolError extends Error { override name = "ProtocolError"; }
