@@ -948,7 +948,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                     f"**{item['status']}**{issue}: {item['reason']}"
                 )
         lines.append("")
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def generated_documents(report: dict[str, Any]) -> dict[Path, str]:
