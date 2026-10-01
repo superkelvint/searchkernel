@@ -42,7 +42,10 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
 
     def test_revision_is_exact_sha_and_checkout_is_proven(self):
         text = self.text
-        self.assertIn("^[0-9a-fA-F]{40}$", text)
+        request = (ROOT / "tools" / "normalize-verification-request.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("^[0-9a-fA-F]{40}$", request)
         self.assertIn(
             "ref: ${{ steps.request.outputs.revision }}",
             text,
