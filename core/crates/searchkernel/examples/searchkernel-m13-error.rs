@@ -95,9 +95,10 @@ fn low_level(root: &Json, case: &Json, config: &Path, data: &Path) -> String {
 
 fn context(definition: &Path) -> Arc<IndexContext> {
     let bytes = fs::read(definition).expect("read definition");
-    let root =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(&bytes)
-            .expect("parse definition");
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&bytes)
+    .expect("parse definition");
     Arc::new(IndexContext::from_definition_ir(
         index_definition_to_ir(root).expect("definition IR"),
     ))
@@ -148,9 +149,10 @@ fn envelope(case: &Json, operation: &str) -> Vec<u8> {
 fn portable(case: &Json, definition: &Path, config: &Path, data: &Path) -> String {
     if !config.join("searchkernel-schema.json").exists() {
         let bytes = fs::read(definition).expect("read definition");
-        let root =
-            searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(&bytes)
-                .expect("parse definition");
+        let root = searchkernel_ir::__flatbuffers::root::<
+            searchkernel_ir::wire::v1::schema::IndexDefinition,
+        >(&bytes)
+        .expect("parse definition");
         let ir = index_definition_to_ir(root).expect("definition IR");
         searchkernel_ir_adapter::compile_index_definition(&ir, config).expect("compile definition");
     }

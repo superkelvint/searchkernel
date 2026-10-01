@@ -166,9 +166,10 @@ fn highlighting_compatibility_survives_portable_flatbuffers_resolution() {
     .expect("highlighting parity definition");
 
     let bytes = searchkernel_ir::search_request_ir_to_api(&request);
-    let api_request =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::SearchRequest>(&bytes)
-            .expect("encoded highlighting request");
+    let api_request = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::SearchRequest,
+    >(&bytes)
+    .expect("encoded highlighting request");
     let portable = IndexContext::from_definition_ir(definition)
         .search_to_ir(api_request)
         .expect("portable highlighting request should resolve");

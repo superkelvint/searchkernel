@@ -85,9 +85,9 @@ fn run_portable(
     mutation: &Json,
 ) -> Result<&'static str, Box<dyn std::error::Error>> {
     let definition_bytes = fs::read(definition)?;
-    let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(
-        &definition_bytes,
-    )?;
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&definition_bytes)?;
     let context = Arc::new(IndexContext::from_definition_ir(index_definition_to_ir(
         root,
     )?));

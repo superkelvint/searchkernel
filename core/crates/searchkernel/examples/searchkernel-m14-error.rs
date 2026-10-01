@@ -106,15 +106,16 @@ fn parse(path: &Path) -> Result<searchkernel_ir::IndexDefinitionIr, PortableErro
             format!("failed to read portable definition: {error}"),
         )
     })?;
-    let root =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(&bytes)
-            .map_err(|error| {
-                PortableError::invalid(
-                    "malformed_flatbuffer",
-                    Some("definition"),
-                    error.to_string(),
-                )
-            })?;
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&bytes)
+    .map_err(|error| {
+        PortableError::invalid(
+            "malformed_flatbuffer",
+            Some("definition"),
+            error.to_string(),
+        )
+    })?;
     index_definition_to_ir(root)
 }
 

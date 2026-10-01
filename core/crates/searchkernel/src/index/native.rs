@@ -223,11 +223,10 @@ impl Index {
         path: impl AsRef<std::path::Path>,
         bytes: &[u8],
     ) -> Result<Self> {
-        let root =
-            searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(bytes)
-                .map_err(|error| {
-                    Error::Serialization(format!("invalid index definition: {error}"))
-                })?;
+        let root = searchkernel_ir::__flatbuffers::root::<
+            searchkernel_ir::wire::v1::schema::IndexDefinition,
+        >(bytes)
+        .map_err(|error| Error::Serialization(format!("invalid index definition: {error}")))?;
         let ir = searchkernel_ir::wire::v1::index_definition_to_ir(root).map_err(Error::from_ir)?;
         searchkernel_ir_adapter::validate_index_definition(&ir).map_err(Error::from_ir)?;
         let resolved_context = IndexContext::from_definition_ir(ir);

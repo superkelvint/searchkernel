@@ -951,9 +951,10 @@ fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
             TypoPolicy::Disabled,
         );
         let bytes = searchkernel_ir::search_request_ir_to_api(&request);
-        let api_request =
-            searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::SearchRequest>(&bytes)
-                .expect("portable same-element request");
+        let api_request = searchkernel_ir::__flatbuffers::root::<
+            searchkernel_ir::wire::v1::schema::SearchRequest,
+        >(&bytes)
+        .expect("portable same-element request");
         IndexContext::from_definition_ir(definition)
             .search_to_ir(api_request)
             .expect("relative portable fields resolve after parent context")

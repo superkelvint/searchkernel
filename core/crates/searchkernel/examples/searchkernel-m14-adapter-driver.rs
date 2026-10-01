@@ -15,9 +15,10 @@ use std::{
 
 fn definition_ir(path: &Path) -> searchkernel_ir::IndexDefinitionIr {
     let bytes = fs::read(path).expect("read M14 definition");
-    let root =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(&bytes)
-            .expect("parse M14 definition");
+    let root = searchkernel_ir::__flatbuffers::root::<
+        searchkernel_ir::wire::v1::schema::IndexDefinition,
+    >(&bytes)
+    .expect("parse M14 definition");
     index_definition_to_ir(root).expect("definition to IR")
 }
 fn open(definition: &Path, config: &Path, data: &Path) -> Dispatcher {
