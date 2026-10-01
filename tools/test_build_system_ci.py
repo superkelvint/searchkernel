@@ -16,6 +16,17 @@ PERSISTENCE_IMMUTABILITY = ROOT / "tools" / "check-persistence-fixture-immutabil
 
 
 class BuildSystemCiTest(unittest.TestCase):
+    def test_dev_ci_image_contract_runs_from_current_checkout(self):
+        result = subprocess.run(
+            ["bash", str(ROOT / "tools" / "test-dev-ci-image.sh")],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="searchkernel-ci-gate.")
         self.root = pathlib.Path(self.temp.name)
