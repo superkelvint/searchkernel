@@ -194,7 +194,7 @@ fn parse_request(bytes: &[u8]) -> Result<wire::RequestEnvelope<'_>, DispatchErro
     root::<wire::RequestEnvelope<'_>>(bytes).map_err(|_| DispatchError::InvalidRequest)
 }
 
-pub(super) fn encode_result<T>(
+pub(crate) fn encode_result<T>(
     result: searchkernel_ir::Result<T>,
     success_kind: wire::ResponsePayload,
     encode: impl for<'a> FnOnce(

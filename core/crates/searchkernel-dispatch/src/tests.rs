@@ -30,7 +30,7 @@ fn invalid_search_result_encoding_becomes_error_response_without_panicking() {
             Ok(invalid),
             wire::ResponsePayload::SearchKernel_Wire_SearchResult,
             |builder, result| {
-                searchkernel_ir::search_result_offset(builder, result)
+                searchkernel_ir::wire::v1::search_result_offset(builder, result)
                     .map(|result| result.as_union_value())
             },
         )
