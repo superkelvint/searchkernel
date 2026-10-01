@@ -152,12 +152,12 @@
           },
           {
             "kind": "wire",
-            "path": "clients/python/searchkernel/protocol.py",
+            "path": "clients/python/searchkernel/_wire/v1/codec.py",
             "contains": "SearchKernel_Wire_CreateIndexRequest"
           },
           {
             "kind": "wire",
-            "path": "clients/python/searchkernel/protocol.py",
+            "path": "clients/python/searchkernel/_wire/v1/codec.py",
             "contains": "SearchKernel_Wire_CreateIndexResult"
           }
         ],
@@ -169,12 +169,12 @@
           },
           {
             "kind": "wire",
-            "path": "clients/python/searchkernel/protocol.py",
+            "path": "clients/python/searchkernel/_wire/v1/codec.py",
             "contains": "SearchKernel_Wire_OpenIndexRequest"
           },
           {
             "kind": "wire",
-            "path": "clients/python/searchkernel/protocol.py",
+            "path": "clients/python/searchkernel/_wire/v1/codec.py",
             "contains": "SearchKernel_Wire_OpenIndexResult"
           }
         ],
@@ -186,12 +186,12 @@
           },
           {
             "kind": "wire",
-            "path": "clients/python/searchkernel/protocol.py",
+            "path": "clients/python/searchkernel/_wire/v1/codec.py",
             "contains": "SearchKernel_Wire_DeleteIndexRequest"
           },
           {
             "kind": "wire",
-            "path": "clients/python/searchkernel/protocol.py",
+            "path": "clients/python/searchkernel/_wire/v1/codec.py",
             "contains": "SearchKernel_Wire_DeleteIndexResult"
           }
         ]
@@ -237,12 +237,12 @@
           },
           {
             "kind": "wire",
-            "path": "clients/typescript/src/protocol/envelope.ts",
+            "path": "clients/typescript/src/_wire/v1/codec.ts",
             "contains": "createIndex: RequestPayload.SearchKernel_Wire_CreateIndexRequest"
           },
           {
             "kind": "wire",
-            "path": "clients/typescript/src/protocol/envelope.ts",
+            "path": "clients/typescript/src/_wire/v1/codec.ts",
             "contains": "createIndex: ResponsePayload.SearchKernel_Wire_CreateIndexResult"
           }
         ],
@@ -259,12 +259,12 @@
           },
           {
             "kind": "wire",
-            "path": "clients/typescript/src/protocol/envelope.ts",
+            "path": "clients/typescript/src/_wire/v1/codec.ts",
             "contains": "openIndex: RequestPayload.SearchKernel_Wire_OpenIndexRequest"
           },
           {
             "kind": "wire",
-            "path": "clients/typescript/src/protocol/envelope.ts",
+            "path": "clients/typescript/src/_wire/v1/codec.ts",
             "contains": "openIndex: ResponsePayload.SearchKernel_Wire_OpenIndexResult"
           }
         ],
@@ -281,12 +281,12 @@
           },
           {
             "kind": "wire",
-            "path": "clients/typescript/src/protocol/envelope.ts",
+            "path": "clients/typescript/src/_wire/v1/codec.ts",
             "contains": "deleteIndex: RequestPayload.SearchKernel_Wire_DeleteIndexRequest"
           },
           {
             "kind": "wire",
-            "path": "clients/typescript/src/protocol/envelope.ts",
+            "path": "clients/typescript/src/_wire/v1/codec.ts",
             "contains": "deleteIndex: ResponsePayload.SearchKernel_Wire_DeleteIndexResult"
           }
         ]
