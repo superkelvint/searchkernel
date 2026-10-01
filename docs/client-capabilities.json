@@ -327,7 +327,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 565
+              "line": 641
             },
             {
               "capability": "query.phrase",
@@ -451,7 +451,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 566
+              "line": 642
             },
             {
               "capability": "query.proximity",
@@ -575,7 +575,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 567
+              "line": 643
             },
             {
               "capability": "query.same_element",
@@ -669,7 +669,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 568
+              "line": 644
             },
             {
               "capability": "query.fuzzy",
@@ -723,7 +723,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 770
+              "line": 756
             },
             {
               "capability": "query.prefix_suffix_substring",
@@ -733,7 +733,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 288
+              "line": 307
             },
             {
               "capability": "query.prefix_suffix_substring",
@@ -944,7 +944,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 569
+              "line": 645
             },
             {
               "capability": "query.geo",
@@ -1062,7 +1062,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 570
+              "line": 646
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1755,7 +1755,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 682
+              "line": 848
             }
           ],
           "overrides": []
