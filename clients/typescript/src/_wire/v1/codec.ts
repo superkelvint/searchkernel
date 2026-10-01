@@ -96,7 +96,7 @@ function toGenerated(value: any): any {
 }
 
 class TextualFilterRequest extends FilterRequestT {
-  constructor(textual: Semantic.FilterClauseT[]) {
+  constructor(textual: WireFilterClauseT[]) {
     super([], [], [], textual);
   }
 
