@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use searchkernel::{field, ErrorCode, Field, Index, IndexDefinition, Sort};
+use searchkernel::{field, ErrorCode, Field, Index, IndexDefinition, RemoteClient, Sort};
 use serde_json::{json, Value};
 
 struct TempIndex(PathBuf);
@@ -39,19 +39,6 @@ impl Drop for Daemon {
     }
 }
 
-fn definition_json() -> Value {
-    let primitive = |kind: &str| json!({"kind_type":"PrimitiveDataType","kind":{"kind":kind}});
-    json!({
-        "name":"entry_parity",
-        "fields":[
-            {"name":"title","data_type":primitive("String"),"stored":{"value":true},"searchable":{"value":true},"matching":{"mode":"Text"}},
-            {"name":"category","data_type":primitive("String"),"stored":{"value":true},"filterable":{"value":true},"sortable":{"value":true}},
-            {"name":"price","data_type":primitive("Float64"),"stored":{"value":true},"filterable":{"value":true},"sortable":{"value":true}}
-        ],
-        "default_search_fields":{"fields":[{"field":"title"}]}
-    })
-}
-
 fn unused_tcp_addr() -> std::net::SocketAddr {
     TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -59,19 +46,11 @@ fn unused_tcp_addr() -> std::net::SocketAddr {
         .unwrap()
 }
 
-fn launch_production_daemon(index_path: &std::path::Path) -> (Daemon, String) {
-    let definition_path = index_path.with_extension("definition.json");
-    std::fs::write(
-        &definition_path,
-        serde_json::to_vec(&definition_json()).unwrap(),
-    )
-    .unwrap();
+fn launch_production_daemon(data_root: &std::path::Path) -> (Daemon, String) {
     let addr = unused_tcp_addr();
     let child = Command::new(env!("CARGO_BIN_EXE_searchkerneld"))
-        .arg("--index")
-        .arg(index_path)
-        .arg("--definition-json")
-        .arg(&definition_path)
+        .arg("--data-root")
+        .arg(data_root)
         .arg("--listen")
         .arg(addr.to_string())
         .stdin(Stdio::null())
@@ -181,7 +160,10 @@ async fn public_rust_direct_and_generated_grpc_match_on_real_engine() {
 
     let grpc_path = TempIndex::new("grpc");
     let (_daemon, endpoint) = launch_production_daemon(&grpc_path.0);
-    let remote = Index::connect(endpoint).unwrap();
+    let client = RemoteClient::connect(endpoint).unwrap();
+    let remote = client
+        .create_index("entry-parity", definition())
+        .expect("create target through canonical daemon lifecycle");
     let grpc_outcome = exercise(&remote);
     remote.close().unwrap();
 

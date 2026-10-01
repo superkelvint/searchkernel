@@ -12,6 +12,7 @@ use crate::schema::{
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
 };
+use crate::update::UpdateBuilder;
 use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -176,7 +177,7 @@ impl Index {
         })
     }
 
-    /// Apply typed assignments, clears, and arithmetic operations to a document.
+    /// Apply a reusable sequence of typed field updates to an existing document.
     pub fn update(&self, id: impl Into<DocumentId>, update: crate::Update) -> Result<()> {
         self.with_backend(|backend| {
             let operations = update.into_resolver()?;
@@ -186,6 +187,31 @@ impl Index {
                 &operations,
                 None,
                 None,
+            )
+            .map_err(Error::from_ir)?;
+            backend.update(request).map_err(Error::from_ir)?;
+            Ok(())
+        })
+    }
+
+    /// Start a fluent advanced update for one document.
+    pub fn update_builder(&self, id: impl Into<DocumentId>) -> UpdateBuilder {
+        UpdateBuilder::new(self.clone(), id.into())
+    }
+
+    pub(crate) fn execute_update(
+        &self,
+        id: &DocumentId,
+        operations: &[searchkernel_ir::UpdateOperationInput],
+        create: Option<bool>,
+    ) -> Result<()> {
+        self.with_backend(|backend| {
+            let request = searchkernel_ir::resolve_update(
+                &self.inner.context,
+                id.as_str(),
+                operations,
+                None,
+                create,
             )
             .map_err(Error::from_ir)?;
             backend.update(request).map_err(Error::from_ir)?;

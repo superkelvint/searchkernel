@@ -74,6 +74,9 @@
     },
     "consumer-release": {
       "description": "Publishable consumer artifacts and fresh-project package qualification"
+    },
+    "rust-native-e2e": {
+      "description": "Native Rust API integration tests against the Vespa engine"
     }
   },
   "verify": {
@@ -799,7 +802,8 @@
       ],
       "architecture": "docs/architecture.md#rust-api",
       "test": [
-        "test:rust-api"
+        "test:rust-api",
+        "test:rust-native-e2e"
       ],
       "verify": [
         "verify:product.integration",

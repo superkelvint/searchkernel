@@ -160,11 +160,17 @@ approximated.
 
 - The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, and regex keep filters.
 
+- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree. Rust exposes root outputs, nested grouping, aggregation aliases, and regex keep filters.
+
 ### Executable grouping expression/function subset (`grouping.functions`)
 
 - The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust exposes named aggregation aliases and regex keep filters; Python exposes the richer expression facade.
 
+- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust exposes named aggregation aliases and regex keep filters; Python exposes the richer expression facade.
+
 ### Grouping aggregations (`grouping.aggregations`)
+
+- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust exposes those aggregation constructors, aliases, ordering, precision, and root outputs; richer grouping expression/filter ergonomics remain narrower than the portable model. Summary aggregation is tracked separately because grouped docsum payloads are incomplete.
 
 - The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust exposes those aggregation constructors, aliases, ordering, precision, and root outputs; richer grouping expression/filter ergonomics remain narrower than the portable model. Summary aggregation is tracked separately because grouped docsum payloads are incomplete.
 

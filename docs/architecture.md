@@ -20,7 +20,7 @@ Transport is plumbing around that model. It must not become another semantic imp
 
 1. **FlatBuffers is the sole canonical portable domain contract.**
 2. **`searchkernel-ir` is the sole portable semantic boundary.** Defaults, validation, normalization, and explicit request meaning are resolved through `*_to_ir()`.
-3. **Rust remains directly embedded by default.** `Index::create` / `Index::open` execute in-process and do not serialize through the portable wire path merely to reach the local engine. An explicitly selected Rust remote handle (`Index::connect`) may use the canonical FlatBuffers-over-gRPC path to reach `searchkerneld` while preserving the same public facade and semantic IR.
+3. **Rust remains directly embedded by default.** `Index::create` / `Index::open` execute in-process and do not serialize through the portable wire path merely to reach the local engine. An explicitly selected Rust `RemoteClient` connects to `searchkerneld` and creates or opens target-bound `Index` handles through canonical FlatBuffers-over-gRPC lifecycle requests.
 4. **First-party non-Rust clients use canonical FlatBuffers through thin transports.** gRPC carrying FlatBuffer bytes remains the default local/native transport. An explicitly selected HTTP edge may carry standard schema-derived FlatBuffers JSON, but it must immediately convert through the official BFBS-backed JSON bridge to the same canonical FlatBuffer envelope and dispatcher.
 5. **Protobuf is transport framing only.** It does not duplicate the Search Kernel domain model.
 6. **The only required native FFI boundary is Rust ↔ Vespa C++.** The former portable client C ABI and per-language native transports are not part of the final architecture.
@@ -96,13 +96,13 @@ Vespa C++
 
 The default embedded Rust product path does not go through gRPC, protobuf, JSON, or a portable client C ABI.
 
-When a process boundary is explicitly selected with `Index::connect`, the same Rust facade resolves requests through `searchkernel-ir`, serializes that resolved meaning into the canonical FlatBuffers envelope, and sends it through the shared generated gRPC framing to `searchkerneld`:
+When a process boundary is explicitly selected with `RemoteClient::connect`, each returned `Index` resolves requests through `searchkernel-ir`, includes its stored logical target in the canonical FlatBuffers envelope, and sends it through the shared generated gRPC framing to `searchkerneld`:
 
 ```text
 Rust application
     │
     ▼
-same idiomatic Search Kernel Rust API
+target-bound idiomatic Search Kernel Index
     │
     ▼
 searchkernel-ir / resolved request meaning
@@ -359,7 +359,7 @@ Per-language cgo/JNI/N-API/PyO3-style transport integrations are not a first-par
 
 ## Rust API
 
-The Rust API is the primary product interface and remains in-process by default. The optional explicit remote constructor reuses the same `Index`, builders, results, and error vocabulary over the canonical daemon transport rather than defining a second Rust client API.
+The Rust API is the primary product interface and remains in-process by default. The optional `RemoteClient` reuses the same `Index`, builders, results, and error vocabulary over the canonical daemon transport rather than defining a second Rust operation API.
 
 It should remain idiomatic while keeping its semantics grounded in the canonical portable model and the capabilities of the underlying engine.
 
@@ -378,7 +378,7 @@ let results = index
     .execute::<Product>()?;
 ```
 
-The Rust API may offer ergonomic builders and strongly typed helpers without forcing embedded Rust calls through serialization or RPC. Remote serialization occurs only when the caller explicitly selects `Index::connect`.
+The Rust API may offer ergonomic builders and strongly typed helpers without forcing embedded Rust calls through serialization or RPC. Remote serialization occurs only when the caller explicitly selects `RemoteClient::connect`. A daemon endpoint alone never selects a target; `create_index` and `open_index` return handles permanently bound to the requested target. `Index::close` closes a local handle and does not delete the daemon index.
 
 The wrapper should not invent new search semantics merely to produce a more elegant interface.
 
@@ -659,7 +659,7 @@ It does not define its own:
 - ranking language;
 - result-consistency model.
 
-Rust applications may embed the engine directly. They may also explicitly select `Index::connect` when a daemon/process boundary is desired; that mode uses the same canonical FlatBuffers/gRPC dispatcher path as other binary clients.
+Rust applications may embed the engine directly. They may also explicitly select `RemoteClient::connect` when a daemon/process boundary is desired; that mode uses canonical `CreateIndex`, `OpenIndex`, and `DeleteIndex` requests plus target-bound operations over the same FlatBuffers/gRPC dispatcher path as other binary clients.
 
 Other languages normally run the same engine through a local `searchkerneld` process. Native/runtime clients default to binary FlatBuffers over gRPC, preferably over a Unix-domain socket where supported; explicitly selected HTTP clients use standard FlatBuffers JSON over the generic HTTP edge. This process boundary is a language interoperability mechanism, not a distributed-search architecture.
 

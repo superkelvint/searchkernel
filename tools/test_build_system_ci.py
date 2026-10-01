@@ -16,15 +16,32 @@ PERSISTENCE_IMMUTABILITY = ROOT / "tools" / "check-persistence-fixture-immutabil
 
 
 class BuildSystemCiTest(unittest.TestCase):
+    def test_dev_ci_image_contract_runs_from_current_checkout(self):
+        result = subprocess.run(
+            ["bash", str(ROOT / "tools" / "test-dev-ci-image.sh")],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="searchkernel-ci-gate.")
         self.root = pathlib.Path(self.temp.name)
         self.fake_cargo = self.root / "cargo"
         self.log = self.root / "cargo.log"
+        self.real_cargo = subprocess.check_output(
+            ["bash", str(ROOT / "tools" / "resolve-rust.sh"), "cargo"],
+            cwd=ROOT,
+            text=True,
+        ).strip()
         self.fake_cargo.write_text(
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
             'if [[ "${1:-}" == "--version" ]]; then exit 0; fi\n'
+            'if [[ "${1:-}" == "metadata" ]]; then exec "$CI_REAL_CARGO" "$@"; fi\n'
             'printf "%s\\n" "$*" >> "${CI_FAKE_CARGO_LOG}"\n'
             'if [[ "${CI_FAKE_CARGO_FAIL:-}" == "${1:-}" ]]; then\n'
             '  echo "FAKE_CARGO_FAILURE:${1}" >&2\n'
@@ -44,6 +61,7 @@ class BuildSystemCiTest(unittest.TestCase):
                 "CARGO": str(self.fake_cargo),
                 "RUSTC": str(self.fake_cargo),
                 "RUSTFMT": str(self.fake_cargo),
+                "CI_REAL_CARGO": self.real_cargo,
                 "CI_FAKE_CARGO_LOG": str(self.log),
                 "CI_FAKE_CARGO_FAIL": fail,
                 "SEARCHKERNEL_DEV_USE_CI_IMAGE": "0",

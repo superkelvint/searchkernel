@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Mapping
 
 from SearchKernel.V2.AggregationKind import AggregationKind
@@ -92,6 +93,9 @@ from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT
 from SearchKernel.V2.YqlQuery import YqlQueryT
 from SearchKernel.V2.TypedQuery import TypedQueryT
+from SearchKernel.V2.QueryModel import QueryModelT
+from SearchKernel.V2.QueryModelType import QueryModelTypeT
+from SearchKernel.V2.RawGroupingSource import RawGroupingSourceT
 from SearchKernel.V2.QueryWand import QueryWandT
 from SearchKernel.V2.QueryComparison import QueryComparisonT
 from SearchKernel.V2.ComparisonOp import ComparisonOp
@@ -113,11 +117,21 @@ from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT
 from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT
 from SearchKernel.V2.SearchRequest import SearchRequestT
 from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T
+from SearchKernel.V2.OptionalUInt64 import OptionalUInt64T
+from SearchKernel.V2.OptionalDouble import OptionalDoubleT
 from SearchKernel.V2.SortDirection import SortDirection
 from SearchKernel.V2.SortExpr import SortExprT
 from SearchKernel.V2.SortTarget import SortTargetT
 from SearchKernel.V2.SortTargetKind import SortTargetKind
 from SearchKernel.V2.FieldSortTarget import FieldSortTargetT
+from SearchKernel.V2.RelevanceSortTarget import RelevanceSortTargetT
+from SearchKernel.V2.RankFeatureSortTarget import RankFeatureSortTargetT
+from SearchKernel.V2.RawSortTarget import RawSortTargetT
+from SearchKernel.V2.MissingPolicy import MissingPolicyT
+from SearchKernel.V2.MissingPolicyKind import MissingPolicyKind
+from SearchKernel.V2.MissingFirst import MissingFirstT
+from SearchKernel.V2.MissingLast import MissingLastT
+from SearchKernel.V2.MissingAs import MissingAsT
 from SearchKernel.V2.StringEntry import StringEntryT
 from SearchKernel.V2.ValueEntry import ValueEntryT
 from SearchKernel.V2.Value import ValueT
@@ -859,8 +873,16 @@ class Group:
         return GroupingRequestT(sourceType=GroupingSourceTags.StructuredGroupingSource, source=StructuredGroupingSourceT(root=root))
 
 
-def _facet_request(field: str, name: str, limit: int, ordering: str | None):
+def _facet_request(
+    field: str,
+    name: str,
+    limit: int,
+    ordering: str | None,
+    precision: int | None = None,
+):
     limit = check_uint32(limit, "facet limit")
+    if precision is not None:
+        precision = check_uint32(precision, "facet precision")
     ordering = ordering or "count_desc"
     if ordering == "count_desc":
         expression = -agg.count()
@@ -872,7 +894,7 @@ def _facet_request(field: str, name: str, limit: int, ordering: str | None):
         expression = g.field(field)
     else:
         raise ValueError("facet sort must be count_desc, count_asc, value_asc, or value_desc")
-    each = GroupingEachOperationT(operations=[
+    each_operations = [
         GroupingOperationT(
             operationType=GroupingOperationKind.GroupingMaxOperation,
             operation=GroupingMaxOperationT(
@@ -880,6 +902,15 @@ def _facet_request(field: str, name: str, limit: int, ordering: str | None):
                 value=FiniteGroupingMaxT(value=limit),
             ),
         ),
+    ]
+    if precision is not None:
+        each_operations.append(
+            GroupingOperationT(
+                operationType=GroupingOperationKind.GroupingPrecisionOperation,
+                operation=GroupingPrecisionOperationT(value=precision),
+            )
+        )
+    each_operations.extend([
         GroupingOperationT(
             operationType=GroupingOperationKind.GroupingOrderOperation,
             operation=GroupingOrderOperationT(expressions=[GroupingOrderExprT(expression=expression.model)]),
@@ -889,6 +920,7 @@ def _facet_request(field: str, name: str, limit: int, ordering: str | None):
             operation=GroupingOutputOperationT(outputs=[GroupingOutputT(expression=agg.count().model)]),
         ),
     ])
+    each = GroupingEachOperationT(operations=each_operations)
     root = GroupingAllOperationT(operations=[
         GroupingOperationT(
             operationType=GroupingOperationKind.GroupingGroupOperation,
@@ -925,43 +957,286 @@ class SearchBuilder:
     def __init__(self, index, query):
         self.index, self.query = index, query
         self._filters, self._sort, self._fields, self._groups = [], [], None, []
+        self._search_fields = None
         self._summary = None
         self._highlighting = None
-        self._aggregates, self._facets = [], []
+        self._presentation_format = None
+        self._bolding = None
+        self._timing = None
+        self._aggregates, self._facets, self._raw_groupings = [], [], []
         self._ranking, self._rank_properties, self._inputs, self._properties = None, {}, {}, {}
-        self._limit = self._offset = None
+        self._query_model = {}
+        self._query_profile = None
+        self._search_chain = None
+        self._limit = self._offset = self._timeout_ms = None
         self._paged = False
 
-    def filter(self, source, bindings=None): self._filters.append((source, dict(bindings or {}))); return self
-    def sort(self, field, direction):
-        if direction not in {"asc", "desc"}: raise ValueError("sort direction must be 'asc' or 'desc'")
-        self._sort.append(SortExprT(target=SortTargetT(targetType=SortTargetKind.FieldSortTarget, target=FieldSortTargetT(field=field)), direction=SortDirection.Asc if direction == "asc" else SortDirection.Desc)); return self
-    def fields(self, *fields): self._fields = list(fields); return self
-    def summary(self, name): self._summary = name; return self
-    def highlight(self, *fields): self._highlighting = list(fields); return self
-    def facet(self, field, *, name=None, limit=None, sort=None):
+    def filter(self, source, bindings=None):
+        self._filters.append((source, dict(bindings or {})))
+        return self
+
+    def search_field(self, field, *, weight=None):
+        if not isinstance(field, str) or not field:
+            raise ValueError("search field must not be empty")
+        if self._search_fields is None:
+            self._search_fields = []
+        if any(existing.field == field for existing in self._search_fields):
+            raise ValueError(f"duplicate search field: {field}")
+        encoded_weight = None
+        if weight is not None:
+            if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight):
+                raise ValueError("search field weight must be finite")
+            encoded_weight = OptionalDoubleT(value=float(weight))
+        self._search_fields.append(SearchFieldT(field=field, weight=encoded_weight))
+        return self
+
+    def search_fields(self, *fields):
+        if self._search_fields is None:
+            self._search_fields = []
+        for field in fields:
+            self.search_field(field)
+        return self
+
+    @staticmethod
+    def _direction(direction):
+        if direction not in {"asc", "desc"}:
+            raise ValueError("sort direction must be 'asc' or 'desc'")
+        return SortDirection.Asc if direction == "asc" else SortDirection.Desc
+
+    @staticmethod
+    def _missing_policy(missing):
+        if missing is None:
+            return None
+        if missing == "first":
+            return MissingPolicyT(
+                policyType=MissingPolicyKind.MissingFirst,
+                policy=MissingFirstT(),
+            )
+        if missing == "last":
+            return MissingPolicyT(
+                policyType=MissingPolicyKind.MissingLast,
+                policy=MissingLastT(),
+            )
+        return MissingPolicyT(
+            policyType=MissingPolicyKind.MissingAs,
+            policy=MissingAsT(value=value(missing)),
+        )
+
+    def sort(self, field, direction, *, missing=None):
+        self._sort.append(SortExprT(
+            target=SortTargetT(
+                targetType=SortTargetKind.FieldSortTarget,
+                target=FieldSortTargetT(field=field),
+            ),
+            direction=self._direction(direction),
+            missing=self._missing_policy(missing),
+        ))
+        return self
+
+    def sort_relevance(self, direction="desc"):
+        self._sort.append(SortExprT(
+            target=SortTargetT(
+                targetType=SortTargetKind.RelevanceSortTarget,
+                target=RelevanceSortTargetT(),
+            ),
+            direction=self._direction(direction),
+        ))
+        return self
+
+    def sort_feature(self, feature, direction="desc"):
+        if not isinstance(feature, str) or not feature:
+            raise ValueError("rank feature must not be empty")
+        self._sort.append(SortExprT(
+            target=SortTargetT(
+                targetType=SortTargetKind.RankFeatureSortTarget,
+                target=RankFeatureSortTargetT(feature=feature),
+            ),
+            direction=self._direction(direction),
+        ))
+        return self
+
+    def raw_sort(self, expression, direction="asc"):
+        if not isinstance(expression, str) or not expression.strip():
+            raise ValueError("raw sort expression must not be empty")
+        self._sort.append(SortExprT(
+            target=SortTargetT(
+                targetType=SortTargetKind.RawSortTarget,
+                target=RawSortTargetT(expression=expression),
+            ),
+            direction=self._direction(direction),
+        ))
+        return self
+
+    def fields(self, *fields):
+        self._fields = list(fields)
+        return self
+
+    def summary(self, name):
+        self._summary = name
+        return self
+
+    def highlight(self, *fields):
+        self._highlighting = list(fields)
+        return self
+
+    def format(self, name):
+        self._presentation_format = name
+        return self
+
+    def bolding(self, enabled):
+        if not isinstance(enabled, bool):
+            raise TypeError("bolding expects a boolean")
+        self._bolding = enabled
+        return self
+
+    def timing(self, enabled):
+        if not isinstance(enabled, bool):
+            raise TypeError("timing expects a boolean")
+        self._timing = enabled
+        return self
+
+    def facet(self, field, *, name=None, limit=None, sort=None, precision=None):
         if limit is not None:
             check_uint32(limit, "facet limit")
-        self._facets.append((field, name or field, limit, sort))
+        if precision is not None:
+            check_uint32(precision, "facet precision")
+        self._facets.append((field, name or field, limit, sort, precision))
         return self
-    def group(self, group): self._groups.append(group); return self
-    def aggregate(self, expression): self._aggregates.append(expression if isinstance(expression, _Output) else expression.as_("")); return self
-    def ranking(self, profile): self._ranking = profile; return self
-    def input(self, name, item): self._inputs[name] = item; return self
+
+    def facets(self, *fields):
+        for field in fields:
+            self.facet(field)
+        return self
+
+    def group(self, group):
+        self._groups.append(group)
+        return self
+
+    def raw_grouping(self, expression):
+        if not isinstance(expression, str) or not expression.strip():
+            raise ValueError("raw grouping expression must not be empty")
+        self._raw_groupings.append(GroupingRequestT(
+            sourceType=GroupingSourceTags.RawGroupingSource,
+            source=RawGroupingSourceT(expression=expression),
+        ))
+        return self
+
+    def aggregate(self, expression):
+        self._aggregates.append(expression if isinstance(expression, _Output) else expression.as_(""))
+        return self
+
+    def ranking(self, profile):
+        self._ranking = profile
+        return self
+
+    def input(self, name, item):
+        self._inputs[name] = (QueryInputKind.LiteralQueryInput, item)
+        return self
+
+    def input_expr(self, name, expression):
+        if not isinstance(name, str) or not name or not isinstance(expression, str) or not expression.strip():
+            raise ValueError("expression query input requires a name and expression")
+        self._inputs[name] = (QueryInputKind.ExpressionQueryInput, expression)
+        return self
+
     def rank_property(self, name, item: str):
         if not isinstance(item, str):
             raise TypeError("rank property value must be a string")
         self._rank_properties[name] = item
         return self
-    def property(self, name, item): self._properties[name] = value(item); return self
+
+    def rank_properties(self, properties):
+        for name, item in properties.items():
+            self.rank_property(name, item)
+        return self
+
+    def property(self, name, item):
+        self._properties[name] = value(item)
+        return self
+
+    def properties(self, properties):
+        for name, item in properties.items():
+            self.property(name, item)
+        return self
+
+    def language(self, language):
+        self._query_model["language"] = language
+        return self
+
+    def locale(self, locale):
+        self._query_model["locale"] = locale
+        return self
+
+    def default_index(self, field):
+        self._query_model["default_index"] = field
+        return self
+
+    def sources(self, *sources):
+        self._query_model["sources"] = list(sources)
+        return self
+
+    def restrict(self, *document_types):
+        self._query_model["restrict"] = list(document_types)
+        return self
+
+    def search_path(self, path):
+        self._query_model["search_path"] = path
+        return self
+
+    def search_group(self, group):
+        self._query_model["search_group"] = check_uint32(group, "search group")
+        return self
+
+    def query_string(self, query):
+        self._query_model["query_string"] = query
+        return self
+
+    def query_model_type(
+        self,
+        *,
+        composite="",
+        tokenization="",
+        syntax="",
+        profile="",
+        yql_default=None,
+    ):
+        if yql_default is not None and not isinstance(yql_default, bool):
+            raise TypeError("yql_default expects a boolean")
+        self._query_model["type"] = QueryModelTypeT(
+            composite=composite,
+            tokenization=tokenization,
+            syntax=syntax,
+            profile=profile,
+            isYqlDefault=OptionalBoolT(value=yql_default) if yql_default is not None else None,
+        )
+        return self
+
+    def query_profile(self, profile):
+        if not isinstance(profile, str) or not profile:
+            raise ValueError("query profile must not be empty")
+        self._query_profile = profile
+        return self
+
+    def search_chain(self, chain):
+        if not isinstance(chain, str) or not chain:
+            raise ValueError("search chain must not be empty")
+        self._search_chain = chain
+        return self
+
     def limit(self, item):
         _uint32(item, "limit")
-        if self._paged: raise ValueError("limit must be non-negative and cannot follow page()")
-        self._limit = item; return self
+        if self._paged:
+            raise ValueError("limit must be non-negative and cannot follow page()")
+        self._limit = item
+        return self
+
     def offset(self, item):
         _uint32(item, "offset")
-        if self._paged: raise ValueError("offset must be non-negative and cannot follow page()")
-        self._offset = item; return self
+        if self._paged:
+            raise ValueError("offset must be non-negative and cannot follow page()")
+        self._offset = item
+        return self
+
     def page(self, number, size):
         if (
             isinstance(number, bool)
@@ -974,9 +1249,21 @@ class SearchBuilder:
         _uint32(size, "page size")
         if number * size > 0xFFFF_FFFF:
             raise ValueError("page range exceeds uint32 range")
-        self._paged, self._offset, self._limit = True, (number - 1) * size, size; return self
+        self._paged, self._offset, self._limit = True, (number - 1) * size, size
+        return self
 
-    def execute(self):
+    def timeout(self, milliseconds):
+        if (
+            isinstance(milliseconds, bool)
+            or not isinstance(milliseconds, int)
+            or milliseconds < 0
+            or milliseconds > 0xFFFF_FFFF_FFFF_FFFF
+        ):
+            raise ValueError("timeout must be a uint64 millisecond value")
+        self._timeout_ms = milliseconds
+        return self
+
+    def _request(self):
         textual = [
             FilterClauseT(
                 source=source,
@@ -987,31 +1274,113 @@ class SearchBuilder:
             )
             for source, bindings in self._filters
         ]
-        filters = FilterRequestT(
-            textual=textual,
-        ) if self._filters else None
+        filters = FilterRequestT(textual=textual) if self._filters else None
         groups = [group.to_request() for group in self._groups]
-        for field, name, limit, _sort in self._facets:
-            groups.append(_facet_request(field, name, 10 if limit is None else limit, _sort))
+        for field, name, limit, facet_sort, precision in self._facets:
+            groups.append(_facet_request(
+                field,
+                name,
+                10 if limit is None else limit,
+                facet_sort,
+                precision,
+            ))
         if self._aggregates:
             groups.append(_root_aggregation_request(self._aggregates))
+        groups.extend(self._raw_groupings)
+
         query = self.query
-        if query is None: query = QuerySourceT(sourceType=QuerySourceKind.MatchAllQuery, source=MatchAllQueryT())
-        elif isinstance(query, str): query = QuerySourceT(sourceType=QuerySourceKind.SearchKernelTextQuery, source=SearchKernelTextQueryT(text=query))
-        inputs = [QueryInputT(name=name, inputType=QueryInputKind.LiteralQueryInput, input=LiteralQueryInputT(value=value(item))) for name, item in sorted(self._inputs.items())]
-        ranking = RankingRequestT(profile=self._ranking, properties=[StringEntryT(key=k, value=v) for k, v in sorted(self._rank_properties.items())]) if self._ranking is not None or self._rank_properties else None
+        if query is None:
+            query = QuerySourceT(
+                sourceType=QuerySourceKind.MatchAllQuery,
+                source=MatchAllQueryT(),
+            )
+        elif isinstance(query, str):
+            query = QuerySourceT(
+                sourceType=QuerySourceKind.SearchKernelTextQuery,
+                source=SearchKernelTextQueryT(text=query),
+            )
+
+        inputs = []
+        for name, (input_type, item) in sorted(self._inputs.items()):
+            if input_type == QueryInputKind.ExpressionQueryInput:
+                payload = ExpressionQueryInputT(expression=item)
+            else:
+                payload = LiteralQueryInputT(value=value(item))
+            inputs.append(QueryInputT(name=name, inputType=input_type, input=payload))
+
+        ranking = RankingRequestT(
+            profile=self._ranking,
+            properties=[
+                StringEntryT(key=k, value=v)
+                for k, v in sorted(self._rank_properties.items())
+            ],
+        ) if self._ranking is not None or self._rank_properties else None
+
         presentation = PresentationRequestT(
             summary=self._summary,
             fields=FieldProjectionT(fields=self._fields) if self._fields is not None else None,
             highlighting=HighlightRequestT(fields=self._highlighting)
             if self._highlighting is not None
             else None,
-        ) if self._summary is not None or self._fields is not None or self._highlighting is not None else None
-        request = SearchRequestT(query=query, filters=filters, sort=self._sort, grouping=groups, ranking=ranking, inputs=inputs, limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None, offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None, presentation=presentation, properties=[ValueEntryT(key=k, value=v) for k, v in sorted(self._properties.items())])
+            format=self._presentation_format,
+            bolding=OptionalBoolT(value=self._bolding) if self._bolding is not None else None,
+            timing=OptionalBoolT(value=self._timing) if self._timing is not None else None,
+        ) if (
+            self._summary is not None
+            or self._fields is not None
+            or self._highlighting is not None
+            or self._presentation_format is not None
+            or self._bolding is not None
+            or self._timing is not None
+        ) else None
+
+        query_model = QueryModelT(
+            queryString=self._query_model.get("query_string"),
+            defaultIndex=self._query_model.get("default_index"),
+            language=self._query_model.get("language"),
+            locale=self._query_model.get("locale"),
+            type=self._query_model.get("type"),
+            sources=self._query_model.get("sources"),
+            restrict=self._query_model.get("restrict"),
+            searchPath=self._query_model.get("search_path"),
+            searchGroup=OptionalUInt32T(value=self._query_model["search_group"])
+            if "search_group" in self._query_model
+            else None,
+        ) if self._query_model else None
+
+        return SearchRequestT(
+            query=query,
+            searchFields=SearchFieldSelectionT(fields=self._search_fields)
+            if self._search_fields is not None
+            else None,
+            filters=filters,
+            sort=self._sort,
+            grouping=groups,
+            ranking=ranking,
+            inputs=inputs,
+            limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None,
+            offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None,
+            timeoutMs=OptionalUInt64T(value=self._timeout_ms) if self._timeout_ms is not None else None,
+            queryModel=query_model,
+            presentation=presentation,
+            properties=[
+                ValueEntryT(key=k, value=v)
+                for k, v in sorted(self._properties.items())
+            ],
+            queryProfile=self._query_profile,
+            searchChain=self._search_chain,
+        )
+
+    def execute(self):
+        request = self._request()
         results = SearchResults(self.index.client.search(request))
-        for _field, name, _limit, _sort in self._facets:
-            results._project_facet(name, name, _field)
+        for field, name, _limit, _sort, _precision in self._facets:
+            results._project_facet(name, name, field)
         return results
+
+    def inspect(self):
+        result = self.index.inspect_query(self._request())
+        return result.resolvedRequest
 
 
 class YqlBuilder(SearchBuilder):

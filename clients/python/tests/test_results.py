@@ -370,9 +370,9 @@ class SharedResultFixtureTest(unittest.TestCase):
 
     def test_shared_malformed_tensor_fixtures_fail_closed(self):
         for filename in (
-            "invalid-tensor-dense-nan.skrs",
-            "invalid-tensor-sparse-positive-infinity.skrs",
-            "invalid-tensor-mixed-negative-infinity.skrs",
+            "result-malformed-non-finite-dense-tensor-cell.skrs",
+            "result-malformed-non-finite-sparse-tensor-cell.skrs",
+            "result-malformed-non-finite-mixed-tensor-cell.skrs",
         ):
             with self.subTest(filename=filename):
                 envelope = unpack_response(

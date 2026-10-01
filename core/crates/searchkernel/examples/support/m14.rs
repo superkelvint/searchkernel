@@ -45,8 +45,7 @@ impl TraceReader {
         self.offset = text.len();
         appended
             .lines()
-            .filter(|line| !line.trim().is_empty())
-            .next_back()
+            .rfind(|line| !line.trim().is_empty())
             .map(|line| serde_json::from_str(line).expect("native trace observation is not JSON"))
     }
 }

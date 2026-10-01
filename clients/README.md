@@ -3,7 +3,8 @@
 This directory contains the non-Rust language SDKs. The portable contract is
 defined by the canonical FlatBuffers schemas in `api/*.fbs`.
 
-Rust applications use the direct in-process Rust API. Non-Rust SDKs use one
+Rust applications use the direct in-process Rust API by default and may use
+`RemoteClient` to address named indexes on a daemon. Non-Rust SDKs use one
 explicitly sanctioned portable transport path and converge on the same
 dispatcher.
 
@@ -90,6 +91,8 @@ searchkernel-dispatch
         ↓
 searchkernel-ir
 ```
+
+Index lifecycle follows one canonical invariant across first-party clients: any client that exposes `CreateIndex` and `OpenIndex` also exposes `DeleteIndex`, with the logical target carried by the V2 request envelope. Managed-local clients may resolve a caller path to that logical target, but deletion still goes through the daemon lifecycle operation; closing a handle never deletes an index.
 
 The low-level complete API is mechanically derived from the canonical
 FlatBuffers contract. Binary clients expose generated FlatBuffers objects;

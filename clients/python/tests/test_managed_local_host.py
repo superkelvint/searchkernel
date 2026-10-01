@@ -277,6 +277,60 @@ class ManagedLocalHostTest(unittest.TestCase):
             "local-test\n",
         )
 
+    def test_managed_identity_marker_waits_for_inflight_publication(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-marker-inflight-")
+        self.addCleanup(temporary.cleanup)
+        identity = Path(temporary.name) / "legacy-index"
+        marker = identity / client_module._MANAGED_MARKER_NAME
+        marker_created = threading.Event()
+        empty_observed = threading.Event()
+        release_writer = threading.Event()
+        failures = []
+        original_open = client_module.Path.open
+        original_read_text = client_module.Path.read_text
+        delayed_once = threading.Event()
+
+        def delayed_open(path, *args, **kwargs):
+            stream = original_open(path, *args, **kwargs)
+            mode = args[0] if args else kwargs.get("mode", "r")
+            if path == marker and mode == "x" and not delayed_once.is_set():
+                delayed_once.set()
+                marker_created.set()
+                release_writer.wait(timeout=2)
+            return stream
+
+        def observed_read_text(path, *args, **kwargs):
+            value = original_read_text(path, *args, **kwargs)
+            if path == marker and value == "":
+                empty_observed.set()
+            return value
+
+        def publish():
+            try:
+                client_module._write_managed_marker(identity, "local-test")
+            except Exception as exc:  # pragma: no cover - asserted below
+                failures.append(exc)
+
+        with (
+            patch.object(client_module.Path, "open", delayed_open),
+            patch.object(client_module.Path, "read_text", observed_read_text),
+        ):
+            first = threading.Thread(target=publish)
+            first.start()
+            self.assertTrue(marker_created.wait(timeout=1))
+            second = threading.Thread(target=publish)
+            second.start()
+            observed = empty_observed.wait(timeout=1)
+            release_writer.set()
+            first.join(timeout=2)
+            second.join(timeout=2)
+
+        self.assertTrue(observed, "the competing publisher never observed the in-flight marker")
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(failures, [])
+        self.assertEqual(marker.read_text(encoding="utf-8"), "local-test\n")
+
     def test_preexisting_empty_unowned_root_is_never_replaced(self):
         temporary = tempfile.TemporaryDirectory(prefix="searchkernel-managed-unowned-empty-")
         self.addCleanup(temporary.cleanup)

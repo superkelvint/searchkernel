@@ -75,6 +75,10 @@ class DevTargetsTest(unittest.TestCase):
     def test_aliases_resolve_to_canonical_targets(self):
         out = subprocess.check_output([TOOL, "resolve", "test", "rust"], text=True).strip()
         self.assertEqual(out, "rust-api")
+        out = subprocess.check_output(
+            [TOOL, "resolve", "test", "rust-native-e2e"], text=True
+        ).strip()
+        self.assertEqual(out, "rust-native-e2e")
         out = subprocess.check_output([TOOL, "resolve", "verify", "m14"], text=True).strip()
         self.assertEqual(out, "milestone.m14")
 
@@ -103,6 +107,15 @@ class DevTargetsTest(unittest.TestCase):
         listed = {line.strip() for line in output.splitlines()}
         for meta in data["verify"].values():
             self.assertTrue(listed.isdisjoint(meta.get("aliases", [])))
+
+    def test_contract_verifier_includes_audit_integrity_checks(self):
+        driver = (ROOT / "dev").read_text()
+        contracts = driver.split("        contracts)\n", 1)[1].split("            ;;\n", 1)[0]
+        bookkeeping = driver.split("bookkeeping_command() {", 1)[1].split("check_protocol() {", 1)[0]
+        for script in ("check-audit-split.py", "check-audit-client-coverage.py"):
+            self.assertIn(script, contracts)
+            self.assertIn(script, bookkeeping)
+
 
     def test_client_semantic_parity_is_registered(self):
         data = json.loads(REGISTRY.read_text())

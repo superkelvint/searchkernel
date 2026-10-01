@@ -9,7 +9,7 @@ import atexit
 import shutil
 import tempfile
 
-from client_real_e2e_parity_helpers import aggregation_expression, aggregation_output
+from client_real_e2e_parity_helpers import aggregation_expression, aggregation_output, corpus_value
 
 from searchkernel import (
     Index,
@@ -101,6 +101,34 @@ def fields_from_corpus():
     for name, spec in E2E_CORPUS["schema"]["fields"].items():
         fields[name] = corpus_field(spec)
     return fields
+
+
+def corpus_field_value(name, item):
+    field_spec = E2E_CORPUS["schema"]["fields"].get(name, {})
+    value = corpus_value(field_spec, item)
+    field_type = field_spec.get("type")
+    if field_type == "int64" and isinstance(value, (int, str)) and not isinstance(value, bool):
+        return int(value)
+    if isinstance(field_type, str) and field_type.startswith("tensor<") and isinstance(value, (list, tuple)):
+        return embedding(*value)
+    return value
+
+
+def corpus_document(source):
+    return {name: corpus_field_value(name, item) for name, item in source.items()}
+
+
+def shared_filter_bindings(source, bindings):
+    converted = {}
+    for name, item in bindings.items():
+        field_match = re.search(
+            rf"([A-Za-z_][\w.]*)\s*(?:(?:<=|>=|=|<|>)\s*|IN\s*\(\s*):{re.escape(name)}\b",
+            source,
+            flags=re.IGNORECASE,
+        )
+        converted[name] = corpus_field_value(field_match.group(1), item) if field_match else item
+    return converted
+
 
 
 def rank_profiles_from_corpus():
@@ -257,9 +285,9 @@ PARITY_OBSERVATIONS: dict[str, object] = {}
 def typed_query_for_scenario(scenario, intent):
     field = intent.get("field")
     if scenario == "typed_query_term":
-        return q.term(field, intent["value"])
+        return q.term(field, corpus_field_value(field, intent["value"]))
     if scenario == "typed_query_contains":
-        return q.contains(field, intent["value"])
+        return q.contains(field, corpus_field_value(field, intent["value"]))
     if scenario == "typed_query_phrase":
         return q.contains(field, q.phrase(*intent["terms"]))
     if scenario == "typed_query_near":
@@ -268,7 +296,7 @@ def typed_query_for_scenario(scenario, intent):
         return q.contains(field, q.onear(*intent["terms"]))
     if scenario in {"typed_query_range", "typed_query_range_exclusive"}:
         return q.range(
-            field, intent["lower"], intent["upper"],
+            field, corpus_field_value(field, intent["lower"]), corpus_field_value(field, intent["upper"]),
             include_lower=intent["include_lower"],
             include_upper=intent["include_upper"],
         )
@@ -276,17 +304,17 @@ def typed_query_for_scenario(scenario, intent):
         left, right = intent["or_terms"]
         negative = intent["not_term"]
         return q.all_of(
-            q.any_of(q.contains(left["field"], left["value"]), q.contains(right["field"], right["value"])),
-            q.negate(q.contains(negative["field"], negative["value"])),
+            q.any_of(q.contains(left["field"], corpus_field_value(left["field"], left["value"])), q.contains(right["field"], corpus_field_value(right["field"], right["value"]))),
+            q.negate(q.contains(negative["field"], corpus_field_value(negative["field"], negative["value"]))),
         )
     if scenario == "typed_query_in":
-        return q.in_values(field, intent["values"])
+        return q.in_values(field, [corpus_field_value(field, value) for value in intent["values"]])
     if scenario == "typed_query_equals":
-        return q.equals(field, intent["value"])
+        return q.equals(field, corpus_field_value(field, intent["value"]))
     if scenario == "typed_query_fuzzy":
-        return q.contains(field, q.fuzzy(intent["value"]))
+        return q.contains(field, q.fuzzy(corpus_field_value(field, intent["value"])))
     if scenario == "typed_query_weak_and":
-        return q.weak_and(*(q.contains(term["field"], term["value"]) for term in intent["terms"]))
+        return q.weak_and(*(q.contains(term["field"], corpus_field_value(term["field"], term["value"])) for term in intent["terms"]))
     if scenario == "typed_query_wand":
         return q.wand(field, intent["items"])
     if scenario == "typed_query_weighted_set":
@@ -294,17 +322,17 @@ def typed_query_for_scenario(scenario, intent):
     if scenario == "typed_query_dot_product":
         return q.dot_product(field, intent["items"])
     if scenario == "typed_query_prefix":
-        return q.prefix(field, intent["value"])
+        return q.prefix(field, corpus_field_value(field, intent["value"]))
     if scenario == "typed_query_substring":
-        return q.substring(field, intent["value"])
+        return q.substring(field, corpus_field_value(field, intent["value"]))
     if scenario == "typed_query_suffix":
-        return q.suffix(field, intent["value"])
+        return q.suffix(field, corpus_field_value(field, intent["value"]))
     if scenario == "typed_query_same_element":
         return q.contains(
             field,
             q.same_element(
-                q.contains(intent["first_field"], intent["first_value"]),
-                q.contains(intent["last_field"], intent["last_value"]),
+                q.contains(intent["first_field"], corpus_field_value(intent["first_field"], intent["first_value"])),
+                q.contains(intent["last_field"], corpus_field_value(intent["last_field"], intent["last_value"])),
             ),
         )
     if scenario == "typed_query_geo_location":
@@ -406,14 +434,14 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     stemming_spec = intents["stemming"]
     stemming = index.search(stemming_spec["query"]).limit(stemming_spec["limit"]).execute()
     binding_spec = intents["text_filter_binding"]
-    text_binding = index.search(binding_spec["query"]).filter(binding_spec["filter"], binding_spec["bindings"]).sort(binding_spec["sort"][0]["field"], binding_spec["sort"][0]["direction"]).limit(binding_spec["limit"]).execute()
+    text_binding = index.search(binding_spec["query"]).filter(binding_spec["filter"], shared_filter_bindings(binding_spec["filter"], binding_spec["bindings"])).sort(binding_spec["sort"][0]["field"], binding_spec["sort"][0]["direction"]).limit(binding_spec["limit"]).execute()
     repeated_spec = intents["repeated_filters"]
     repeated_builder = index.search(repeated_spec["query"])
     for filter_spec in repeated_spec["filters"]:
-        repeated_builder = repeated_builder.filter(filter_spec["source"], filter_spec["bindings"])
+        repeated_builder = repeated_builder.filter(filter_spec["source"], shared_filter_bindings(filter_spec["source"], filter_spec["bindings"]))
     repeated_filters = repeated_builder.sort(repeated_spec["sort"][0]["field"], repeated_spec["sort"][0]["direction"]).limit(repeated_spec["limit"]).execute()
     boolean_spec = intents["boolean_filter_grammar"]
-    boolean_filter = (index.search(boolean_spec["query"]).filter(boolean_spec["filter"], boolean_spec["bindings"])
+    boolean_filter = (index.search(boolean_spec["query"]).filter(boolean_spec["filter"], shared_filter_bindings(boolean_spec["filter"], boolean_spec["bindings"]))
                       .sort(boolean_spec["sort"][0]["field"], boolean_spec["sort"][0]["direction"]).limit(boolean_spec["limit"]).execute())
     projection_spec = intents["sorting_projection"]
     projection = index.search(projection_spec["query"]).sort(projection_spec["sort"][0]["field"], projection_spec["sort"][0]["direction"]).fields(*projection_spec["projection"]).limit(projection_spec["limit"]).execute()
@@ -423,7 +451,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     nested_spec = intents["nested_grouping"]
     if nested_spec["kind"] != "browse":
         raise ValueError("nested_grouping requires browse intent")
-    nested = index.browse().filter(nested_spec["filter"]["source"], nested_spec["filter"]["bindings"]).group(
+    nested = index.browse().filter(nested_spec["filter"]["source"], shared_filter_bindings(nested_spec["filter"]["source"], nested_spec["filter"]["bindings"])).group(
         Group.by(nested_spec["group_by"]).limit(nested_spec["limit"]).output(*(aggregation_output(output) for output in nested_spec["outputs"])).subgroup(
             Group.by(nested_spec["nested"]["group_by"]).limit(nested_spec["nested"]["limit"]).output(*(aggregation_output(output) for output in nested_spec["nested"]["outputs"]))
         )
@@ -458,7 +486,7 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     degraded_spec = intents["coverage_degradation"]
     if degraded_spec["kind"] != "browse":
         raise ValueError("coverage_degradation requires browse intent")
-    degraded = index.browse().filter(degraded_spec["filter"]["source"], degraded_spec["filter"]["bindings"]).sort(degraded_spec["sort"][0]["field"], degraded_spec["sort"][0]["direction"])
+    degraded = index.browse().filter(degraded_spec["filter"]["source"], shared_filter_bindings(degraded_spec["filter"]["source"], degraded_spec["filter"]["bindings"])).sort(degraded_spec["sort"][0]["field"], degraded_spec["sort"][0]["direction"])
     for key, value in degraded_spec["rank_properties"].items(): degraded = degraded.rank_property(key, value)
     degraded = degraded.limit(degraded_spec["limit"]).execute()
     yql_spec = intents["yql"]
@@ -489,9 +517,9 @@ def capture_real_engine_parity(index) -> dict[str, object]:
     assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).limit(misuse_spec["negative_limit"]), "negative limit rejected")
     assert_raises((TypeError, ValueError), lambda: index.search(misuse_spec["query"]).offset(misuse_spec["negative_offset"]), "negative offset rejected")
     update_spec = intents["advanced_update"]
-    index.insert(update_spec["document_id"], update_spec["initial"])
+    index.insert(update_spec["document_id"], corpus_document(update_spec["initial"]))
     update_builder = index.update(update_spec["document_id"])
-    for key, value in update_spec["set"].items(): update_builder = update_builder.set(key, value)
+    for key, value in update_spec["set"].items(): update_builder = update_builder.set(key, corpus_field_value(key, value))
     for key in update_spec["unset"]: update_builder = update_builder.unset(key)
     for key, value in update_spec["increments"].items(): update_builder = update_builder.increment(key, value)
     update_builder.execute()
@@ -612,12 +640,7 @@ with Index.create(
 
     heading("2. INSERT DOCUMENTS")
 
-    documents = []
-    for source in E2E_CORPUS["documents"]:
-        document = dict(source)
-        if "embedding" in document:
-            document["embedding"] = embedding(*document["embedding"])
-        documents.append(document)
+    documents = [corpus_document(source) for source in E2E_CORPUS["documents"]]
 
     for document in documents:
         index.insert(document)
@@ -625,17 +648,15 @@ with Index.create(
 
     probe_spec = E2E_CORPUS["coverage_probes"]
     for probe in range(probe_spec["count"]):
-        document = dict(probe_spec["document"])
-        document["_id"] = f"degraded-{probe}"
-        document["embedding"] = embedding(*document["embedding"])
+        document = corpus_document({**probe_spec["document"], "_id": f"degraded-{probe}"})
         index.insert(document)
     print(f"inserted {probe_spec['count']} deterministic coverage probe documents")
 
     PARITY_OBSERVATIONS.update(capture_real_engine_parity(index))
     patch_spec = PARITY_INTENTS["patch"]
-    index.insert(patch_spec["document_id"], patch_spec["initial"])
+    index.insert(patch_spec["document_id"], corpus_document(patch_spec["initial"]))
     patch_builder = index.patch(patch_spec["document_id"])
-    for key, value in patch_spec["set"].items(): patch_builder = patch_builder.set(key, value)
+    for key, value in patch_spec["set"].items(): patch_builder = patch_builder.set(key, corpus_field_value(key, value))
     for key in patch_spec["unset"]: patch_builder = patch_builder.unset(key)
     patch_builder.execute()
     mutated = index.get(patch_spec["document_id"])
@@ -644,7 +665,7 @@ with Index.create(
     parity_mutation_deleted = index.delete(delete_spec["document_id"])
     PARITY_OBSERVATIONS["delete"] = {"deleted": parity_mutation_deleted, "absent_after_delete": index.get(delete_spec["document_id"]) is None}
     reopen_spec = PARITY_INTENTS["reopen_persistence"]
-    index.insert({"_id": reopen_spec["marker_id"], **reopen_spec["marker"]})
+    index.insert(corpus_document({"_id": reopen_spec["marker_id"], **reopen_spec["marker"]}))
 
     # -----------------------------------------------------------------------
     # GET
@@ -1579,7 +1600,7 @@ with Index.create(
     upsert_spec = PARITY_INTENTS["upsert_replacement"]
     replacement = dict(upsert_spec["replacement"])
     vector_document_id = replacement.pop("vector_document_id")
-    index.upsert({"_id": upsert_spec["document_id"], **replacement, "embedding": embedding(*corpus_vector(vector_document_id))})
+    index.upsert(corpus_document({"_id": upsert_spec["document_id"], **replacement, "embedding": corpus_vector(vector_document_id)}))
 
     doc = index.get(upsert_spec["document_id"])
     print(doc)
