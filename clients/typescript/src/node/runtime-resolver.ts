@@ -224,6 +224,15 @@ export async function resolveRuntime(): Promise<string> {
     );
     return stdout.trim();
   } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? String((error as NodeJS.ErrnoException).code)
+        : "";
+    if (code === "ENOENT") {
+      throw new SearchKernelError(
+        "platform-unsupported: Node managed-local requires the util-linux flock executable",
+      );
+    }
     const diagnostic = error instanceof Error ? error.message : String(error);
     throw new SearchKernelError(`managed-local runtime resolution failed: ${diagnostic}`);
   }
