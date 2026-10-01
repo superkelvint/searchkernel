@@ -17,5 +17,12 @@
       "cache_relative_path": "objects/skrt-v1-71e7f4c7d8aa8f91139580377ee9007354d70df54331a6306f5cce41f5565909",
       "lock_relative_path": "locks/skrt-v1-71e7f4c7d8aa8f91139580377ee9007354d70df54331a6306f5cce41f5565909.lock"
     }
+  ],
+  "runtime_validation_cases": [
+    { "name": "manifest-format-mismatch", "mutation": "manifest-format", "expected_error": "runtime-invalid" },
+    { "name": "non-executable-daemon", "mutation": "non-executable", "expected_error": "runtime-invalid" },
+    { "name": "escaping-runtime-symlink", "mutation": "escaping-symlink", "expected_error": "runtime-invalid" },
+    { "name": "runtime-identity-mismatch", "mutation": "identity-mismatch", "expected_error": "identity-mismatch" },
+    { "name": "runtime-payload-digest-mismatch", "mutation": "payload-digest-mismatch", "expected_error": "digest-mismatch" }
   ]
 }
