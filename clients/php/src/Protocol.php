@@ -57,14 +57,14 @@ final class Protocol
         ];
         if ($target !== null) {
             $envelope['target'] = ['name' => $target];
-        }
-        if ($expectedIndexGeneration !== null) {
-            if ($expectedIndexGeneration === '') {
-                throw new InvalidArgumentException(
-                    'expected index generation must be a non-empty string',
-                );
+            if ($expectedIndexGeneration !== null) {
+                if ($expectedIndexGeneration === '') {
+                    throw new InvalidArgumentException(
+                        'expected index generation must be a non-empty string',
+                    );
+                }
+                $envelope['target']['generation'] = $expectedIndexGeneration;
             }
-            $envelope['expected_index_generation'] = $expectedIndexGeneration;
         }
         return $envelope;
     }
