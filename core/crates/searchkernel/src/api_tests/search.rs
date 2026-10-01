@@ -469,7 +469,7 @@ fn public_rust_omitted_typed_query_defaults_match_portable_requests() {
                 "title",
                 searchkernel_ir::QueryExprKindIr::Near {
                     children: vec![term()],
-                    distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
+                    distance: searchkernel_ir::DEFAULT_PROXIMITY_DISTANCE,
                 },
             ),
         ),
@@ -479,9 +479,9 @@ fn public_rust_omitted_typed_query_defaults_match_portable_requests() {
                 "title",
                 searchkernel_ir::QueryExprKindIr::Fuzzy {
                     value: searchkernel_ir::RequestValueIr::String("value".to_owned()),
-                    max_edit_distance: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
-                    prefix_length: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
-                    prefix: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX,
+                    max_edit_distance: searchkernel_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+                    prefix_length: searchkernel_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
+                    prefix: searchkernel_ir::DEFAULT_FUZZY_PREFIX,
                 },
             ),
         ),
