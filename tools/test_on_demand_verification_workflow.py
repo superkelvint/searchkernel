@@ -18,7 +18,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_uses_bounded_dispatch_and_pr_comment_ingress_with_read_only_permissions(self):
+    def test_uses_bounded_dispatch_and_pr_comment_ingress_with_isolated_reporter_write_permission(self):
         text = self.text
         self.assertIn("repository_dispatch:", text)
         self.assertIn("types: [searchkernel-verification]", text)
@@ -28,6 +28,12 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^\s+pull_request:")
         self.assertNotRegex(text, r"(?m)^\s+push:")
         self.assertIn("permissions:\n  contents: read\n", text)
+        verify_start = text.index("  verify:")
+        reporter_start = text.index("  report-comment:")
+        verify = text[verify_start:reporter_start]
+        reporter = text[reporter_start:]
+        self.assertNotIn("issues: write", verify)
+        self.assertIn("permissions:\n      contents: read\n      issues: write\n", reporter)
         self.assertNotIn("${{ secrets.", text)
 
     def test_control_plane_is_proven_before_subject_checkout(self):
@@ -156,6 +162,33 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
             '\n          ./dev "${OPERATION}" "${CANONICAL_TARGET}"',
             text,
         )
+
+    def test_comment_triggered_results_are_posted_back_with_clickable_run_evidence(self):
+        text = self.text
+        reporter_start = text.index("  report-comment:")
+        reporter = text[reporter_start:]
+
+        self.assertIn("needs: verify", reporter)
+        self.assertIn("always()", reporter)
+        self.assertIn("github.event_name == 'issue_comment'", reporter)
+        self.assertIn("github.event.issue.pull_request", reporter)
+        self.assertIn("github.event.comment.author_association == 'OWNER'", reporter)
+        self.assertIn("github.event.comment.author_association == 'MEMBER'", reporter)
+        self.assertIn("github.event.comment.author_association == 'COLLABORATOR'", reporter)
+        self.assertIn("github.rest.issues.createComment", reporter)
+        self.assertIn(
+            "RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            reporter,
+        )
+        self.assertIn("REQUESTED_REVISION: ${{ needs.verify.outputs.requested_revision }}", reporter)
+        self.assertIn("OBSERVED_REVISION: ${{ needs.verify.outputs.observed_revision }}", reporter)
+        self.assertIn("CANONICAL_COMMAND: ${{ needs.verify.outputs.canonical_command }}", reporter)
+        self.assertIn("VERIFICATION_RESULT: ${{ needs.verify.outputs.verification_result }}", reporter)
+        self.assertIn("[View Actions run]", reporter)
+        self.assertIn("PASS", reporter)
+        self.assertIn("FAIL", reporter)
+        self.assertNotIn("actions/checkout", reporter)
+        self.assertNotIn("path: subject", reporter)
 
     def test_structured_evidence_is_always_published(self):
         text = self.text
