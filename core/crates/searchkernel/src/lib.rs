@@ -32,7 +32,7 @@ pub use query::{
     WeightedQueryItem,
 };
 #[cfg(feature = "remote")]
-pub use remote::RemoteOptions;
+pub use remote::{RemoteClient, RemoteOptions};
 pub use result::{
     Coverage, CoverageDegraded, FacetResult, FacetValue, FeatureSet, FeatureValue, GroupingResult,
     HighlightFragment, HighlightResult, HighlightSpan, Hit, NonFiniteFloat, ResultGroup, ResultHit,

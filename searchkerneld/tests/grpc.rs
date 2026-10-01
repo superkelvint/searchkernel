@@ -2,8 +2,8 @@ use std::{
     net::SocketAddr,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc,
+        atomic::{AtomicUsize, Ordering},
+        Arc, Condvar, Mutex,
     },
     time::Duration,
 };
@@ -16,8 +16,8 @@ use hyper_util::rt::TokioIo;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use prost::Message;
 use searchkernel::{
-    field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Patch, Ranking, Sort,
-    Tensor,
+    field, ErrorCode as PublicErrorCode, Field, Index, IndexDefinition, Patch, Ranking,
+    RemoteClient, Sort, Tensor,
 };
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
@@ -36,8 +36,11 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Notify;
-use tonic::{Code, Request};
+use tokio::sync::{oneshot, Notify};
+use tokio_stream::wrappers::TcpListenerStream;
+#[cfg(unix)]
+use tokio_stream::wrappers::UnixListenerStream;
+use tonic::{Code, Request, Response, Status};
 
 fn describe_request(version: u32) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
@@ -165,16 +168,194 @@ fn large_search_request() -> Vec<u8> {
 }
 
 fn dispatcher(backend: Arc<dyn Backend>) -> (Index, Arc<Dispatcher>) {
+    let (index, dispatcher, _) = dispatcher_with_definition(backend);
+    (index, dispatcher)
+}
+
+fn dispatcher_with_definition(
+    backend: Arc<dyn Backend>,
+) -> (Index, Arc<Dispatcher>, searchkernel_ir::IndexDefinitionIr) {
     let definition =
         IndexDefinition::new().field(Field::text("title").stored(true).searchable(true));
     let index = Index::from_backend(definition, backend).expect("test index");
     let (context, session) = index.clone().into_session_parts();
-    (index, Arc::new(Dispatcher::new(context, session)))
+    let definition = context.definition().clone();
+    (
+        index,
+        Arc::new(Dispatcher::new(context, session)),
+        definition,
+    )
+}
+
+/// Test-only daemon protocol fixture: lifecycle calls return the hosted schema,
+/// and ordinary calls reach the injected dispatcher.
+#[derive(Clone)]
+struct RemoteTestService {
+    dispatcher: Arc<Dispatcher>,
+    definition: searchkernel_ir::IndexDefinitionIr,
+}
+
+#[tonic::async_trait]
+impl rpc::search_kernel_server::SearchKernel for RemoteTestService {
+    async fn execute(
+        &self,
+        request: Request<rpc::FlatBufferFrame>,
+    ) -> Result<Response<rpc::FlatBufferFrame>, Status> {
+        let payload = request.into_inner().payload;
+        let envelope = wire::root_as_request_envelope(&payload)
+            .map_err(|_| Status::invalid_argument("invalid Search Kernel request"))?;
+        let response = match envelope.payload_type() {
+            wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+                lifecycle_definition_response(&self.definition, true)
+            }
+            wire::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+                lifecycle_definition_response(&self.definition, false)
+            }
+            wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest => lifecycle_delete_response(),
+            _ => self
+                .dispatcher
+                .dispatch(&payload)
+                .map_err(|_| Status::invalid_argument("invalid Search Kernel request"))?,
+        };
+        Ok(Response::new(rpc::FlatBufferFrame { payload: response }))
+    }
+}
+
+fn lifecycle_definition_response(
+    definition: &searchkernel_ir::IndexDefinitionIr,
+    create: bool,
+) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let (payload_type, payload) = if create {
+        let result = wire::CreateIndexResult::create(
+            &mut builder,
+            &wire::CreateIndexResultArgs { index: Some(index) },
+        );
+        (
+            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            result.as_union_value(),
+        )
+    } else {
+        let result = wire::OpenIndexResult::create(
+            &mut builder,
+            &wire::OpenIndexResultArgs { index: Some(index) },
+        );
+        (
+            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            result.as_union_value(),
+        )
+    };
+    let envelope = wire::ResponseEnvelope::create(
+        &mut builder,
+        &wire::ResponseEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            payload_type,
+            payload: Some(payload),
+        },
+    );
+    wire::finish_response_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn lifecycle_delete_response() -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let result = wire::DeleteIndexResult::create(&mut builder, &wire::DeleteIndexResultArgs {});
+    let envelope = wire::ResponseEnvelope::create(
+        &mut builder,
+        &wire::ResponseEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            payload_type: wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+            payload: Some(result.as_union_value()),
+        },
+    );
+    wire::finish_response_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+struct RemoteTestServer {
+    endpoint: String,
+    shutdown: Option<oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+    #[cfg(unix)]
+    socket_path: Option<std::path::PathBuf>,
+}
+
+impl RemoteTestServer {
+    async fn tcp(
+        dispatcher: Arc<Dispatcher>,
+        definition: searchkernel_ir::IndexDefinitionIr,
+    ) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind remote fixture");
+        let address = listener.local_addr().expect("remote fixture address");
+        let service = rpc::search_kernel_server::SearchKernelServer::new(RemoteTestService {
+            dispatcher,
+            definition,
+        });
+        let (shutdown, shutdown_rx) = oneshot::channel();
+        let task = tokio::spawn(
+            tonic::transport::Server::builder()
+                .add_service(service)
+                .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {
+                    let _ = shutdown_rx.await;
+                }),
+        );
+        Self {
+            endpoint: address.to_string(),
+            shutdown: Some(shutdown),
+            task,
+            #[cfg(unix)]
+            socket_path: None,
+        }
+    }
+
+    #[cfg(unix)]
+    async fn unix(
+        path: &Path,
+        dispatcher: Arc<Dispatcher>,
+        definition: searchkernel_ir::IndexDefinitionIr,
+    ) -> Self {
+        let listener = tokio::net::UnixListener::bind(path).expect("bind remote fixture socket");
+        let service = rpc::search_kernel_server::SearchKernelServer::new(RemoteTestService {
+            dispatcher,
+            definition,
+        });
+        let (shutdown, shutdown_rx) = oneshot::channel();
+        let task = tokio::spawn(
+            tonic::transport::Server::builder()
+                .add_service(service)
+                .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
+                    let _ = shutdown_rx.await;
+                }),
+        );
+        Self {
+            endpoint: format!("unix://{}", path.display()),
+            shutdown: Some(shutdown),
+            task,
+            socket_path: Some(path.to_owned()),
+        }
+    }
+
+    async fn shutdown(mut self) {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        self.task
+            .await
+            .expect("remote fixture task")
+            .expect("remote fixture shutdown");
+        #[cfg(unix)]
+        if let Some(path) = self.socket_path.take() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 struct BlockingBackend {
     started: Arc<Notify>,
-    release: Arc<AtomicBool>,
+    release: (Mutex<bool>, Condvar),
     searches: Arc<AtomicUsize>,
 }
 
@@ -182,9 +363,15 @@ impl BlockingBackend {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             started: Arc::new(Notify::new()),
-            release: Arc::new(AtomicBool::new(false)),
+            release: (Mutex::new(false), Condvar::new()),
             searches: Arc::new(AtomicUsize::new(0)),
         })
+    }
+
+    fn release(&self) {
+        let (released, wake) = &self.release;
+        *released.lock().expect("blocking backend release lock") = true;
+        wake.notify_all();
     }
 
     fn unsupported<T>() -> BackendResult<T> {
@@ -238,8 +425,10 @@ impl Backend for BlockingBackend {
     ) -> BackendResult<searchkernel_ir::SearchResult> {
         self.searches.fetch_add(1, Ordering::SeqCst);
         self.started.notify_waiters();
-        while !self.release.load(Ordering::Acquire) {
-            std::thread::yield_now();
+        let (released, wake) = &self.release;
+        let mut released = released.lock().expect("blocking backend release lock");
+        while !*released {
+            released = wake.wait(released).expect("blocking backend release lock");
         }
         Self::unsupported()
     }
@@ -261,21 +450,19 @@ async fn connect_client(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn ergonomic_rust_remote_client_uses_actual_daemon_transport() {
+async fn ergonomic_rust_remote_client_uses_canonical_grpc_transport() {
     let backend = Arc::new(RecordingBackend::new());
-    let (_local, dispatcher) = dispatcher(backend);
-    let server = start(
-        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
-        dispatcher,
-    )
-    .await
-    .expect("start searchkerneld transport");
-    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+    let (_local, dispatcher, lifecycle_definition) = dispatcher_with_definition(backend);
+    let server = RemoteTestServer::tcp(dispatcher, lifecycle_definition).await;
+    let endpoint = server.endpoint.clone();
 
     // The public remote API is intentionally synchronous. In an async
     // application it belongs on the application's normal blocking-work path.
     tokio::task::spawn_blocking(move || {
-        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        let client = RemoteClient::connect(endpoint).expect("connect Rust remote daemon");
+        let remote = client
+            .open_index("grpc-test")
+            .expect("open Rust remote index");
         let error = remote
             .search("headphones")
             .execute::<String>()
@@ -287,10 +474,7 @@ async fn ergonomic_rust_remote_client_uses_actual_daemon_transport() {
     .await
     .expect("remote client blocking task");
 
-    server
-        .shutdown()
-        .await
-        .expect("shutdown searchkerneld transport");
+    server.shutdown().await;
 }
 
 async fn execute_grpc_web_raw(
@@ -391,19 +575,17 @@ async fn ergonomic_remote_search_preserves_direct_normalized_ir_through_daemon()
     )]));
     let hosted =
         Index::from_backend(definition, scripted.clone()).expect("build hosted scripted index");
-    // let expected_definition = hosted.describe().expect("describe hosted index");
     let (context, session) = hosted.into_session_parts();
+    let lifecycle_definition = context.definition().clone();
     let dispatcher = Arc::new(Dispatcher::new(context, session));
-    let server = start(
-        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
-        dispatcher,
-    )
-    .await
-    .expect("start searchkerneld transport");
-    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+    let server = RemoteTestServer::tcp(dispatcher, lifecycle_definition).await;
+    let endpoint = server.endpoint.clone();
 
     tokio::task::spawn_blocking(move || {
-        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        let client = RemoteClient::connect(endpoint).expect("connect Rust remote daemon");
+        let remote = client
+            .open_index("grpc-test")
+            .expect("open Rust remote index");
         let result = remote
             .search("remote headphones")
             .filter(field("price").gte(10.0))
@@ -424,10 +606,7 @@ async fn ergonomic_remote_search_preserves_direct_normalized_ir_through_daemon()
     scripted
         .finish()
         .expect("remote daemon consumed the exact direct IR request");
-    server
-        .shutdown()
-        .await
-        .expect("shutdown searchkerneld transport");
+    server.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -481,16 +660,19 @@ async fn ergonomic_remote_patch_and_projection_preserve_direct_normalized_ir_thr
     let hosted =
         Index::from_backend(definition, scripted.clone()).expect("build hosted scripted index");
     let (context, session) = hosted.into_session_parts();
-    let server = start(
-        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
+    let lifecycle_definition = context.definition().clone();
+    let server = RemoteTestServer::tcp(
         Arc::new(Dispatcher::new(context, session)),
+        lifecycle_definition,
     )
-    .await
-    .expect("start searchkerneld transport");
-    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+    .await;
+    let endpoint = server.endpoint.clone();
 
     tokio::task::spawn_blocking(move || {
-        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        let client = RemoteClient::connect(endpoint).expect("connect Rust remote daemon");
+        let remote = client
+            .open_index("grpc-test")
+            .expect("open Rust remote index");
         remote
             .patch("doc-1", patch)
             .expect("remote patch preserves direct normalized IR");
@@ -507,10 +689,7 @@ async fn ergonomic_remote_patch_and_projection_preserve_direct_normalized_ir_thr
     scripted
         .finish()
         .expect("remote daemon consumed exact patch and projected-get IR");
-    server
-        .shutdown()
-        .await
-        .expect("shutdown searchkerneld transport");
+    server.shutdown().await;
 }
 
 #[cfg(unix)]
@@ -752,7 +931,7 @@ async fn admission_limit_rejects_a_large_queued_request() {
         tokio::task::yield_now().await;
     }
     let second_finished = second.is_finished();
-    backend.release.store(true, Ordering::Release);
+    backend.release();
     first.await.expect("first task").expect("first request");
     let second_result = second.await.expect("second task");
 
@@ -799,7 +978,7 @@ async fn admission_limit_is_shared_by_grpc_web() {
     let (status, _content_type, body) =
         execute_grpc_web_raw(web_address, large_search_request()).await;
     assert_eq!(status, 200);
-    backend.release.store(true, Ordering::Release);
+    backend.release();
     let body = String::from_utf8_lossy(&body);
     assert!(
         body.contains("grpc-status: 8"),
@@ -901,7 +1080,7 @@ async fn cancelled_execution_waiter_releases_admission_capacity() {
     // Also prove timed-out waiters do not remain queued for execution and run
     // later when the occupied native slot is finally released.
     tokio::time::sleep(Duration::from_millis(200)).await;
-    backend.release.store(true, Ordering::Release);
+    backend.release();
     first.await.expect("first task").expect("first request");
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
@@ -1277,21 +1456,20 @@ async fn ergonomic_remote_insert_preserves_direct_normalized_ir_through_daemon()
         Index::from_backend(definition, scripted.clone()).expect("build hosted scripted index");
     let expected_definition = hosted.describe().expect("describe hosted index");
     let (context, session) = hosted.into_session_parts();
+    let lifecycle_definition = context.definition().clone();
     let dispatcher = Arc::new(Dispatcher::new(context, session));
-    let server = start(
-        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
-        dispatcher,
-    )
-    .await
-    .expect("start searchkerneld transport");
-    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+    let server = RemoteTestServer::tcp(dispatcher, lifecycle_definition).await;
+    let endpoint = server.endpoint.clone();
 
     tokio::task::spawn_blocking(move || {
-        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        let client = RemoteClient::connect(endpoint).expect("connect Rust remote daemon");
+        let remote = client
+            .open_index("grpc-test")
+            .expect("open Rust remote index");
         assert_eq!(
             remote.describe().expect("describe remote index"),
             expected_definition,
-            "connect-time Describe must preserve the effective Rust schema exactly"
+            "OpenIndex result must preserve the effective Rust schema exactly"
         );
         remote
             .insert("doc-tags", &tags_document)
@@ -1310,10 +1488,7 @@ async fn ergonomic_remote_insert_preserves_direct_normalized_ir_through_daemon()
     scripted
         .finish()
         .expect("remote daemon consumed the exact direct insert IR");
-    server
-        .shutdown()
-        .await
-        .expect("shutdown searchkerneld transport");
+    server.shutdown().await;
 }
 
 #[cfg(unix)]
@@ -1332,14 +1507,16 @@ async fn ergonomic_rust_remote_client_connects_over_unix_socket() {
     let lock_path = PathBuf::from(lock_name);
 
     let backend = Arc::new(RecordingBackend::new());
-    let (_local, dispatcher) = dispatcher(backend);
-    let server = start(ServerConfig::unix(&socket_path), dispatcher)
-        .await
-        .expect("start Unix searchkerneld transport");
-    let endpoint = format!("unix://{}", socket_path.display());
+    let (_local, dispatcher, lifecycle_definition) = dispatcher_with_definition(backend);
+    let server = RemoteTestServer::unix(&socket_path, dispatcher, lifecycle_definition).await;
+    let endpoint = server.endpoint.clone();
 
     tokio::task::spawn_blocking(move || {
-        let remote = Index::connect(endpoint).expect("connect Rust remote client over Unix socket");
+        let client =
+            RemoteClient::connect(endpoint).expect("connect Rust remote daemon over Unix socket");
+        let remote = client
+            .open_index("grpc-test")
+            .expect("open Rust remote index");
         let error = remote
             .search("headphones")
             .execute::<String>()
@@ -1351,7 +1528,7 @@ async fn ergonomic_rust_remote_client_connects_over_unix_socket() {
     .await
     .expect("Unix remote client blocking task");
 
-    server.shutdown().await.expect("shutdown Unix transport");
+    server.shutdown().await;
     assert!(
         !socket_path.exists(),
         "searchkerneld shutdown must remove the owned Unix socket"
@@ -1424,17 +1601,20 @@ async fn ergonomic_remote_result_matches_embedded_public_projection_exactly() {
     let hosted = Index::from_backend(definition, remote_backend.clone())
         .expect("build hosted scripted index");
     let (context, session) = hosted.into_session_parts();
-    let server = start(
-        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address")),
+    let lifecycle_definition = context.definition().clone();
+    let server = RemoteTestServer::tcp(
         Arc::new(Dispatcher::new(context, session)),
+        lifecycle_definition,
     )
-    .await
-    .expect("start searchkerneld transport");
-    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+    .await;
+    let endpoint = server.endpoint.clone();
 
     let fixture_names = fixtures.iter().map(|(name, _)| *name).collect::<Vec<_>>();
     let remote_results = tokio::task::spawn_blocking(move || {
-        let remote = Index::connect(endpoint).expect("connect ergonomic Rust remote client");
+        let client = RemoteClient::connect(endpoint).expect("connect Rust remote daemon");
+        let remote = client
+            .open_index("grpc-test")
+            .expect("open Rust remote index");
         let mut results = Vec::with_capacity(fixture_names.len());
         for name in fixture_names {
             let result = remote
@@ -1456,28 +1636,21 @@ async fn ergonomic_remote_result_matches_embedded_public_projection_exactly() {
         remote_results, embedded_results,
         "remote response decoding must preserve every canonical public Rust result projection"
     );
-    server
-        .shutdown()
-        .await
-        .expect("shutdown searchkerneld transport");
+    server.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn ergonomic_rust_remote_client_multiplexes_concurrent_calls() {
     let backend = BlockingBackend::new();
-    let (_local, dispatcher) = dispatcher(backend.clone());
-    let server = start(
-        ServerConfig::new("127.0.0.1:0".parse().expect("ephemeral TCP address"))
-            .with_execution_limit(2)
-            .with_admission_limit(2),
-        dispatcher,
-    )
-    .await
-    .expect("start searchkerneld transport");
-    let endpoint = server.tcp_addr().expect("TCP test server").to_string();
+    let (_local, dispatcher, lifecycle_definition) = dispatcher_with_definition(backend.clone());
+    let server = RemoteTestServer::tcp(dispatcher, lifecycle_definition).await;
+    let endpoint = server.endpoint.clone();
 
     let remote = tokio::task::spawn_blocking(move || {
-        Index::connect(endpoint).expect("connect ergonomic Rust remote client")
+        let client = RemoteClient::connect(endpoint).expect("connect Rust remote daemon");
+        client
+            .open_index("grpc-test")
+            .expect("open Rust remote index")
     })
     .await
     .expect("connect blocking task");
@@ -1504,8 +1677,7 @@ async fn ergonomic_rust_remote_client_multiplexes_concurrent_calls() {
     })
     .await
     .expect("both remote calls must reach the daemon concurrently");
-
-    backend.release.store(true, Ordering::Release);
+    backend.release();
 
     let first_error = first_call.await.expect("first blocking task");
     let second_error = second_call.await.expect("second blocking task");
@@ -1513,8 +1685,5 @@ async fn ergonomic_rust_remote_client_multiplexes_concurrent_calls() {
     assert_eq!(second_error.code(), PublicErrorCode::Unsupported);
 
     remote.close().expect("close remote client");
-    server
-        .shutdown()
-        .await
-        .expect("shutdown searchkerneld transport");
+    server.shutdown().await;
 }

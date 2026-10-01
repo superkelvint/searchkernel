@@ -12,7 +12,8 @@
       "id": "rust",
       "title": "Rust",
       "runtimes": [
-        "native"
+        "native",
+        "grpc"
       ]
     },
     {
@@ -3371,7 +3372,28 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "daemon.multi_index_lifecycle",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "searchkerneld/tests/multi_index.rs",
+              "line": 1451
+            },
+            {
+              "capability": "daemon.multi_index_lifecycle",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "searchkerneld/tests/multi_index.rs",
+              "line": 1451
+            }
+          ],
           "overrides": []
         }
       ]

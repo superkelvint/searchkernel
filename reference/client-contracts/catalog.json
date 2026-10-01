@@ -13,11 +13,83 @@
     "rust": {
       "title": "Rust",
       "runtimes": [
-        "native"
+        "native",
+        "grpc"
       ],
       "evidence_roots": [
         "core/crates/searchkernel/tests",
-        "core/crates/searchkernel/examples"
+        "core/crates/searchkernel/examples",
+        "core/crates/searchkernel/src",
+        "searchkerneld/tests"
+      ],
+      "lifecycle_contract": {
+        "CreateIndex": [
+          {
+            "kind": "public",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "pub fn create_index("
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
+            "contains": "RequestPayload::SearchKernel_V2_CreateIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "ResponsePayload::SearchKernel_V2_CreateIndexResult"
+          }
+        ],
+        "OpenIndex": [
+          {
+            "kind": "public",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "pub fn open_index("
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
+            "contains": "RequestPayload::SearchKernel_V2_OpenIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "ResponsePayload::SearchKernel_V2_OpenIndexResult"
+          }
+        ],
+        "DeleteIndex": [
+          {
+            "kind": "public",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "pub fn delete_index("
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
+            "contains": "RequestPayload::SearchKernel_V2_DeleteIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "ResponsePayload::SearchKernel_V2_DeleteIndexResult"
+          }
+        ]
+      },
+      "required_e2e_runtimes": [
+        "grpc"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "grpc"
+          ],
+          "path": "searchkerneld/tests/multi_index.rs",
+          "command": [
+            "./dev",
+            "test",
+            "searchkerneld-multi-index"
+          ]
+        }
       ]
     },
     "python": {
@@ -393,6 +465,7 @@
   ],
   "overrides": [],
   "lifecycle_surfaces": [
+    "rust",
     "python",
     "typescript",
     "php",

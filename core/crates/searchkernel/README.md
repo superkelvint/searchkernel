@@ -19,10 +19,30 @@ filter, and search types that an application uses.
 - `Index` sends direct Rust resolver inputs to `searchkernel-ir`, which
   validates and normalizes them before handing owned IR to a backend. It does
   not serialize the request through FlatBuffers or gRPC.
-- `Index::create` and `Index::open` use the native Vespa-backed lifecycle;
-  `Index::from_backend` is test/infrastructure setup.
+- `Index::create` and `Index::open` use the native Vespa-backed lifecycle.
+- `RemoteClient::connect` connects to a multi-index daemon; its lifecycle
+  methods use canonical requests, and returned `Index` handles stay bound to
+  their selected target.
+- `Index::from_backend` is test/infrastructure setup.
 - Result documents are converted from owned backend values into caller-chosen
   `serde` types.
+
+Remote use selects a target through the daemon client:
+
+```rust
+let client = RemoteClient::connect("127.0.0.1:50051")?;
+let products = client.create_index("products", definition)?;
+products.insert("sku-1", &product)?;
+products.close()?;
+
+let products = client.open_index("products")?;
+let results = products.search("keyboard").execute::<Product>()?;
+client.delete_index("products")?;
+```
+
+`Index::connect(endpoint)` is deprecated because an endpoint alone does not
+select a logical index. Use `RemoteClient::connect(endpoint)` followed by
+`create_index(target, definition)` or `open_index(target)`.
 
 Search result fields are also available as `ResultValue`, which preserves the
 portable value kinds, including unsigned integers, bytes, tensors, and explicit

@@ -700,7 +700,7 @@ test_target() {
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
         rust-api)
-            "$CARGO" test -p searchkernel --all-targets --no-default-features
+            "$CARGO" test -p searchkernel --all-targets --no-default-features --features remote,internal-api
             ;;
         client-real-e2e-parity)
             "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"
@@ -721,7 +721,7 @@ test_target() {
             run_ruby_tests
             ;;
         searchkerneld-multi-index)
-            "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown
+            "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown --test grpc
             ;;
         *)
             echo "registry error: test target '$target' has no dispatcher" >&2

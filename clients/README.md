@@ -3,7 +3,8 @@
 This directory contains the non-Rust language SDKs. The portable contract is
 defined by the canonical FlatBuffers schemas in `api/*.fbs`.
 
-Rust applications use the direct in-process Rust API. Non-Rust SDKs use one
+Rust applications use the direct in-process Rust API by default and may use
+`RemoteClient` to address named indexes on a daemon. Non-Rust SDKs use one
 explicitly sanctioned portable transport path and converge on the same
 dispatcher.
 

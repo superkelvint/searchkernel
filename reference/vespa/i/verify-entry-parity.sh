@@ -13,8 +13,9 @@ if grep -E 'RecordingBackend|ScriptedBackend|searchkernel_testkit' "$TEST"; then
 fi
 grep -F 'Index::create' "$TEST" >/dev/null || fail_verification "Rust-direct path is missing"
 grep -F 'env!("CARGO_BIN_EXE_searchkerneld")' "$TEST" >/dev/null || fail_verification "production searchkerneld process launch is missing"
-grep -F '.arg("--definition-json")' "$TEST" >/dev/null || fail_verification "daemon definition ingress is missing"
-grep -F 'Index::connect' "$TEST" >/dev/null || fail_verification "generated gRPC remote path is missing"
+grep -F '.arg("--data-root")' "$TEST" >/dev/null || fail_verification "multi-index daemon data root is missing"
+grep -F 'RemoteClient::connect' "$TEST" >/dev/null || fail_verification "Rust remote daemon client path is missing"
+grep -F '.create_index("entry-parity", definition())' "$TEST" >/dev/null || fail_verification "canonical Rust CreateIndex lifecycle is missing"
 grep -F 'assert_eq!(grpc_outcome, direct_outcome' "$TEST" >/dev/null || fail_verification "cross-entry semantic comparison is missing"
 "$SCRIPT_DIR/test-entry-parity-gate.sh"
 cargo test -p searchkerneld --test real_engine_entry_parity --features native -- --nocapture
