@@ -97,8 +97,9 @@ pub enum ControlPlaneResolutionError {
 pub fn resolve_control_plane_request<'a>(
     envelope: wire::RequestEnvelope<'a>,
 ) -> Result<ControlPlaneRequest<'a>, ControlPlaneResolutionError> {
+    let target_view = envelope.target();
     let target =
-        resolve_index_target(envelope.target()).map_err(ControlPlaneResolutionError::Semantic)?;
+        resolve_index_target(target_view).map_err(ControlPlaneResolutionError::Semantic)?;
     match envelope.payload_type() {
         wire::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
             let payload = envelope
@@ -124,7 +125,7 @@ pub fn resolve_control_plane_request<'a>(
         wire::RequestPayload::NONE => Err(ControlPlaneResolutionError::InvalidEnvelope),
         _ => Ok(ControlPlaneRequest::Route {
             target,
-            expected_generation: envelope.expected_index_generation(),
+            expected_generation: target_view.and_then(|target| target.generation()),
         }),
     }
 }
@@ -454,7 +455,13 @@ mod tests {
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let name = builder.create_string("Products");
         let target =
-            api::IndexTarget::create(&mut builder, &api::IndexTargetArgs { name: Some(name) });
+            api::IndexTarget::create(
+                &mut builder,
+                &api::IndexTargetArgs {
+                    name: Some(name),
+                    generation: None,
+                },
+            );
         builder.finish(target, None);
         let target = flatbuffers::root::<api::IndexTarget<'_>>(builder.finished_data())
             .expect("valid target view");
