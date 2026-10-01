@@ -76,7 +76,3 @@ fn closed_target_error() -> searchkernel_ir::PortableError {
         "Search Kernel target is closed",
     )
 }
-
-
-
-
