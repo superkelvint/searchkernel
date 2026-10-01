@@ -244,7 +244,7 @@ fn lifecycle_definition_response(
     create: bool,
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let index = searchkernel_ir::wire::v1::index_definition_offset(&mut builder, definition);
     let (payload_type, payload) = if create {
         let result = wire::CreateIndexResult::create(
             &mut builder,
