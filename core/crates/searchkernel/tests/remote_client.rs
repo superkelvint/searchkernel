@@ -450,7 +450,24 @@ async fn daemon_lifecycle_uses_canonical_results_and_rejects_wrong_response_type
 
     let opened = client.open_index("first").expect("decode open result");
     opened.close().expect("close opened handle");
+    let stale = client
+        .open_index("first")
+        .expect("open handle that must be invalidated by delete");
     client.delete_index("first").expect("decode delete result");
+    let stale_error = stale
+        .describe()
+        .expect_err("delete must permanently close existing target-bound handles");
+    assert_eq!(stale_error.code(), PublicErrorCode::IndexClosed);
+
+    let replacement = client
+        .create_index("first", definition())
+        .expect("recreate target after delete");
+    let stale_error = stale
+        .describe()
+        .expect_err("recreating a target must not revive an old Rust handle");
+    assert_eq!(stale_error.code(), PublicErrorCode::IndexClosed);
+    replacement.close().expect("close replacement handle");
+
     let error = client
         .open_index("wrong-response")
         .err()
