@@ -51,6 +51,19 @@ grep -Fq -- '--draft' "$PUBLISH" || {
     exit 1
 }
 
+grep -Fq 'SEARCHKERNEL_DEV_USE_CI_IMAGE=0' "$PUBLISH" || {
+    echo "host native-base publication must provision in the selected host environment" >&2
+    exit 1
+}
+grep -Fq 'env -u SK_NATIVE_SDK' "$PUBLISH" || {
+    echo "native-base publication must ignore ambient legacy SK_NATIVE_SDK overrides" >&2
+    exit 1
+}
+grep -Fq 'provision_native_base "$BUILD_ENV"' "$PUBLISH" || {
+    echo "native-base publication must provision before packaging each selected environment" >&2
+    exit 1
+}
+
 python3 - "$PUBLISH" <<'PY'
 import pathlib
 import sys
