@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "reference/result-response-conformance/corpus.json"
 FIXTURES = ROOT / "reference/result-response-conformance/fixtures"
+FACET_FIXTURES = ROOT / "core/crates/searchkernel-dispatch/tests/fixtures/portable/responses"
 SCHEMA_CHECK = ROOT / "tools/check-result-response-schema.py"
 
 _spec = importlib.util.spec_from_file_location("result_response_schema", SCHEMA_CHECK)
@@ -205,9 +206,41 @@ def main() -> int:
                 }
             )
 
+        facet_cases = []
+        for source in sorted(FACET_FIXTURES.glob("result-facet-*.skrs")):
+            target = case_dir / source.name
+            shutil.copyfile(source, target)
+            run(
+                [
+                    flatc,
+                    "--json",
+                    "--strict-json",
+                    "-I",
+                    str(ROOT / "api"),
+                    "-o",
+                    str(case_dir),
+                    str(ROOT / "api/searchkernel_response.fbs"),
+                    "--",
+                    str(target),
+                ]
+            )
+            facet_cases.append(
+                {
+                    "id": source.stem.removeprefix("result-"),
+                    "file": source.name,
+                    "json": target.with_suffix(".json").name,
+                }
+            )
+
         case_manifest = temporary / "cases.json"
         case_manifest.write_text(
-            json.dumps({"valid": cases, "malformed": malformed_cases})
+            json.dumps(
+                {
+                    "valid": cases,
+                    "malformed": malformed_cases,
+                    "facet": facet_cases,
+                }
+            )
         )
         traces_dir = temporary / "traces"
         traces_dir.mkdir()

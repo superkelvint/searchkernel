@@ -202,6 +202,16 @@ module SearchKernel
       raise ProtocolError, "empty tensor type_spec" if type_spec.empty?
       kind = discriminator!(payload, "payload", %w[DenseTensorValues SparseTensorCells MixedTensorBlocks])
       data = payload["payload"]
+      known_payload_keys = {
+        "DenseTensorValues" => "values",
+        "SparseTensorCells" => "cells",
+        "MixedTensorBlocks" => "blocks"
+      }
+      allowed_payload_key = known_payload_keys.fetch(kind)
+      foreign_payload_keys = data.keys & (known_payload_keys.values - [allowed_payload_key])
+      unless foreign_payload_keys.empty?
+        raise ProtocolError, "mismatched #{kind} payload"
+      end
       key, value = case kind
       when "DenseTensorValues" then ["dense", decoded_cells(data.fetch("values", []))]
       when "SparseTensorCells" then ["sparse", decoded_records(data["cells"], :cell)]
