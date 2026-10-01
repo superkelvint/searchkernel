@@ -2,6 +2,16 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+
+# Wire-major sources are durable identities. The top-level schema files remain
+# compatibility mirrors for tooling that has not yet moved under api/wire/v1.
+# Fail closed if an edit changes only one side.
+for schema in searchkernel.fbs searchkernel_request.fbs searchkernel_response.fbs; do
+    if ! cmp -s "$root/api/$schema" "$root/api/wire/v1/$schema"; then
+        echo "wire V1 schema drift: api/$schema must mirror api/wire/v1/$schema" >&2
+        exit 1
+    fi
+done
 temporary=$(mktemp -d)
 trap 'rm -rf -- "$temporary"' EXIT
 
