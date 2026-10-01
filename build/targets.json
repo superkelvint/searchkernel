@@ -45,6 +45,9 @@
     "native-base-artifact": {
       "description": "Clean-room native-base production, archive install, adapter link, and runtime load"
     },
+    "native-base-policy": {
+      "description": "Native-base container dispatch, publication boundary, and shell policy regressions"
+    },
     "ir": {
       "description": "Portable semantic IR tests"
     },
