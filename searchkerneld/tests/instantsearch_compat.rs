@@ -5,7 +5,10 @@ use std::sync::Arc;
 use flatbuffers::root;
 use searchkernel_dispatch::Dispatcher;
 use searchkernel_ir::{IndexContext, OperationIr, QueryIr};
-use searchkernel_protocol::{protocol::v1::{self as wire, PROTOCOL_VERSION}, wire::v1 as api};
+use searchkernel_protocol::{
+    protocol::v1::{self as wire, PROTOCOL_VERSION},
+    wire::v1 as api,
+};
 use searchkernel_testkit::RecordingBackend;
 use searchkerneld::search_endpoint_test_support::{
     SearchEndpointBindError, SearchEndpointConfig, SearchEndpointPolicy, SearchEndpointRouteError,

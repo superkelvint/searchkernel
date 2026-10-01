@@ -13,12 +13,12 @@ use hyper::body::Bytes;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use searchkernel::{Field, Index, IndexDefinition};
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
 use searchkernel_protocol::json::{
     request_json_to_flatbuffer, response_flatbuffer_to_json, response_json_to_flatbuffer,
 };
 use searchkernel_protocol::protocol::v1 as wire;
+use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
 use searchkernel_testkit::RecordingBackend;
 use searchkerneld::{start, ServerConfig, JSON_EXECUTE_PATH};
 use tokio::sync::Notify;

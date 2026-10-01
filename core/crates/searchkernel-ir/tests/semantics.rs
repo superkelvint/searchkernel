@@ -1736,8 +1736,7 @@ fn v2_result_validation_rejects_nonportable_doubles_and_tensor_cells_without_pan
 fn v2_error_encoding_remains_portable() {
     let error = PortableError::new(ErrorCode::InvalidArgument, "bad request");
     let bytes = error_to_api(&error);
-    let encoded =
-        searchkernel_ir::__flatbuffers::root::<api::Error>(&bytes).expect("valid error");
+    let encoded = searchkernel_ir::__flatbuffers::root::<api::Error>(&bytes).expect("valid error");
     assert_eq!(encoded.code(), api::ErrorCode::InvalidArgument);
     assert_eq!(encoded.message(), Some("bad request"));
 }

@@ -994,7 +994,10 @@ fn rejects_update_type_errors_before_backend_execution() {
         wire::ResponsePayload::SearchKernel_Wire_Error
     );
     assert_eq!(
-        envelope.payload_as_search_kernel_wire_error().unwrap().code(),
+        envelope
+            .payload_as_search_kernel_wire_error()
+            .unwrap()
+            .code(),
         api::ErrorCode::InvalidArgument
     );
     assert!(

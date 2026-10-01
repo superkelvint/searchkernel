@@ -20,9 +20,9 @@ use searchkernel::{
     Tensor,
 };
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
 use searchkernel_protocol::protocol::v1 as wire;
+use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
 use searchkernel_testkit::{
     canonical_result_fixtures, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
 };

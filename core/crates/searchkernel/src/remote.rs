@@ -10,7 +10,7 @@ use crate::{Index, Result};
 use searchkernel_ir::{
     self as ir, Backend, BackendSession, ErrorCode, IndexContext, PortableError,
 };
-use searchkernel_protocol::{protocol::v1::{self as wire, PROTOCOL_VERSION}};
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use searchkernel_rpc::{
     rpc::{search_kernel_client::SearchKernelClient, FlatBufferFrame},
     MAX_GRPC_MESSAGE_SIZE,
@@ -598,8 +598,10 @@ impl Backend for RemoteBackend {
 
     fn patch(&self, request: ir::PatchRequestIr) -> ir::Result<ir::PatchResult> {
         let payload = self.call(ir::encode_patch_request(&request)?, false)?;
-        let envelope =
-            self.response(&payload, wire::ResponsePayload::SearchKernel_Wire_PatchResult)?;
+        let envelope = self.response(
+            &payload,
+            wire::ResponsePayload::SearchKernel_Wire_PatchResult,
+        )?;
         let result = ir::patch_result_from_api(
             envelope
                 .payload_as_search_kernel_wire_patch_result()
@@ -641,7 +643,8 @@ impl Backend for RemoteBackend {
 
     fn get(&self, request: ir::GetRequestIr) -> ir::Result<ir::GetResult> {
         let payload = self.call(ir::encode_get_request(&request)?, true)?;
-        let envelope = self.response(&payload, wire::ResponsePayload::SearchKernel_Wire_GetResult)?;
+        let envelope =
+            self.response(&payload, wire::ResponsePayload::SearchKernel_Wire_GetResult)?;
         let result = ir::get_result_from_api(
             envelope
                 .payload_as_search_kernel_wire_get_result()

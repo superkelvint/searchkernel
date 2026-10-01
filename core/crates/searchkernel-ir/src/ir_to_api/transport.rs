@@ -1,5 +1,5 @@
 use super::*;
-use searchkernel_protocol::{protocol::v1::{self as wire, PROTOCOL_VERSION}};
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use std::collections::BTreeMap;
 
 fn finish_request(

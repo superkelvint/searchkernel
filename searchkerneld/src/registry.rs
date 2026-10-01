@@ -2,7 +2,10 @@ use flatbuffers::root;
 use searchkernel::{Error as IndexError, ErrorCode as IndexErrorCode, Index};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
 use searchkernel_ir::{ControlPlaneRequest, PortableError};
-use searchkernel_protocol::{protocol::v1::{self as wire, PROTOCOL_VERSION}, wire::v1 as api};
+use searchkernel_protocol::{
+    protocol::v1::{self as wire, PROTOCOL_VERSION},
+    wire::v1 as api,
+};
 use std::{
     collections::BTreeMap,
     fmt,
@@ -447,11 +450,13 @@ fn encode_lifecycle_result(
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
     let payload = match payload_type {
-        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => api::CreateIndexResult::create(
-            &mut builder,
-            &api::CreateIndexResultArgs { index: Some(index) },
-        )
-        .as_union_value(),
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => {
+            api::CreateIndexResult::create(
+                &mut builder,
+                &api::CreateIndexResultArgs { index: Some(index) },
+            )
+            .as_union_value()
+        }
         wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult => api::OpenIndexResult::create(
             &mut builder,
             &api::OpenIndexResultArgs { index: Some(index) },

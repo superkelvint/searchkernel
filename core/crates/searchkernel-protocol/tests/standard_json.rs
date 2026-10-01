@@ -245,8 +245,7 @@ fn standard_json_accepts_flatbuffers_positional_empty_union_tables() {
 
 #[test]
 fn standard_json_carries_ranking_inputs_and_structured_grouping() {
-    let bytes =
-        request_json_to_flatbuffer(WIDENED_SEARCH_REQUEST).expect("widened request JSON");
+    let bytes = request_json_to_flatbuffer(WIDENED_SEARCH_REQUEST).expect("widened request JSON");
     let printed = request_flatbuffer_to_json(&bytes).expect("widened request JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
     assert_eq!(value["payload_type"], "SearchKernel_Wire_SearchRequest");
@@ -340,7 +339,10 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
         wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest.0,
         11
     );
-    assert_eq!(wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest.0, 12);
+    assert_eq!(
+        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest.0,
+        12
+    );
 
     assert_eq!(wire::ResponsePayload::SearchKernel_Wire_InsertResult.0, 1);
     assert_eq!(wire::ResponsePayload::SearchKernel_Wire_UpsertResult.0, 2);
@@ -360,7 +362,10 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
         wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult.0,
         12
     );
-    assert_eq!(wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult.0, 13);
+    assert_eq!(
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult.0,
+        13
+    );
 
     // #848 establishes this layout as the compatibility baseline. Future
     // protocol evolution appends fields/variants rather than reusing slots.

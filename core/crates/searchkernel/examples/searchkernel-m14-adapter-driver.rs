@@ -167,7 +167,11 @@ fn run(root: &Json, definition: &Path, config: &Path, data: &Path) -> Json {
     let d = open(definition, config, data);
     let (after_reopen, trace) = query(&d, root, opts, &root["query"], &mut traces);
     evidence.push(json!({"id":"after_reopen","trace":trace}));
-    let deleted = dispatch(&d, "SearchKernel_Wire_DeleteRequest", json!({"id":delete_id}));
+    let deleted = dispatch(
+        &d,
+        "SearchKernel_Wire_DeleteRequest",
+        json!({"id":delete_id}),
+    );
     assert_eq!(deleted["payload"]["deleted"], true);
     let (after_delete, trace) = query(&d, root, opts, &root["query"], &mut traces);
     evidence.push(json!({"id":"after_delete","trace":trace}));

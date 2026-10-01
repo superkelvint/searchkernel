@@ -5,7 +5,7 @@
 //! behavior for adversarial FlatBuffers responses.
 
 use flatbuffers::FlatBufferBuilder;
-use searchkernel_protocol::{protocol::v1::{self as wire, PROTOCOL_VERSION}};
+use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 
 fn address<'a>(
     builder: &mut FlatBufferBuilder<'a>,
