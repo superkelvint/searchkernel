@@ -308,8 +308,8 @@ export class SearchResults {
   constructor(result: SearchResultT) {
     this.raw = result;
     if (result.root == null) throw new ResultDecodeError("missing SearchResult.root");
-    if (result.totalHits == null) throw new ResultDecodeError("missing SearchResult.total_hits");
     this.root = wrapNode(result.root);
+    if (result.totalHits == null) throw new ResultDecodeError("missing SearchResult.total_hits");
 
     const rootChildren = this.root instanceof ResultGroup ? this.root.children : [];
     this.hits = this.root instanceof Hit
