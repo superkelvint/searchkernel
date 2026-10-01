@@ -526,14 +526,16 @@ fn encode_lifecycle_result(
     let index = wire_ir::index_definition_offset(&mut builder, definition);
     let generation = builder.create_string(index_generation);
     let payload = match payload_type {
-        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => api::CreateIndexResult::create(
-            &mut builder,
-            &api::CreateIndexResultArgs {
-                index: Some(index),
-                generation: Some(generation),
-            },
-        )
-        .as_union_value(),
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => {
+            api::CreateIndexResult::create(
+                &mut builder,
+                &api::CreateIndexResultArgs {
+                    index: Some(index),
+                    generation: Some(generation),
+                },
+            )
+            .as_union_value()
+        }
         wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult => api::OpenIndexResult::create(
             &mut builder,
             &api::OpenIndexResultArgs {
