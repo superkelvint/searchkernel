@@ -522,7 +522,7 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
         body = JSON.generate(
           "protocol_version" => 1,
           "payload_type" => "SearchKernel_Wire_#{response_name}",
-          "payload" => { "index" => {}, "generation" => "fixture-generation" }
+          "payload" => { "index" => {} }
         )
         socket.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
         socket.close

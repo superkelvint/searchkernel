@@ -166,7 +166,7 @@ pub fn encode_insert_request_for_target_generation(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_InsertRequest,
+        wire::RequestPayload::SearchKernel_V2_InsertRequest,
         request.as_union_value(),
         target,
         expected_index_generation,
@@ -222,7 +222,7 @@ pub fn encode_upsert_request_for_target_generation(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_UpsertRequest,
+        wire::RequestPayload::SearchKernel_V2_UpsertRequest,
         request.as_union_value(),
         target,
         expected_index_generation,
@@ -340,7 +340,7 @@ pub fn encode_patch_request_for_target_generation(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_PatchRequest,
+        wire::RequestPayload::SearchKernel_V2_PatchRequest,
         request.as_union_value(),
         logical_target,
         expected_index_generation,
@@ -558,7 +558,7 @@ pub fn encode_update_request_for_target_generation(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_UpdateRequest,
+        wire::RequestPayload::SearchKernel_V2_UpdateRequest,
         request.as_union_value(),
         logical_target,
         expected_index_generation,
@@ -614,7 +614,7 @@ pub fn encode_delete_request_for_target_generation(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_DeleteRequest,
+        wire::RequestPayload::SearchKernel_V2_DeleteRequest,
         request.as_union_value(),
         logical_target,
         expected_index_generation,
@@ -696,7 +696,7 @@ pub fn encode_get_request_for_target_generation(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_GetRequest,
+        wire::RequestPayload::SearchKernel_V2_GetRequest,
         request.as_union_value(),
         logical_target,
         expected_index_generation,
@@ -732,7 +732,7 @@ pub fn encode_search_request_for_target_generation(
     let request = super::search::search_request_offset(&mut builder, request);
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_SearchRequest,
+        wire::RequestPayload::SearchKernel_V2_SearchRequest,
         request.as_union_value(),
         logical_target,
         expected_index_generation,
@@ -810,7 +810,7 @@ pub fn encode_analyze_request_for_target_generation(
     );
     Ok(finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_AnalyzeRequest,
+        wire::RequestPayload::SearchKernel_V2_AnalyzeRequest,
         request.as_union_value(),
         logical_target,
         expected_index_generation,
@@ -841,7 +841,7 @@ pub fn encode_describe_request_for_target_generation(
     let request = api::DescribeRequest::create(&mut builder, &api::DescribeRequestArgs {});
     finish_request(
         &mut builder,
-        wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
+        wire::RequestPayload::SearchKernel_V2_DescribeRequest,
         request.as_union_value(),
         logical_target,
         expected_index_generation,

@@ -861,7 +861,7 @@ impl RemoteClient {
                 "remote client target lifecycle lock is poisoned",
             ))
         })?;
-        let request = wire_ir::encode_open_index_request(target);
+        let request = ir::encode_open_index_request(target);
         let response = self
             .transport
             .call(request, true)
@@ -902,7 +902,7 @@ impl RemoteClient {
                 "remote client target lifecycle lock is poisoned",
             ))
         })?;
-        let request = wire_ir::encode_delete_index_request(target);
+        let request = ir::encode_delete_index_request(target);
         let response = self
             .transport
             .call(request, false)

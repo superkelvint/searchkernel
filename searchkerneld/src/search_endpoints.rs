@@ -1548,7 +1548,6 @@ fn encode_search_request(
         &mut builder,
         &api::IndexTargetArgs {
             name: Some(target_name),
-            generation: None,
         },
     );
     let envelope = wire::RequestEnvelope::create(

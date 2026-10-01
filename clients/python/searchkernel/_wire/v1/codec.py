@@ -217,6 +217,10 @@ def pack_request(
     if target is not None:
         if not isinstance(target, str):
             raise TypeError("Search Kernel target must be a string")
+        if expected_index_generation is not None and (
+            not isinstance(expected_index_generation, str) or not expected_index_generation
+        ):
+            raise ValueError("expected index generation must be a non-empty string")
         index_target = IndexTargetT(target, expected_index_generation)
     envelope = RequestEnvelope.RequestEnvelopeT(
         PROTOCOL_VERSION,

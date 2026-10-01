@@ -158,17 +158,11 @@ final class RecordingTransport implements Transport
             ],
             'SearchKernel_Wire_CreateIndexRequest' => [
                 'payload_type' => 'SearchKernel_Wire_CreateIndexResult',
-                'payload' => [
-                    'index' => $payload['definition'] ?? [],
-                    'generation' => 'fixture-generation',
-                ],
+                'payload' => ['index' => $payload['definition'] ?? []],
             ],
             'SearchKernel_Wire_OpenIndexRequest' => [
                 'payload_type' => 'SearchKernel_Wire_OpenIndexResult',
-                'payload' => [
-                    'index' => ['fields' => []],
-                    'generation' => 'fixture-generation',
-                ],
+                'payload' => ['index' => ['fields' => []]],
             ],
             'SearchKernel_Wire_DeleteIndexRequest' => [
                 'payload_type' => 'SearchKernel_Wire_DeleteIndexResult',

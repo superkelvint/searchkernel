@@ -1,4 +1,4 @@
-'''Generated V1 codec metadata; do not edit.'''
+"""Generated V1 codec metadata; do not edit."""
 
 ENUM_FIELDS = {
     'AnalyzeRequest': {'targetType': 'AnalyzeTarget'},
