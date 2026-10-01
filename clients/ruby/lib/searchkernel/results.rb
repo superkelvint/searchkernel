@@ -173,10 +173,16 @@ module SearchKernel
       return nil if raw.nil?
       Value.object!(raw, "Relevance")
       kind = Value.discriminator!(raw, "value", %w[FiniteRelevance NegativeInfinityRelevance PositiveInfinityRelevance])
+      payload = raw["value"]
       case kind
-      when "FiniteRelevance" then Value.finite!(raw["value"].fetch("value", 0.0))
-      when "NegativeInfinityRelevance" then -Float::INFINITY
-      when "PositiveInfinityRelevance" then Float::INFINITY
+      when "FiniteRelevance"
+        Value.finite!(payload.fetch("value", 0.0))
+      when "NegativeInfinityRelevance"
+        raise ProtocolError, "mismatched NegativeInfinityRelevance payload" if payload.key?("value")
+        -Float::INFINITY
+      when "PositiveInfinityRelevance"
+        raise ProtocolError, "mismatched PositiveInfinityRelevance payload" if payload.key?("value")
+        Float::INFINITY
       end
     end
 

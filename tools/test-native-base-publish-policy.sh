@@ -51,6 +51,28 @@ grep -Fq -- '--draft' "$PUBLISH" || {
     exit 1
 }
 
+grep -Fq 'SEARCHKERNEL_DEV_USE_CI_IMAGE=0' "$PUBLISH" || {
+    echo "host native-base publication must provision in the selected host environment" >&2
+    exit 1
+}
+grep -Fq 'env -u SK_NATIVE_SDK' "$PUBLISH" || {
+    echo "native-base publication must ignore ambient legacy SK_NATIVE_SDK overrides" >&2
+    exit 1
+}
+grep -Fq 'provision_native_base "$BUILD_ENV"' "$PUBLISH" || {
+    echo "native-base publication must provision before packaging each selected environment" >&2
+    exit 1
+}
+
+grep -Fq 'normalize_absolute_root' "$PACKAGE" || {
+    echo "native-base packager must normalize producer roots without corrupting relative CMake paths" >&2
+    exit 1
+}
+if grep -Fq 'text.replace(vespa_root, "/work/vespa")' "$PACKAGE"; then
+    echo "native-base packager must not blindly replace the Vespa root substring" >&2
+    exit 1
+fi
+
 python3 - "$PUBLISH" <<'PY'
 import pathlib
 import sys

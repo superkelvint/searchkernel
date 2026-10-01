@@ -13,11 +13,94 @@
     "rust": {
       "title": "Rust",
       "runtimes": [
-        "native"
+        "native",
+        "grpc"
       ],
       "evidence_roots": [
         "core/crates/searchkernel/tests",
-        "core/crates/searchkernel/examples"
+        "core/crates/searchkernel/examples",
+        "core/crates/searchkernel/src",
+        "searchkerneld/tests"
+      ],
+      "lifecycle_contract": {
+        "CreateIndex": [
+          {
+            "kind": "public",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "pub fn create_index("
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
+            "contains": "RequestPayload::SearchKernel_V2_CreateIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "ResponsePayload::SearchKernel_V2_CreateIndexResult"
+          }
+        ],
+        "OpenIndex": [
+          {
+            "kind": "public",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "pub fn open_index("
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
+            "contains": "RequestPayload::SearchKernel_V2_OpenIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "ResponsePayload::SearchKernel_V2_OpenIndexResult"
+          }
+        ],
+        "DeleteIndex": [
+          {
+            "kind": "public",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "pub fn delete_index("
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel-ir/src/ir_to_api/transport.rs",
+            "contains": "RequestPayload::SearchKernel_V2_DeleteIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "core/crates/searchkernel/src/remote.rs",
+            "contains": "ResponsePayload::SearchKernel_V2_DeleteIndexResult"
+          }
+        ]
+      },
+      "required_e2e_runtimes": [
+        "grpc"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "native"
+          ],
+          "path": "core/crates/searchkernel/tests/native_e2e.rs",
+          "command": [
+            "./dev",
+            "test",
+            "rust-native-e2e"
+          ]
+        },
+        {
+          "runtimes": [
+            "grpc"
+          ],
+          "path": "searchkerneld/tests/multi_index.rs",
+          "command": [
+            "./dev",
+            "test",
+            "searchkerneld-multi-index"
+          ]
+        }
       ]
     },
     "python": {
@@ -59,7 +142,60 @@
             "--include-facade"
           ]
         }
-      ]
+      ],
+      "lifecycle_contract": {
+        "CreateIndex": [
+          {
+            "kind": "public",
+            "path": "clients/python/searchkernel/client.py",
+            "contains": "    def create("
+          },
+          {
+            "kind": "wire",
+            "path": "clients/python/searchkernel/protocol.py",
+            "contains": "SearchKernel_V2_CreateIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/python/searchkernel/protocol.py",
+            "contains": "SearchKernel_V2_CreateIndexResult"
+          }
+        ],
+        "OpenIndex": [
+          {
+            "kind": "public",
+            "path": "clients/python/searchkernel/client.py",
+            "contains": "    def open(cls, path:"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/python/searchkernel/protocol.py",
+            "contains": "SearchKernel_V2_OpenIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/python/searchkernel/protocol.py",
+            "contains": "SearchKernel_V2_OpenIndexResult"
+          }
+        ],
+        "DeleteIndex": [
+          {
+            "kind": "public",
+            "path": "clients/python/searchkernel/client.py",
+            "contains": "    def delete_index("
+          },
+          {
+            "kind": "wire",
+            "path": "clients/python/searchkernel/protocol.py",
+            "contains": "SearchKernel_V2_DeleteIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/python/searchkernel/protocol.py",
+            "contains": "SearchKernel_V2_DeleteIndexResult"
+          }
+        ]
+      }
     },
     "typescript": {
       "title": "TypeScript",
@@ -86,7 +222,75 @@
             "clients/typescript/scripts/run-real-e2e.sh"
           ]
         }
-      ]
+      ],
+      "lifecycle_contract": {
+        "CreateIndex": [
+          {
+            "kind": "public",
+            "path": "clients/typescript/src/client/index.ts",
+            "contains": "  static async create("
+          },
+          {
+            "kind": "public",
+            "path": "clients/typescript/src/node/index.ts",
+            "contains": "  static async create("
+          },
+          {
+            "kind": "wire",
+            "path": "clients/typescript/src/protocol/envelope.ts",
+            "contains": "createIndex: RequestPayload.SearchKernel_V2_CreateIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/typescript/src/protocol/envelope.ts",
+            "contains": "createIndex: ResponsePayload.SearchKernel_V2_CreateIndexResult"
+          }
+        ],
+        "OpenIndex": [
+          {
+            "kind": "public",
+            "path": "clients/typescript/src/client/index.ts",
+            "contains": "  static async open("
+          },
+          {
+            "kind": "public",
+            "path": "clients/typescript/src/node/index.ts",
+            "contains": "  static async open("
+          },
+          {
+            "kind": "wire",
+            "path": "clients/typescript/src/protocol/envelope.ts",
+            "contains": "openIndex: RequestPayload.SearchKernel_V2_OpenIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/typescript/src/protocol/envelope.ts",
+            "contains": "openIndex: ResponsePayload.SearchKernel_V2_OpenIndexResult"
+          }
+        ],
+        "DeleteIndex": [
+          {
+            "kind": "public",
+            "path": "clients/typescript/src/client/index.ts",
+            "contains": "  static async delete("
+          },
+          {
+            "kind": "public",
+            "path": "clients/typescript/src/node/index.ts",
+            "contains": "  static async delete("
+          },
+          {
+            "kind": "wire",
+            "path": "clients/typescript/src/protocol/envelope.ts",
+            "contains": "deleteIndex: RequestPayload.SearchKernel_V2_DeleteIndexRequest"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/typescript/src/protocol/envelope.ts",
+            "contains": "deleteIndex: ResponsePayload.SearchKernel_V2_DeleteIndexResult"
+          }
+        ]
+      }
     },
     "php": {
       "title": "PHP",
@@ -108,7 +312,45 @@
             "clients/php/examples/run_searchkernel_client_api_e2e.sh"
           ]
         }
-      ]
+      ],
+      "lifecycle_contract": {
+        "CreateIndex": [
+          {
+            "kind": "public",
+            "path": "clients/php/src/Index.php",
+            "contains": "    public static function create("
+          },
+          {
+            "kind": "wire",
+            "path": "clients/php/src/Protocol.php",
+            "contains": "'create_index' => ['CreateIndexRequest', 'CreateIndexResult']"
+          }
+        ],
+        "OpenIndex": [
+          {
+            "kind": "public",
+            "path": "clients/php/src/Index.php",
+            "contains": "    public static function open(string $baseUrl, string $target): self"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/php/src/Protocol.php",
+            "contains": "'open_index' => ['OpenIndexRequest', 'OpenIndexResult']"
+          }
+        ],
+        "DeleteIndex": [
+          {
+            "kind": "public",
+            "path": "clients/php/src/Index.php",
+            "contains": "    public static function deleteTarget(string $baseUrl, string $target): bool"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/php/src/Protocol.php",
+            "contains": "'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult']"
+          }
+        ]
+      }
     },
     "ruby": {
       "title": "Ruby",
@@ -145,7 +387,45 @@
             "clients/ruby/examples/run_searchkernel_package_daemon_e2e.sh"
           ]
         }
-      ]
+      ],
+      "lifecycle_contract": {
+        "CreateIndex": [
+          {
+            "kind": "public",
+            "path": "clients/ruby/lib/searchkernel/facade.rb",
+            "contains": "    def self.create(location, fields:"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/ruby/lib/searchkernel/protocol.rb",
+            "contains": "create_index: { request: \"CreateIndexRequest\", response: \"CreateIndexResult\" }"
+          }
+        ],
+        "OpenIndex": [
+          {
+            "kind": "public",
+            "path": "clients/ruby/lib/searchkernel/facade.rb",
+            "contains": "    def self.open(location, target:"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/ruby/lib/searchkernel/protocol.rb",
+            "contains": "open_index: { request: \"OpenIndexRequest\", response: \"OpenIndexResult\" }"
+          }
+        ],
+        "DeleteIndex": [
+          {
+            "kind": "public",
+            "path": "clients/ruby/lib/searchkernel/facade.rb",
+            "contains": "    def self.delete(base_url, target:"
+          },
+          {
+            "kind": "wire",
+            "path": "clients/ruby/lib/searchkernel/protocol.rb",
+            "contains": "delete_index: { request: \"DeleteIndexRequest\", response: \"DeleteIndexResult\" }"
+          }
+        ]
+      }
     }
   },
   "parity_requirements": [
@@ -194,5 +474,12 @@
       "title": "Disjoint Juniper continuation regions become separate fragments"
     }
   ],
-  "overrides": []
+  "overrides": [],
+  "lifecycle_surfaces": [
+    "rust",
+    "python",
+    "typescript",
+    "php",
+    "ruby"
+  ]
 }

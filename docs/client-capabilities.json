@@ -12,7 +12,8 @@
       "id": "rust",
       "title": "Rust",
       "runtimes": [
-        "native"
+        "native",
+        "grpc"
       ]
     },
     {
@@ -297,7 +298,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 527
+              "line": 557
             },
             {
               "capability": "query.phrase",
@@ -307,7 +308,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 527
+              "line": 557
             },
             {
               "capability": "query.phrase",
@@ -327,7 +328,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 565
+              "line": 641
             },
             {
               "capability": "query.phrase",
@@ -347,7 +348,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 415
+              "line": 506
             },
             {
               "capability": "query.phrase",
@@ -421,7 +422,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 528
+              "line": 558
             },
             {
               "capability": "query.proximity",
@@ -431,7 +432,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 528
+              "line": 558
             },
             {
               "capability": "query.proximity",
@@ -451,7 +452,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 566
+              "line": 642
             },
             {
               "capability": "query.proximity",
@@ -471,7 +472,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 416
+              "line": 507
             },
             {
               "capability": "query.proximity",
@@ -545,7 +546,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 557
+              "line": 587
             },
             {
               "capability": "query.same_element",
@@ -555,7 +556,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 557
+              "line": 587
             },
             {
               "capability": "query.same_element",
@@ -575,7 +576,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 567
+              "line": 643
             },
             {
               "capability": "query.same_element",
@@ -639,7 +640,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 529
+              "line": 559
             },
             {
               "capability": "query.fuzzy",
@@ -649,7 +650,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 529
+              "line": 559
             },
             {
               "capability": "query.fuzzy",
@@ -669,7 +670,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 568
+              "line": 644
             },
             {
               "capability": "query.fuzzy",
@@ -689,7 +690,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 417
+              "line": 508
             }
           ],
           "overrides": []
@@ -723,7 +724,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 833
+              "line": 772
             },
             {
               "capability": "query.prefix_suffix_substring",
@@ -733,7 +734,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 288
+              "line": 307
             },
             {
               "capability": "query.prefix_suffix_substring",
@@ -743,7 +744,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
-              "line": 385
+              "line": 402
             },
             {
               "capability": "query.prefix_suffix_substring",
@@ -914,7 +915,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 622
+              "line": 652
             },
             {
               "capability": "query.geo",
@@ -924,7 +925,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 622
+              "line": 652
             },
             {
               "capability": "query.geo",
@@ -944,7 +945,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 569
+              "line": 645
             },
             {
               "capability": "query.geo",
@@ -1032,7 +1033,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 530
+              "line": 560
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1042,7 +1043,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 530
+              "line": 560
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1062,7 +1063,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/facade.rb",
-              "line": 570
+              "line": 646
             },
             {
               "capability": "query.weighted_and_wand",
@@ -1082,7 +1083,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 418
+              "line": 509
             }
           ],
           "overrides": []
@@ -1359,7 +1360,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 217
+              "line": 308
             },
             {
               "capability": "search.sorting",
@@ -1404,18 +1405,7 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [
-            {
-              "capability": "search.sort_missing_placement",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "shared",
-              "kind": "ergonomic",
-              "strength": "builder",
-              "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 245
-            }
-          ],
+          "evidence": [],
           "overrides": []
         }
       ]
@@ -1487,7 +1477,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 218
+              "line": 309
             },
             {
               "capability": "search.pagination",
@@ -1562,16 +1552,6 @@
               "strength": "builder",
               "path": "clients/php/examples/try_searchkernel_client_api_e2e.php",
               "line": 1238
-            },
-            {
-              "capability": "search.search_fields",
-              "scenario": "basic",
-              "surface": "python",
-              "runtime": "shared",
-              "kind": "ergonomic",
-              "strength": "builder",
-              "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 244
             }
           ],
           "overrides": []
@@ -1615,7 +1595,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 662
+              "line": 692
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1625,7 +1605,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 662
+              "line": 692
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1655,7 +1635,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 219
+              "line": 310
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1776,7 +1756,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 682
+              "line": 957
             }
           ],
           "overrides": []
@@ -1840,7 +1820,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 663
+              "line": 693
             },
             {
               "capability": "result.highlighting",
@@ -1850,7 +1830,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 663
+              "line": 693
             },
             {
               "capability": "result.highlighting",
@@ -1880,7 +1860,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 220
+              "line": 311
             },
             {
               "capability": "result.highlighting",
@@ -2347,7 +2327,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 323
+              "line": 301
             },
             {
               "capability": "update.document_crud",
@@ -2357,7 +2337,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_e2e.py",
-              "line": 323
+              "line": 301
             },
             {
               "capability": "update.document_crud",
@@ -2367,7 +2347,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
-              "line": 271
+              "line": 301
             },
             {
               "capability": "update.document_crud",
@@ -2387,7 +2367,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
-              "line": 271
+              "line": 301
             },
             {
               "capability": "update.document_crud",
@@ -2492,6 +2472,26 @@
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
               "line": 975
+            },
+            {
+              "capability": "update.arithmetic",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 174
+            },
+            {
+              "capability": "update.arithmetic",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 174
             }
           ],
           "overrides": []
@@ -2556,6 +2556,26 @@
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_client_api_e2e.rb",
               "line": 976
+            },
+            {
+              "capability": "update.create_if_nonexistent",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 175
+            },
+            {
+              "capability": "update.create_if_nonexistent",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 175
             }
           ],
           "overrides": []
@@ -2791,7 +2811,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
-              "line": 270
+              "line": 300
             },
             {
               "capability": "query.text_weak_and",
@@ -2801,7 +2821,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/examples/try_searchkernel_package_daemon_e2e.rb",
-              "line": 270
+              "line": 300
             }
           ],
           "overrides": []
@@ -3392,7 +3412,28 @@
         {
           "id": "basic",
           "title": "Basic behavior",
-          "evidence": [],
+          "evidence": [
+            {
+              "capability": "daemon.multi_index_lifecycle",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "strength": "runtime",
+              "path": "searchkerneld/tests/multi_index.rs",
+              "line": 1452
+            },
+            {
+              "capability": "daemon.multi_index_lifecycle",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "searchkerneld/tests/multi_index.rs",
+              "line": 1452
+            }
+          ],
           "overrides": []
         }
       ]

@@ -30,6 +30,7 @@ from SearchKernel.V2.BytesValue import BytesValueT
 from SearchKernel.V2.DataType import DataTypeT
 from SearchKernel.V2.DataTypeKind import DataTypeKind
 from SearchKernel.V2.DeleteRequest import DeleteRequestT
+from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT
 from SearchKernel.V2.DescribeRequest import DescribeRequestT
 from SearchKernel.V2.Document import DocumentT
 from SearchKernel.V2.ErrorCode import ErrorCode
@@ -410,14 +411,28 @@ def _prepare_managed_data_root(data_root: Path) -> None:
         pass
 
     if created:
+        temporary_marker = None
+        published = False
         try:
-            with marker.open("x", encoding="utf-8") as stream:
+            descriptor, temporary_marker = tempfile.mkstemp(
+                prefix=f".{marker.name}.", dir=data_root
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 stream.write(_MANAGED_ROOT_MARKER_VALUE + "\n")
+            # Publish complete marker contents atomically without replacing a
+            # path that another process may have created in the meantime.
+            os.link(temporary_marker, marker)
+            published = True
+            os.unlink(temporary_marker)
+            temporary_marker = None
             _validate_managed_data_root(data_root)
             return
         except Exception:
             try:
-                marker.unlink(missing_ok=True)
+                if published:
+                    marker.unlink(missing_ok=True)
+                if temporary_marker is not None:
+                    os.unlink(temporary_marker)
                 data_root.rmdir()
             except OSError:
                 pass
@@ -933,6 +948,9 @@ class Client:
             raise ClientError("OpenIndexResult.index is missing")
         return result
 
+    def delete_index(self) -> Any:
+        return self.execute("delete_index", DeleteIndexRequestT())
+
     def close(self) -> None:
         self.transport.close()
 
@@ -1014,6 +1032,44 @@ class Index:
             owner.close()
             raise
         return cls(client, owner, ergonomic=True)
+
+    @classmethod
+    def delete_index(
+        cls,
+        endpoint_or_path: str | os.PathLike[str],
+        *,
+        target: str | None = None,
+    ) -> None:
+        """Delete a logical target, resolving managed-local path identity when needed."""
+        if target is not None:
+            client = Client(GrpcTransport(os.fspath(endpoint_or_path)), target=target)
+            try:
+                client.delete_index()
+            finally:
+                client.close()
+            return
+
+        canonical_path, data_root, local_target = _managed_location(Path(endpoint_or_path))
+        _prepare_managed_data_root(data_root)
+        _migrate_legacy_managed_path(canonical_path, data_root, local_target)
+        if (data_root / local_target).is_dir() and not canonical_path.exists():
+            _write_managed_marker(canonical_path, local_target)
+
+        owner = _ManagedLocalHost.acquire(data_root)
+        client = Client(GrpcTransport(owner.endpoint), target=local_target)
+        deleted = False
+        try:
+            client.delete_index()
+            deleted = True
+        finally:
+            try:
+                client.close()
+            finally:
+                try:
+                    owner.close()
+                finally:
+                    if deleted:
+                        _cleanup_managed_reservation(canonical_path, local_target)
 
     def insert(self, identifier: str | Mapping[str, Any], fields: Mapping[str, Any] | None = None) -> Any:
         if self._ergonomic and isinstance(identifier, Mapping):
