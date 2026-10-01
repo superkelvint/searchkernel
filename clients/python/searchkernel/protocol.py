@@ -66,7 +66,13 @@ def pack_object(obj: Any, *, file_identifier: bytes | None = None) -> bytes:
     return bytes(builder.Output())
 
 
-def pack_request(operation: str, payload: Any, *, target: str | None = None) -> bytes:
+def pack_request(
+    operation: str,
+    payload: Any,
+    *,
+    target: str | None = None,
+    expected_index_generation: str | None = None,
+) -> bytes:
     try:
         payload_type = _REQUEST_TYPES[operation]
     except KeyError as exc:
@@ -76,7 +82,13 @@ def pack_request(operation: str, payload: Any, *, target: str | None = None) -> 
         if not isinstance(target, str):
             raise TypeError("Search Kernel target must be a string")
         index_target = IndexTargetT(target)
-    envelope = RequestEnvelope.RequestEnvelopeT(PROTOCOL_VERSION, payload_type, payload, index_target)
+    envelope = RequestEnvelope.RequestEnvelopeT(
+        protocolVersion=PROTOCOL_VERSION,
+        payloadType=payload_type,
+        payload=payload,
+        target=index_target,
+        expectedIndexGeneration=expected_index_generation,
+    )
     return pack_object(envelope, file_identifier=REQUEST_IDENTIFIER)
 
 
