@@ -12,7 +12,7 @@ use std::{
 };
 
 use flatbuffers::root;
-use searchkernel::{Field, Index, IndexDefinition, RemoteClient};
+use searchkernel::{Field, IndexDefinition, RemoteClient};
 use searchkernel_protocol::{
     protocol::v1::{self as wire, PROTOCOL_VERSION},
     wire::v1 as api,

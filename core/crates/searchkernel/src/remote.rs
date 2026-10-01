@@ -832,15 +832,15 @@ impl RemoteClient {
             .transport
             .call(request, false, None)
             .map_err(crate::Error::from_ir)?;
+        let envelope = self.response(
+            &response.payload,
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+        )?;
         let generation = response.generation.clone().ok_or_else(|| {
             crate::Error::from_ir(invalid_remote_response(
                 "create-index response is missing target generation metadata",
             ))
         })?;
-        let envelope = self.response(
-            &response.payload,
-            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
-        )?;
         let result = envelope
             .payload_as_search_kernel_wire_create_index_result()
             .ok_or_else(|| {
@@ -863,15 +863,15 @@ impl RemoteClient {
             .transport
             .call(request, true, None)
             .map_err(crate::Error::from_ir)?;
+        let envelope = self.response(
+            &response.payload,
+            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
+        )?;
         let generation = response.generation.clone().ok_or_else(|| {
             crate::Error::from_ir(invalid_remote_response(
                 "open-index response is missing target generation metadata",
             ))
         })?;
-        let envelope = self.response(
-            &response.payload,
-            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
-        )?;
         let result = envelope
             .payload_as_search_kernel_wire_open_index_result()
             .ok_or_else(|| {
