@@ -77,8 +77,16 @@ When implementing a client, use these sources in this order:
 3. `searchkernel-ir` / `*_to_ir()` — canonical portable semantics.
 4. `docs/client-api-spec.md` — intended cross-language public facade.
 5. `docs/filter-expression-language.md` — filter syntax and clause-local binding semantics.
-6. Existing first-party clients — implementation references, not independent specifications.
-7. Shared conformance/E2E fixtures — executable behavior contract.
+6. `BUILDING.md`, root `dev`, and `build/targets.json` — canonical repository build/test/verify command surface and ownership mapping.
+7. `reference/client-contracts/catalog.json` plus executable `SKC:` annotations — canonical client capability/evidence registry.
+8. `reference/client-semantic-parity/`, `reference/result-response-conformance/`, and `reference/client-real-e2e-parity/` — shared cross-language acceptance corpora.
+9. Existing first-party clients — implementation references, not independent specifications.
+10. Shared conformance/E2E fixtures — executable behavior contract.
+11. `clients/INTEGRATING_NEW_CLIENTS.md` — repository integration SOP once the client implementation exists.
+
+The public repository command surface is `./dev`. Direct language-tool,
+package-manager, verifier-script, or bookkeeping invocations are implementation
+details unless this document explicitly says otherwise.
 
 If an existing client conflicts with the FlatBuffers contract or canonical IR semantics, the existing client is wrong.
 
@@ -311,7 +319,7 @@ Implement a new language client in the following order.
 Each phase must pass before moving to the next.
 
 ```text
-0. Inspect/freeze inputs
+0. Inspect/freeze inputs and the current ./dev/build ownership model
 1. Generate portable models
 2. Generate/implement transport plumbing
 3. Implement protocol envelope layer
@@ -320,13 +328,65 @@ Each phase must pass before moving to the next.
 6. Implement result decoding
 7. Implement ergonomic facade
 8. Implement managed-local lifecycle where applicable
-9. Package/export correctly
-10. Port canonical E2E
-11. Cross-language conformance
-12. Adversarial acceptance review
+9. Package/export correctly and prove the packaged consumer
+10. Port the canonical public-facade E2E
+11. Register the client surface, runtimes, evidence roots, and executable E2E lanes
+12. Add shared semantic/result conformance
+13. Add shared real-engine E2E parity
+14. Wire ./dev test/verify/bookkeeping ownership
+15. Run focused, repository-wide, and adversarial acceptance
 ```
 
 Do not combine client creation with changes to Search Kernel semantics, backend lowering, or daemon domain behavior.
+
+### 8.1 The build system is part of the client contract
+
+Normal development and acceptance use the root `./dev` interface. Build/test/verify
+commands run in the canonical Search Kernel CI image by default, so a client must
+work in that environment rather than depending on packages or state that happen
+to exist on a developer host.
+
+Use the smallest relevant command while iterating:
+
+```bash
+./dev test --list
+./dev verify --list
+./dev explain clients/<client>
+
+./dev test <client>
+./dev verify contracts
+./dev verify client-semantic-parity
+./dev test client-real-e2e-parity
+```
+
+Use the repository gates in increasing scope:
+
+```bash
+./dev check-fast
+./dev check
+./dev galaxy
+./dev universe
+```
+
+`./dev ci` is intentionally a cheap mandatory PR gate. A green `./dev ci`
+does **not** establish that a new client is complete; client/package/E2E/parity
+acceptance lives in the stronger commands above.
+
+When a local-capable developer or agent cannot execute a relevant lane locally,
+use the exact-HEAD remote form instead of inventing a one-off workflow:
+
+```bash
+./dev test --remote <scope>
+./dev verify --remote <lane>
+```
+
+Remote verification is evidence for the pushed commit, not for uncommitted local
+changes.
+
+The detailed repository-wiring procedure lives in
+[`INTEGRATING_NEW_CLIENTS.md`](./INTEGRATING_NEW_CLIENTS.md). This document
+defines what must exist; the integration SOP defines every place it must be
+registered.
 
 ---
 
@@ -1131,10 +1191,12 @@ Use current first-party client behavior and shared fixtures to determine what is
 
 ## 33. `Index`
 
-Remote/client mode should support the language equivalent of:
+Remote/client mode should connect to the daemon separately from selecting an
+index, using the language equivalent of:
 
 ```text
-Index.connect(endpoint)
+client = RemoteClient.connect(endpoint)
+index = client.open_index(target)
 ```
 
 Clients that explicitly claim managed-local operation should additionally support managed local lifecycle as described later. Runtime capability alone does not force a connect-only client to claim daemon ownership.
@@ -1308,7 +1370,8 @@ model is an already-managed daemon, including shared-host/server deployments.
 Such a client must:
 
 - document that lifecycle boundary clearly;
-- expose `Index.connect(endpoint)` or its language equivalent;
+- expose daemon-level `connect(endpoint)` and target-specific `open_index`
+  operations, or their language equivalents;
 - not claim managed-local capability evidence;
 - still verify persistence/reopen semantics through an external harness when
   those semantics are part of its public behavior.
@@ -1580,7 +1643,8 @@ When porting from an existing first-party client, preserve behavior while adapti
 
 ## 53. A client is not complete because it serializes
 
-Each first-party SDK needs several independent test layers.
+Each first-party SDK needs several independent test layers. They prove different
+claims and must not be collapsed into one "client tests passed" signal.
 
 ```text
 A. low-level representation/reproducibility checks
@@ -1591,10 +1655,35 @@ E. facade/builder tests
 F. result decoding tests
 G. transport tests
 H. managed-host tests where applicable
-I. package/install tests
-J. real-engine E2E
-K. cross-language conformance
+I. packaged-artifact consumer tests
+J. registered real-product E2E lanes
+K. canonical request/IR semantic conformance
+L. frozen result-response conformance
+M. shared real-engine cross-client E2E parity
 ```
+
+The evidence model is deliberately split:
+
+```text
+ergonomic    the handwritten facade exposes the capability
+conformance  shared canonical fixtures prove equivalent meaning/decoding
+e2e          a registered lane reaches the real daemon/backend path
+```
+
+Those are independent. A builder test cannot prove real-runtime behavior. A
+low-level E2E cannot prove the ergonomic facade exists. A comment in a test file
+cannot prove E2E unless the repository knows how to execute that exact
+file/runtime.
+
+For normal iteration, the language's complete ordinary suite is exposed as:
+
+```bash
+./dev test <client>
+```
+
+That target should own the client's language tests, package/consumer proof, and
+registered surface E2E as applicable. Do not make developers reconstruct the
+client's test suite from raw package-manager commands.
 
 ---
 
@@ -1817,6 +1906,29 @@ For clients that claim managed-local operation, the example should own its tempo
 
 For connect-only clients, including HTTP-first server clients and browser-only clients, a separate harness may prepare the daemon/index. The language E2E must still exercise the public package facade rather than bypassing through generated/protocol internals.
 
+An E2E file is not accepted merely because it exists or contains an `SKC:`
+annotation. Register the exact executable lane in
+`reference/client-contracts/catalog.json` with its runtime(s), path, and
+repository-root command. If the runtime is required for the production surface,
+list it in `required_e2e_runtimes` so omission is a registry failure.
+
+The normal execution path is:
+
+```text
+SKC kinds=e2e annotation
+        ↓
+catalog e2e_lanes entry
+        ↓
+./dev test <client>
+        ↓
+tools/check-client-contracts.py --run-e2e-surface <client>
+        ↓
+real searchkerneld / backend
+```
+
+The internal checker invocation is shown only to explain the chain; users and
+agents should normally run the `./dev` target.
+
 ---
 
 ## 63. E2E scenario coverage
@@ -1982,12 +2094,75 @@ e2e          real product/backend path executes it
 A test may prove more than one kind, but do not infer `ergonomic` merely
 because a low-level E2E reaches the backend. Record the runtime explicitly.
 
-Run:
+The catalog is
+[`reference/client-contracts/catalog.json`](../reference/client-contracts/catalog.json).
+For a new first-class surface, register:
+
+```text
+runtimes
+evidence_roots
+required_e2e_runtimes where production support requires runtime proof
+e2e_lanes with exact path + command
+parity_requirements only when an explicit source→target parity contract is intended
+```
+
+Use repository bookkeeping, not the checker directly:
 
 ```bash
-python3 tools/check-client-contracts.py --write
-python3 tools/check-client-contracts.py --check
+./dev bookkeeping sync
+./dev bookkeeping check
+./dev verify contracts
 ```
+
+`bookkeeping sync` regenerates deterministic reports such as
+`docs/CLIENT_CAPABILITIES.md` and `docs/client-capabilities.json`; the checked
+state must be clean afterward. Do not hand-edit generated compatibility output
+and do not maintain parallel support booleans.
+
+### 65.2 Cross-language compatibility has separate executable gates
+
+A first-class client participates in three stronger parity mechanisms in addition
+to its own `./dev test <client>` suite:
+
+1. **Canonical semantic parity**
+   ```bash
+   ./dev verify client-semantic-parity
+   ```
+   This executes the frozen cross-language request/IR corpus and the frozen
+   result-response schema/conformance corpus. Adding a client means extending
+   those harnesses so the new language consumes the same inputs and is compared
+   under the same rules; merely having equivalent-looking unit tests is not
+   enough.
+
+2. **Result-response conformance**
+   The client must decode the shared encoded response fixtures under
+   `reference/result-response-conformance/`, including malformed cases and
+   recursive result shapes. Do not regenerate fixtures to make a new client
+   pass. `./dev regen result-fixtures` is an authoring command for intentional
+   canonical fixture changes.
+
+3. **Real-engine E2E parity**
+   ```bash
+   ./dev test client-real-e2e-parity
+   ```
+   This runs each first-party showcase against the real engine using the shared
+   scenario intent in `reference/client-real-e2e-parity/corpus.json`, captures
+   normalized observations, and compares them across clients. A new first-class
+   client must be added to the comparator and its shared scenario
+   classifications; it must not carry a private "equivalent" corpus.
+
+These gates catch different regressions. Keep all three.
+
+### 65.3 Compatibility evidence should be executable and omission-sensitive
+
+The target state is not "the new client has tests." It is:
+
+> If the client disappears from generation, capability evidence, result
+> conformance, semantic parity, packaging, or real E2E, a normal repository
+> command fails.
+
+That is why compatibility metadata is derived from executable evidence and why
+required E2E runtimes are explicit.
 
 ## 66. Parity checklist
 
@@ -2094,6 +2269,29 @@ Probe readiness deterministically.
 
 Own the process group/session and implement hard cleanup fallback.
 
+### Failure: treating mandatory PR CI as client acceptance
+
+`./dev ci` is intentionally cheap. Run the client, compatibility, parity, and
+real-engine gates that establish the claims your change makes.
+
+### Failure: adding an `SKC:` E2E annotation without an executable lane
+
+Capability comments are evidence pointers, not magic. Register the exact
+path/runtime/command in the client-contract catalog and execute it through the
+canonical client test surface.
+
+### Failure: running private language commands as the documented acceptance path
+
+Raw `cargo`, `npm`, `pip`, `gem`, `php`, `ruby`, and internal
+`tools/check-*.py` commands may be useful while debugging, but first-class
+repository verification must be reachable through `./dev`.
+
+### Failure: creating a client-specific parity corpus
+
+Reuse the frozen semantic, result-response, and real-engine scenario corpora.
+Host-language adaptations belong in the client adapter, not in a forked truth
+set.
+
 ### Failure: unnecessary refactors while adding a client
 
 Make the smallest additive repository diff necessary.
@@ -2104,42 +2302,59 @@ Make the smallest additive repository diff necessary.
 
 ## 68. Recommended execution workflow for an implementation agent
 
-### Step 1 — Read only authoritative context first
+### Step 1 — Read the build and protocol authorities first
 
 Read:
 
 ```text
+BUILDING.md
 clients/README.md
+clients/INTEGRATING_NEW_CLIENTS.md
 docs/architecture.md
 docs/client-api-spec.md
 docs/filter-expression-language.md
 api/*.fbs
 api/rpc/searchkernel.proto
+reference/client-contracts/README.md
+reference/client-contracts/catalog.json
+reference/client-semantic-parity/
+reference/result-response-conformance/
+reference/client-real-e2e-parity/
 ```
 
-Then inspect Python and TypeScript as reference implementations.
+Then inspect the current Python client and at least one client with a similar
+transport/runtime model.
 
-### Step 2 — Write an implementation inventory
+On an unfamiliar checkout, run `./dev doctor` before diagnosing build failures
+as product-code failures.
+
+### Step 2 — Write an implementation and evidence inventory
 
 Before coding, list:
 
 ```text
 low-level representation strategy (generated binary models or schema-backed JSON)
 gRPC generation strategy if the client uses gRPC
-package/module layout
+package/module layout and package-manager artifact
 low-level escape hatch
-value conversion policy
-numeric-width policy
+value conversion and numeric-width policy
 result wrappers
 managed-local capability
 browser/mobile constraints
-required tests
-E2E plan
+catalog runtimes and evidence roots
+required E2E runtimes
+public E2E lane(s)
+semantic-parity adapter
+result-response-conformance adapter
+real-engine-parity adapter
+./dev test target
+package-consumer test
 ```
 
-Resolve host-language representability differences explicitly.
+Resolve host-language representability differences explicitly. Decide which
+claims are ergonomic, conformance, and E2E claims before annotating tests.
 
-### Step 3 — Implement low-level proof first
+### Step 3 — Implement the low-level proof first
 
 Prove the complete low-level path before large ergonomic builder work.
 
@@ -2190,19 +2405,94 @@ schema/rank-profile helpers where applicable
 managed lifecycle if claimed
 ```
 
-### Step 5 — Port tests while porting features
+Port executable tests with each slice. Add `SKC:` annotations only where the
+test actually proves the named capability and evidence kind.
 
-Do not postpone all tests until the facade is complete.
+### Step 5 — Prove the package artifact, not only the source tree
 
-Every discovered language-specific edge case gets a regression test immediately.
+Build the package users will install, consume it from a clean external fixture,
+and run the public entrypoints from that installed artifact. This proof belongs
+inside the future `./dev test <client>` target.
 
-### Step 6 — Port the canonical E2E
+Do not let source-tree imports, workspace-relative generated files, or a
+developer's globally installed dependencies hide a broken package.
 
-The E2E should use only the public package surface users are expected to use.
+### Step 6 — Port and register the canonical public E2E
 
-Do not cheat by constructing low-level protocol requests in the showcase unless demonstrating the explicit low-level API.
+Port `try_searchkernel_client_api_e2e` semantically. It must use the public
+package/facade that users are expected to use.
 
-### Step 7 — Independent adversarial review
+Register every claimed E2E runtime in
+`reference/client-contracts/catalog.json`. Add `required_e2e_runtimes` for
+production runtime claims that must never lose executable backend coverage.
+
+At this point the client-specific command should be real:
+
+```bash
+./dev test <client>
+```
+
+### Step 7 — Join the shared compatibility harnesses
+
+Add the client to:
+
+```text
+canonical semantic parity
+frozen result-response conformance
+shared real-engine E2E parity
+```
+
+Use the existing shared corpora; do not fork expected behavior per language.
+
+Run:
+
+```bash
+./dev verify client-semantic-parity
+./dev test client-real-e2e-parity
+```
+
+### Step 8 — Register build ownership and deterministic bookkeeping
+
+Wire the new surface into the canonical repository command/ownership model as
+described in `INTEGRATING_NEW_CLIENTS.md`. Use `build/targets.json` and
+`./dev explain <path>` so future agents can discover the focused and strong
+checks for the client.
+
+Then run:
+
+```bash
+./dev bookkeeping sync
+./dev bookkeeping check
+./dev verify contracts
+```
+
+The sync must not leave unexplained generated drift.
+
+### Step 9 — Run increasing-scope repository gates
+
+During implementation, prefer focused commands. Before calling the client
+first-class, run:
+
+```bash
+./dev check-fast
+./dev test <client>
+./dev verify contracts
+./dev verify client-semantic-parity
+./dev test client-real-e2e-parity
+./dev check
+```
+
+For final exhaustive qualification of the integrated client, run:
+
+```bash
+./dev universe
+```
+
+If a relevant test/verifier cannot run locally, push the exact commit and use
+the supported `--remote` form. Do not substitute "CI is green" for a missing
+strong lane.
+
+### Step 10 — Independent adversarial review
 
 The reviewer should specifically try to break:
 
@@ -2213,17 +2503,19 @@ malformed response handling
 unknown future enum values
 map ordering/duplicates
 result-tree preservation
-package exports
-clean publishing
+package exports and clean installed-artifact consumption
 browser/native split
 transport cancellation/deadlines
 managed daemon cleanup
-cross-language request parity
+SKC evidence strength/runtime correctness
+unregistered or falsely-green E2E lanes
+canonical semantic parity
+result-response conformance
+real-engine scenario parity
+build/target omission
 ```
 
-### Step 8 — Fix findings without broad refactoring
-
-Keep the client addition focused. Do not opportunistically rewrite unrelated code.
+Fix findings without broad unrelated refactoring.
 
 ---
 
@@ -2327,7 +2619,20 @@ lifecycle boundary and MUST NOT claim managed-local capability support.
 - [ ] Browser bundle succeeds if browser support is claimed.
 - [ ] Examples intended for users are included and compile.
 
-### Tests/E2E
+### Repository/build-system integration
+
+- [ ] `reference/client-contracts/catalog.json` contains the client surface, real runtimes, and evidence roots.
+- [ ] Every claimed E2E file/runtime is backed by an exact `e2e_lanes` entry.
+- [ ] Production runtimes that require backend proof are listed in `required_e2e_runtimes`.
+- [ ] `SKC:` annotations use the correct independent evidence kinds and runtime.
+- [ ] `./dev test <client>` is registered and owns the complete ordinary client/package/E2E suite.
+- [ ] `build/targets.json` maps the client area to appropriate focused and strong checks.
+- [ ] `./dev explain clients/<client>` exposes discoverable ownership/check guidance.
+- [ ] `./dev bookkeeping sync` followed by `./dev bookkeeping check` is clean.
+- [ ] `./dev verify contracts` passes.
+- [ ] Generated compatibility reports are current; no hand-maintained positive support matrix was added.
+
+### Tests/E2E/parity
 
 - [ ] Protocol tests.
 - [ ] Value boundary tests.
@@ -2336,11 +2641,18 @@ lifecycle boundary and MUST NOT claim managed-local capability support.
 - [ ] Result fixture tests.
 - [ ] Transport tests.
 - [ ] Managed-host tests where managed-local operation is claimed.
-- [ ] Package consumer tests.
+- [ ] Packaged-artifact consumer tests.
 - [ ] Full public API E2E against real `searchkerneld`/Vespa.
 - [ ] Close/reopen persistence E2E where applicable; connect-only clients may use an external harness.
-- [ ] Cross-language semantic conformance.
+- [ ] Client participates in `./dev verify client-semantic-parity`.
+- [ ] Client consumes the frozen `reference/result-response-conformance/` fixtures.
+- [ ] Client participates in `./dev test client-real-e2e-parity` using the shared corpus.
+- [ ] `./dev test <client>` passes.
+- [ ] `./dev check-fast` and `./dev check` pass.
+- [ ] `./dev universe` passes in an environment capable of full qualification. Focused `test`/`verify` lanes may use their supported exact-HEAD remote forms when local execution is unavailable; this does not imply a remote `universe` command.
 - [ ] Independent adversarial review completed.
+
+A green mandatory PR gate alone is not sufficient evidence for this checklist.
 
 ---
 

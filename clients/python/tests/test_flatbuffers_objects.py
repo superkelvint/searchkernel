@@ -23,9 +23,11 @@ from searchkernel.ergonomic import (  # noqa: E402
     _root_aggregation_request,
     _value_entries,
 )
-from searchkernel.protocol import pack_object, pack_request  # noqa: E402
+from searchkernel.protocol import expected_response_type, pack_object, pack_request  # noqa: E402
 from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelopeT  # noqa: E402
+from SearchKernel.Protocol.V2 import RequestPayload, ResponsePayload  # noqa: E402
 from SearchKernel.V2.Document import DocumentT  # noqa: E402
+from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT  # noqa: E402
 from SearchKernel.V2.InsertRequest import InsertRequestT  # noqa: E402
 from SearchKernel.V2.Int64Value import Int64ValueT  # noqa: E402
 from SearchKernel.V2.TensorValue import TensorValueT  # noqa: E402
@@ -53,6 +55,16 @@ from SearchKernel.V2.SortExpr import SortExprT  # noqa: E402
 from SearchKernel.V2.SortTarget import SortTargetT  # noqa: E402
 from SearchKernel.V2.SortTargetKind import SortTargetKind  # noqa: E402
 from SearchKernel.V2.FieldSortTarget import FieldSortTargetT  # noqa: E402
+from SearchKernel.V2.RelevanceSortTarget import RelevanceSortTargetT  # noqa: E402
+from SearchKernel.V2.RankFeatureSortTarget import RankFeatureSortTargetT  # noqa: E402
+from SearchKernel.V2.MissingPolicy import MissingPolicyT  # noqa: E402
+from SearchKernel.V2.MissingPolicyKind import MissingPolicyKind  # noqa: E402
+from SearchKernel.V2.MissingLast import MissingLastT  # noqa: E402
+from SearchKernel.V2.SearchField import SearchFieldT  # noqa: E402
+from SearchKernel.V2.SearchFieldSelection import SearchFieldSelectionT  # noqa: E402
+from SearchKernel.V2.OptionalUInt64 import OptionalUInt64T  # noqa: E402
+from SearchKernel.V2.QueryModel import QueryModelT  # noqa: E402
+from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT  # noqa: E402
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
 from SearchKernel.V2.QuerySource import QuerySourceT  # noqa: E402
 from SearchKernel.V2.QuerySourceKind import QuerySourceKind  # noqa: E402
@@ -69,10 +81,20 @@ from SearchKernel.V2.RelevanceKind import RelevanceKind  # noqa: E402
 from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT  # noqa: E402
 from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT  # noqa: E402
 from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT  # noqa: E402
+from SearchKernel.V2.ResultGroup import ResultGroupT  # noqa: E402
+from SearchKernel.V2.ResultNode import ResultNodeT  # noqa: E402
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
+from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation  # noqa: E402
 
 
 _SNAPSHOT_BINARY = None
+
+
+def _empty_search_result():
+    return SimpleNamespace(
+        root=ResultNodeT(ResultNodeKind.ResultGroup, ResultGroupT()),
+        totalHits=SimpleNamespace(value=0, relation=TotalHitsRelation.Exact),
+    )
 
 
 def _snapshot_binary(root):
@@ -127,6 +149,20 @@ def _canonical_snapshot(request):
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
+    def test_delete_index_uses_canonical_envelope_discriminators_and_target(self):
+        raw = pack_request("delete_index", DeleteIndexRequestT(), target="catalog-a")
+        envelope = RequestEnvelopeT.InitFromPackedBuf(raw)
+
+        self.assertEqual(
+            envelope.payloadType,
+            RequestPayload.RequestPayload.SearchKernel_V2_DeleteIndexRequest,
+        )
+        self.assertEqual(envelope.target.name, "catalog-a")
+        self.assertEqual(
+            expected_response_type("delete_index"),
+            ResponsePayload.ResponsePayload.SearchKernel_V2_DeleteIndexResult,
+        )
+
     def test_signed_value_checks_int64_range_before_flatbuffers_packing(self):
         for item in (-(2**63) - 1, 2**63):
             with self.subTest(item=item):
@@ -187,17 +223,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_field_sorts_match_canonical_rust_ir(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -224,6 +256,73 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                     _canonical_snapshot(index.client.request),
                     _canonical_snapshot(canonical),
                 )
+
+    # SKC: search.search_fields/basic kinds=ergonomic runtime=shared
+    # SKC: search.sort_missing_placement/basic kinds=ergonomic runtime=shared
+    def test_search_builder_executable_union_converges_on_shared_ir(self):
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return _empty_search_result()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        request = (
+            SearchBuilder(index, "wireless")
+            .search_fields("title")
+            .sort("price", "asc", missing="last")
+            .sort_relevance("desc")
+            .sort_feature("freshness", "asc")
+            .timeout(500)
+            .language("en")
+            ._request()
+        )
+        canonical = SearchRequestT(
+            query=QuerySourceT(
+                sourceType=QuerySourceKind.SearchKernelTextQuery,
+                source=SearchKernelTextQueryT(text="wireless"),
+            ),
+            searchFields=SearchFieldSelectionT(fields=[SearchFieldT(field="title")]),
+            sort=[
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.FieldSortTarget,
+                        target=FieldSortTargetT(field="price"),
+                    ),
+                    direction=SortDirection.Asc,
+                    missing=MissingPolicyT(
+                        policyType=MissingPolicyKind.MissingLast,
+                        policy=MissingLastT(),
+                    ),
+                ),
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.RelevanceSortTarget,
+                        target=RelevanceSortTargetT(),
+                    ),
+                    direction=SortDirection.Desc,
+                ),
+                SortExprT(
+                    target=SortTargetT(
+                        targetType=SortTargetKind.RankFeatureSortTarget,
+                        target=RankFeatureSortTargetT(feature="freshness"),
+                    ),
+                    direction=SortDirection.Asc,
+                ),
+            ],
+            timeoutMs=OptionalUInt64T(value=500),
+            queryModel=QueryModelT(language="en"),
+        )
+        self.assertEqual(
+            _canonical_snapshot(request),
+            _canonical_snapshot(canonical),
+        )
 
     def test_nested_grouping_uses_structural_all_scope(self):
         request = Group.by("category").output(agg.count()).subgroup(
@@ -328,14 +427,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             ["alpha", "zeta"],
         )
 
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -349,17 +444,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_facet_preserves_zero_limit_and_canonical_name(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -376,17 +467,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(root.label, "brands")
 
     def test_facet_sort_modes_and_multiple_names_are_canonical(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -422,14 +509,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             )
 
     def test_ergonomic_summary_and_fields_share_one_presentation(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -685,14 +768,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(profile.inputs[0].name, "query_embedding")
         self.assertEqual(profile.firstPhase.expression, "closeness(embedding)")
 
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -941,17 +1020,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_ergonomic_filter_bindings_are_sorted(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -965,17 +1040,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_ergonomic_ranking_inputs_use_generated_objects(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -1006,17 +1077,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(builder._rank_properties, {"source": "catalog"})
 
     def test_ergonomic_rank_properties_preserve_absent_profile(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -1037,17 +1104,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(index.client.request.ranking.profile, "default")
 
     def test_ergonomic_ranking_properties_and_inputs_are_canonical_order(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):
@@ -1071,17 +1134,13 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
 
     def test_page_and_grouping_helpers_match_canonical_rust_ir(self):
-        class EmptyResult:
-            root = None
-            totalHits = None
-
         class CaptureClient:
             def __init__(self):
                 self.request = None
 
             def search(self, request):
                 self.request = request
-                return EmptyResult()
+                return _empty_search_result()
 
         class Index:
             def __init__(self):

@@ -3,6 +3,7 @@
 require "fileutils"
 require "json"
 require "tmpdir"
+require_relative "client_real_e2e_parity_helpers"
 
 unless ENV["SEARCHKERNEL_RUBY_USE_INSTALLED_GEM"] == "1"
   $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
@@ -109,10 +110,10 @@ def typed_query_for_scenario(scenario, intent)
   when "typed_query_range", "typed_query_range_exclusive"
     SearchKernel::Query.range(
       field,
-      gte: intent.fetch("include_lower") ? intent.fetch("lower") : nil,
-      gt: intent.fetch("include_lower") ? nil : intent.fetch("lower"),
-      lte: intent.fetch("include_upper") ? intent.fetch("upper") : nil,
-      lt: intent.fetch("include_upper") ? nil : intent.fetch("upper")
+      gte: intent.fetch("include_lower") ? ClientRealE2EParityHelpers.query_value(E2E_CORPUS, field, intent.fetch("lower")) : nil,
+      gt: intent.fetch("include_lower") ? nil : ClientRealE2EParityHelpers.query_value(E2E_CORPUS, field, intent.fetch("lower")),
+      lte: intent.fetch("include_upper") ? ClientRealE2EParityHelpers.query_value(E2E_CORPUS, field, intent.fetch("upper")) : nil,
+      lt: intent.fetch("include_upper") ? nil : ClientRealE2EParityHelpers.query_value(E2E_CORPUS, field, intent.fetch("upper"))
     )
   when "typed_query_boolean"
     left, right = intent.fetch("or_terms")
@@ -339,7 +340,7 @@ def capture_real_engine_parity(index)
   check(negative_limit_rejected && negative_offset_rejected && page_and_limit_rejected && page_and_offset_rejected,
         "builder misuse inputs are rejected")
   update_spec = intents.fetch("advanced_update")
-  index.insert(update_spec.fetch("initial").merge("_id" => update_spec.fetch("document_id")))
+  index.insert(ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, update_spec.fetch("initial").merge("_id" => update_spec.fetch("document_id"))))
   update_builder = index.update(update_spec.fetch("document_id"))
   update_spec.fetch("set").each { |key, value| update_builder = update_builder.set(key, value) }
   update_spec.fetch("unset").each { |field| update_builder = update_builder.unset(field) }
@@ -466,14 +467,14 @@ end
 index = SearchKernel::Index.create(index_path, fields: fields, rank_profiles: rank_profiles)
 begin
   E2E_CORPUS.fetch("documents").each do |source|
-    document = source.dup
+    document = ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, source)
     document["embedding"] = embedding(*document.fetch("embedding")) if document["embedding"]
     index.insert(document)
   end
 
   probe_spec = E2E_CORPUS.fetch("coverage_probes")
   probe_spec.fetch("count").times do |probe|
-    document = probe_spec.fetch("document").dup
+    document = ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, probe_spec.fetch("document"))
     document["_id"] = "degraded-#{probe}"
     document["embedding"] = embedding(*document.fetch("embedding"))
     index.insert(document)
@@ -481,9 +482,11 @@ begin
 
   PARITY_OBSERVATIONS.merge!(capture_real_engine_parity(index))
   patch_spec = PARITY_INTENTS.fetch("patch")
-  index.insert(patch_spec.fetch("initial").merge("_id" => patch_spec.fetch("document_id")))
+  index.insert(ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, patch_spec.fetch("initial").merge("_id" => patch_spec.fetch("document_id"))))
   patch_builder = index.patch(patch_spec.fetch("document_id"))
-  patch_spec.fetch("set").each { |key, value| patch_builder = patch_builder.set(key, value) }
+  ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, patch_spec.fetch("set")).each do |key, value|
+    patch_builder = patch_builder.set(key, value)
+  end
   patch_spec.fetch("unset").each { |field| patch_builder = patch_builder.unset(field) }
   patch_builder.execute
   mutated = index.get(patch_spec.fetch("document_id"))
@@ -492,7 +495,7 @@ begin
   parity_mutation_deleted = index.delete(delete_spec.fetch("document_id"))
   PARITY_OBSERVATIONS["delete"] = {"deleted" => parity_mutation_deleted, "absent_after_delete" => index.get(delete_spec.fetch("document_id")).nil?}
   reopen_spec = PARITY_INTENTS.fetch("reopen_persistence")
-  index.insert(reopen_spec.fetch("marker").merge("_id" => reopen_spec.fetch("marker_id")))
+  index.insert(ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, reopen_spec.fetch("marker").merge("_id" => reopen_spec.fetch("marker_id"))))
 
   results = index.search("shoes")
     .filter("price <= :max", "max" => 100.0)
@@ -774,7 +777,7 @@ begin
   upsert_spec = PARITY_INTENTS.fetch("upsert_replacement")
   replacement = upsert_spec.fetch("replacement").reject { |key, _value| key == "vector_document_id" }
   replacement["embedding"] = embedding(*corpus_vector(upsert_spec.fetch("replacement").fetch("vector_document_id")))
-  index.upsert(upsert_spec.fetch("document_id"), replacement)
+  index.upsert(upsert_spec.fetch("document_id"), ClientRealE2EParityHelpers.document_from_corpus(E2E_CORPUS, replacement))
   upserted_shoe2 = index.get(upsert_spec.fetch("document_id"))
   same(119.0, upserted_shoe2.fetch("price"), "upsert replacement")
   PARITY_OBSERVATIONS["upsert_replacement"] = {"price" => upserted_shoe2.fetch("price"), "updated_title_matches" => upserted_shoe2.fetch("title").include?("Updated"), "search_ids" => ids(index.search(upsert_spec.fetch("search_query")).execute)}

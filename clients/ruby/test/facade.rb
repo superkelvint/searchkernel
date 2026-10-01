@@ -4,6 +4,18 @@ require "fileutils"
 require "json"
 require "tempfile"
 require "tmpdir"
+require_relative "../examples/client_real_e2e_parity_helpers"
+
+e2e_corpus = JSON.parse(File.read(File.expand_path("../../../reference/client-real-e2e-parity/corpus.json", __dir__)))
+typed_corpus_document = ClientRealE2EParityHelpers.document_from_corpus(
+  e2e_corpus,
+  { "_id" => "typed-corpus-document", "price" => 89, "sale_price" => 79, "rating" => 5 }
+)
+TestSupport.same(89.0, typed_corpus_document.fetch("price"), "E2E Float64 field is normalized from JSON integer")
+TestSupport.same(79.0, typed_corpus_document.fetch("sale_price"), "E2E optional Float64 field is normalized from JSON integer")
+TestSupport.same(5, typed_corpus_document.fetch("rating"), "E2E Int64 field remains an integer")
+TestSupport.same(50.0, ClientRealE2EParityHelpers.query_value(e2e_corpus, "price", 50), "E2E range bound matches the declared Float64 field")
+TestSupport.same(5, ClientRealE2EParityHelpers.query_value(e2e_corpus, "rating", 5), "E2E query value preserves declared Int64 field")
 
 class CloseCountingOwner
   attr_reader :close_count
@@ -250,6 +262,25 @@ same(
   nearest_expr.fetch("annotations").map { |entry| entry.fetch("key") },
   "nearest-neighbor annotations are deterministic"
 )
+nearest_annotations = nearest_expr.fetch("annotations").to_h do |entry|
+  [entry.fetch("key"), SearchKernel::Value.decode(entry.fetch("value"))]
+end
+same(
+  { "approximate" => true, "exploreAdditionalHits" => 20, "targetNumHits" => 10 },
+  nearest_annotations,
+  "nearest-neighbor annotation values lower canonically"
+)
+
+hybrid = SearchKernel::Query.all_of(
+  SearchKernel::Query.contains("title", "shoes"),
+  SearchKernel::Query.nearest_neighbor("embedding", "query_embedding")
+)
+same("QueryAnd", hybrid.dig("source", "query", "expr_type"), "hybrid query uses typed AND")
+same(
+  %w[QueryContains QueryNearestNeighbor],
+  hybrid.dig("source", "query", "expr", "clauses").map { |clause| clause.fetch("expr_type") },
+  "hybrid query preserves text and nearest-neighbor clauses"
+)
 
 combined = SearchKernel::Query.any_of(
   SearchKernel::Query.contains("title", "shoes"),
@@ -328,6 +359,63 @@ group = SearchKernel::Group.by("brand").limit(10).output(SearchKernel::Agg.count
 grouping_request = group.to_request
 same("StructuredGroupingSource", grouping_request.fetch("source_type"), "structured grouping source")
 same(2, grouping_request.dig("source", "root", "operations").length, "grouping root shape")
+
+nested_grouping = SearchKernel::Group.by("category")
+  .output(SearchKernel::Agg.count)
+  .subgroup(SearchKernel::Group.by("brand").output(SearchKernel::Agg.count))
+  .to_request
+root_operations = nested_grouping.dig("source", "root", "operations")
+same(%w[GroupingGroupOperation GroupingEachOperation], root_operations.map { |op| op.fetch("operation_type") },
+     "nested grouping root uses group then each")
+parent_each = root_operations.fetch(1).fetch("operation")
+same(%w[GroupingOutputOperation GroupingAllOperation], parent_each.fetch("operations").map { |op| op.fetch("operation_type") },
+     "nested grouping attaches subgroup under structural all scope")
+nested_all = parent_each.fetch("operations").fetch(1).fetch("operation")
+same(%w[GroupingGroupOperation GroupingEachOperation], nested_all.fetch("operations").map { |op| op.fetch("operation_type") },
+     "structural all scope owns the nested group operation tree")
+
+rank_profile = SearchKernel::RankProfile.new("two-phase")
+  .first_phase("attribute(rating)")
+  .second_phase("attribute(inventory)")
+  .rerank_count(3)
+rank_definition = rank_profile.definition
+same({ "expression" => "attribute(rating)" }, rank_definition.fetch("first_phase"),
+     "rank profile preserves first phase")
+same(
+  { "expression" => "attribute(inventory)", "rerank_count" => { "value" => 3 } },
+  rank_definition.fetch("second_phase"),
+  "rank profile preserves second phase and rerank count canonical shape"
+)
+assert(!SearchKernel::RankProfile.new("single-phase").definition.key?("second_phase"),
+       "absent second phase remains absent")
+same({ "rerank_count" => { "value" => 0 } },
+     SearchKernel::RankProfile.new("zero-rerank").rerank_count(0).definition.fetch("second_phase"),
+     "explicit zero rerank count remains present")
+raises(ArgumentError, "rerank count rejects uint32 overflow") do
+  SearchKernel::RankProfile.new("overflow").rerank_count(0x1_0000_0000)
+end
+
+hnsw_definition = SearchKernel::TensorField.new(
+  "tensor<float>(x[3])",
+  distance_metric: :euclidean,
+  hnsw: SearchKernel::HnswIndexConfig.new(
+    max_links_per_node: 4,
+    neighbors_to_explore_at_insert: 16
+  )
+).definition("embedding")
+same("TensorDataType", hnsw_definition.dig("data_type", "kind_type"), "HNSW field remains tensor typed")
+same("tensor<float>(x[3])", hnsw_definition.dig("data_type", "kind", "type_spec"), "tensor type spec preserved")
+same({ "value" => true }, hnsw_definition.dig("index", "enabled"), "HNSW enables canonical index")
+same({ "value" => 4 }, hnsw_definition.dig("index", "hnsw", "max_links_per_node"), "HNSW max links lowers canonically")
+same({ "value" => 16 }, hnsw_definition.dig("index", "hnsw", "neighbors_to_explore_at_insert"),
+     "HNSW insertion exploration lowers canonically")
+same("Euclidean", hnsw_definition.dig("attribute", "distance_metric"), "HNSW distance metric lowers canonically")
+raises(ArgumentError, "HNSW max links rejects uint32 overflow") do
+  SearchKernel::HnswIndexConfig.new(max_links_per_node: 0x1_0000_0000).definition
+end
+raises(ArgumentError, "HNSW insertion exploration rejects negative uint32") do
+  SearchKernel::HnswIndexConfig.new(neighbors_to_explore_at_insert: -1).definition
+end
 
 definition = SearchKernel::Schema.index_definition(
   {

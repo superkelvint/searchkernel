@@ -263,6 +263,19 @@ class CapabilityLedgerTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.LedgerError, "missing symbol"):
             MODULE.validate_ledger(ledger)
 
+
+    def test_limitations_include_authoritative_release_scope(self) -> None:
+        limitations = MODULE.generated_documents(self.ledger)[ROOT / "LIMITATIONS.md"]
+        release_support = MODULE.load_release_support()
+        platform = release_support["platform"]
+        self.assertIn("## Release scope", limitations)
+        self.assertIn(
+            f"**{platform['os']} {platform['arch']} {platform['libc']}**",
+            limitations,
+        )
+        for surface in release_support["deferred"]:
+            self.assertIn(f"`{surface}`", limitations)
+
     def test_stale_document_is_detected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "generated.md"

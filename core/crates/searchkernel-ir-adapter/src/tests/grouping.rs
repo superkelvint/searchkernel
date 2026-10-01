@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn canonical_facet_labels_preserve_fast_path_or_named_grouping_semantics() {
+fn canonical_and_custom_facet_labels_preserve_the_facet_fast_path() {
     let mut default = facet_grouping(
         "brand",
         10,
@@ -21,11 +21,11 @@ fn canonical_facet_labels_preserve_fast_path_or_named_grouping_semantics() {
     );
     named.root.label = Some("brands".to_owned());
     let lowered = lower_groupings(&[named]).expect("custom-named facet should lower");
-    let [crate::search::GroupingLowering::Native(native)] = lowered.as_slice() else {
-        panic!("custom-named facet must use grouping plan to preserve its label");
+    let [crate::search::GroupingLowering::Facet(facet)] = lowered.as_slice() else {
+        panic!("custom-named facet should retain the facet lowering");
     };
-    assert_eq!(native.plan.root_label.as_deref(), Some("brands"));
-    assert_eq!(native.plan.levels[0].label.as_deref(), Some("brands"));
+    assert_eq!(facet.field, "brand");
+    assert_eq!(facet.name, "brands");
 }
 
 #[test]

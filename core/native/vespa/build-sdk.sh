@@ -548,6 +548,18 @@ else
     exit 1
 fi
 
+# A base object must be self-contained before it is admitted to the immutable
+# native cache. The configured Vespa DSOs may depend on producer-host libraries
+# outside the dependency install (for example libxxhash.so.0 from /lib64).
+# Bundle every non-baseline DT_NEEDED dependency now rather than allowing the
+# later artifact packager to repair an already-invalid cache object.
+if [ "$BASE_ONLY" = 1 ]; then
+    python3 "$ROOT/tools/bundle-native-runtime-closure.py" \
+        "$SDK/lib" \
+        --search-dir "$DEPS_LIB_DIR" \
+        --search-dir "$VESPA_EXTRA_LIB_DIR"
+fi
+
 # Shared-library aliases are allowed only when they are simple relative names
 # resolving to regular files inside this SDK. Never publish producer absolute
 # links, directory traversal, broken links, or links back into the host.

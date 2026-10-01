@@ -161,6 +161,56 @@ cases.fetch("valid").each do |scenario|
   traces[scenario.fetch("id")] = trace_result(result)
 end
 
+# Keep a few high-risk shared fixtures explicit in the Ruby suite rather than
+# relying only on whole-trace equality. These assertions document the semantic
+# invariants that are easiest for a permissive decoder to erase.
+infinite_children = traces.fetch("infinite-relevance").dig("root", "children")
+raise "shared positive infinity relevance was not preserved" unless infinite_children.fetch(1).fetch("relevance") == "+inf"
+raise "shared negative infinity relevance was not preserved" unless infinite_children.fetch(2).fetch("relevance") == "-inf"
+
+empty = traces.fetch("empty")
+raise "shared empty result gained children" unless empty.dig("root", "children") == []
+raise "shared empty result gained coverage" unless empty.fetch("coverage").nil?
+raise "shared empty result gained timing" unless empty.fetch("timing").nil?
+raise "shared empty result metadata changed" unless empty.fetch("metadata") == {}
+
+tensor_trace = traces.fetch("sparse-mixed-tensors")
+sparse = tensor_trace.dig("root", "children", 0, "fields", "sparse", "$searchkernel_tensor")
+raise "shared sparse tensor type was not preserved" unless sparse.fetch("type_spec") == "tensor<float>(label{},region{})"
+raise "shared sparse tensor values were not preserved" unless sparse.fetch("sparse").map { |cell| cell.fetch("value") } == [0.5, -0.25]
+raise "shared sparse tensor addresses were not preserved" unless sparse.fetch("sparse").first.fetch("address") == [
+  { "dimension" => "label", "label" => "a" },
+  { "dimension" => "region", "label" => "east" }
+]
+mixed = tensor_trace.dig("root", "value", "$searchkernel_tensor")
+raise "shared mixed tensor type was not preserved" unless mixed.fetch("type_spec") == "tensor<float>(label{},region{},x[2])"
+raise "shared mixed tensor blocks were not preserved" unless mixed.fetch("mixed").map { |block| block.fetch("values") } == [[0.25, 0.75], [1.5, -2.0]]
+
+# Exercise the entire strict facet corpus, not just hand-built representatives.
+# Only the two canonical facet shapes may project; every other result-facet-*
+# fixture must remain a generic result tree.
+cases.fetch("facet").each do |scenario|
+  wire = JSON.parse(File.read(File.join(case_directory, scenario.fetch("json"))))
+  payload = SearchKernel::Protocol.expect_response(:search, wire)
+  result = SearchKernel::Results::SearchResults.new(payload)
+
+  case scenario.fetch("id")
+  when "facet-valid"
+    projected = result.project_facet("brand", "brand", "brand")
+    expected = { "brand" => [{ "value" => "Acme", "count" => 3 }] }
+    raise "shared valid facet did not project canonically" unless projected.facets == expected
+  when "facet-valid-named"
+    projected = result.project_facet("brands", "brands", "brand")
+    expected = { "brands" => [{ "value" => "Acme", "count" => 3 }] }
+    raise "shared named facet did not project canonically" unless projected.facets == expected
+  else
+    projected = result.project_facet("brand", "brand", "brand")
+    unless projected.facets == {}
+      raise "shared invalid facet fixture projected unexpectedly: #{scenario.fetch('id')}"
+    end
+  end
+end
+
 outcomes = {}
 cases.fetch("malformed").each do |scenario|
   if scenario.fetch("bridge_rejected")
@@ -178,6 +228,10 @@ cases.fetch("malformed").each do |scenario|
   end
   raise "malformed result was accepted: #{scenario.fetch('id')}"
 end
+
+# The shared driver validates the bridge/client rejection stage for every malformed
+# fixture. Cases rejected by the FlatBuffers JSON bridge never reach Ruby, so
+# equivalent direct Ruby decoder regressions live in test/run.rb instead.
 
 traces["malformed_outcomes"] = outcomes
 File.write(File.join(ENV.fetch("SEARCHKERNEL_RESULT_TRACE_DIR"), "ruby.json"), JSON.generate(traces))
