@@ -87,7 +87,6 @@ def pack_request(
         payloadType=payload_type,
         payload=payload,
         target=index_target,
-        expectedIndexGeneration=expected_index_generation,
     )
     return pack_object(envelope, file_identifier=REQUEST_IDENTIFIER)
 
