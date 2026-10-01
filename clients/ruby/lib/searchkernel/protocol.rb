@@ -39,13 +39,12 @@ module SearchKernel
         raise ArgumentError, "Search Kernel target must be a string" unless target.is_a?(String)
 
         envelope["target"] = { "name" => target }
-      end
-      unless expected_index_generation.nil?
-        unless expected_index_generation.is_a?(String) && !expected_index_generation.empty?
-          raise ArgumentError, "Search Kernel expected index generation must be a non-empty string"
+        unless expected_index_generation.nil?
+          unless expected_index_generation.is_a?(String) && !expected_index_generation.empty?
+            raise ArgumentError, "Search Kernel expected index generation must be a non-empty string"
+          end
+          envelope["target"]["generation"] = expected_index_generation
         end
-
-        envelope["expected_index_generation"] = expected_index_generation
       end
       envelope
     end
