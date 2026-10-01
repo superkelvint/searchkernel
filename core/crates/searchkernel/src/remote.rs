@@ -852,8 +852,13 @@ impl RemoteClient {
 
     /// Open an existing logical target and return an index handle bound to it.
     pub fn open_index(&self, target: impl AsRef<str>) -> Result<Index> {
-        let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
+        let transition = self.lifecycle_lock(target)?;
+        let _lifecycle = transition.lock().map_err(|_| {
+            crate::Error::from_ir(invalid_remote_response(
+                "remote client target lifecycle lock is poisoned",
+            ))
+        })?;
         let request = ir::encode_open_index_request(target);
         let response = self
             .transport
@@ -883,8 +888,13 @@ impl RemoteClient {
 
     /// Delete one logical target from the daemon registry.
     pub fn delete_index(&self, target: impl AsRef<str>) -> Result<()> {
-        let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
+        let transition = self.lifecycle_lock(target)?;
+        let _lifecycle = transition.lock().map_err(|_| {
+            crate::Error::from_ir(invalid_remote_response(
+                "remote client target lifecycle lock is poisoned",
+            ))
+        })?;
         let request = ir::encode_delete_index_request(target);
         let response = self
             .transport
