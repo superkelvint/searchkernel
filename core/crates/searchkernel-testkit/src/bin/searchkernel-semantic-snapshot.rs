@@ -6,8 +6,8 @@
 //! model.
 
 use flatbuffers::root;
+use searchkernel_ir::snapshot;
 use searchkernel_ir::wire::v1::schema as api;
-use searchkernel_ir::{snapshot, IndexContext};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
