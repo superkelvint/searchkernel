@@ -31,21 +31,45 @@ FLAGS_FILE=$VESPA_ROOT/searchcore/src/tests/proton/documentdb/CMakeFiles/searchc
 LINK_FILE=$VESPA_ROOT/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt
 [[ -f "$FLAGS_FILE" && -f "$LINK_FILE" ]] || { echo "configured Vespa metadata is missing" >&2; exit 1; }
 
-VESPA_TOP=$(git -C "$VESPA_ROOT" rev-parse --show-toplevel 2>/dev/null || true)
-[[ -n "$VESPA_TOP" && "$(cd -- "$VESPA_TOP" && pwd -P)" == "$(cd -- "$VESPA_ROOT" && pwd -P)" ]] || {
-    echo "standalone pinned Vespa checkout is required to package a published base" >&2
-    exit 1
+VESPA_MARKER="$VESPA_ROOT/.searchkernel-vespa-artifact.json"
+VESPA_FROM_MARKER=0
+if [[ -f "$VESPA_MARKER" ]]; then
+    "$PYTHON_BIN" - "$VESPA_MARKER" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
+import json
+import sys
+
+path, build_env, target, commit = sys.argv[1:]
+with open(path, encoding="utf-8") as stream:
+    marker = json.load(stream)
+expected = {
+    "build_environment": build_env,
+    "native_target": target,
+    "vespa_commit": commit,
 }
-ACTUAL_VESPA_COMMIT=$(git -C "$VESPA_ROOT" rev-parse HEAD)
-[[ "$ACTUAL_VESPA_COMMIT" == "$PINNED_VESPA_COMMIT" ]] || {
-    echo "cannot publish Vespa base from $ACTUAL_VESPA_COMMIT; expected $PINNED_VESPA_COMMIT" >&2
-    exit 1
-}
-git -C "$VESPA_ROOT" diff --quiet --ignore-submodules -- &&
-git -C "$VESPA_ROOT" diff --cached --quiet --ignore-submodules -- || {
-    echo "cannot publish Vespa base from a dirty Vespa checkout" >&2
-    exit 1
-}
+for key, value in expected.items():
+    if marker.get(key) != value:
+        raise SystemExit(
+            f"published Vespa toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
+        )
+PY
+    VESPA_FROM_MARKER=1
+else
+    VESPA_TOP=$(git -C "$VESPA_ROOT" rev-parse --show-toplevel 2>/dev/null || true)
+    [[ -n "$VESPA_TOP" && "$(cd -- "$VESPA_TOP" && pwd -P)" == "$(cd -- "$VESPA_ROOT" && pwd -P)" ]] || {
+        echo "standalone pinned Vespa checkout or verified published toolchain is required to package a published base" >&2
+        exit 1
+    }
+    ACTUAL_VESPA_COMMIT=$(git -C "$VESPA_ROOT" rev-parse HEAD)
+    [[ "$ACTUAL_VESPA_COMMIT" == "$PINNED_VESPA_COMMIT" ]] || {
+        echo "cannot publish Vespa base from $ACTUAL_VESPA_COMMIT; expected $PINNED_VESPA_COMMIT" >&2
+        exit 1
+    }
+    git -C "$VESPA_ROOT" diff --quiet --ignore-submodules -- &&
+    git -C "$VESPA_ROOT" diff --cached --quiet --ignore-submodules -- || {
+        echo "cannot publish Vespa base from a dirty Vespa checkout" >&2
+        exit 1
+    }
+fi
 
 RAW_INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS_FILE")
 CONFIGURED_DEPS=$(printf '%s\n' "$RAW_INCLUDES" | sed -n 's#.*-isystem \([^ ]*\)/include.*#\1#p')
@@ -110,18 +134,22 @@ runtime_source_args=(
 
 # Package the immutable Vespa source/header surface plus generated header-like
 # files and the exact compile/link metadata used by the adapter build. Heavy
-# native objects and libraries stay in the base lib directory instead.
-(
-    cd "$VESPA_ROOT"
-    git ls-files -z -- \
-        '*.h' '*.hh' '*.hpp' '*.hxx' '*.ipp' '*.inl' '*.inc' '*.def' '*.tcc' |
-        tar --null -T - -chf -
-) | tar -C "$BUNDLE/toolchain/upstream/vespa" -xf -
+# native objects and libraries stay in the base lib directory instead. A
+# published toolchain is already a filtered immutable header/config snapshot, so
+# it has no Git index to enumerate.
+if [[ "$VESPA_FROM_MARKER" != 1 ]]; then
+    (
+        cd "$VESPA_ROOT"
+        git ls-files -z -- \
+            '*.h' '*.hh' '*.hpp' '*.hxx' '*.ipp' '*.inl' '*.inc' '*.def' '*.tcc' |
+            tar --null -T - -chf -
+    ) | tar -C "$BUNDLE/toolchain/upstream/vespa" -xf -
+fi
 (
     cd "$VESPA_ROOT"
     find . -type f \( \
         -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' -o \
-        -name '*.ipp' -o -name '*.inl' -o -name '*.inc' -o -name '*.def' -o -name '*.tcc' -o -name 'flags.make' -o -name 'link.txt' \
+        -name '*.ipp' -o -name '*.inl' -o -name '*.inc' -o -name '*.def' -o -name '*.tcc' -o -name 'flags.make' -o -name 'link.txt' -o -name '.searchkernel-vespa-artifact.json' \
     \) -print0 | tar --null -T - -chf -
 ) | tar -C "$BUNDLE/toolchain/upstream/vespa" -xf -
 cp -aL "$DEPS/include/." "$BUNDLE/toolchain/vespa-deps/include/"
