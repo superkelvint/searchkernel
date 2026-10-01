@@ -1,6 +1,6 @@
-use searchkernel_ir::*;
-use searchkernel_ir::wire::v1::*;
 use searchkernel_ir::wire::v1::schema as api;
+use searchkernel_ir::wire::v1::*;
+use searchkernel_ir::*;
 use std::collections::BTreeMap;
 
 fn index_context() -> IndexContext {
