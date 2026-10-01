@@ -224,11 +224,11 @@ impl Index {
         bytes: &[u8],
     ) -> Result<Self> {
         let root =
-            searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(bytes)
+            searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::IndexDefinition>(bytes)
                 .map_err(|error| {
                     Error::Serialization(format!("invalid index definition: {error}"))
                 })?;
-        let ir = searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
+        let ir = searchkernel_ir::wire::v1::index_definition_to_ir(root).map_err(Error::from_ir)?;
         searchkernel_ir_adapter::validate_index_definition(&ir).map_err(Error::from_ir)?;
         let resolved_context = IndexContext::from_definition_ir(ir);
         Self::create_with_definitions(path.as_ref(), bytes.to_vec(), resolved_context)
