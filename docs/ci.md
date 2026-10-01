@@ -155,7 +155,21 @@ Local-capable callers may use convenience wrappers:
 
 Remote-only agents may dispatch the same bounded workflow through an authorized
 GitHub UI/API/CLI/connector without having a Search Kernel development
-environment.
+environment. Connectors that cannot issue `repository_dispatch` may use an
+authorized pull-request comment as a second ingress to the same verifier:
+
+```text
+/searchkernel-verify ci <exact-sha>
+/searchkernel-verify test <scope> <exact-sha>
+/searchkernel-verify verify <lane> <exact-sha>
+```
+
+Comment requests are accepted only on pull requests and only from GitHub actors
+whose `author_association` is `OWNER`, `MEMBER`, or `COLLABORATOR`. The
+comment is only a request envelope: it does not supply shell text or redefine
+the verifier. The exact SHA and target still pass through the same repository
+membership, target-registry, trusted-control-plane, and exact-checkout checks as
+`repository_dispatch`.
 
 ### Remote evidence requirements
 
@@ -186,9 +200,10 @@ The on-demand control plane should therefore come from trusted/default-branch
 infrastructure while the requested SHA is checked out separately as code under
 test.
 
-The current trust policy is deliberately small and uses authenticated
-repository dispatch as the caller authorization boundary. Remote verification
-must:
+The current trust policy is deliberately small. It accepts authenticated
+repository dispatch and authorized pull-request comments as two request
+ingresses into the same trusted verifier. Comment ingress is restricted to OWNER, MEMBER, or COLLABORATOR author
+associations and a single-line, bounded command grammar. Remote verification must:
 
 - accept only bounded `ci`, `test`, and `verify` operations;
 - validate targets against the canonical repository-owned target registry;
@@ -202,8 +217,9 @@ must:
 
 The workflow has read-only GitHub repository permissions, exposes no release,
 deployment, or write secrets to subject execution, and accepts no arbitrary
-shell command. We do not currently maintain a separate actor allowlist or
-runner-permission service; callers must have repository dispatch access.
+shell command. Repository-dispatch callers must have dispatch access; comment
+callers must be authorized collaborators by GitHub author association. There is
+no separate actor allowlist or runner-permission service.
 
 A candidate may change implementation or verifier code, but it must not gain
 the ability to alter privileged orchestration for its own execution.
