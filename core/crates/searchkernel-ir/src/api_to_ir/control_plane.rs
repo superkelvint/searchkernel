@@ -505,8 +505,13 @@ mod tests {
 
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let name = builder.create_string("products");
-        let target =
-            api::IndexTarget::create(&mut builder, &api::IndexTargetArgs { name: Some(name) });
+        let target = api::IndexTarget::create(
+            &mut builder,
+            &api::IndexTargetArgs {
+                name: Some(name),
+                generation: None,
+            },
+        );
         let create = api::CreateIndexRequest::create(
             &mut builder,
             &api::CreateIndexRequestArgs { definition: None },
