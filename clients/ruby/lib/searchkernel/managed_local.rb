@@ -1,9 +1,16 @@
 # frozen_string_literal: true
 
 require "digest"
+require "etc"
 require "fileutils"
+require "json"
+require "open-uri"
+require "uri"
 require "open3"
+require "pathname"
+require "rubygems/package"
 require "socket"
+require "zlib"
 require "tmpdir"
 
 require_relative "errors"
@@ -272,8 +279,8 @@ module SearchKernel
         configured = ENV["SEARCHKERNEL_LOCAL_HOST"]
         return File.expand_path(configured) if configured && !configured.empty?
 
-        packaged = File.expand_path("bin/searchkerneld", __dir__)
-        return packaged if File.file?(packaged)
+        descriptor_path = File.expand_path("runtime.json", __dir__)
+        return File.join(resolve_runtime(descriptor_path), "bin", "searchkerneld") if File.file?(descriptor_path)
 
         root = File.expand_path("../../../..", __dir__)
         target_dir = ENV["CARGO_TARGET_DIR"]
@@ -283,6 +290,169 @@ module SearchKernel
           return candidate if File.file?(candidate)
         end
         File.join(root, "target", "debug", "searchkerneld")
+      end
+
+      def resolve_runtime(descriptor_path)
+        descriptor = JSON.parse(File.read(descriptor_path))
+        validate_runtime_descriptor(descriptor)
+        artifact_uri = URI.parse(descriptor.fetch("artifact_url"))
+        expected_artifact = "searchkernel-runtime-#{descriptor.fetch('runtime_identity')}-#{descriptor.fetch('platform')}.tar.gz"
+        unless %w[https file].include?(artifact_uri.scheme) && (artifact_uri.scheme != "https" || !artifact_uri.host.to_s.empty?) && File.basename(URI::DEFAULT_PARSER.unescape(artifact_uri.path)) == expected_artifact
+          raise ClientError, "origin-invalid: artifact URL is not immutable or supported"
+        end
+        override = ENV["SEARCHKERNEL_RUNTIME_DIR"]
+        return validate_runtime(override, descriptor) if override && !override.empty?
+        cache = ENV["SEARCHKERNEL_RUNTIME_CACHE"] || File.join(ENV["XDG_CACHE_HOME"] || File.join(Dir.home, ".cache"), "searchkernel", "runtime")
+        final = File.join(cache, "objects", descriptor.fetch("runtime_identity"))
+        begin; return validate_runtime(final, descriptor); rescue ClientError; end
+        FileUtils.mkdir_p(File.dirname(final)); FileUtils.mkdir_p(File.join(cache, "locks"))
+        File.open(File.join(cache, "locks", "#{descriptor.fetch('runtime_identity')}.lock"), "w") do |lock|
+          lock.flock(File::LOCK_EX)
+          begin; return validate_runtime(final, descriptor); rescue ClientError; FileUtils.rm_rf(final); end
+          Dir.mktmpdir("searchkernel-runtime-", cache) do |tmp|
+            archive = File.join(tmp, "runtime.tar.gz")
+            url = descriptor.fetch("artifact_url")
+            if (origin = ENV["SEARCHKERNEL_RUNTIME_ORIGIN"]) && !origin.empty?
+              url = origin.sub(%r{/+$}, "") + "/" + File.basename(URI.parse(url).path)
+            end
+            parsed_url = URI.parse(url)
+            if parsed_url.scheme == "file"
+              File.binwrite(archive, File.binread(parsed_url.path))
+            else
+              URI.open(url) { |input| File.binwrite(archive, input.read) }
+            end
+            raise ClientError, "runtime artifact digest mismatch" unless Digest::SHA256.file(archive).hexdigest == descriptor.fetch("artifact_sha256")
+            validate_runtime_archive(archive)
+            unpack = File.join(tmp, "unpack"); Dir.mkdir(unpack)
+            system("tar", "-xzf", archive, "-C", unpack, "--no-same-owner", "--no-same-permissions", exception: true)
+            validate_runtime(unpack, descriptor); File.rename(unpack, final)
+          end
+        end
+        validate_runtime(final, descriptor)
+      rescue StandardError => error
+        raise error if error.is_a?(ClientError)
+        raise ClientError, "managed-local runtime resolution failed: #{error.message}"
+      end
+
+      def validate_runtime(root, descriptor)
+        root = File.expand_path(root)
+        root_stat = File.lstat(root)
+        raise ClientError, "runtime-invalid: runtime root must be a real directory" unless root_stat.directory? && !root_stat.symlink?
+        manifest = JSON.parse(File.read(File.join(root, "manifest.json")))
+        raise ClientError, "runtime-invalid: runtime manifest must be an object" unless manifest.is_a?(Hash)
+        unless manifest["format_version"] == 1
+          raise ClientError, "runtime-invalid: unsupported runtime manifest format"
+        end
+        %w[searchkernel_version searchkernel_revision runtime_package_generation platform native_target build_environment native_abi_version vespa_commit runtime_identity].each do |key|
+          raise ClientError, "identity-mismatch: #{key} differs" unless manifest[key] == descriptor[key]
+        end
+        validate_runtime_symlinks(root)
+        %w[bin/searchkerneld bin/searchkerneld.real lib/libsearchkernel_vespa.so.2].each do |member|
+          path = File.join(root, member)
+          raise ClientError, "runtime-invalid: required runtime member missing: #{member}" unless File.file?(path)
+        end
+        %w[bin/searchkerneld bin/searchkerneld.real].each do |member|
+          unless File.stat(File.join(root, member)).mode & 0o111 != 0
+            raise ClientError, "runtime-invalid: required runtime executable is not executable: #{member}"
+          end
+        end
+        digest = Digest::SHA256.new
+        Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).select { |path| File.file?(path) && File.basename(path) != "manifest.json" }.sort.each do |path|
+          relative = path.delete_prefix(File.expand_path(root) + "/")
+          data = File.binread(path)
+          digest.update([relative.bytesize].pack("Q>")); digest.update(relative); digest.update([data.bytesize].pack("Q>")); digest.update(data)
+        end
+        raise ClientError, "digest-mismatch: runtime payload digest differs" unless manifest["payload_sha256"] == digest.hexdigest
+        File.expand_path(root)
+      rescue Errno::ENOENT, JSON::ParserError => error
+        raise ClientError, "runtime-invalid: #{error.message}"
+      end
+
+      def validate_runtime_descriptor(descriptor, platform: RUBY_PLATFORM, libc_version: detected_glibc_version)
+        identity_keys = %w[searchkernel_version searchkernel_revision runtime_package_generation platform native_target build_environment native_abi_version vespa_commit]
+        unless descriptor.is_a?(Hash) && descriptor["format_version"] == 1
+          raise ClientError, "descriptor-invalid: unsupported or malformed runtime descriptor"
+        end
+        identity_keys.each do |key|
+          value = descriptor[key]
+          valid = %w[runtime_package_generation native_abi_version].include?(key) ? value.is_a?(Integer) && value.positive? : value.is_a?(String) && !value.empty?
+          raise ClientError, "descriptor-invalid: #{key} is missing or invalid" unless valid
+        end
+        material = identity_keys.sort.to_h { |key| [key, descriptor.fetch(key)] }
+        derived = "skrt-v1-#{Digest::SHA256.hexdigest(JSON.generate(material))}"
+        unless descriptor["runtime_identity"] == derived
+          raise ClientError, "descriptor-invalid: runtime identity does not match identity material"
+        end
+        unless descriptor["artifact_sha256"].is_a?(String) && descriptor["artifact_sha256"].match?(/\A[0-9a-f]{64}\z/)
+          raise ClientError, "descriptor-invalid: artifact_sha256 must be lowercase SHA-256 hex"
+        end
+        unless glibc_x86_64?(platform, libc_version) && descriptor["platform"] == "linux-x86_64-glibc" && descriptor["native_target"] == "x86_64-unknown-linux-gnu"
+          raise ClientError, "platform-mismatch: runtime descriptor does not match a qualified glibc host"
+        end
+        descriptor
+      end
+
+      def detected_glibc_version
+        return nil unless defined?(Etc::CS_GNU_LIBC_VERSION)
+
+        Etc.confstr(Etc::CS_GNU_LIBC_VERSION)
+      rescue SystemCallError, ArgumentError
+        nil
+      end
+
+      def glibc_x86_64?(platform, libc_version)
+        platform.include?("linux") && platform.match?(/x86_64|amd64/) && libc_version.to_s.downcase.start_with?("glibc ")
+      end
+
+      def validate_runtime_symlinks(root)
+        base = File.realpath(root)
+        Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).each do |path|
+          next unless File.symlink?(path)
+
+          target = File.realpath(path)
+          unless target == base || target.start_with?(base + File::SEPARATOR)
+            raise ClientError, "runtime-invalid: runtime symlink escapes runtime root: #{path}"
+          end
+        rescue Errno::ENOENT, Errno::ELOOP => error
+          raise ClientError, "runtime-invalid: runtime symlink cannot be resolved: #{error.message}"
+        end
+      end
+
+      def validate_runtime_archive(archive_path)
+        entries = []
+        Zlib::GzipReader.open(archive_path) do |gzip|
+          Gem::Package::TarReader.new(gzip).each do |entry|
+            name = entry.full_name
+            path = Pathname.new(name)
+            if path.absolute? || path.each_filename.any? { |part| part == ".." }
+              raise ClientError, "artifact-invalid: archive path escapes runtime root"
+            end
+            type = entry.header.typeflag
+            if %w[1].include?(type)
+              raise ClientError, "artifact-invalid: archive hard links are not permitted"
+            elsif %w[3 4 6].include?(type)
+              raise ClientError, "artifact-invalid: archive special files are not permitted"
+            end
+            unless %w[0 2 5 7].include?(type)
+              raise ClientError, "artifact-invalid: unsupported archive entry type #{type.inspect}"
+            end
+            entries << [path.cleanpath, type, entry.header.linkname]
+          end
+        end
+        links = entries.select { |_path, type, _target| type == "2" }.map(&:first)
+        entries.each do |path, type, _target|
+          if links.any? { |link| type != "2" && path.each_filename.to_a[0, link.each_filename.count] == link.each_filename.to_a }
+            raise ClientError, "artifact-invalid: archive member traverses an archive link"
+          end
+        end
+        entries.each do |path, type, target|
+          next unless type == "2"
+
+          destination = path.dirname.join(target).cleanpath
+          if Pathname.new(target).absolute? || destination.each_filename.any? { |part| part == ".." }
+            raise ClientError, "artifact-invalid: archive link escapes runtime root"
+          end
+        end
       end
 
       def release(host, force:)
