@@ -202,9 +202,8 @@ test.
 
 The current trust policy is deliberately small. It accepts authenticated
 repository dispatch and authorized pull-request comments as two request
-ingresses into the same trusted verifier. Comment ingress is restricted to
-`OWNER`, `MEMBER`, or `COLLABORATOR` author associations and a single-line,
-bounded command grammar. Remote verification must:
+ingresses into the same trusted verifier. Comment ingress is restricted to OWNER, MEMBER, or COLLABORATOR author
+associations and a single-line, bounded command grammar. Remote verification must:
 
 - accept only bounded `ci`, `test`, and `verify` operations;
 - validate targets against the canonical repository-owned target registry;
