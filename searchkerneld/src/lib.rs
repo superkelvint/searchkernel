@@ -217,7 +217,7 @@ impl SearchKernelTransport {
     fn dispatch_grpc(
         &self,
         payload: &[u8],
-        expected_generation: Option<&str>,
+        _expected_generation: Option<&str>,
     ) -> Result<GrpcDispatchResult, Box<Status>> {
         match &self.target {
             DispatchTarget::Single(dispatcher) => {
@@ -234,7 +234,7 @@ impl SearchKernelTransport {
             #[cfg(feature = "native")]
             DispatchTarget::Registry(registry) => {
                 let result = registry
-                    .dispatch_grpc(payload, expected_generation)
+                    .dispatch_grpc(payload, _expected_generation)
                     .map_err(|error| Box::new(registry_error_status(error)))?;
                 Ok(GrpcDispatchResult {
                     payload: result.payload,
@@ -299,15 +299,12 @@ impl SearchKernel for SearchKernelTransport {
         &self,
         request: Request<FlatBufferFrame>,
     ) -> Result<Response<FlatBufferFrame>, Status> {
-        let generation = request
-            .metadata()
-            .get(INDEX_GENERATION_METADATA_KEY)
-            .map(|value| {
-                value.to_str().map(str::to_owned).map_err(|_| {
-                    Status::invalid_argument("invalid Search Kernel index generation metadata")
-                })
-            })
-            .transpose()?;
+        let generation = match request.metadata().get(INDEX_GENERATION_METADATA_KEY) {
+            Some(value) => Some(value.to_str().map(str::to_owned).map_err(|_| {
+                Status::invalid_argument("invalid Search Kernel index generation metadata")
+            })?),
+            None => None,
+        };
         let payload = request.into_inner().payload;
         let transport = self.clone();
         let result = run_blocking(self.execution_limit.clone(), move || {

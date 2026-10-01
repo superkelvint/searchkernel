@@ -5,7 +5,7 @@ use std::{
     io::Read,
     net::{SocketAddr, TcpListener, TcpStream},
     os::unix::process::ExitStatusExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -188,7 +188,7 @@ fn assert_response_kind(bytes: &[u8], expected: wire::ResponsePayload) {
     assert_eq!(envelope.payload_type(), expected);
 }
 
-fn spawn_multi_daemon(data_root: &PathBuf, address: SocketAddr) -> Child {
+fn spawn_multi_daemon(data_root: &Path, address: SocketAddr) -> Child {
     Command::new(env!("CARGO_BIN_EXE_searchkerneld"))
         .args([
             "--data-root",

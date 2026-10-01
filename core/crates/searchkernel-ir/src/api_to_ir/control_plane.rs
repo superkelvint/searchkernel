@@ -410,6 +410,7 @@ mod tests {
         assert!(!error.retryable);
     }
 
+    #[test]
     fn missing_target_and_definition_have_canonical_portable_errors() {
         let missing_target = resolve_index_target(None).unwrap_err();
         assert_eq!(missing_target.code, ErrorCode::InvalidArgument);

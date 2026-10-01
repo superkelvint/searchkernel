@@ -1593,8 +1593,7 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
     assert_eq!(missing.details()[0].code, INDEX_NOT_FOUND_DETAIL_CODE);
     let repeated_delete = other_client
         .delete_index("rust-a")
-        .err()
-        .expect("repeated delete error");
+        .expect_err("repeated delete error");
     assert_eq!(repeated_delete.code(), RustErrorCode::NotFound);
     assert_eq!(
         repeated_delete.details()[0].code,
