@@ -16,6 +16,7 @@ from native_runtime_closure import (
     ldd_resolutions,
     needed_libraries,
     resolve_origin_dependency,
+    runtime_candidates,
     sha256_file,
 )
 
@@ -145,6 +146,7 @@ def bundle(
                 resolved_payload,
                 ldd,
                 [*resolved_search_dirs, root],
+                trusted_source_roots,
             )
         except RuntimeError as exc:
             die(str(exc))
@@ -173,6 +175,17 @@ def bundle(
                     else resolved_payload.name
                 )
                 continue
+            candidates = runtime_candidates(
+                needed,
+                [*resolved_search_dirs, root],
+                trusted_source_roots,
+            )
+            candidate_hashes = {sha256_file(candidate) for candidate in candidates}
+            if len(candidate_hashes) > 1:
+                die(
+                    f"conflicting producer candidates for {needed}: "
+                    + ", ".join(str(candidate) for candidate in candidates)
+                )
             source = resolutions.get(needed)
             if source is None:
                 die(

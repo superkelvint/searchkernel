@@ -700,6 +700,7 @@ test_target() {
         native-base-artifact)
             "$PYTHON" "$ROOT/tools/test_check_native_runtime_closure.py"
             "$PYTHON" "$ROOT/tools/test_bundle_native_runtime_closure.py"
+            "$PYTHON" "$ROOT/tools/test_native_base_runtime_source.py"
             "$PYTHON" "$ROOT/tools/test_native_base_metadata.py"
             bash "$ROOT/tools/test-native-base-artifact.sh"
             bash "$ROOT/tools/test-fetch-native-base.sh"

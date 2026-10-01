@@ -7,6 +7,8 @@ import pathlib
 import re
 import subprocess
 import hashlib
+import os
+import tempfile
 
 
 # GNU/Linux C/C++ runtime baseline for the supported x86_64-unknown-linux-gnu
@@ -102,40 +104,95 @@ def sha256_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
-def ldd_resolutions(payload: pathlib.Path, ldd: str, library_path: list[pathlib.Path]) -> dict[str, pathlib.Path]:
-    """Return concrete loader choices while allowing only explicitly named search roots."""
-    import os
-
-    env = os.environ.copy()
-    env.pop("LD_PRELOAD", None)
-    env.pop("LD_LIBRARY_PATH", None)
-    if library_path:
-        env["LD_LIBRARY_PATH"] = ":".join(str(path) for path in library_path)
-    completed = subprocess.run(
-        [ldd, "-r", str(payload)],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-    )
-    output = completed.stdout + "\n" + completed.stderr
-    failures = [
-        line.strip()
-        for line in output.splitlines()
-        if "not found" in line or "undefined symbol" in line
-    ]
-    if failures:
-        raise RuntimeError("loader rejected {}:\n  {}".format(payload, "\n  ".join(failures)))
-
-    resolved: dict[str, pathlib.Path] = {}
-    for line in completed.stdout.splitlines():
-        match = LDD_RESOLUTION_RE.match(line)
-        if match:
-            resolved[match.group("name")] = pathlib.Path(match.group("path"))
+def runtime_candidates(
+    name: str,
+    directories: list[pathlib.Path],
+    allowed_roots: list[pathlib.Path],
+) -> list[pathlib.Path]:
+    """Find concrete same-name ELF candidates without following out-of-root aliases."""
+    candidates: set[pathlib.Path] = set()
+    for directory in directories:
+        entry = directory / name
+        try:
+            resolved = entry.resolve(strict=True)
+        except (OSError, RuntimeError):
             continue
-        match = LDD_DIRECT_RE.match(line)
-        if match:
-            path = pathlib.Path(match.group("path"))
-            resolved[path.name] = path
-    return resolved
+        if _inside(resolved, allowed_roots) and resolved.is_file() and is_elf(resolved):
+            candidates.add(resolved)
+    return sorted(candidates, key=str)
+
+
+def _inside(path: pathlib.Path, roots: list[pathlib.Path]) -> bool:
+    return any(path.is_relative_to(root) for root in roots)
+
+
+def _hermetic_search_dirs(
+    library_path: list[pathlib.Path],
+    allowed_roots: list[pathlib.Path],
+    temporary_root: pathlib.Path,
+) -> list[pathlib.Path]:
+    """Mirror only ELF candidates whose resolved bytes live under allowed producer roots."""
+    safe_dirs: list[pathlib.Path] = []
+    for index, directory in enumerate(library_path):
+        safe_dir = temporary_root / str(index)
+        safe_dir.mkdir()
+        for entry in sorted(directory.iterdir(), key=lambda item: item.name):
+            try:
+                resolved = entry.resolve(strict=True)
+            except (OSError, RuntimeError):
+                continue
+            if not _inside(resolved, allowed_roots):
+                continue
+            if not resolved.is_file() or not is_elf(resolved):
+                continue
+            (safe_dir / entry.name).symlink_to(resolved)
+        if any(safe_dir.iterdir()):
+            safe_dirs.append(safe_dir)
+    return safe_dirs
+
+
+def ldd_resolutions(
+    payload: pathlib.Path,
+    ldd: str,
+    library_path: list[pathlib.Path],
+    allowed_roots: list[pathlib.Path] | None = None,
+) -> dict[str, pathlib.Path]:
+    """Return concrete loader choices without honoring stale external search aliases."""
+    roots = [root.resolve(strict=True) for root in (allowed_roots or library_path)]
+    env = os.environ.copy()
+    for variable in tuple(env):
+        if variable.startswith("LD_"):
+            env.pop(variable, None)
+
+    with tempfile.TemporaryDirectory(prefix="searchkernel-ldd-path.") as raw:
+        sanitized = _hermetic_search_dirs(library_path, roots, pathlib.Path(raw))
+        if sanitized:
+            env["LD_LIBRARY_PATH"] = ":".join(str(path) for path in sanitized)
+        completed = subprocess.run(
+            [ldd, "-r", str(payload)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        output = completed.stdout + "\n" + completed.stderr
+        failures = [
+            line.strip()
+            for line in output.splitlines()
+            if "not found" in line or "undefined symbol" in line
+        ]
+        if failures:
+            raise RuntimeError("loader rejected {}:\n  {}".format(payload, "\n  ".join(failures)))
+
+        resolved: dict[str, pathlib.Path] = {}
+        for line in completed.stdout.splitlines():
+            match = LDD_RESOLUTION_RE.match(line)
+            if match:
+                resolved[match.group("name")] = pathlib.Path(match.group("path")).resolve(strict=True)
+                continue
+            match = LDD_DIRECT_RE.match(line)
+            if match:
+                path = pathlib.Path(match.group("path")).resolve(strict=True)
+                resolved[path.name] = path
+        return resolved

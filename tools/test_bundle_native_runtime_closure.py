@@ -175,13 +175,19 @@ def main() -> int:
                 "base-only SDK construction must close non-baseline runtime dependencies "
                 "before native-cache publication"
             )
-        base_bundle = build_sdk_text.index('if [ "$BASE_ONLY" = 1 ]; then', build_sdk_text.index('libffi.so.6 required'))
+        base_bundle = build_sdk_text.index(
+            'if [ "$BASE_ONLY" = 1 ]; then\n    RUNTIME_SEARCH_ARGS=',
+            build_sdk_text.index("Runtime sources are restricted to explicitly named producer"),
+        )
         closure_bundle = build_sdk_text.index('bundle-native-runtime-closure.py', base_bundle)
         alias_validation = build_sdk_text.index('SDK_LIB_REAL=', closure_bundle)
         if not base_bundle < closure_bundle < alias_validation:
             raise SystemExit(
                 "base-only SDK runtime closure must be bundled before SDK alias validation/publication"
             )
+        base_closure_logic = build_sdk_text[base_bundle:alias_validation]
+        if "libffi.so.6" in base_closure_logic or "VESPA_AWS_LIB_DIR" in base_closure_logic:
+            raise SystemExit("native-base closure must not have a libffi-specific producer source")
 
         package_text = PACKAGE.read_text(encoding="utf-8")
         copied_base = package_text.index('cp -aL "$BASE/." "$BUNDLE/base/"')

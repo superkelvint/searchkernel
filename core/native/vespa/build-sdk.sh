@@ -198,7 +198,7 @@ if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
         VESPA_EXTRA_LIB_DIR=$DEPS_LIB_DIR
     elif [ "$BASE_ONLY" = 1 ] && has_llvm_runtime "$VESPA_DEPS/../../usr/lib64"; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
-    elif has_llvm_runtime "$SDK_PACKAGE/lib"; then
+    elif [ "$BASE_ONLY" != 1 ] && has_llvm_runtime "$SDK_PACKAGE/lib"; then
         VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
     elif has_llvm_runtime "$VESPA_DEPS/../../usr/lib64"; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
@@ -530,55 +530,41 @@ if [ "$BASE_ONLY" != 1 ]; then
         ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
         -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 fi
-if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
-    AWS_LIB_DIR=$VESPA_AWS_LIB_DIR
-elif [ -f "$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6" ]; then
-    AWS_LIB_DIR=$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist
-elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
-    AWS_LIB_DIR=$DEPS_LIB_DIR
-elif [ "$BASE_ONLY" != 1 ] && [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
-    AWS_LIB_DIR=$SDK_PACKAGE/lib
-elif [ "$BASE_ONLY" != 1 ]; then
-    AWS_LIB_DIR=$ROOT/target/native-sdk-package/lib
-else
-    AWS_LIB_DIR=
-fi
-if [ -n "$AWS_LIB_DIR" ] && [ -d "$AWS_LIB_DIR" ]; then
-    AWS_LIB_DIR=$(CDPATH= cd -- "$AWS_LIB_DIR" && pwd -P)
-fi
-if [ -n "$AWS_LIB_DIR" ] && [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
-    AWS_LIB_REAL=$(readlink -f "$AWS_LIB_DIR/libffi.so.6")
-    if [ "$BASE_ONLY" = 1 ] && [ -z "${VESPA_AWS_LIB_DIR:-}" ]; then
-        case "$AWS_LIB_REAL" in
-            "$VESPA_DEPS"/*|/usr/local/aws-cli/*) ;;
-            *)
-                echo "refusing undeclared libffi.so.6 source outside Vespa producer inputs: $AWS_LIB_REAL" >&2
-                echo "provide VESPA_AWS_LIB_DIR as an explicit producer input" >&2
-                exit 1
-                ;;
-        esac
+if [ "$BASE_ONLY" != 1 ]; then
+    # Full development SDKs retain their historical convenience behavior.
+    # Native-base construction leaves every non-system runtime dependency,
+    # including libffi, to the generic DT_NEEDED resolver below.
+    if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
+        AWS_LIB_DIR=$VESPA_AWS_LIB_DIR
+    elif [ -f "$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6" ]; then
+        AWS_LIB_DIR=$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist
+    elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
+        AWS_LIB_DIR=$DEPS_LIB_DIR
+    elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
+        AWS_LIB_DIR=$SDK_PACKAGE/lib
+    else
+        AWS_LIB_DIR=$ROOT/target/native-sdk-package/lib
     fi
-    if [ "$BASE_ONLY" != 1 ] && [ "$AWS_LIB_REAL" != "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
-        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$AWS_LIB_DIR/libffi.so.6"
+    if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
+        if [ "$(readlink -f "$AWS_LIB_DIR/libffi.so.6")" != \
+             "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
+            sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$AWS_LIB_DIR/libffi.so.6"
+        fi
+    elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
+        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$SDK_PACKAGE/lib/libffi.so.6"
+    elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
+        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$DEPS_LIB_DIR/libffi.so.6"
+    else
+        echo "libffi.so.6 required by the bundled LLVM runtime was not found" >&2
+        exit 1
     fi
-elif [ "$BASE_ONLY" != 1 ] && [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
-    sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$DEPS_LIB_DIR/libffi.so.6"
-else
-    echo "libffi.so.6 required by the bundled LLVM runtime was not found in declared producer inputs" >&2
-    echo "set VESPA_AWS_LIB_DIR or provide libffi.so.6 in $DEPS_LIB_DIR" >&2
-    exit 1
 fi
 
 # A base object must be self-contained before it is admitted to the immutable
 # native cache. Runtime sources are restricted to explicitly named producer
 # roots so transitive symlinks cannot pull in another local SDK.
 if [ "$BASE_ONLY" = 1 ]; then
-    AWS_SOURCE_ARGS=()
     RUNTIME_SEARCH_ARGS=(--search-dir "$DEPS_LIB_DIR" --search-dir "$VESPA_EXTRA_LIB_DIR")
-    if [ -n "$AWS_LIB_DIR" ]; then
-        AWS_SOURCE_ARGS+=(--source-root "vespa-aws=$AWS_LIB_DIR")
-        RUNTIME_SEARCH_ARGS+=(--search-dir "$AWS_LIB_DIR")
-    fi
     "$PYTHON_BIN" "$ROOT/tools/bundle-native-runtime-closure.py" \
         "$SDK/lib" \
         "${RUNTIME_SEARCH_ARGS[@]}" \
@@ -586,7 +572,8 @@ if [ "$BASE_ONLY" = 1 ]; then
         --source-root "vespa-deps=$VESPA_DEPS" \
         --source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR" \
         --source-root "system=/usr" \
-        "${AWS_SOURCE_ARGS[@]}"
+        --source-root "system-lib=/lib" \
+        --source-root "system-lib64=/lib64"
 fi
 
 
