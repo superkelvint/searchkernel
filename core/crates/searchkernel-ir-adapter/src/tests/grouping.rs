@@ -198,7 +198,7 @@ fn canonical_grouping_round_trips_through_flatbuffers_and_ir() {
     .expect("grouping test definition");
     let bytes = searchkernel_ir::search_request_ir_to_api(&request);
     let api_request =
-        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::SearchRequest>(&bytes)
+        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::SearchRequest>(&bytes)
             .expect("encoded search request");
     let round_tripped = IndexContext::from_definition_ir(definition)
         .search_to_ir(api_request)
