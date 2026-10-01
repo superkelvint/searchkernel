@@ -192,7 +192,7 @@ def main() -> int:
             raise SystemExit("native-base closure must not have a libffi-specific producer source")
 
         package_text = PACKAGE.read_text(encoding="utf-8")
-        copied_base = package_text.index('cp -aL "$BASE/." "$BUNDLE/base/"')
+        copied_base = package_text.index('cp -a "$BASE/." "$BUNDLE/base/"')
         prepare_stage = package_text.find("make-writable-tree.sh", copied_base)
         bundle_closure = package_text.index('"$BUNDLE/base/lib"', copied_base)
         if not copied_base < prepare_stage < bundle_closure:
@@ -399,6 +399,11 @@ def main() -> int:
             env=env,
         )
 
+        # Link-time aliases need to survive package staging and runtime
+        # pruning so an isolated consumer can rebuild with the configured
+        # -lNAME inputs. The alias must remain a symlink to the kept SONAME
+        # payload, not a duplicate ELF that the pruner would discard.
+        (bundle / "libsearchkernel_fixture_mid.so").symlink_to(mid_name)
         pruned = root / "pruned-bundle"
         shutil.copytree(bundle, pruned, symlinks=True)
         run(
@@ -411,6 +416,8 @@ def main() -> int:
         for retained in (mid_name, leaf_name):
             if not (pruned / retained).is_file():
                 raise SystemExit(f"runtime pruner removed required transitive dependency {retained}")
+        if not (pruned / "libsearchkernel_fixture_mid.so").is_symlink():
+            raise SystemExit("runtime pruner removed the package-local adapter linker alias")
         for removed in ("libsearchkernel_fixture_base.so.1", extra_name, origin_name):
             if (pruned / removed).exists():
                 raise SystemExit(f"runtime pruner retained unrelated ELF candidate {removed}")

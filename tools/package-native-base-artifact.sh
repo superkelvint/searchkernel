@@ -78,7 +78,12 @@ cleanup() {
 trap cleanup EXIT
 BUNDLE=$STAGE/searchkernel-vespa-base
 mkdir -p "$BUNDLE/base" "$BUNDLE/toolchain/upstream/vespa" "$BUNDLE/toolchain/vespa-deps/include" "$BUNDLE/toolchain/vespa-deps/lib64"
-cp -aL "$BASE/." "$BUNDLE/base/"
+# Keep the cache's relative linker aliases as symlinks to their exact SONAME
+# payloads. Dereferencing here turns aliases into duplicate ELF files; the
+# runtime pruner then correctly drops those duplicates because only the
+# SONAME path is needed at load time, which would leave the archive unable to
+# rebuild its adapter from -lNAME inputs.
+cp -a "$BASE/." "$BUNDLE/base/"
 # The installed cache is immutable; this copy is the mutable packaging stage.
 bash "$ROOT/tools/make-writable-tree.sh" "$BUNDLE/base"
 
