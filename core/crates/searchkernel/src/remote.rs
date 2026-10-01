@@ -1047,10 +1047,10 @@ mod tests {
             Command::Shutdown => panic!("unexpected shutdown before execute"),
         }
 
-        let error = caller
-            .join()
-            .expect("transport caller thread")
-            .expect_err("dropped reply must fail the transport call");
+        let error = match caller.join().expect("transport caller thread") {
+            Ok(_) => panic!("dropped reply must fail the transport call"),
+            Err(error) => error,
+        };
         assert_eq!(error.code, ErrorCode::Unavailable);
         assert!(
             !error.retryable,

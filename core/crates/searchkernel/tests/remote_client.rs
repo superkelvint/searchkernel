@@ -251,7 +251,10 @@ fn lifecycle_definition_response(
     definition: &searchkernel_ir::IndexDefinitionIr,
     create: bool,
 ) -> Vec<u8> {
-    use searchkernel_protocol::{protocol::v1 as wire, v2 as api, PROTOCOL_VERSION};
+    use searchkernel_protocol::{
+        protocol::v1::{self as wire, PROTOCOL_VERSION},
+        wire::v1 as api,
+    };
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
     let (payload_type, payload) = if create {
@@ -286,7 +289,10 @@ fn lifecycle_definition_response(
 }
 
 fn lifecycle_delete_response() -> Vec<u8> {
-    use searchkernel_protocol::{protocol::v1 as wire, v2 as api, PROTOCOL_VERSION};
+    use searchkernel_protocol::{
+        protocol::v1::{self as wire, PROTOCOL_VERSION},
+        wire::v1 as api,
+    };
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let result = api::DeleteIndexResult::create(&mut builder, &api::DeleteIndexResultArgs {});
     let envelope = wire::ResponseEnvelope::create(
