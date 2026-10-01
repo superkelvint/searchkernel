@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import ctypes
+import os
 import pathlib
+import shutil
+import subprocess
 import sys
+import tempfile
 
 
 def main() -> int:
@@ -14,20 +17,49 @@ def main() -> int:
     parser.add_argument("adapter", type=pathlib.Path)
     parser.add_argument("expected_abi", type=int)
     args = parser.parse_args()
-    try:
-        library = ctypes.CDLL(str(args.adapter), mode=ctypes.RTLD_LOCAL)
-    except OSError as exc:
-        raise SystemExit(f"dynamic loader could not load packaged Search Kernel adapter: {exc}") from exc
-    try:
-        abi_version = library.sk_native_abi_version
-    except AttributeError as exc:
-        raise SystemExit("loaded adapter does not export sk_native_abi_version") from exc
-    abi_version.argtypes = []
-    abi_version.restype = ctypes.c_uint32
-    actual = abi_version()
-    if actual != args.expected_abi:
-        raise SystemExit(f"adapter ABI version mismatch: expected {args.expected_abi}, got {actual}")
-    print(f"native adapter runtime load and ABI smoke: PASS ({actual})")
+    adapter = args.adapter.resolve(strict=True)
+    compiler = shutil.which("cc")
+    if compiler is None:
+        raise SystemExit("cc is required for native adapter runtime smoke")
+    with tempfile.TemporaryDirectory(prefix="searchkernel-native-smoke.") as raw:
+        work = pathlib.Path(raw)
+        source = work / "smoke.c"
+        executable = work / "smoke"
+        source.write_text(
+            "#include <stdint.h>\n"
+            "extern uint32_t sk_native_abi_version(void);\n"
+            f"int main(void) {{ return sk_native_abi_version() == {args.expected_abi}U ? 0 : 1; }}\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                compiler,
+                str(source),
+                str(adapter),
+                f"-Wl,-rpath,{adapter.parent}",
+                "-o",
+                str(executable),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            raise SystemExit(f"could not link native adapter runtime smoke:\n{result.stderr.strip()}")
+        env = os.environ.copy()
+        env.pop("LD_LIBRARY_PATH", None)
+        env.pop("LD_PRELOAD", None)
+        run = subprocess.run(
+            [str(executable)],
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if run.returncode != 0:
+            detail = run.stderr.strip() or f"smoke process exited with status {run.returncode}"
+            raise SystemExit(f"dynamic loader/runtime could not run packaged Search Kernel adapter: {detail}")
+    print(f"native adapter runtime load and ABI smoke: PASS ({args.expected_abi})")
     return 0
 
 
