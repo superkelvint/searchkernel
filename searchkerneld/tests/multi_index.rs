@@ -1570,7 +1570,15 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
     a.close().expect("close reopened A");
     b.close().expect("close reopened B");
 
+    let stale_a = client
+        .open_index("rust-a")
+        .expect("open A handle that delete must invalidate");
     client.delete_index("rust-a").expect("delete A");
+    let stale_error = stale_a
+        .describe()
+        .expect_err("delete must close live Rust handles for the target");
+    assert_eq!(stale_error.code(), RustErrorCode::IndexClosed);
+
     let missing = client
         .open_index("rust-a")
         .err()
@@ -1586,6 +1594,19 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
         repeated_delete.details()[0].code,
         INDEX_NOT_FOUND_DETAIL_CODE
     );
+
+    let replacement_a = client
+        .create_index("rust-a", definition("schema_a_recreated"))
+        .expect("recreate A after delete");
+    let stale_error = stale_a
+        .describe()
+        .expect_err("recreating A must not revive the stale Rust handle");
+    assert_eq!(stale_error.code(), RustErrorCode::IndexClosed);
+    replacement_a.close().expect("close replacement A");
+    client
+        .delete_index("rust-a")
+        .expect("delete recreated A");
+
     let b = client.open_index("rust-b").expect("B survives A deletion");
     assert_eq!(
         b.get::<RemoteLifecycleDocument>("b-doc")
