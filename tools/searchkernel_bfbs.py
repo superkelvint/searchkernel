@@ -197,10 +197,10 @@ class ReflectedSchema:
         reflected = field.Type()
         base = reflected.BaseType()
         index = reflected.Index()
-        if field.Optional():
-            return "null"
         if base in (self.base.Vector, self.base.Vector64):
             return "[]"
+        if field.Optional():
+            return "null"
         if base == self.base.Array:
             raise ValueError(f"semantic model does not support fixed arrays: {_decode(field.Name())}")
         if base in (self.base.String, self.base.Obj, self.base.Union):

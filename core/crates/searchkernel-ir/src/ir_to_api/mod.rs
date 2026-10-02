@@ -45,7 +45,8 @@ pub use search::{
     inspect_query_result_offset, inspect_query_result_to_api, search_request_ir_to_api,
 };
 pub use transport::{
-    encode_analyze_request, encode_analyze_request_for_target, encode_create_index_request,
+    encode_analyze_request, encode_analyze_request_for_target,
+    encode_analyze_request_for_target_generation, encode_create_index_request,
     encode_delete_index_request, encode_delete_request, encode_delete_request_for_target,
     encode_delete_request_for_target_generation, encode_describe_request,
     encode_describe_request_for_target, encode_describe_request_for_target_generation,

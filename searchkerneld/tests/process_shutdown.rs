@@ -87,7 +87,13 @@ fn target<'a>(
     name: &str,
 ) -> flatbuffers::WIPOffset<api::IndexTarget<'a>> {
     let name = builder.create_string(name);
-    api::IndexTarget::create(builder, &api::IndexTargetArgs { name: Some(name) })
+    api::IndexTarget::create(
+        builder,
+        &api::IndexTargetArgs {
+            name: Some(name),
+            generation: None,
+        },
+    )
 }
 
 fn create_index_request(target_name: &str, field_name: &str) -> Vec<u8> {
