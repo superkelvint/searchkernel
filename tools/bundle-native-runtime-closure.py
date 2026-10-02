@@ -162,8 +162,14 @@ def bundle(
                         f"{resolved_payload.name}: unresolved origin-relative "
                         f"runtime dependency {needed}"
                     )
-                origin_root = root if resolved_payload.is_relative_to(root) else resolved_payload.parent
-                if not origin_dependency.resolve(strict=True).is_relative_to(origin_root):
+                allowed_origin_roots = [root]
+                if not resolved_payload.is_relative_to(root):
+                    allowed_origin_roots.append(resolved_payload.parent)
+                resolved_origin = origin_dependency.resolve(strict=True)
+                if not any(
+                    resolved_origin.is_relative_to(origin_root)
+                    for origin_root in allowed_origin_roots
+                ):
                     die(
                         f"{resolved_payload.name}: origin-relative dependency escapes "
                         f"its packaged runtime directory: {needed}"
