@@ -42,7 +42,7 @@ jobs:
             const runId = process.env.GITHUB_RUN_ID;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
             const request = String(context.payload.comment?.body || "").replaceAll("`", "\\`");
-            const fields = String(context.payload.comment?.body || "").trim().split(/\\s+/);
+            const fields = String(context.payload.comment?.body || "").trim().split(/\s+/);
             const operation = fields[1] || "";
             const target = operation === "ci" ? "" : (fields[2] || "");
             const command = operation === "ci"
