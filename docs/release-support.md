@@ -1,6 +1,6 @@
-# Release support matrix
+# Release support and stability
 
-This document describes the **distribution promise** for the next Search Kernel
+This document describes the **distribution promise** for the Search Kernel 0.1.x
 beta. Implementation present in the repository is not automatically a supported
 release surface. The machine-readable authority is [`release-support.json`](release-support.json).
 
@@ -34,9 +34,19 @@ the gem does not yet carry or lazily acquire the native `searchkerneld`
 runtime required for a clean consumer install. Managed-local remains deferred
 until that consumer runtime path is packaged and qualified.
 
-## Consumer quickstarts
+## Stability and compatibility
 
-The canonical executable release quickstarts are rendered in [release-quickstart.md](release-quickstart.md) and are executed by the clean-consumer qualification gate.
+Search Kernel is pre-1.0 beta software. As the README states, its public API will change before it stabilizes. The release matrix qualifies the listed surfaces as a set; it does not establish compatibility for arbitrary mixtures of independently released clients and daemons. Select artifacts from the same release manifest.
+
+The portable domain contract is the canonical FlatBuffers API. Native runtime packages carry a runtime identity that includes the native ABI, and the packaging path validates that identity. The native ABI is runtime provenance; it is not the persisted-index compatibility gate.
+
+Persisted indexes are governed by the storage compatibility generation in their manifest. The current generation is 1. Native ABI, Search Kernel package version, and Vespa revision are recorded as creation provenance, not reopen gates. See [persistent index compatibility](persistence-compatibility.md).
+
+The complete set of known feature limitations is maintained in [LIMITATIONS.md](../LIMITATIONS.md).
+
+## Consumer documentation
+
+Use [Install and run Search Kernel](getting-started.md) for artifact installation, listener selection, runtime ownership, persistence, and troubleshooting. The [generated release quickstarts](release-quickstart.md) are the canonical executable examples used by clean-consumer qualification.
 
 ## Python / Ruby parity boundary
 

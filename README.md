@@ -4,33 +4,17 @@ Search Kernel is a Rust interface to Vespa's native search engine, packaged so i
 
 Vespa's C++ engine does the actual work: storage, indexing, ranking, query execution. Search Kernel does not reimplement any of it. It gives that engine a normal Rust API plus first-party Python, TypeScript, PHP, and Ruby clients through `searchkerneld`. Release qualification is deliberately narrower than implementation presence; see the release support matrix.
 
-```python
-from searchkernel import Index
+## Start here
 
-index = Index.open("./search")
+Search Kernel is currently a **0.1.x beta**. Consumer installation uses released artifacts; contributor setup is separate.
 
-index.put({
-    "_id": "1",
-    "title": "The quick brown fox",
-})
+- [Install the released packages and runtime](docs/getting-started.md#installation-and-runtime-ownership).
+- Check the [release support and stability contract](docs/release-support.md) before deployment.
+- Follow the [canonical executable release quickstarts](docs/release-quickstart.md).
+- See the [release notes](docs/release-notes.md) and [consumer troubleshooting](docs/getting-started.md#troubleshooting).
+- Use [BUILDING.md](BUILDING.md) for source builds and contribution setup.
 
-results = index.search("brown fox")
-
-index.update("1", {"title": "The slow brown fox"})
-index.delete("1")
-```
-
-The same operations in Rust:
-
-```rust
-let engine = Engine::open(path, config)?;
-
-engine.put(document)?;
-engine.update(update)?;
-engine.remove(id)?;
-
-let result = engine.search(request)?;
-```
+The qualified platform is Linux x86-64 with glibc. Supported release modes are Rust embedded, `searchkerneld`, Python managed-local/connect, TypeScript/Node connect, and Ruby connect. Browser gRPC-Web, PHP, Ruby managed-local, Go, macOS, Windows, and Linux aarch64 are deferred.
 
 ## Why
 
@@ -58,9 +42,9 @@ It also doesn't have its own ranking language, storage engine, or schema migrati
 
 ## Installing
 
-Search Kernel links against Vespa's native libraries at build time. None of the managed-local bindings are pure-language packages. The next beta release qualifies **Linux x86-64 with glibc** for the Rust embedded API and `searchkerneld`; for non-Rust SDKs, Python (managed-local/connect), TypeScript/Node.js (connect), and Ruby (connect-to-daemon) are qualified. Ruby managed-local remains deferred until the gem can obtain its native runtime without repository-local state or an injected host binary. Browser TypeScript/gRPC-Web, PHP, Go, macOS, Windows, and Linux ARM/aarch64 are not release-supported surfaces.
+Use the versioned consumer artifacts described in the [installation guide](docs/getting-started.md), and select the matching files and checksums from the release manifest. Do not build from a repository checkout for normal application use.
 
-See the [authoritative release support matrix](docs/release-support.md) before deploying or packaging Search Kernel.
+See the [release support matrix](docs/release-support.md) before deploying or packaging Search Kernel.
 
 ### Development prerequisites
 
@@ -146,7 +130,7 @@ models and do not maintain parallel full-schema DTOs or handwritten codecs.
 
 ## Language bindings
 
-Release support is deliberately narrower than implementation inventory. For the next beta, Python (managed-local/connect), TypeScript/Node.js (connect), and Ruby (connect-to-daemon) are supported non-Rust SDK modes on the qualified Linux x86-64 glibc platform. Ruby managed-local, PHP, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
+Release support is deliberately narrower than implementation inventory. For the 0.1.x beta, Python (managed-local/connect), TypeScript/Node.js (connect), and Ruby (connect-to-daemon) are supported non-Rust SDK modes on the qualified Linux x86-64 glibc platform. Ruby managed-local, PHP, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
 
 ## Repository layout
 
