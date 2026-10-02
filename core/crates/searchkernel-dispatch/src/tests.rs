@@ -150,6 +150,7 @@ fn describe_request(version: u32, kind: wire::RequestPayload) -> Vec<u8> {
             target: None,
             payload_type: kind,
             payload: Some(request.as_union_value()),
+            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -190,6 +191,7 @@ fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
             target: Some(target),
             payload_type: kind,
             payload: Some(payload),
+            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -206,6 +208,7 @@ fn empty_search_request() -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
+            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));

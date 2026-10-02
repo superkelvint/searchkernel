@@ -108,16 +108,40 @@ export interface ClientTransport {
 }
 
 export class Client {
+  private expectedGeneration?: string;
+  private bindOnUse = false;
+  private binding?: Promise<void>;
+
   constructor(readonly transport: ClientTransport, readonly target?: string) {}
+
+  bindGeneration(generation: string | Uint8Array | null): void {
+    if (typeof generation !== "string" || generation.length === 0) {
+      throw new ProtocolError("lifecycle result is missing canonical target generation");
+    }
+    this.expectedGeneration = generation;
+  }
+
+  requireOpenBeforeOperations(): void {
+    this.bindOnUse = true;
+    this.binding = this.openIndex()
+      .then((result) => { this.bindGeneration(result.generation); });
+    // The synchronous connect method starts the open immediately. The first
+    // operation still observes the rejection through this.binding.
+    void this.binding.catch(() => undefined);
+  }
 
   async execute<K extends Operation>(
     operation: K,
     request: OperationRequestMap[K],
     options?: ExecuteOptions,
   ): Promise<OperationResponseMap[K]> {
+    if (this.bindOnUse && this.expectedGeneration === undefined &&
+        operation !== "createIndex" && operation !== "openIndex") {
+      await this.binding;
+    }
     try {
       const decoded = unpackResponse(
-        await this.transport.execute(packRequest(operation, request, this.target), options),
+        await this.transport.execute(packRequest(operation, request, this.target, this.expectedGeneration), options),
         operation,
       );
       if (decoded.isError) {
@@ -225,7 +249,9 @@ export class Index {
   ): Index {
     const target = typeof targetOrTransport === "string" ? targetOrTransport : undefined;
     const transport = typeof targetOrTransport === "string" ? selectedTransport : targetOrTransport;
-    return new Index(new Client(transport ?? new GrpcWebTransport(endpoint), target));
+    const client = new Client(transport ?? new GrpcWebTransport(endpoint), target);
+    if (target !== undefined) client.requireOpenBeforeOperations();
+    return new Index(client);
   }
 
   static async create(
@@ -238,6 +264,7 @@ export class Index {
     try {
       const result = await client.createIndex(definition);
       if (result.index === null) throw new ProtocolError("CreateIndexResult.index is missing");
+      client.bindGeneration(result.generation);
       return new Index(client);
     } catch (error) {
       await client.close();
@@ -254,6 +281,7 @@ export class Index {
     try {
       const result = await client.openIndex();
       if (result.index === null) throw new ProtocolError("OpenIndexResult.index is missing");
+      client.bindGeneration(result.generation);
       return new Index(client);
     } catch (error) {
       await client.close();

@@ -15,8 +15,10 @@ pub const INDEX_ALREADY_EXISTS_DETAIL_CODE: &str = "index_already_exists";
 pub const INDEX_NOT_FOUND_DETAIL_CODE: &str = "index_not_found";
 pub const INDEX_IN_USE_DETAIL_CODE: &str = "index_in_use";
 pub const STALE_INDEX_HANDLE_DETAIL_CODE: &str = "stale_index_handle";
+pub const INVALID_INDEX_GENERATION_DETAIL_CODE: &str = "invalid_index_generation";
 pub const TARGET_PATH: &str = "target";
 pub const TARGET_NAME_PATH: &str = "target.name";
+pub const EXPECTED_GENERATION_PATH: &str = "expected_generation";
 pub const CREATE_INDEX_DEFINITION_PATH: &str = "payload.definition";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,9 +80,11 @@ pub enum ControlPlaneRequest<'a> {
     },
     Delete {
         target: &'a str,
+        expected_generation: Option<&'a str>,
     },
     Route {
         target: &'a str,
+        expected_generation: Option<&'a str>,
     },
 }
 
@@ -98,6 +102,8 @@ pub fn resolve_control_plane_request<'a>(
 ) -> Result<ControlPlaneRequest<'a>, ControlPlaneResolutionError> {
     let target =
         resolve_index_target(envelope.target()).map_err(ControlPlaneResolutionError::Semantic)?;
+    let expected_generation = resolve_expected_generation(envelope.expected_generation())
+        .map_err(ControlPlaneResolutionError::Semantic)?;
     match envelope.payload_type() {
         wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
             let payload = envelope
@@ -118,10 +124,42 @@ pub fn resolve_control_plane_request<'a>(
             envelope
                 .payload_as_search_kernel_wire_delete_index_request()
                 .ok_or(ControlPlaneResolutionError::InvalidEnvelope)?;
-            Ok(ControlPlaneRequest::Delete { target })
+            Ok(ControlPlaneRequest::Delete {
+                target,
+                expected_generation,
+            })
         }
         wire::RequestPayload::NONE => Err(ControlPlaneResolutionError::InvalidEnvelope),
-        _ => Ok(ControlPlaneRequest::Route { target }),
+        _ => Ok(ControlPlaneRequest::Route {
+            target,
+            expected_generation,
+        }),
+    }
+}
+
+fn resolve_expected_generation(value: Option<&str>) -> Result<Option<&str>, PortableError> {
+    match value {
+        Some("") => Err(control_error(
+            ErrorCode::InvalidArgument,
+            INVALID_INDEX_GENERATION_DETAIL_CODE,
+            Some(EXPECTED_GENERATION_PATH),
+            "expected index generation must not be empty".to_owned(),
+        )),
+        value => Ok(value),
+    }
+}
+
+/// Compare the target incarnation while the registry still owns the selected
+/// entry. A missing expectation is an explicit name-based request; handles
+/// created or opened by clients always carry their returned generation.
+pub fn check_expected_generation(
+    expected: Option<&str>,
+    current: &str,
+) -> Result<(), PortableError> {
+    if expected.is_some_and(|expected| expected != current) {
+        Err(stale_index_handle_error())
+    } else {
+        Ok(())
     }
 }
 
@@ -408,6 +446,22 @@ mod tests {
         assert_eq!(error.details[0].code, STALE_INDEX_HANDLE_DETAIL_CODE);
         assert_eq!(error.details[0].path.as_deref(), Some(TARGET_PATH));
         assert!(!error.retryable);
+
+        assert!(check_expected_generation(None, "current").is_ok());
+        assert!(check_expected_generation(Some("current"), "current").is_ok());
+        assert_eq!(
+            check_expected_generation(Some("obsolete"), "current")
+                .expect_err("obsolete generation")
+                .details[0]
+                .code,
+            STALE_INDEX_HANDLE_DETAIL_CODE
+        );
+        let empty = resolve_expected_generation(Some("")).expect_err("empty generation");
+        assert_eq!(empty.details[0].code, INVALID_INDEX_GENERATION_DETAIL_CODE);
+        assert_eq!(
+            empty.details[0].path.as_deref(),
+            Some(EXPECTED_GENERATION_PATH)
+        );
     }
 
     #[test]
@@ -508,6 +562,7 @@ mod tests {
                 target: Some(target),
                 payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
                 payload: Some(create.as_union_value()),
+                expected_generation: None,
             },
         );
         wire::finish_request_envelope_buffer(&mut builder, create_envelope);

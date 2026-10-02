@@ -276,10 +276,9 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
     stop_daemon(pid)
     pid = nil
 
-    unavailable = SearchKernel::Index.connect(base_url, target: "products", timeout: 0.25)
     begin
-      unavailable.get("package-1")
-      raise "request to stopped external daemon unexpectedly succeeded"
+      SearchKernel::Index.connect(base_url, target: "products", timeout: 0.25)
+      raise "connecting to a stopped external daemon unexpectedly succeeded"
     rescue SearchKernel::TransportError => error
       check(
         error.message.include?("Search Kernel HTTP transport failed:"),
@@ -289,8 +288,6 @@ Dir.mktmpdir("searchkernel-ruby-package-daemon-") do |work|
         error.message.include?("#{base_url}/v1/execute"),
         "unavailable-daemon diagnostic does not identify the target endpoint: #{error.message}"
       )
-    ensure
-      unavailable.close
     end
   ensure
     stop_daemon(pid)

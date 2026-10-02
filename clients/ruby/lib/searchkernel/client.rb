@@ -14,12 +14,31 @@ module SearchKernel
 
       @transport = transport
       @target = target
+      @expected_generation = nil
+      @bind_on_use = false
       @closed = false
+    end
+
+    def require_open_before_operations
+      @bind_on_use = true
+    end
+
+    def bind_generation(generation)
+      unless generation.is_a?(String) && !generation.empty?
+        raise ProtocolError, "lifecycle result is missing canonical target generation"
+      end
+      @expected_generation = generation
     end
 
     def execute(operation, payload)
       raise TransportError, "Search Kernel client is closed" if @closed
-      response = @transport.execute(Protocol.request_envelope(operation, payload, target: @target))
+      if @bind_on_use && @expected_generation.nil? &&
+         !%i[create_index open_index].include?(operation.to_sym)
+        bind_generation(open_index({})["generation"])
+      end
+      response = @transport.execute(Protocol.request_envelope(
+        operation, payload, target: @target, expected_generation: @expected_generation
+      ))
       Protocol.expect_response(operation, response)
     end
 

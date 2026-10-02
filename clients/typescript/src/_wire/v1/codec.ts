@@ -213,6 +213,7 @@ export function packRequest<K extends Operation>(
   operation: K,
   payload: OperationRequestMap[K],
   target?: string,
+  expectedGeneration?: string,
 ): Uint8Array {
   let indexTarget: IndexTargetT | null = null;
   if (target !== undefined) {
@@ -223,6 +224,7 @@ export function packRequest<K extends Operation>(
     requestTypes[operation],
     toGenerated(payload) as never,
     indexTarget,
+    expectedGeneration ?? null,
   );
   return packObject(envelope, REQUEST_IDENTIFIER);
 }

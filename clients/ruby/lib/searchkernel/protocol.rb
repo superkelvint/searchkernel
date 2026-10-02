@@ -26,7 +26,7 @@ module SearchKernel
 
     module_function
 
-    def request_envelope(operation, payload, target: nil)
+    def request_envelope(operation, payload, target: nil, expected_generation: nil)
       spec = operation_spec(operation)
       raise ArgumentError, "Search Kernel request payload must be an object" unless payload.is_a?(Hash)
 
@@ -40,6 +40,7 @@ module SearchKernel
 
         envelope["target"] = { "name" => target }
       end
+      envelope["expected_generation"] = expected_generation unless expected_generation.nil?
       envelope
     end
 

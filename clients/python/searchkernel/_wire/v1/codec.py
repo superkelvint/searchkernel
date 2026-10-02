@@ -202,7 +202,13 @@ def pack_object(obj: Any, *, file_identifier: bytes | None = None) -> bytes:
     return bytes(builder.Output())
 
 
-def pack_request(operation: str, payload: Any, *, target: str | None = None) -> bytes:
+def pack_request(
+    operation: str,
+    payload: Any,
+    *,
+    target: str | None = None,
+    expected_generation: str | None = None,
+) -> bytes:
     try:
         payload_type = _REQUEST_TYPES[operation]
     except KeyError as exc:
@@ -217,6 +223,7 @@ def pack_request(operation: str, payload: Any, *, target: str | None = None) -> 
         payload_type,
         _to_generated(payload),
         index_target,
+        expected_generation,
     )
     return pack_object(envelope, file_identifier=REQUEST_IDENTIFIER)
 

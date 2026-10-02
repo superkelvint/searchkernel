@@ -89,7 +89,8 @@ class ReflectedSchema:
         return sorted((obj.Fields(i) for i in range(obj.FieldsLength())), key=lambda field: field.Id())
 
     def field_name(self, field: Any) -> str:
-        return _camel(_decode(field.Name()))
+        name = _camel(_decode(field.Name()))
+        return "arguments_" if name == "arguments" else name
 
     def _enum(self, index: int) -> Any:
         if index < 0 or index >= len(self.enums):
@@ -197,10 +198,10 @@ class ReflectedSchema:
         reflected = field.Type()
         base = reflected.BaseType()
         index = reflected.Index()
-        if field.Optional():
-            return "null"
         if base in (self.base.Vector, self.base.Vector64):
             return "[]"
+        if field.Optional():
+            return "null"
         if base == self.base.Array:
             raise ValueError(f"semantic model does not support fixed arrays: {_decode(field.Name())}")
         if base in (self.base.String, self.base.Obj, self.base.Union):

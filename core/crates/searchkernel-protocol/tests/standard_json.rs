@@ -373,6 +373,7 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
     assert_eq!(wire::RequestEnvelope::VT_PAYLOAD_TYPE, 6);
     assert_eq!(wire::RequestEnvelope::VT_PAYLOAD, 8);
     assert_eq!(wire::RequestEnvelope::VT_TARGET, 10);
+    assert_eq!(wire::RequestEnvelope::VT_EXPECTED_GENERATION, 12);
     assert_eq!(wire::ResponseEnvelope::VT_PROTOCOL_VERSION, 4);
     assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD_TYPE, 6);
     assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD, 8);
@@ -382,7 +383,9 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
     assert_eq!(wire::IndexTarget::VT_NAME, 4);
     assert_eq!(wire::CreateIndexRequest::VT_DEFINITION, 4);
     assert_eq!(wire::CreateIndexResult::VT_INDEX, 4);
+    assert_eq!(wire::CreateIndexResult::VT_GENERATION, 6);
     assert_eq!(wire::OpenIndexResult::VT_INDEX, 4);
+    assert_eq!(wire::OpenIndexResult::VT_GENERATION, 6);
 
     // ErrorCode values are portable wire ABI and must never be renumbered.
     assert_eq!(wire::ErrorCode::Unspecified.0, 0);

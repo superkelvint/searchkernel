@@ -23,7 +23,6 @@ use searchkernel_dispatch::Dispatcher;
 use searchkernel_ir::{Backend, PortableError, Result as BackendResult};
 use searchkernel_protocol::protocol::v1 as wire;
 use searchkernel_protocol::protocol::v1::PROTOCOL_VERSION;
-use searchkernel_rpc::INDEX_GENERATION_METADATA_KEY;
 use searchkernel_testkit::{
     canonical_result_fixtures, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
 };
@@ -55,6 +54,7 @@ fn describe_request(version: u32) -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
             payload: Some(request.as_union_value()),
+            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -79,6 +79,7 @@ fn targeted_describe_request(version: u32, target_name: &str) -> Vec<u8> {
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
             payload: Some(request.as_union_value()),
+            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -95,6 +96,7 @@ fn search_request() -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
+            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -129,6 +131,7 @@ fn valid_search_request() -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
+            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -163,6 +166,7 @@ fn large_search_request() -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
+            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -206,11 +210,6 @@ impl rpc::search_kernel_server::SearchKernel for RemoteTestService {
         let payload = request.into_inner().payload;
         let envelope = wire::root_as_request_envelope(&payload)
             .map_err(|_| Status::invalid_argument("invalid Search Kernel request"))?;
-        let lifecycle_response = matches!(
-            envelope.payload_type(),
-            wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest
-                | wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest
-        );
         let response = match envelope.payload_type() {
             wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
                 lifecycle_definition_response(&self.definition, true)
@@ -226,16 +225,7 @@ impl rpc::search_kernel_server::SearchKernel for RemoteTestService {
                 .dispatch(&payload)
                 .map_err(|_| Status::invalid_argument("invalid Search Kernel request"))?,
         };
-        let mut response = Response::new(rpc::FlatBufferFrame { payload: response });
-        if lifecycle_response {
-            response.metadata_mut().insert(
-                INDEX_GENERATION_METADATA_KEY,
-                "fixture-generation"
-                    .parse()
-                    .expect("static fixture generation metadata"),
-            );
-        }
-        Ok(response)
+        Ok(Response::new(rpc::FlatBufferFrame { payload: response }))
     }
 }
 
@@ -245,10 +235,14 @@ fn lifecycle_definition_response(
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::wire::v1::index_definition_offset(&mut builder, definition);
+    let generation = builder.create_string("fixture-generation");
     let (payload_type, payload) = if create {
         let result = wire::CreateIndexResult::create(
             &mut builder,
-            &wire::CreateIndexResultArgs { index: Some(index) },
+            &wire::CreateIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         );
         (
             wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
@@ -257,7 +251,10 @@ fn lifecycle_definition_response(
     } else {
         let result = wire::OpenIndexResult::create(
             &mut builder,
-            &wire::OpenIndexResultArgs { index: Some(index) },
+            &wire::OpenIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         );
         (
             wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,

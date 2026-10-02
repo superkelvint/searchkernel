@@ -574,6 +574,8 @@ table CreateIndexRequest {
 
 table CreateIndexResult {
   index:IndexDefinition;
+  // Opaque incarnation token for target-bound handles.
+  generation:string;
 }
 
 table OpenIndexRequest {
@@ -581,6 +583,8 @@ table OpenIndexRequest {
 
 table OpenIndexResult {
   index:IndexDefinition;
+  // Opaque incarnation token for target-bound handles.
+  generation:string;
 }
 
 // Delete removes the logical target from the daemon registry and deletes its

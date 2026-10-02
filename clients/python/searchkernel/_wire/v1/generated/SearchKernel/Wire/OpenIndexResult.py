@@ -41,8 +41,15 @@ class OpenIndexResult(object):
             return obj
         return None
 
+    # OpenIndexResult
+    def Generation(self) -> Optional[str]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
+        if o != 0:
+            return self._tab.String(o + self._tab.Pos)
+        return None
+
 def OpenIndexResultStart(builder: flatbuffers.Builder):
-    builder.StartObject(1)
+    builder.StartObject(2)
 
 def Start(builder: flatbuffers.Builder):
     OpenIndexResultStart(builder)
@@ -52,6 +59,12 @@ def OpenIndexResultAddIndex(builder: flatbuffers.Builder, index: int):
 
 def AddIndex(builder: flatbuffers.Builder, index: int):
     OpenIndexResultAddIndex(builder, index)
+
+def OpenIndexResultAddGeneration(builder: flatbuffers.Builder, generation: int):
+    builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(generation), 0)
+
+def AddGeneration(builder: flatbuffers.Builder, generation: int):
+    OpenIndexResultAddGeneration(builder, generation)
 
 def OpenIndexResultEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
@@ -71,8 +84,10 @@ class OpenIndexResultT(object):
     def __init__(
         self,
         index = None,
+        generation = None,
     ):
         self.index = index  # type: Optional[SearchKernel.Wire.IndexDefinition.IndexDefinitionT]
+        self.generation = generation  # type: Optional[str]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -97,13 +112,20 @@ class OpenIndexResultT(object):
             return
         if openIndexResult.Index() is not None:
             self.index = SearchKernel.Wire.IndexDefinition.IndexDefinitionT.InitFromObj(openIndexResult.Index())
+        self.generation = openIndexResult.Generation()
+        if self.generation is not None:
+            self.generation = self.generation.decode('utf-8')
 
     # OpenIndexResultT
     def Pack(self, builder):
         if self.index is not None:
             index = self.index.Pack(builder)
+        if self.generation is not None:
+            generation = builder.CreateString(self.generation)
         OpenIndexResultStart(builder)
         if self.index is not None:
             OpenIndexResultAddIndex(builder, index)
+        if self.generation is not None:
+            OpenIndexResultAddGeneration(builder, generation)
         openIndexResult = OpenIndexResultEnd(builder)
         return openIndexResult

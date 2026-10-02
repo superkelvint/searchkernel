@@ -26,6 +26,7 @@ pub fn build_component_transport_case(
                 target: None,
                 payload_type,
                 payload: Some(payload),
+                expected_generation: None,
             },
         );
         builder

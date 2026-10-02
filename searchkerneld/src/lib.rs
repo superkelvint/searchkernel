@@ -73,7 +73,6 @@ use rpc::{
     FlatBufferFrame,
 };
 
-use searchkernel_rpc::INDEX_GENERATION_METADATA_KEY;
 pub use searchkernel_rpc::MAX_GRPC_MESSAGE_SIZE;
 
 /// HTTP/JSON edge endpoint carrying standard FlatBuffers JSON envelopes.
@@ -193,11 +192,6 @@ pub struct SearchKernelTransport {
     execution_limit: Arc<Semaphore>,
 }
 
-struct GrpcDispatchResult {
-    payload: Vec<u8>,
-    generation: Option<String>,
-}
-
 impl SearchKernelTransport {
     fn single(dispatcher: Arc<Dispatcher>, execution_limit: Arc<Semaphore>) -> Self {
         Self {
@@ -214,11 +208,7 @@ impl SearchKernelTransport {
         }
     }
 
-    fn dispatch_grpc(
-        &self,
-        payload: &[u8],
-        _expected_generation: Option<&str>,
-    ) -> Result<GrpcDispatchResult, Box<Status>> {
+    fn dispatch_grpc(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
         match &self.target {
             DispatchTarget::Single(dispatcher) => {
                 reject_targeted_single_request(payload)
@@ -226,21 +216,12 @@ impl SearchKernelTransport {
                 let payload = dispatcher
                     .dispatch(payload)
                     .map_err(|error| Box::new(dispatch_error_status(error)))?;
-                Ok(GrpcDispatchResult {
-                    payload,
-                    generation: None,
-                })
+                Ok(payload)
             }
             #[cfg(feature = "native")]
-            DispatchTarget::Registry(registry) => {
-                let result = registry
-                    .dispatch_grpc(payload, _expected_generation)
-                    .map_err(|error| Box::new(registry_error_status(error)))?;
-                Ok(GrpcDispatchResult {
-                    payload: result.payload,
-                    generation: result.generation,
-                })
-            }
+            DispatchTarget::Registry(registry) => registry
+                .dispatch(payload)
+                .map_err(|error| Box::new(registry_error_status(error))),
         }
     }
 
@@ -299,33 +280,16 @@ impl SearchKernel for SearchKernelTransport {
         &self,
         request: Request<FlatBufferFrame>,
     ) -> Result<Response<FlatBufferFrame>, Status> {
-        let generation = match request.metadata().get(INDEX_GENERATION_METADATA_KEY) {
-            Some(value) => Some(value.to_str().map(str::to_owned).map_err(|_| {
-                Status::invalid_argument("invalid Search Kernel index generation metadata")
-            })?),
-            None => None,
-        };
         let payload = request.into_inner().payload;
         let transport = self.clone();
         let result = run_blocking(self.execution_limit.clone(), move || {
-            transport.dispatch_grpc(&payload, generation.as_deref())
+            transport.dispatch_grpc(&payload)
         })
         .await
         .map_err(|status| *status)?
         .map_err(|status| *status)?;
 
-        let mut response = Response::new(FlatBufferFrame {
-            payload: result.payload,
-        });
-        if let Some(generation) = result.generation {
-            let value = generation
-                .parse()
-                .map_err(|_| Status::internal("invalid Search Kernel index generation"))?;
-            response
-                .metadata_mut()
-                .insert(INDEX_GENERATION_METADATA_KEY, value);
-        }
-        Ok(response)
+        Ok(Response::new(FlatBufferFrame { payload: result }))
     }
 }
 

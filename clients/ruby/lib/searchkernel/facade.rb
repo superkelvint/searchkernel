@@ -501,7 +501,14 @@ module SearchKernel
     attr_reader :client
 
     def self.connect(base_url, target:, timeout: 30.0)
-      new(Client.new(HttpTransport.new(base_url, timeout: timeout), target: target))
+      client = Client.new(HttpTransport.new(base_url, timeout: timeout), target: target)
+      payload = client.open_index({})
+      raise ProtocolError, "OpenIndexResult.index must be an object" unless payload["index"].is_a?(Hash)
+      client.bind_generation(payload["generation"])
+      new(client)
+    rescue StandardError
+      client&.close
+      raise
     end
 
     def self.create(location, fields:, rank_profiles: nil, target: nil, timeout: 30.0)
@@ -511,6 +518,7 @@ module SearchKernel
         payload = client.create_index("definition" => definition)
         index = payload["index"]
         raise ProtocolError, "CreateIndexResult.index must be an object" unless index.is_a?(Hash)
+        client.bind_generation(payload["generation"])
         return new(client)
       end
 
@@ -527,6 +535,7 @@ module SearchKernel
       payload = client.create_index("definition" => definition)
       index = payload["index"]
       raise ProtocolError, "CreateIndexResult.index must be an object" unless index.is_a?(Hash)
+      client.bind_generation(payload["generation"])
       new(client, owner: owner)
     rescue StandardError
       client&.close
@@ -541,6 +550,7 @@ module SearchKernel
         payload = client.open_index({})
         index = payload["index"]
         raise ProtocolError, "OpenIndexResult.index must be an object" unless index.is_a?(Hash)
+        client.bind_generation(payload["generation"])
         return new(client)
       end
 
@@ -557,6 +567,7 @@ module SearchKernel
       payload = client.open_index({})
       index = payload["index"]
       raise ProtocolError, "OpenIndexResult.index must be an object" unless index.is_a?(Hash)
+      client.bind_generation(payload["generation"])
       new(client, owner: owner)
     rescue StandardError
       client&.close
@@ -574,6 +585,7 @@ module SearchKernel
 
     def initialize(client, owner: nil)
       @client = client
+      @client.require_open_before_operations unless @client.target.nil?
       @owner = owner
       @closed = false
     end

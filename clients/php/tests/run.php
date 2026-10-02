@@ -162,7 +162,7 @@ final class RecordingTransport implements Transport
             ],
             'SearchKernel_Wire_OpenIndexRequest' => [
                 'payload_type' => 'SearchKernel_Wire_OpenIndexResult',
-                'payload' => ['index' => ['fields' => []]],
+                'payload' => ['index' => ['fields' => []], 'generation' => 'recorded-generation'],
             ],
             'SearchKernel_Wire_DeleteIndexRequest' => [
                 'payload_type' => 'SearchKernel_Wire_DeleteIndexResult',
@@ -211,6 +211,8 @@ throws(
     'closed PHP handle rejects further operations',
 );
 same('test', $secondHandle->describe()['name'], 'closing one PHP handle leaves another selected handle usable');
+same('SearchKernel_Wire_OpenIndexRequest', $handleTransport->requests[0]['payload_type'], 'PHP handle opens before use');
+same('recorded-generation', $handleTransport->requests[1]['expected_generation'], 'PHP handle carries generation');
 
 
 $document = Protocol::document([

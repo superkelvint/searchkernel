@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Client, ClientError  # noqa: E402
+from searchkernel import Client, ClientError, Index  # noqa: E402
 from searchkernel.grpc_transport import (  # noqa: E402
     DEFAULT_GRPC_TIMEOUT_SECONDS,
     MAX_GRPC_MESSAGE_SIZE,
@@ -39,9 +39,11 @@ class _Stub:
 class _FrameTransport:
     def __init__(self, frames):
         self.frames = list(frames)
+        self.calls = []
         self.closed = False
 
-    def call(self, _payload):
+    def call(self, payload):
+        self.calls.append(payload)
         return self.frames.pop(0)
 
     def close(self):
@@ -56,6 +58,22 @@ def _response(payload_type, payload):
 
 
 class GrpcTransportTest(unittest.TestCase):
+    def test_index_handle_carries_open_generation_on_target_requests(self):
+        transport = _FrameTransport([
+            _response(
+                ResponsePayload.SearchKernel_Wire_OpenIndexResult,
+                OpenIndexResultT(IndexDefinitionT(name="products"), "generation-1"),
+            ),
+            _response(
+                ResponsePayload.SearchKernel_Wire_DeleteIndexResult,
+                DeleteIndexResultT(),
+            ),
+        ])
+        index = Index(Client(transport, target="products"))
+        index.client.delete_index()
+        request = RequestEnvelope.GetRootAs(transport.calls[1])
+        self.assertEqual(request.ExpectedGeneration().decode(), "generation-1")
+
     def test_ordinary_request_envelope_carries_logical_index_target(self):
         payload = pack_request("insert", InsertRequestT(), target="products")
         self.assertTrue(RequestEnvelope.RequestEnvelopeBufferHasIdentifier(payload, 0))

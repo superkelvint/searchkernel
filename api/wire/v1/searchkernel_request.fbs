@@ -34,6 +34,12 @@ table RequestEnvelope {
   // #848 establishes this field at the current slot as the forward-compatibility
   // baseline; future fields append rather than shifting existing slots.
   target:SearchKernel.Wire.IndexTarget;
+
+  // A handle created or opened for this target carries the returned
+  // generation on every later target-scoped operation. The daemon rejects a
+  // request if the target now names a different incarnation. Omission keeps
+  // the raw protocol's explicit name-based operation semantics.
+  expected_generation:string;
 }
 
 root_type RequestEnvelope;

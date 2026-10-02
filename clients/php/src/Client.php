@@ -14,6 +14,8 @@ namespace SearchKernel;
 final class Client
 {
     private bool $closed = false;
+    private ?string $expectedGeneration = null;
+    private bool $bindOnUse = false;
 
     public function __construct(
         private readonly Transport $transport,
@@ -37,11 +39,28 @@ final class Client
         if ($this->closed) {
             throw new TransportException('Search Kernel client is closed');
         }
+        if ($this->bindOnUse && $this->expectedGeneration === null &&
+            !in_array($operation, ['create_index', 'open_index'], true)) {
+            $this->bindGeneration($this->openIndex()['generation'] ?? null);
+        }
         [$requestType, $responseType] = Protocol::operation($operation);
         $response = $this->transport->execute(
-            Protocol::envelope($requestType, $payload, $this->target),
+            Protocol::envelope($requestType, $payload, $this->target, $this->expectedGeneration),
         );
         return Protocol::expectPayload($response, $responseType);
+    }
+
+    public function requireOpenBeforeOperations(): void
+    {
+        $this->bindOnUse = true;
+    }
+
+    public function bindGeneration(mixed $generation): void
+    {
+        if (!is_string($generation) || $generation === '') {
+            throw new ProtocolException('lifecycle result is missing canonical target generation');
+        }
+        $this->expectedGeneration = $generation;
     }
 
     /** @param array<string,mixed> $payload @return array<string,mixed> */

@@ -69,8 +69,15 @@ class RequestEnvelope(object):
             return obj
         return None
 
+    # RequestEnvelope
+    def ExpectedGeneration(self) -> Optional[str]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
+        if o != 0:
+            return self._tab.String(o + self._tab.Pos)
+        return None
+
 def RequestEnvelopeStart(builder: flatbuffers.Builder):
-    builder.StartObject(4)
+    builder.StartObject(5)
 
 def Start(builder: flatbuffers.Builder):
     RequestEnvelopeStart(builder)
@@ -98,6 +105,12 @@ def RequestEnvelopeAddTarget(builder: flatbuffers.Builder, target: int):
 
 def AddTarget(builder: flatbuffers.Builder, target: int):
     RequestEnvelopeAddTarget(builder, target)
+
+def RequestEnvelopeAddExpectedGeneration(builder: flatbuffers.Builder, expectedGeneration: int):
+    builder.PrependUOffsetTRelativeSlot(4, flatbuffers.number_types.UOffsetTFlags.py_type(expectedGeneration), 0)
+
+def AddExpectedGeneration(builder: flatbuffers.Builder, expectedGeneration: int):
+    RequestEnvelopeAddExpectedGeneration(builder, expectedGeneration)
 
 def RequestEnvelopeEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
@@ -134,11 +147,13 @@ class RequestEnvelopeT(object):
         payloadType = 0,
         payload = None,
         target = None,
+        expectedGeneration = None,
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
         self.payload = payload  # type: Union[None, 'SearchKernel.Wire.InsertRequest.InsertRequestT', 'SearchKernel.Wire.UpsertRequest.UpsertRequestT', 'SearchKernel.Wire.PatchRequest.PatchRequestT', 'SearchKernel.Wire.DeleteRequest.DeleteRequestT', 'SearchKernel.Wire.GetRequest.GetRequestT', 'SearchKernel.Wire.SearchRequest.SearchRequestT', 'SearchKernel.Wire.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.Wire.DescribeRequest.DescribeRequestT', 'SearchKernel.Wire.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.Wire.UpdateRequest.UpdateRequestT', 'SearchKernel.Wire.CreateIndexRequest.CreateIndexRequestT', 'SearchKernel.Wire.OpenIndexRequest.OpenIndexRequestT', 'SearchKernel.Wire.DeleteIndexRequest.DeleteIndexRequestT']
         self.target = target  # type: Optional[SearchKernel.Wire.IndexTarget.IndexTargetT]
+        self.expectedGeneration = expectedGeneration  # type: Optional[str]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -166,6 +181,9 @@ class RequestEnvelopeT(object):
         self.payload = SearchKernel.Protocol.RequestPayload.RequestPayloadCreator(self.payloadType, requestEnvelope.Payload())
         if requestEnvelope.Target() is not None:
             self.target = SearchKernel.Wire.IndexTarget.IndexTargetT.InitFromObj(requestEnvelope.Target())
+        self.expectedGeneration = requestEnvelope.ExpectedGeneration()
+        if self.expectedGeneration is not None:
+            self.expectedGeneration = self.expectedGeneration.decode('utf-8')
 
     # RequestEnvelopeT
     def Pack(self, builder):
@@ -173,6 +191,8 @@ class RequestEnvelopeT(object):
             payload = self.payload.Pack(builder)
         if self.target is not None:
             target = self.target.Pack(builder)
+        if self.expectedGeneration is not None:
+            expectedGeneration = builder.CreateString(self.expectedGeneration)
         RequestEnvelopeStart(builder)
         RequestEnvelopeAddProtocolVersion(builder, self.protocolVersion)
         RequestEnvelopeAddPayloadType(builder, self.payloadType)
@@ -180,5 +200,7 @@ class RequestEnvelopeT(object):
             RequestEnvelopeAddPayload(builder, payload)
         if self.target is not None:
             RequestEnvelopeAddTarget(builder, target)
+        if self.expectedGeneration is not None:
+            RequestEnvelopeAddExpectedGeneration(builder, expectedGeneration)
         requestEnvelope = RequestEnvelopeEnd(builder)
         return requestEnvelope

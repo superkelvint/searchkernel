@@ -47,6 +47,7 @@ final class Protocol
         string $payloadType,
         array|JsonObject $payload,
         ?string $target = null,
+        ?string $expectedGeneration = null,
     ): array
     {
         $envelope = [
@@ -56,6 +57,9 @@ final class Protocol
         ];
         if ($target !== null) {
             $envelope['target'] = ['name' => $target];
+        }
+        if ($expectedGeneration !== null) {
+            $envelope['expected_generation'] = $expectedGeneration;
         }
         return $envelope;
     }

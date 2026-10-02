@@ -17,7 +17,7 @@ use searchkernel_rpc::{
         search_kernel_server::{SearchKernel, SearchKernelServer},
         FlatBufferFrame,
     },
-    INDEX_GENERATION_METADATA_KEY, MAX_GRPC_MESSAGE_SIZE,
+    MAX_GRPC_MESSAGE_SIZE,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -191,11 +191,6 @@ impl SearchKernel for TestService {
         &self,
         request: Request<FlatBufferFrame>,
     ) -> Result<Response<FlatBufferFrame>, Status> {
-        let request_generation = request
-            .metadata()
-            .get(INDEX_GENERATION_METADATA_KEY)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_owned);
         let request = request.into_inner().payload;
         let envelope = searchkernel_protocol::protocol::v1::root_as_request_envelope(&request)
             .map_err(|_| Status::invalid_argument("invalid request envelope"))?;
@@ -224,7 +219,7 @@ impl SearchKernel for TestService {
                 lifecycle_delete_response()
             }
             _ => {
-                if request_generation.as_deref() != Some("probe-generation") {
+                if envelope.expected_generation() != Some("probe-generation") {
                     return Err(Status::failed_precondition(
                         "target-bound request is missing the expected generation",
                     ));
@@ -232,18 +227,7 @@ impl SearchKernel for TestService {
                 self.dispatcher.dispatch(&request).map_err(dispatch_status)?
             }
         };
-        let mut response = Response::new(FlatBufferFrame { payload });
-        if matches!(
-            envelope.payload_type(),
-            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
-                | searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_OpenIndexRequest
-        ) {
-            response.metadata_mut().insert(
-                INDEX_GENERATION_METADATA_KEY,
-                "probe-generation".parse().expect("static generation metadata"),
-            );
-        }
-        Ok(response)
+        Ok(Response::new(FlatBufferFrame { payload }))
     }
 }
 
@@ -257,10 +241,14 @@ fn lifecycle_definition_response(
     };
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::wire::v1::index_definition_offset(&mut builder, definition);
+    let generation = builder.create_string("probe-generation");
     let (payload_type, payload) = if create {
         let result = api::CreateIndexResult::create(
             &mut builder,
-            &api::CreateIndexResultArgs { index: Some(index) },
+            &api::CreateIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         );
         (
             wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
@@ -269,7 +257,10 @@ fn lifecycle_definition_response(
     } else {
         let result = api::OpenIndexResult::create(
             &mut builder,
-            &api::OpenIndexResultArgs { index: Some(index) },
+            &api::OpenIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         );
         (
             wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
