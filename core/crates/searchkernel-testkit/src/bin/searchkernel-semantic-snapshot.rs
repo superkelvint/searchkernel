@@ -6,8 +6,8 @@
 //! model.
 
 use flatbuffers::root;
+use searchkernel_ir::snapshot;
 use searchkernel_ir::wire::v1::schema as api;
-use searchkernel_ir::{snapshot, IndexContext};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -86,15 +86,14 @@ fn main() {
         .unwrap_or_else(|error| panic!("encode index fixture: {error}"));
     let index = root::<api::IndexDefinition<'_>>(&index_bytes)
         .unwrap_or_else(|error| panic!("decode index fixture: {error}"));
-    let context = IndexContext::from_api(index)
+    let context = searchkernel_ir::wire::v1::index_context_from_api(index)
         .unwrap_or_else(|error| panic!("resolve index fixture: {error}"));
 
     let request_bytes =
         fs::read(&request).unwrap_or_else(|error| panic!("read {}: {error}", request.display()));
     let request = root::<api::SearchRequest<'_>>(&request_bytes)
         .unwrap_or_else(|error| panic!("decode request: {error}"));
-    let resolved = context
-        .search_to_ir(request)
+    let resolved = searchkernel_ir::wire::v1::search_to_ir(&context, request)
         .unwrap_or_else(|error| panic!("resolve request: {error}"));
     println!(
         "{}",

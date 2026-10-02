@@ -88,8 +88,7 @@ fn public_and_portable_fuzzy_option_errors_converge_in_the_ir() {
 
     let bytes = portable_fuzzy_request(0, 2, false);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let portable_error = context
-        .search_to_ir(request)
+    let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request)
         .expect_err("portable invalid fuzzy options must fail in the resolver");
     assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
     assert_eq!(
@@ -249,8 +248,7 @@ fn public_compositional_typed_queries_match_portable_requests() {
         let bytes = portable_typed_request(portable_query, BTreeMap::new());
         let portable_request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
             .expect("portable request should parse");
-        let portable_request = context
-            .search_to_ir(portable_request)
+        let portable_request = searchkernel_ir::wire::v1::search_to_ir(&context, portable_request)
             .expect("portable query should resolve");
         assert_eq!(rust_request.query(), portable_request.query());
     }

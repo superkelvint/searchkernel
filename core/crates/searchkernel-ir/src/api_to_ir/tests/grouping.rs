@@ -82,7 +82,7 @@ fn flatbuffer_grouping_ingress_uses_canonical_alias_validation() {
         TypoPolicy::Disabled,
     )
     .with_grouping(vec![grouping]);
-    let bytes = crate::search_request_ir_to_api(&request);
+    let bytes = crate::wire::v1::search_request_ir_to_api(&request);
     let request =
         crate::__flatbuffers::root::<api::SearchRequest>(&bytes).expect("encoded search request");
 
@@ -143,7 +143,7 @@ fn grouping_range_integer_bounds_round_trip_through_portable_ir() {
         TypoPolicy::Disabled,
     )
     .with_grouping(vec![grouping]);
-    let bytes = crate::search_request_ir_to_api(&request);
+    let bytes = crate::wire::v1::search_request_ir_to_api(&request);
     let api_request =
         crate::__flatbuffers::root::<api::SearchRequest>(&bytes).expect("encoded search request");
 
@@ -265,7 +265,7 @@ fn flatbuffer_grouping_ingress_rejects_the_same_cross_request_collision() {
         root_output_grouping(Some("metric"), GroupingAggregationIr::Count),
         root_output_grouping(Some("metric"), GroupingAggregationIr::Count),
     ]);
-    let bytes = crate::search_request_ir_to_api(&request);
+    let bytes = crate::wire::v1::search_request_ir_to_api(&request);
     let request =
         crate::__flatbuffers::root::<api::SearchRequest>(&bytes).expect("encoded grouping request");
 

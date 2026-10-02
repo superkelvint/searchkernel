@@ -170,9 +170,11 @@ fn highlighting_compatibility_survives_portable_flatbuffers_resolution() {
         searchkernel_ir::wire::v1::schema::SearchRequest,
     >(&bytes)
     .expect("encoded highlighting request");
-    let portable = IndexContext::from_definition_ir(definition)
-        .search_to_ir(api_request)
-        .expect("portable highlighting request should resolve");
+    let portable = searchkernel_ir::wire::v1::search_to_ir(
+        &IndexContext::from_definition_ir(definition),
+        api_request,
+    )
+    .expect("portable highlighting request should resolve");
     assert_eq!(portable, request);
 
     for candidate in [&request, &portable] {

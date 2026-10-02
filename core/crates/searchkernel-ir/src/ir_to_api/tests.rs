@@ -335,14 +335,14 @@ fn rich_v2_index_definition_round_trips_through_ir() {
 
     let bytes = index_definition_ir_to_api(&definition);
     let api = flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap();
-    let first = crate::index_definition_to_ir(api).unwrap();
+    let first = crate::wire::v1::index_definition_to_ir(api).unwrap();
     assert_eq!(
         definition, first,
         "independently constructed canonical IR must survive its first FlatBuffers round trip"
     );
     let bytes = index_definition_ir_to_api(&first);
     let api = flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap();
-    let second = crate::index_definition_to_ir(api).unwrap();
+    let second = crate::wire::v1::index_definition_to_ir(api).unwrap();
     assert_eq!(first, second);
 }
 
@@ -383,7 +383,7 @@ fn indexing_script_only_field_round_trips_through_v2_without_typed_capabilities(
         },
     );
     builder.finish(definition, None);
-    let first = crate::index_definition_to_ir(
+    let first = crate::wire::v1::index_definition_to_ir(
         flatbuffers::root::<api::IndexDefinition>(builder.finished_data()).unwrap(),
     )
     .unwrap();
@@ -393,9 +393,10 @@ fn indexing_script_only_field_round_trips_through_v2_without_typed_capabilities(
     );
 
     let bytes = index_definition_ir_to_api(&first);
-    let second =
-        crate::index_definition_to_ir(flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap())
-            .unwrap();
+    let second = crate::wire::v1::index_definition_to_ir(
+        flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap(),
+    )
+    .unwrap();
     assert_eq!(first, second);
 }
 
@@ -461,12 +462,12 @@ fn indexing_script_with_unrelated_metadata_round_trips_losslessly() {
         );
         builder.finish(definition, None);
 
-        let first = crate::index_definition_to_ir(
+        let first = crate::wire::v1::index_definition_to_ir(
             flatbuffers::root::<api::IndexDefinition>(builder.finished_data()).unwrap(),
         )
         .unwrap();
         let bytes = index_definition_ir_to_api(&first);
-        let second = crate::index_definition_to_ir(
+        let second = crate::wire::v1::index_definition_to_ir(
             flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap(),
         )
         .unwrap();
@@ -521,9 +522,10 @@ fn rank_phase_controls_are_validated_against_their_phase() {
     }];
 
     let bytes = index_definition_ir_to_api(&definition);
-    let error =
-        crate::index_definition_to_ir(flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap())
-            .unwrap_err();
+    let error = crate::wire::v1::index_definition_to_ir(
+        flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap(),
+    )
+    .unwrap_err();
     assert_eq!(error.details[0].code, "invalid_rank_phase");
     assert_eq!(
         error.details[0].path.as_deref(),

@@ -234,7 +234,7 @@ fn sort_missing_as_is_not_rejected_or_dropped() {
         PrefixPolicy::Disabled,
         TypoPolicy::Disabled,
     );
-    let bytes = crate::search_request_ir_to_api(&request);
+    let bytes = crate::wire::v1::search_request_ir_to_api(&request);
     let encoded = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
     let encoded_sort = encoded.sort().unwrap().get(0);
     assert_eq!(

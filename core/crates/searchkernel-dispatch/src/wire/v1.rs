@@ -26,9 +26,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_insert_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
-                context
-                    .insert_to_ir(payload)
-                    .and_then(|request| backend.insert(request))
+                ir_wire::insert_to_ir(context, payload).and_then(|request| backend.insert(request))
             })?;
             Ok(encode_result(
                 result,
@@ -43,9 +41,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_upsert_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
-                context
-                    .upsert_to_ir(payload)
-                    .and_then(|request| backend.upsert(request))
+                ir_wire::upsert_to_ir(context, payload).and_then(|request| backend.upsert(request))
             })?;
             Ok(encode_result(
                 result,
@@ -60,9 +56,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_patch_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
-                context
-                    .patch_to_ir(payload)
-                    .and_then(|request| backend.patch(request))
+                ir_wire::patch_to_ir(context, payload).and_then(|request| backend.patch(request))
             })?;
             Ok(encode_result(
                 result,
@@ -75,9 +69,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_update_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
-                context
-                    .update_to_ir(payload)
-                    .and_then(|request| backend.update(request))
+                ir_wire::update_to_ir(context, payload).and_then(|request| backend.update(request))
             })?;
             Ok(encode_result(
                 result,
@@ -92,9 +84,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_delete_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
-                context
-                    .delete_to_ir(payload)
-                    .and_then(|request| backend.delete(request))
+                ir_wire::delete_to_ir(context, payload).and_then(|request| backend.delete(request))
             })?;
             Ok(encode_result(
                 result,
@@ -109,9 +99,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_get_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
-                context
-                    .get_to_ir(payload)
-                    .and_then(|request| backend.get(request))
+                ir_wire::get_to_ir(context, payload).and_then(|request| backend.get(request))
             })?;
             Ok(encode_result(
                 result,
@@ -124,9 +112,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_search_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
-                context
-                    .search_to_ir(payload)
-                    .and_then(|request| backend.search(request))
+                ir_wire::search_to_ir(context, payload).and_then(|request| backend.search(request))
             })?;
             Ok(encode_result(
                 result,
@@ -142,8 +128,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_analyze_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
-                context
-                    .analyze_to_ir(payload)
+                ir_wire::analyze_to_ir(context, payload)
                     .and_then(|request| backend.analyze(request))
             })?;
             Ok(encode_result(
@@ -173,7 +158,8 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 .payload_as_search_kernel_wire_inspect_query_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let request = payload.request().ok_or(DispatchError::InvalidRequest)?;
-            let result = dispatcher.execute_context(|context| context.inspect_query(request))?;
+            let result =
+                dispatcher.execute_context(|context| ir_wire::inspect_query(context, request))?;
             Ok(encode_result(
                 result,
                 wire::ResponsePayload::SearchKernel_Wire_InspectQueryResult,

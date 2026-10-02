@@ -1,8 +1,8 @@
 use flatbuffers::root;
 use searchkernel_ir::wire::v1::schema as api;
 use searchkernel_ir::{
-    snapshot, IndexContext, PresentationInput, QueryInputIr, QueryModelInput, QuerySourceInput,
-    RankingInput, RequestValueIr, SearchInput, TextualFilterInput, Value,
+    snapshot, PresentationInput, QueryInputIr, QueryModelInput, QuerySourceInput, RankingInput,
+    RequestValueIr, SearchInput, TextualFilterInput, Value,
 };
 use serde::Deserialize;
 use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -80,7 +80,7 @@ fn main() {
         serde_json::from_slice(&fs::read(root_dir.join(&c.index)).unwrap()).unwrap();
     let bytes = searchkernel_testkit::build_index_definition_from_json(&index_json).unwrap();
     let index = root::<api::IndexDefinition<'_>>(&bytes).unwrap();
-    let ctx = IndexContext::from_api(index).unwrap();
+    let ctx = searchkernel_ir::wire::v1::index_context_from_api(index).unwrap();
     let mut out = serde_json::Map::new();
     for s in c.scenarios {
         let i = s.intent;

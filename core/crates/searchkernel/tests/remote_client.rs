@@ -207,6 +207,12 @@ impl SearchKernel for TestService {
             .lock()
             .expect("target log")
             .push(target.to_owned());
+        if target == "blocked-create"
+            && envelope.payload_type()
+                == searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
+        {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
         if target == "slow-create"
             && envelope.payload_type()
                 == searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
@@ -680,6 +686,59 @@ async fn lifecycle_mutation_deadlines_report_ambiguous_create() {
         .iter()
         .any(|detail| detail.code == "remote_outcome_unknown"));
 
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn slow_create_does_not_block_lifecycle_on_another_target() {
+    let server = TestServer::start(Arc::new(ProbeBackend::default())).await;
+    let client = RemoteClient::connect(&server.endpoint).expect("connect remote daemon");
+    let creating_client = client.clone();
+    let (created_tx, created_rx) = std::sync::mpsc::sync_channel(1);
+    let creating = std::thread::spawn(move || {
+        let definition = IndexDefinition::new().field(Field::text("title"));
+        created_tx
+            .send(creating_client.create_index("blocked-create", definition))
+            .expect("report create result");
+    });
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if server
+                .targets
+                .lock()
+                .expect("target log")
+                .iter()
+                .any(|target| target == "blocked-create")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("create reached daemon");
+
+    let opening_client = client.clone();
+    let (opened_tx, opened_rx) = std::sync::mpsc::sync_channel(1);
+    let opening = std::thread::spawn(move || {
+        opened_tx
+            .send(opening_client.open_index("other"))
+            .expect("report open result");
+    });
+    let opened = opened_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("unrelated open must finish while create is blocked")
+        .expect("open unrelated target");
+    opened.close().expect("close unrelated handle");
+    creating.join().expect("join create caller");
+    opening.join().expect("join open caller");
+    created_rx
+        .recv()
+        .expect("create result")
+        .expect("create target")
+        .close()
+        .expect("close created handle");
     server.shutdown().await;
 }
 

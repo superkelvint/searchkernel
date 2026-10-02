@@ -813,12 +813,10 @@ impl RemoteClient {
         definition: IndexDefinition,
     ) -> Result<Index> {
         let target = target.as_ref();
-        let transition = self.lifecycle_lock(target)?;
-        let _lifecycle = transition.lock().map_err(|_| {
-            crate::Error::from_ir(invalid_remote_response(
-                "remote client target lifecycle lock is poisoned",
-            ))
-        })?;
+        let lifecycle = self.lifecycle_lock(target)?;
+        let _lifecycle = lifecycle
+            .lock()
+            .map_err(|_| self.poisoned_lifecycle_error())?;
         let input = crate::schema::index_definition_to_input(&definition)?;
         let request = wire_ir::encode_create_index_request(target, &input);
         let response = self
@@ -855,13 +853,11 @@ impl RemoteClient {
     /// Open an existing logical target and return an index handle bound to it.
     pub fn open_index(&self, target: impl AsRef<str>) -> Result<Index> {
         let target = target.as_ref();
-        let transition = self.lifecycle_lock(target)?;
-        let _lifecycle = transition.lock().map_err(|_| {
-            crate::Error::from_ir(invalid_remote_response(
-                "remote client target lifecycle lock is poisoned",
-            ))
-        })?;
-        let request = ir::encode_open_index_request(target);
+        let lifecycle = self.lifecycle_lock(target)?;
+        let _lifecycle = lifecycle
+            .lock()
+            .map_err(|_| self.poisoned_lifecycle_error())?;
+        let request = wire_ir::encode_open_index_request(target);
         let response = self
             .transport
             .call(request, true)
@@ -896,13 +892,11 @@ impl RemoteClient {
     /// Delete one logical target from the daemon registry.
     pub fn delete_index(&self, target: impl AsRef<str>) -> Result<()> {
         let target = target.as_ref();
-        let transition = self.lifecycle_lock(target)?;
-        let _lifecycle = transition.lock().map_err(|_| {
-            crate::Error::from_ir(invalid_remote_response(
-                "remote client target lifecycle lock is poisoned",
-            ))
-        })?;
-        let request = ir::encode_delete_index_request(target);
+        let lifecycle = self.lifecycle_lock(target)?;
+        let _lifecycle = lifecycle
+            .lock()
+            .map_err(|_| self.poisoned_lifecycle_error())?;
+        let request = wire_ir::encode_delete_index_request(target);
         let response = self
             .transport
             .call(request, false)
@@ -923,20 +917,26 @@ impl RemoteClient {
     }
 
     fn lifecycle_lock(&self, target: &str) -> Result<Arc<Mutex<()>>> {
-        let mut locks = self.lifecycle_locks.lock().map_err(|_| {
-            crate::Error::from_ir(invalid_remote_response(
-                "remote client lifecycle-lock registry is poisoned",
-            ))
-        })?;
+        let mut locks = self
+            .lifecycle_locks
+            .lock()
+            .map_err(|_| self.poisoned_lifecycle_error())?;
         if let Some(lock) = locks.get(target).and_then(Weak::upgrade) {
             return Ok(lock);
         }
 
-        // Keep coordination bounded when callers touch many distinct targets.
+        // Weak entries keep the table bounded after callers finish transitions
+        // on targets that are never used again.
         locks.retain(|_, lock| lock.strong_count() != 0);
         let lock = Arc::new(Mutex::new(()));
         locks.insert(target.to_owned(), Arc::downgrade(&lock));
         Ok(lock)
+    }
+
+    fn poisoned_lifecycle_error(&self) -> crate::Error {
+        crate::Error::from_ir(invalid_remote_response(
+            "remote client lifecycle lock is poisoned",
+        ))
     }
 
     fn register_target_session(&self, target: &str, session: &Arc<BackendSession>) -> Result<()> {
