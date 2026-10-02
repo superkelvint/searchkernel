@@ -4,6 +4,7 @@ from searchkernel import uint64
 from searchkernel.client import value
 from searchkernel.protocol import pack_object
 from searchkernel._semantic import is_semantic_table
+import searchkernel._semantic as semantic
 from searchkernel._wire.v1.generated.SearchKernel.Wire.UInt64Value import UInt64ValueT
 from searchkernel._wire.v1.generated.SearchKernel.Wire.Value import ValueT
 from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueKind import ValueKind
@@ -11,13 +12,13 @@ from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueKind import ValueKin
 
 class UInt64ValueTest(unittest.TestCase):
     def test_plain_integer_keeps_the_existing_signed_variant(self):
-        self.assertEqual(value(2**63 - 1).kindType, ValueKind.Int64Value)
+        self.assertEqual(value(2**63 - 1).kindType, semantic.ValueKind.Int64Value)
 
     def test_uint64_preserves_variant_at_boundaries(self):
         for number in (0, 2**63 - 1, 2**63, 2**64 - 1):
             with self.subTest(number=number):
                 encoded = value(uint64(number))
-                self.assertEqual(encoded.kindType, ValueKind.UInt64Value)
+                self.assertEqual(encoded.kindType, semantic.ValueKind.UInt64Value)
                 self.assertTrue(is_semantic_table(encoded.kind, "UInt64Value"))
                 self.assertEqual(encoded.kind.value, number)
 

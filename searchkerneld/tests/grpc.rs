@@ -54,7 +54,6 @@ fn describe_request(version: u32) -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
             payload: Some(request.as_union_value()),
-            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -80,7 +79,6 @@ fn targeted_describe_request(version: u32, target_name: &str) -> Vec<u8> {
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_DescribeRequest,
             payload: Some(request.as_union_value()),
-            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -97,7 +95,6 @@ fn search_request() -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
-            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -132,7 +129,6 @@ fn valid_search_request() -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
-            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));
@@ -167,7 +163,6 @@ fn large_search_request() -> Vec<u8> {
             target: None,
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(request.as_union_value()),
-            expected_generation: None,
         },
     );
     builder.finish(envelope, Some("SKRQ"));

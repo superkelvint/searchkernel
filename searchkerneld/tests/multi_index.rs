@@ -127,7 +127,6 @@ fn create_request_with_definition_name(
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
             payload: Some(payload.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -148,7 +147,6 @@ fn create_request_without_definition(target_name: &str) -> Vec<u8> {
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
             payload: Some(payload.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -167,7 +165,6 @@ fn open_request(target_name: Option<&str>) -> Vec<u8> {
             target,
             payload_type: wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
             payload: Some(payload.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -186,7 +183,6 @@ fn delete_index_request(target_name: &str) -> Vec<u8> {
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest,
             payload: Some(payload.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -237,7 +233,6 @@ fn upsert_request(target_name: &str, id: &str, field_name: &str, text: &str) -> 
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_UpsertRequest,
             payload: Some(payload.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -273,7 +268,6 @@ fn search_request(target_name: &str, text: &str) -> Vec<u8> {
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(payload.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -316,19 +310,10 @@ async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec
 }
 
 fn request_json_with_generation(payload: &[u8], generation: &str) -> Vec<u8> {
-    let mut json = request_flatbuffer_to_json(payload).expect("request JSON");
-    while json.last().is_some_and(u8::is_ascii_whitespace) {
-        json.pop();
-    }
-    assert_eq!(json.pop(), Some(b'}'));
-    json.extend_from_slice(
-        format!(
-            ",\"expected_generation\":{}}}",
-            serde_json::to_string(generation).expect("generation JSON string")
-        )
-        .as_bytes(),
-    );
-    json
+    let json = request_flatbuffer_to_json(payload).expect("request JSON");
+    let mut value: serde_json::Value = serde_json::from_slice(&json).expect("request JSON value");
+    value["target"]["generation"] = serde_json::Value::String(generation.to_owned());
+    serde_json::to_vec(&value).expect("request JSON with target generation")
 }
 
 fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {

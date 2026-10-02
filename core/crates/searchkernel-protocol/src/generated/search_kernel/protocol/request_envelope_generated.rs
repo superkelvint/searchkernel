@@ -24,7 +24,6 @@ impl<'a> RequestEnvelope<'a> {
     pub const VT_PAYLOAD_TYPE: ::flatbuffers::VOffsetT = 6;
     pub const VT_PAYLOAD: ::flatbuffers::VOffsetT = 8;
     pub const VT_TARGET: ::flatbuffers::VOffsetT = 10;
-    pub const VT_EXPECTED_GENERATION: ::flatbuffers::VOffsetT = 12;
 
     #[inline]
     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -41,9 +40,6 @@ impl<'a> RequestEnvelope<'a> {
         args: &'args RequestEnvelopeArgs<'args>,
     ) -> ::flatbuffers::WIPOffset<RequestEnvelope<'bldr>> {
         let mut builder = RequestEnvelopeBuilder::new(_fbb);
-        if let Some(x) = args.expected_generation {
-            builder.add_expected_generation(x);
-        }
         if let Some(x) = args.target {
             builder.add_target(x);
         }
@@ -101,18 +97,6 @@ impl<'a> RequestEnvelope<'a> {
                     RequestEnvelope::VT_TARGET,
                     None,
                 )
-        }
-    }
-    #[inline]
-    pub fn expected_generation(&self) -> Option<&'a str> {
-        // Safety:
-        // Created from valid Table for this object
-        // which contains a valid value in this slot
-        unsafe {
-            self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(
-                RequestEnvelope::VT_EXPECTED_GENERATION,
-                None,
-            )
         }
     }
     #[inline]
@@ -362,7 +346,6 @@ impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
         }
      })?
      .visit_field::<::flatbuffers::ForwardsUOffset<super::wire::IndexTarget>>("target", Self::VT_TARGET, false)?
-     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("expected_generation", Self::VT_EXPECTED_GENERATION, false)?
      .finish();
         Ok(())
     }
@@ -372,7 +355,6 @@ pub struct RequestEnvelopeArgs<'a> {
     pub payload_type: RequestPayload,
     pub payload: Option<::flatbuffers::WIPOffset<::flatbuffers::UnionWIPOffset>>,
     pub target: Option<::flatbuffers::WIPOffset<super::wire::IndexTarget<'a>>>,
-    pub expected_generation: Option<::flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for RequestEnvelopeArgs<'a> {
     #[inline]
@@ -382,7 +364,6 @@ impl<'a> Default for RequestEnvelopeArgs<'a> {
             payload_type: RequestPayload::NONE,
             payload: None,
             target: None,
-            expected_generation: None,
         }
     }
 }
@@ -420,16 +401,6 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> RequestEnvelopeBuilder<'a, 'b
                 RequestEnvelope::VT_TARGET,
                 target,
             );
-    }
-    #[inline]
-    pub fn add_expected_generation(
-        &mut self,
-        expected_generation: ::flatbuffers::WIPOffset<&'b str>,
-    ) {
-        self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
-            RequestEnvelope::VT_EXPECTED_GENERATION,
-            expected_generation,
-        );
     }
     #[inline]
     pub fn new(
@@ -590,7 +561,6 @@ impl ::core::fmt::Debug for RequestEnvelope<'_> {
             }
         };
         ds.field("target", &self.target());
-        ds.field("expected_generation", &self.expected_generation());
         ds.finish()
     }
 }

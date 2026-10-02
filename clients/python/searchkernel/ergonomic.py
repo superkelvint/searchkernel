@@ -162,6 +162,7 @@ from ._semantic import MissingAsT
 
 from .client import Tensor, _decode_value_entries, _python_value, value
 from .scalars import check_uint32
+from ._wire import wire_enum_matches as _wire_enum_matches
 
 
 _MISSING = object()
@@ -1526,17 +1527,17 @@ class ResultContinuation:
 
 
 def _relevance_value(node):
-    if node is None or node.valueType == RelevanceKind.NONE:
+    if node is None or _wire_enum_matches(node.valueType, RelevanceKind.NONE):
         return None
-    if node.valueType == RelevanceKind.FiniteRelevance:
+    if _wire_enum_matches(node.valueType, RelevanceKind.FiniteRelevance):
         if not is_semantic_table(node.value, "FiniteRelevance"):
             raise ValueError("finite relevance has a missing or mismatched payload")
         return node.value.value
-    if node.valueType == RelevanceKind.PositiveInfinityRelevance:
+    if _wire_enum_matches(node.valueType, RelevanceKind.PositiveInfinityRelevance):
         if not is_semantic_table(node.value, "PositiveInfinityRelevance"):
             raise ValueError("positive-infinity relevance has a missing or mismatched payload")
         return float("inf")
-    if node.valueType == RelevanceKind.NegativeInfinityRelevance:
+    if _wire_enum_matches(node.valueType, RelevanceKind.NegativeInfinityRelevance):
         if not is_semantic_table(node.value, "NegativeInfinityRelevance"):
             raise ValueError("negative-infinity relevance has a missing or mismatched payload")
         return float("-inf")
@@ -1604,11 +1605,11 @@ def _node(node):
     if node is None or getattr(node, "node", None) is None:
         raise ValueError("missing ResultNode payload")
     node_type = getattr(node, "nodeType", ResultNodeKind.NONE)
-    if node_type == ResultNodeKind.ResultGroup:
+    if _wire_enum_matches(node_type, ResultNodeKind.ResultGroup):
         if not is_semantic_table(node.node, "ResultGroup"):
             raise ValueError("mismatched ResultNode union: ResultGroup payload")
         return ResultGroup(node.node)
-    if node_type == ResultNodeKind.Hit:
+    if _wire_enum_matches(node_type, ResultNodeKind.Hit):
         if not is_semantic_table(node.node, "Hit"):
             raise ValueError("mismatched ResultNode union: Hit payload")
         return Hit(node.node)
@@ -1699,7 +1700,10 @@ class SearchResults:
             if (
                 count.key != "count"
                 or count.value is None
-                or count.value.kindType not in accepted_count_kinds
+                or not any(
+                    _wire_enum_matches(count.value.kindType, kind)
+                    for kind in accepted_count_kinds
+                )
             ):
                 return
             count_value = _python_value(count.value)

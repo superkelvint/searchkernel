@@ -148,7 +148,6 @@ fn create_index_request(target_name: &str, field_name: &str) -> Vec<u8> {
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
             payload: Some(payload.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
@@ -167,7 +166,6 @@ fn open_index_request(target_name: &str) -> Vec<u8> {
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
             payload: Some(payload.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);

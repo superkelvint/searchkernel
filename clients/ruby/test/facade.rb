@@ -113,7 +113,7 @@ bound_transport = FacadeRecordingTransport.new
 bound_index = SearchKernel::Index.new(SearchKernel::Client.new(bound_transport, target: "products"))
 bound_index.describe
 same("SearchKernel_Wire_OpenIndexRequest", bound_transport.requests[0].fetch("payload_type"), "bound index opens target")
-same("recorded-generation", bound_transport.requests[1].fetch("expected_generation"), "bound index carries generation")
+same("recorded-generation", bound_transport.requests[1].fetch("target").fetch("generation"), "bound index carries generation")
 
 same("doc-1", index.insert("_id" => "doc-1", "title" => "Running Shoes", "price" => 99.0), "facade insert id")
 insert_request = transport.requests.last.fetch("payload")

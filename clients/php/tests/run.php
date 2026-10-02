@@ -212,7 +212,7 @@ throws(
 );
 same('test', $secondHandle->describe()['name'], 'closing one PHP handle leaves another selected handle usable');
 same('SearchKernel_Wire_OpenIndexRequest', $handleTransport->requests[0]['payload_type'], 'PHP handle opens before use');
-same('recorded-generation', $handleTransport->requests[1]['expected_generation'], 'PHP handle carries generation');
+same('recorded-generation', $handleTransport->requests[1]['target']['generation'], 'PHP handle carries generation');
 
 
 $document = Protocol::document([

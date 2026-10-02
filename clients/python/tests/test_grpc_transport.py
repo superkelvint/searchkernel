@@ -22,6 +22,7 @@ from searchkernel._wire.v1.generated.SearchKernel.Protocol.ResponsePayload impor
 from searchkernel._wire.v1.generated.SearchKernel.Wire.CreateIndexResult import CreateIndexResultT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.DeleteIndexResult import DeleteIndexResultT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.IndexDefinition import IndexDefinitionT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.InsertResult import InsertResultT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.OpenIndexResult import OpenIndexResultT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Protocol.RequestEnvelope import RequestEnvelope  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.InsertRequest import InsertRequestT  # noqa: E402
@@ -65,14 +66,14 @@ class GrpcTransportTest(unittest.TestCase):
                 OpenIndexResultT(IndexDefinitionT(name="products"), "generation-1"),
             ),
             _response(
-                ResponsePayload.SearchKernel_Wire_DeleteIndexResult,
-                DeleteIndexResultT(),
+                ResponsePayload.SearchKernel_Wire_InsertResult,
+                InsertResultT(),
             ),
         ])
         index = Index(Client(transport, target="products"))
-        index.client.delete_index()
+        index.client.execute("insert", InsertRequestT())
         request = RequestEnvelope.GetRootAs(transport.calls[1])
-        self.assertEqual(request.ExpectedGeneration().decode(), "generation-1")
+        self.assertEqual(request.Target().Generation().decode(), "generation-1")
 
     def test_ordinary_request_envelope_carries_logical_index_target(self):
         payload = pack_request("insert", InsertRequestT(), target="products")

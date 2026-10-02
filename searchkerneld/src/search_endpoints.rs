@@ -1558,7 +1558,6 @@ fn encode_search_request(
             target: Some(target),
             payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(search.as_union_value()),
-            expected_generation: None,
         },
     );
     wire::finish_request_envelope_buffer(&mut builder, envelope);

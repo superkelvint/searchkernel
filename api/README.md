@@ -43,7 +43,7 @@ through these schemas merely to reach the local engine.
   handle is not a server-side unload operation.
 - Create/Open return an opaque `generation` in their canonical results. An
   `Index` handle retains that token and carries it as
-  `RequestEnvelope.expected_generation` on target-scoped operations. If the
+  `IndexTarget.generation` on target-scoped operations. If the
   target has been deleted and recreated, the daemon returns
   `FailedPrecondition` / `stale_index_handle` at `target` through either gRPC
   or HTTP. Raw requests that omit the token explicitly address the current

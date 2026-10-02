@@ -7,8 +7,8 @@ pub mod v1 {
     pub use searchkernel_protocol::wire::v1 as schema;
 
     pub use crate::api_to_ir::control_plane::{
-        check_expected_generation, resolve_control_plane_request, resolve_index_target,
-        ControlPlaneRequest, ControlPlaneResolutionError,
+        resolve_control_plane_request, resolve_index_target, ControlPlaneRequest,
+        ControlPlaneResolutionError,
     };
     pub use crate::api_to_ir::{
         analyze_result_from_api, analyzer_to_ir, delete_result_from_api, field_to_ir,
