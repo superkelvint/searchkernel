@@ -49,10 +49,10 @@ fn rank_profile_input_default_converges_across_rust_and_flatbuffers_ingress() {
     let rust_ir = definition_to_ir(&rust_definition)
         .expect("Rust schema ingress should preserve canonical rank-profile defaults");
 
-    let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let bytes = searchkernel_ir::wire::v1::index_definition_ir_to_api(&canonical);
     let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("portable schema should decode");
-    let portable_ir = searchkernel_ir::index_definition_to_ir(root)
+    let portable_ir = searchkernel_ir::wire::v1::index_definition_to_ir(root)
         .expect("portable schema ingress should preserve canonical rank-profile defaults");
 
     assert_eq!(rust_ir.rank_profiles()[0].inputs[1].default_value, expected);
@@ -411,8 +411,7 @@ fn empty_named_ranking_has_identical_rust_and_portable_semantics() {
         .expect_err("empty Rust ranking profile should be invalid");
     let bytes = portable_text_request_with_empty_controls(Some(""), None, None);
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let portable_error = context
-        .search_to_ir(request)
+    let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request)
         .expect_err("empty portable ranking profile must not become the default");
 
     assert_eq!(rust_error.details()[0].code, "invalid_ranking");

@@ -18,7 +18,7 @@ fn structured_grouping_validation_is_shared_between_ingresses() {
     };
     let bytes = portable_grouping_request("brand");
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let portable_request = context.search_to_ir(request).unwrap();
+    let portable_request = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap();
     assert_eq!(rust_request, portable_request);
 
     let recording = Arc::new(RecordingBackend::new());
@@ -30,7 +30,7 @@ fn structured_grouping_validation_is_shared_between_ingresses() {
         .unwrap_err();
     let bytes = portable_grouping_request("");
     let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-    let portable_error = context.search_to_ir(request).unwrap_err();
+    let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request).unwrap_err();
     assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
     assert_eq!(
         portable_error.code,
@@ -83,8 +83,7 @@ fn public_structured_grouping_validates_schema_fields_in_search_resolution() {
 
         let bytes = portable_grouping_request(field);
         let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
-        let portable_error = context
-            .search_to_ir(request)
+        let portable_error = searchkernel_ir::wire::v1::search_to_ir(&context, request)
             .expect_err("portable grouping fields must use the same schema validation");
         assert_eq!(portable_error.details[0].code, detail_code);
     }

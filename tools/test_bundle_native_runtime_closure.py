@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import json
 import shutil
 import stat
 import subprocess
@@ -18,6 +19,8 @@ CHECKER = ROOT / "tools" / "check-native-runtime-closure.py"
 PACKAGE = ROOT / "tools" / "package-native-base-artifact.sh"
 BUILD_SDK = ROOT / "core" / "native" / "vespa" / "build-sdk.sh"
 MAKE_WRITABLE_TREE = ROOT / "tools" / "make-writable-tree.sh"
+COPY_LINK_INPUTS = ROOT / "tools" / "copy-native-base-link-shared-libraries.py"
+PRUNE_CLOSURE = ROOT / "tools" / "prune-native-runtime-closure.py"
 
 
 def run(*args: str, env: dict[str, str] | None = None) -> None:
@@ -54,6 +57,58 @@ def main() -> int:
         bundle = root / "bundle"
         producer.mkdir()
         bundle.mkdir()
+
+        # Native-base seeding follows the configured adapter link command. It
+        # must not copy every neighboring DSO merely because it is a candidate.
+        selected_dir = producer / "selected"
+        selected_dir.mkdir()
+        (root / "selected.c").write_text(
+            "int searchkernel_fixture_selected(void) { return 23; }\n",
+            encoding="utf-8",
+        )
+        selected_name = "libsearchkernel_fixture_selected.so.1"
+        selected = selected_dir / selected_name
+        compile_shared(cc, root / "selected.c", selected, selected_name)
+        (selected_dir / "libsearchkernel_fixture_selected.so").symlink_to(selected_name)
+        (root / "unrelated.c").write_text(
+            "int searchkernel_fixture_unrelated(void) { return 29; }\n",
+            encoding="utf-8",
+        )
+        unrelated = producer / "libsearchkernel_fixture_unrelated.so.1"
+        compile_shared(cc, root / "unrelated.c", unrelated, unrelated.name)
+        link_file = root / "link.txt"
+        link_file.write_text(
+            f"c++ -L{selected_dir} -lsearchkernel_fixture_selected\n",
+            encoding="utf-8",
+        )
+        link_stage = root / "link-stage"
+        run(
+            sys.executable,
+            str(COPY_LINK_INPUTS),
+            str(link_file),
+            str(link_stage),
+            "--cxx", cc,
+            "--source-root", f"producer={producer}",
+        )
+        if not (link_stage / selected_name).is_file():
+            raise SystemExit("native-base input resolver missed the selected configured shared library")
+        if not (link_stage / "libsearchkernel_fixture_selected.so").is_file():
+            raise SystemExit("native-base input resolver omitted the selected -l linker alias")
+        if (link_stage / unrelated.name).exists():
+            raise SystemExit("native-base input resolver copied an unrelated shared-library candidate")
+
+        mounted_link = root / "mounted-link.txt"
+        mounted_link.write_text("c++ -L/work/vespa/selected -lsearchkernel_fixture_selected\n", encoding="utf-8")
+        mounted_stage = root / "mounted-stage"
+        run(
+            sys.executable, str(COPY_LINK_INPUTS), str(mounted_link), str(mounted_stage),
+            "--cxx", cc, "--producer-root", f"/work/vespa={producer}",
+            "--source-root", f"producer={producer}",
+        )
+        if not (mounted_stage / selected_name).is_file():
+            raise SystemExit("link input resolution failed after mounting Vespa at /vespa")
+        if (link_stage / unrelated.name).exists():
+            raise SystemExit("native-base input resolver copied an unrelated shared-library candidate")
 
         leaf_name = "libsearchkernel_fixture_leaf.so.1"
         mid_name = "libsearchkernel_fixture_mid.so.1"
@@ -122,16 +177,22 @@ def main() -> int:
                 "base-only SDK construction must close non-baseline runtime dependencies "
                 "before native-cache publication"
             )
-        base_bundle = build_sdk_text.index('if [ "$BASE_ONLY" = 1 ]; then', build_sdk_text.index('libffi.so.6 required'))
+        base_bundle = build_sdk_text.index(
+            'if [ "$BASE_ONLY" = 1 ]; then\n    RUNTIME_SEARCH_ARGS=',
+            build_sdk_text.index("Runtime sources are restricted to explicitly named producer"),
+        )
         closure_bundle = build_sdk_text.index('bundle-native-runtime-closure.py', base_bundle)
         alias_validation = build_sdk_text.index('SDK_LIB_REAL=', closure_bundle)
         if not base_bundle < closure_bundle < alias_validation:
             raise SystemExit(
                 "base-only SDK runtime closure must be bundled before SDK alias validation/publication"
             )
+        base_closure_logic = build_sdk_text[base_bundle:alias_validation]
+        if "libffi.so.6" in base_closure_logic or "VESPA_AWS_LIB_DIR" in base_closure_logic:
+            raise SystemExit("native-base closure must not have a libffi-specific producer source")
 
         package_text = PACKAGE.read_text(encoding="utf-8")
-        copied_base = package_text.index('cp -aL "$BASE/." "$BUNDLE/base/"')
+        copied_base = package_text.index('cp -a "$BASE/." "$BUNDLE/base/"')
         prepare_stage = package_text.find("make-writable-tree.sh", copied_base)
         bundle_closure = package_text.index('"$BUNDLE/base/lib"', copied_base)
         if not copied_base < prepare_stage < bundle_closure:
@@ -157,8 +218,33 @@ def main() -> int:
             str(bundle),
             "--search-dir",
             str(producer),
+            "--source-root", f"producer={producer}",
             env=env,
         )
+
+        provenance_path = bundle / ".searchkernel-runtime-provenance.json"
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        entries = provenance.get("libraries")
+        if provenance.get("format_version") != 1 or not isinstance(entries, list):
+            raise SystemExit("runtime bundler did not write machine-readable provenance")
+        leaf_entry = next((item for item in entries if item.get("soname") == leaf_name), None)
+        if leaf_entry is None or not leaf_entry.get("sha256") or not leaf_entry.get("required_by"):
+            raise SystemExit("runtime provenance omitted DSO identity or dependency relationships")
+        if pathlib.Path(leaf_entry.get("source_identity", "/missing")).is_absolute():
+            raise SystemExit("runtime provenance must not make consumers depend on producer absolute paths")
+        original_source_identity = leaf_entry["source_identity"]
+        tampered_leaf = bundle / leaf_name
+        original_leaf = tampered_leaf.read_bytes()
+        tampered_leaf.write_bytes(original_leaf + b"tampered")
+        rejected_provenance = subprocess.run(
+            [sys.executable, str(CHECKER), str(bundle), "--require-provenance"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if rejected_provenance.returncode == 0 or "SHA-256" not in rejected_provenance.stderr:
+            raise SystemExit("runtime checker did not reject a packaged DSO with changed bytes")
+        tampered_leaf.write_bytes(original_leaf)
 
         for name in (mid_name, leaf_name):
             path = bundle / name
@@ -231,10 +317,15 @@ def main() -> int:
             str(adapter),
             "--search-dir",
             str(producer),
+            "--source-root", f"producer={producer}",
             env=env,
         )
         if not (bundle / extra_name).is_file():
             raise SystemExit("bundler did not copy adapter-only runtime dependency")
+        updated_provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        updated_leaf = next(item for item in updated_provenance["libraries"] if item.get("soname") == leaf_name)
+        if updated_leaf["source_identity"] != original_source_identity:
+            raise SystemExit("restaging replaced concrete producer provenance with cache-local identity")
 
         extra_complete = subprocess.run(
             [sys.executable, str(CHECKER), str(bundle), str(adapter)],
@@ -304,8 +395,40 @@ def main() -> int:
             str(origin_adapter),
             "--search-dir",
             str(producer),
+            "--source-root", f"producer={producer}",
             env=env,
         )
+
+        # Link-time aliases need to survive package staging and runtime
+        # pruning so an isolated consumer can rebuild with the configured
+        # -lNAME inputs. The alias must remain a symlink to the kept SONAME
+        # payload, not a duplicate ELF that the pruner would discard.
+        (bundle / "libsearchkernel_fixture_mid.so").symlink_to(mid_name)
+        pruned = root / "pruned-bundle"
+        shutil.copytree(bundle, pruned, symlinks=True)
+        run(
+            sys.executable,
+            str(PRUNE_CLOSURE),
+            str(pruned),
+            "--root-elf",
+            str(consumer),
+        )
+        for retained in (mid_name, leaf_name):
+            if not (pruned / retained).is_file():
+                raise SystemExit(f"runtime pruner removed required transitive dependency {retained}")
+        if not (pruned / "libsearchkernel_fixture_mid.so").is_symlink():
+            raise SystemExit("runtime pruner removed the package-local adapter linker alias")
+        for removed in ("libsearchkernel_fixture_base.so.1", extra_name, origin_name):
+            if (pruned / removed).exists():
+                raise SystemExit(f"runtime pruner retained unrelated ELF candidate {removed}")
+        pruned_complete = subprocess.run(
+            [sys.executable, str(CHECKER), str(pruned), str(consumer)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if pruned_complete.returncode != 0:
+            raise SystemExit("runtime pruner removed a required dependency:\n" + pruned_complete.stderr)
 
     print("native runtime bundling regression: PASS")
     return 0

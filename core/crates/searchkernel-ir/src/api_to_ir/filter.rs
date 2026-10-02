@@ -6,7 +6,7 @@ use crate::filter_expression::{bind_parsed_filter, parse_error_to_portable};
 use crate::model::*;
 #[cfg(test)]
 use searchkernel_filter::parse_filter;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 
 pub(crate) const MAX_FILTER_BINDINGS: usize = 1024;
@@ -74,13 +74,16 @@ impl IndexContext {
         Ok((structured, textual))
     }
 
-    pub fn filter_to_ir(&self, filter: api::FilterExpr<'_>) -> Result<FilterIr> {
+    pub(crate) fn filter_to_ir(&self, filter: api::FilterExpr<'_>) -> Result<FilterIr> {
         self.filter_to_ir_at(filter, "filter")
     }
-    pub fn comparison_to_ir(&self, comparison: api::FilterComparison<'_>) -> Result<ComparisonIr> {
+    pub(crate) fn comparison_to_ir(
+        &self,
+        comparison: api::FilterComparison<'_>,
+    ) -> Result<ComparisonIr> {
         self.comparison_to_ir_at(comparison, "comparison")
     }
-    pub fn range_to_ir(&self, range: api::FilterRange<'_>) -> Result<RangeIr> {
+    pub(crate) fn range_to_ir(&self, range: api::FilterRange<'_>) -> Result<RangeIr> {
         self.range_to_ir_at(range, "range")
     }
     #[cfg(test)]

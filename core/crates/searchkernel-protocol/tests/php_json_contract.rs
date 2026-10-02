@@ -9,7 +9,7 @@ use searchkernel_protocol::{
         request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
         response_json_to_flatbuffer,
     },
-    protocol::v2::{RequestEnvelope, RequestPayload},
+    protocol::v1::{RequestEnvelope, RequestPayload},
 };
 
 fn assert_php_consumes_printed_response(repo_root: &std::path::Path, name: &str, json: &[u8]) {
@@ -80,7 +80,7 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
 
         let input: serde_json::Value = serde_json::from_slice(json)
             .unwrap_or_else(|error| panic!("{name}: emitted invalid JSON: {error}"));
-        assert_eq!(input["protocol_version"], 2, "{name}: protocol version");
+        assert_eq!(input["protocol_version"], 1, "{name}: protocol version");
         let input_type = input["payload_type"]
             .as_str()
             .unwrap_or_else(|| panic!("{name}: payload_type missing"))
@@ -98,11 +98,11 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                 if name == "create-index-e2e-schema" {
                     assert_eq!(
                         envelope.payload_type(),
-                        RequestPayload::SearchKernel_V2_CreateIndexRequest,
+                        RequestPayload::SearchKernel_Wire_CreateIndexRequest,
                         "{name}: daemon sees create-index discriminator"
                     );
                     let payload = envelope
-                        .payload_as_search_kernel_v2_create_index_request()
+                        .payload_as_search_kernel_wire_create_index_request()
                         .unwrap_or_else(|| {
                             panic!("{name}: daemon cannot access create-index payload")
                         });
@@ -128,11 +128,11 @@ fn php_emitted_standard_json_matches_canonical_bfbs() {
                 if name == "open-index-empty-table" {
                     assert_eq!(
                         envelope.payload_type(),
-                        RequestPayload::SearchKernel_V2_OpenIndexRequest,
+                        RequestPayload::SearchKernel_Wire_OpenIndexRequest,
                         "{name}: daemon sees open-index discriminator"
                     );
                     envelope
-                        .payload_as_search_kernel_v2_open_index_request()
+                        .payload_as_search_kernel_wire_open_index_request()
                         .unwrap_or_else(|| {
                             panic!("{name}: daemon cannot access open-index payload")
                         });

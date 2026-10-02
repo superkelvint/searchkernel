@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 from searchkernel import Index
 from searchkernel.client import value
-from SearchKernel.V2.Document import DocumentT
-from SearchKernel.V2.ValueEntry import ValueEntryT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Document import DocumentT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry import ValueEntryT
 
 
 class _GetClient:

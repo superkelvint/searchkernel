@@ -1,3 +1,5 @@
+use crate::wire::v1::schema as api;
+use crate::wire::v1::*;
 use crate::*;
 use std::collections::BTreeMap;
 

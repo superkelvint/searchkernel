@@ -445,21 +445,22 @@ fn update_builder_matches_portable_dispatcher_ir_for_full_executable_union() {
             .last_call()
             .unwrap_or_else(|| panic!("{name}: direct Rust update IR"));
 
-        let mut request_json = serde_json::json!({
-            "protocol_version": 2,
-            "payload_type": "SearchKernel_V2_UpdateRequest",
-            "payload": {
+        let mut payload = serde_json::json!({
                 "id": "sku-42",
                 "operations": [operation]
-            }
         });
         if let Some(create) = create {
-            request_json["payload"]["create"] = serde_json::json!({"value": create});
+            payload["create"] = serde_json::json!({"value": create});
         }
-        let request_json =
-            serde_json::to_vec(&request_json).expect("serialize canonical portable update");
-        let request = searchkernel_protocol::json::request_json_to_flatbuffer(&request_json)
-            .unwrap_or_else(|error| panic!("{name}: canonical portable update request: {error}"));
+        let payload_json = serialize_flatbuffer_json(&payload);
+        let request_json = format!(
+            "{{\"protocol_version\":1,\"payload_type\":\"SearchKernel_Wire_UpdateRequest\",\"payload\":{payload_json}}}"
+        );
+        let request =
+            searchkernel_protocol::json::request_json_to_flatbuffer(request_json.as_bytes())
+                .unwrap_or_else(|error| {
+                    panic!("{name}: canonical portable update request: {error}")
+                });
         dispatcher.dispatch(&request).unwrap_or_else(|error| {
             panic!("{name}: dispatcher must encode backend errors: {error:?}")
         });
@@ -471,6 +472,51 @@ fn update_builder_matches_portable_dispatcher_ir_for_full_executable_union() {
             direct, portable,
             "{name}: direct and portable update IR differ"
         );
+    }
+}
+
+fn serialize_flatbuffer_json(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(object) => {
+            let mut ordered = Vec::new();
+            let mut emitted = Vec::new();
+            for (key, value) in object {
+                if let Some(payload_key) = key.strip_suffix("_type") {
+                    if let Some(payload) = object.get(payload_key) {
+                        ordered.push((key.as_str(), value));
+                        ordered.push((payload_key, payload));
+                        emitted.push(key.as_str());
+                        emitted.push(payload_key);
+                    }
+                }
+            }
+            for (key, value) in object {
+                if !emitted.contains(&key.as_str()) {
+                    ordered.push((key.as_str(), value));
+                }
+            }
+            let fields = ordered
+                .into_iter()
+                .map(|(key, value)| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).expect("serialize JSON key"),
+                        serialize_flatbuffer_json(value)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{{fields}}}")
+        }
+        serde_json::Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(serialize_flatbuffer_json)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        _ => serde_json::to_string(value).expect("serialize JSON value"),
     }
 }
 
@@ -1336,8 +1382,8 @@ fn advanced_grouping_facade_matches_independent_portable_request_ir() {
     );
     let request = searchkernel_protocol::json::request_json_to_flatbuffer(
         br#"{
-          "protocol_version": 2,
-          "payload_type": "SearchKernel_V2_SearchRequest",
+          "protocol_version": 1,
+          "payload_type": "SearchKernel_Wire_SearchRequest",
           "payload": {
             "query": {"source_type": "MatchAllQuery", "source": {}},
             "grouping": [{

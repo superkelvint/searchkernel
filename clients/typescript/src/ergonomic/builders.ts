@@ -1,40 +1,39 @@
-import { Builder, type Offset } from "flatbuffers";
-import { ArithmeticUpdateT } from "../generated/flatbuffers/search-kernel/v2/arithmetic-update.js";
-import { ArithmeticUpdateOperator } from "../generated/flatbuffers/search-kernel/v2/arithmetic-update-operator.js";
-import { AssignUpdateT } from "../generated/flatbuffers/search-kernel/v2/assign-update.js";
-import { ClearUpdateT } from "../generated/flatbuffers/search-kernel/v2/clear-update.js";
-import { FieldPathT } from "../generated/flatbuffers/search-kernel/v2/field-path.js";
-import { FieldProjectionT } from "../generated/flatbuffers/search-kernel/v2/field-projection.js";
-import { FilterClauseT } from "../generated/flatbuffers/search-kernel/v2/filter-clause.js";
-import { FilterRequest, FilterRequestT } from "../generated/flatbuffers/search-kernel/v2/filter-request.js";
-import { LiteralQueryInputT } from "../generated/flatbuffers/search-kernel/v2/literal-query-input.js";
-import { MatchAllQueryT } from "../generated/flatbuffers/search-kernel/v2/match-all-query.js";
-import { OptionalBoolT } from "../generated/flatbuffers/search-kernel/v2/optional-bool.js";
-import { OptionalUInt32T } from "../generated/flatbuffers/search-kernel/v2/optional-uint32.js";
-import { PatchOperationKind } from "../generated/flatbuffers/search-kernel/v2/patch-operation-kind.js";
-import { PatchOperationT } from "../generated/flatbuffers/search-kernel/v2/patch-operation.js";
-import { PatchRequestT } from "../generated/flatbuffers/search-kernel/v2/patch-request.js";
-import { PresentationRequestT } from "../generated/flatbuffers/search-kernel/v2/presentation-request.js";
-import { QueryInputKind } from "../generated/flatbuffers/search-kernel/v2/query-input-kind.js";
-import { QueryInputT } from "../generated/flatbuffers/search-kernel/v2/query-input.js";
-import { QuerySourceKind } from "../generated/flatbuffers/search-kernel/v2/query-source-kind.js";
-import { QuerySourceT } from "../generated/flatbuffers/search-kernel/v2/query-source.js";
-import { RankingRequestT } from "../generated/flatbuffers/search-kernel/v2/ranking-request.js";
-import { SearchKernelTextQueryT } from "../generated/flatbuffers/search-kernel/v2/search-kernel-text-query.js";
-import { SearchRequestT } from "../generated/flatbuffers/search-kernel/v2/search-request.js";
-import { SetFieldT } from "../generated/flatbuffers/search-kernel/v2/set-field.js";
-import { StringEntryT } from "../generated/flatbuffers/search-kernel/v2/string-entry.js";
-import { SortDirection } from "../generated/flatbuffers/search-kernel/v2/sort-direction.js";
-import { SortExprT } from "../generated/flatbuffers/search-kernel/v2/sort-expr.js";
-import { SortTargetKind } from "../generated/flatbuffers/search-kernel/v2/sort-target-kind.js";
-import { SortTargetT } from "../generated/flatbuffers/search-kernel/v2/sort-target.js";
-import { FieldSortTargetT } from "../generated/flatbuffers/search-kernel/v2/field-sort-target.js";
-import { UnsetFieldT } from "../generated/flatbuffers/search-kernel/v2/unset-field.js";
-import { UpdateOperationKind } from "../generated/flatbuffers/search-kernel/v2/update-operation-kind.js";
-import { UpdateOperationT } from "../generated/flatbuffers/search-kernel/v2/update-operation.js";
-import { UpdateRequestT } from "../generated/flatbuffers/search-kernel/v2/update-request.js";
-import { ValueEntryT } from "../generated/flatbuffers/search-kernel/v2/value-entry.js";
-import { YqlQueryT } from "../generated/flatbuffers/search-kernel/v2/yql-query.js";
+import { ArithmeticUpdateT } from "../semantic.js";
+import { ArithmeticUpdateOperator } from "../semantic.js";
+import { AssignUpdateT } from "../semantic.js";
+import { ClearUpdateT } from "../semantic.js";
+import { FieldPathT } from "../semantic.js";
+import { FieldProjectionT } from "../semantic.js";
+import { FilterClauseT } from "../semantic.js";
+import { FilterRequestT } from "../semantic.js";
+import { LiteralQueryInputT } from "../semantic.js";
+import { MatchAllQueryT } from "../semantic.js";
+import { OptionalBoolT } from "../semantic.js";
+import { OptionalUInt32T } from "../semantic.js";
+import { PatchOperationKind } from "../semantic.js";
+import { PatchOperationT } from "../semantic.js";
+import { PatchRequestT } from "../semantic.js";
+import { PresentationRequestT } from "../semantic.js";
+import { QueryInputKind } from "../semantic.js";
+import { QueryInputT } from "../semantic.js";
+import { QuerySourceKind } from "../semantic.js";
+import { QuerySourceT } from "../semantic.js";
+import { RankingRequestT } from "../semantic.js";
+import { SearchKernelTextQueryT } from "../semantic.js";
+import { SearchRequestT } from "../semantic.js";
+import { SetFieldT } from "../semantic.js";
+import { StringEntryT } from "../semantic.js";
+import { SortDirection } from "../semantic.js";
+import { SortExprT } from "../semantic.js";
+import { SortTargetKind } from "../semantic.js";
+import { SortTargetT } from "../semantic.js";
+import { FieldSortTargetT } from "../semantic.js";
+import { UnsetFieldT } from "../semantic.js";
+import { UpdateOperationKind } from "../semantic.js";
+import { UpdateOperationT } from "../semantic.js";
+import { UpdateRequestT } from "../semantic.js";
+import { ValueEntryT } from "../semantic.js";
+import { YqlQueryT } from "../semantic.js";
 import { SearchResults } from "../client/results.js";
 import { value, type ValueInput } from "../client/values.js";
 import type { Index } from "../client/index.js";
@@ -63,16 +62,7 @@ interface FacetSpec {
 class TextualFilterRequest extends FilterRequestT {
   constructor(textual: FilterClauseT[]) {
     super([], [], [], textual);
-  }
-
-  override pack(builder: Builder): Offset {
-    const textual = FilterRequest.createTextualVector(
-      builder,
-      builder.createObjectOffsetList(this.textual),
-    );
-    FilterRequest.startFilterRequest(builder);
-    FilterRequest.addTextual(builder, textual);
-    return FilterRequest.endFilterRequest(builder);
+    (this as any)._textualOnly = true;
   }
 }
 

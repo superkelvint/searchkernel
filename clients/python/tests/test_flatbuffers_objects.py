@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel import Boolean, ClientError, Float, Group, Hit, HnswIndexConfig, Integer, Keyword, RankProfile, StructField, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
 from searchkernel.client import _document, _python_value, value  # noqa: E402
+import searchkernel._semantic as semantic  # noqa: E402
 from searchkernel.ergonomic import (  # noqa: E402
     SearchBuilder,
     _facet_request,
@@ -24,67 +25,68 @@ from searchkernel.ergonomic import (  # noqa: E402
     _value_entries,
 )
 from searchkernel.protocol import expected_response_type, pack_object, pack_request  # noqa: E402
-from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelopeT  # noqa: E402
-from SearchKernel.Protocol.V2 import RequestPayload, ResponsePayload  # noqa: E402
-from SearchKernel.V2.Document import DocumentT  # noqa: E402
-from SearchKernel.V2.DeleteIndexRequest import DeleteIndexRequestT  # noqa: E402
-from SearchKernel.V2.InsertRequest import InsertRequestT  # noqa: E402
-from SearchKernel.V2.Int64Value import Int64ValueT  # noqa: E402
-from SearchKernel.V2.TensorValue import TensorValueT  # noqa: E402
-from SearchKernel.V2.TensorPayloadKind import TensorPayloadKind  # noqa: E402
-from SearchKernel.V2.DenseTensorValues import DenseTensorValuesT  # noqa: E402
-from SearchKernel.V2.MixedTensorBlocks import MixedTensorBlocksT  # noqa: E402
-from SearchKernel.V2.NonFiniteFloatKind import NonFiniteFloatKind  # noqa: E402
-from SearchKernel.V2.NonFiniteFloatValue import NonFiniteFloatValueT  # noqa: E402
-from SearchKernel.V2.SparseTensorCells import SparseTensorCellsT  # noqa: E402
-from SearchKernel.V2.TensorAddressEntry import TensorAddressEntryT  # noqa: E402
-from SearchKernel.V2.TensorBlock import TensorBlockT  # noqa: E402
-from SearchKernel.V2.TensorCell import TensorCellT  # noqa: E402
-from SearchKernel.V2.UInt64Value import UInt64ValueT  # noqa: E402
-from SearchKernel.V2.Value import ValueT  # noqa: E402
-from SearchKernel.V2.ValueEntry import ValueEntryT  # noqa: E402
-from SearchKernel.V2.ValueKind import ValueKind  # noqa: E402
-from SearchKernel.V2.DistanceMetric import DistanceMetric  # noqa: E402
-from SearchKernel.V2.HnswIndexConfig import HnswIndexConfigT  # noqa: E402
-from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
-from SearchKernel.V2.FilterClause import FilterClauseT  # noqa: E402
-from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
-from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
-from SearchKernel.V2.SortDirection import SortDirection  # noqa: E402
-from SearchKernel.V2.SortExpr import SortExprT  # noqa: E402
-from SearchKernel.V2.SortTarget import SortTargetT  # noqa: E402
-from SearchKernel.V2.SortTargetKind import SortTargetKind  # noqa: E402
-from SearchKernel.V2.FieldSortTarget import FieldSortTargetT  # noqa: E402
-from SearchKernel.V2.RelevanceSortTarget import RelevanceSortTargetT  # noqa: E402
-from SearchKernel.V2.RankFeatureSortTarget import RankFeatureSortTargetT  # noqa: E402
-from SearchKernel.V2.MissingPolicy import MissingPolicyT  # noqa: E402
-from SearchKernel.V2.MissingPolicyKind import MissingPolicyKind  # noqa: E402
-from SearchKernel.V2.MissingLast import MissingLastT  # noqa: E402
-from SearchKernel.V2.SearchField import SearchFieldT  # noqa: E402
-from SearchKernel.V2.SearchFieldSelection import SearchFieldSelectionT  # noqa: E402
-from SearchKernel.V2.OptionalUInt64 import OptionalUInt64T  # noqa: E402
-from SearchKernel.V2.QueryModel import QueryModelT  # noqa: E402
-from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT  # noqa: E402
-from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
-from SearchKernel.V2.QuerySource import QuerySourceT  # noqa: E402
-from SearchKernel.V2.QuerySourceKind import QuerySourceKind  # noqa: E402
-from SearchKernel.V2.ErrorCode import ErrorCode  # noqa: E402
-from SearchKernel.V2.GroupingBinaryOperator import GroupingBinaryOperator  # noqa: E402
-from SearchKernel.V2.GroupingFilterExprKind import GroupingFilterExprKind  # noqa: E402
-from SearchKernel.V2.GroupingOperationKind import GroupingOperationKind  # noqa: E402
-from SearchKernel.V2.GroupingExpressionKind import GroupingExpressionKind  # noqa: E402
-from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
-from SearchKernel.V2.PrimitiveDataTypeKind import PrimitiveDataTypeKind  # noqa: E402
-from SearchKernel.V2.QueryExprKind import QueryExprKind  # noqa: E402
-from SearchKernel.V2.Relevance import RelevanceT  # noqa: E402
-from SearchKernel.V2.RelevanceKind import RelevanceKind  # noqa: E402
-from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT  # noqa: E402
-from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT  # noqa: E402
-from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT  # noqa: E402
-from SearchKernel.V2.ResultGroup import ResultGroupT  # noqa: E402
-from SearchKernel.V2.ResultNode import ResultNodeT  # noqa: E402
-from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
-from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Protocol.RequestEnvelope import RequestEnvelopeT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Protocol.RequestPayload import RequestPayload  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Protocol.ResponsePayload import ResponsePayload  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.DeleteIndexRequest import DeleteIndexRequestT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Document import DocumentT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.InsertRequest import InsertRequestT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Int64Value import Int64ValueT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TensorValue import TensorValueT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TensorPayloadKind import TensorPayloadKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.DenseTensorValues import DenseTensorValuesT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MixedTensorBlocks import MixedTensorBlocksT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.NonFiniteFloatKind import NonFiniteFloatKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.NonFiniteFloatValue import NonFiniteFloatValueT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SparseTensorCells import SparseTensorCellsT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TensorAddressEntry import TensorAddressEntryT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TensorBlock import TensorBlockT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TensorCell import TensorCellT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.UInt64Value import UInt64ValueT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Value import ValueT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry import ValueEntryT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueKind import ValueKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.DistanceMetric import DistanceMetric  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.HnswIndexConfig import HnswIndexConfigT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.IndexDefinition import IndexDefinitionT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.FilterClause import FilterClauseT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.FilterRequest import FilterRequestT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchRequest import SearchRequestT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SortDirection import SortDirection  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SortExpr import SortExprT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SortTarget import SortTargetT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SortTargetKind import SortTargetKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.FieldSortTarget import FieldSortTargetT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MatchAllQuery import MatchAllQueryT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.QuerySource import QuerySourceT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.QuerySourceKind import QuerySourceKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ErrorCode import ErrorCode  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.GroupingBinaryOperator import GroupingBinaryOperator  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.GroupingFilterExprKind import GroupingFilterExprKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.GroupingOperationKind import GroupingOperationKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.GroupingExpressionKind import GroupingExpressionKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MatchingMode import MatchingMode  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.PrimitiveDataTypeKind import PrimitiveDataTypeKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.QueryExprKind import QueryExprKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.Relevance import RelevanceT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.RelevanceKind import RelevanceKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.FiniteRelevance import FiniteRelevanceT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.PositiveInfinityRelevance import PositiveInfinityRelevanceT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.NegativeInfinityRelevance import NegativeInfinityRelevanceT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNodeKind import ResultNodeKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultGroup import ResultGroupT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ResultNode import ResultNodeT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHitsRelation import TotalHitsRelation  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.RelevanceSortTarget import RelevanceSortTargetT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.RankFeatureSortTarget import RankFeatureSortTargetT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MissingPolicy import MissingPolicyT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MissingPolicyKind import MissingPolicyKind  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.MissingLast import MissingLastT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchField import SearchFieldT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchFieldSelection import SearchFieldSelectionT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.OptionalUInt64 import OptionalUInt64T  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.QueryModel import QueryModelT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchKernelTextQuery import SearchKernelTextQueryT  # noqa: E402
 
 
 _SNAPSHOT_BINARY = None
@@ -155,12 +157,12 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
 
         self.assertEqual(
             envelope.payloadType,
-            RequestPayload.RequestPayload.SearchKernel_V2_DeleteIndexRequest,
+            RequestPayload.SearchKernel_Wire_DeleteIndexRequest,
         )
         self.assertEqual(envelope.target.name, "catalog-a")
         self.assertEqual(
             expected_response_type("delete_index"),
-            ResponsePayload.ResponsePayload.SearchKernel_V2_DeleteIndexResult,
+            ResponsePayload.SearchKernel_Wire_DeleteIndexResult,
         )
 
     def test_signed_value_checks_int64_range_before_flatbuffers_packing(self):
@@ -354,43 +356,26 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             ],
         )
 
-    def test_ergonomics_follow_generated_enum_constants(self):
-        members = {
-            (PrimitiveDataTypeKind, "String"): 101,
-            (PrimitiveDataTypeKind, "Int64"): 105,
-            (PrimitiveDataTypeKind, "Float64"): 107,
-            (PrimitiveDataTypeKind, "Bool"): 102,
-            (MatchingMode, "Unspecified"): 200,
-            (MatchingMode, "Text"): 201,
-            (MatchingMode, "Exact"): 203,
-            (GroupingBinaryOperator, "Add"): 301,
-            (GroupingBinaryOperator, "Subtract"): 302,
-            (GroupingBinaryOperator, "Multiply"): 303,
-            (GroupingBinaryOperator, "Divide"): 304,
-            (ErrorCode, "InvalidArgument"): 401,
-        }
-        original = {(enum, name): getattr(enum, name) for enum, name in members}
-        try:
-            for (enum, name), value_ in members.items():
-                setattr(enum, name, value_)
+    def test_ergonomics_use_version_free_semantic_enum_values(self):
+        from searchkernel._semantic import SemanticEnumValue, SemanticTable
 
-            self.assertEqual(Text().definition("title").dataType.kind.kind, PrimitiveDataTypeKind.String)
-            self.assertEqual(Text().definition("title").matching.mode, MatchingMode.Text)
-            self.assertEqual(Keyword().definition("sku").matching.mode, MatchingMode.Exact)
-            self.assertEqual(Integer().definition("count").dataType.kind.kind, PrimitiveDataTypeKind.Int64)
-            self.assertEqual(Float().definition("score").dataType.kind.kind, PrimitiveDataTypeKind.Float64)
-            self.assertEqual(Boolean().definition("active").dataType.kind.kind, PrimitiveDataTypeKind.Bool)
-            self.assertEqual((g.field("price") + 1).model.expr.op, GroupingBinaryOperator.Add)
-            self.assertEqual((g.field("price") - 1).model.expr.op, GroupingBinaryOperator.Subtract)
-            self.assertEqual((g.field("price") * 1).model.expr.op, GroupingBinaryOperator.Multiply)
-            self.assertEqual((g.field("price") / 1).model.expr.op, GroupingBinaryOperator.Divide)
-            self.assertEqual(
-                ClientError("bad", error=SimpleNamespace(code=ErrorCode.InvalidArgument)).code,
-                "invalid_argument",
-            )
-        finally:
-            for (enum, name), value_ in original.items():
-                setattr(enum, name, value_)
+        definition = Text().definition("title")
+        self.assertIsInstance(definition, SemanticTable)
+        self.assertIsInstance(definition.dataType.kind.kind, SemanticEnumValue)
+        self.assertEqual(definition.dataType.kind.kind, PrimitiveDataTypeKind.String)
+        self.assertEqual(definition.matching.mode, MatchingMode.Text)
+        self.assertEqual(Keyword().definition("sku").matching.mode, MatchingMode.Exact)
+        self.assertEqual(Integer().definition("count").dataType.kind.kind, PrimitiveDataTypeKind.Int64)
+        self.assertEqual(Float().definition("score").dataType.kind.kind, PrimitiveDataTypeKind.Float64)
+        self.assertEqual(Boolean().definition("active").dataType.kind.kind, PrimitiveDataTypeKind.Bool)
+        self.assertEqual((g.field("price") + 1).model.expr.op, GroupingBinaryOperator.Add)
+        self.assertEqual((g.field("price") - 1).model.expr.op, GroupingBinaryOperator.Subtract)
+        self.assertEqual((g.field("price") * 1).model.expr.op, GroupingBinaryOperator.Multiply)
+        self.assertEqual((g.field("price") / 1).model.expr.op, GroupingBinaryOperator.Divide)
+        self.assertEqual(
+            ClientError("bad", error=SimpleNamespace(code=ErrorCode.InvalidArgument)).code,
+            "invalid_argument",
+        )
 
     def test_recursive_value_and_envelope_round_trip(self):
         document = DocumentT(
@@ -398,7 +383,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             fields=[],
         )
         document.fields = [
-            __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+            __import__("searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
                 key="payload", value=value({"nested": [1, True]})
             )
         ]
@@ -525,13 +510,16 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(presentation.fields.fields, ["title"])
         self.assertEqual(presentation.highlighting.fields, ["title"])
 
-    def test_widened_v2_objects_pack_without_schema_mapper(self):
-        tensor = TensorValueT(
+    def test_wire_codec_packs_version_free_semantic_objects(self):
+        from searchkernel._semantic import DenseTensorValuesT as SemanticDenseTensorValuesT
+        from searchkernel._semantic import SemanticTable, TensorValueT as SemanticTensorValueT
+
+        tensor = SemanticTensorValueT(
             typeSpec="tensor<float>(x[2])",
             payloadType=TensorPayloadKind.DenseTensorValues,
-            payload=DenseTensorValuesT(values=[0.25, 0.75]),
+            payload=SemanticDenseTensorValuesT(values=[0.25, 0.75]),
         )
-        self.assertIsInstance(tensor, TensorValueT)
+        self.assertIsInstance(tensor, SemanticTable)
 
         grouping = Group.by("category").output(agg.count().as_("count"))
         request = grouping.to_request()
@@ -596,19 +584,19 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertIsNone(_python_value(value(None)))
         self.assertEqual(
             _python_value(
-                ValueT(kindType=ValueKind.UInt64Value, kind=UInt64ValueT(value=2**63))
+                semantic.ValueT(kindType=semantic.ValueKind.UInt64Value, kind=semantic.UInt64ValueT(value=2**63))
             ),
             2**63,
         )
         for kind, expected in (
-            (NonFiniteFloatKind.NaN, math.nan),
-            (NonFiniteFloatKind.PositiveInfinity, math.inf),
-            (NonFiniteFloatKind.NegativeInfinity, -math.inf),
+            (semantic.NonFiniteFloatKind.NaN, math.nan),
+            (semantic.NonFiniteFloatKind.PositiveInfinity, math.inf),
+            (semantic.NonFiniteFloatKind.NegativeInfinity, -math.inf),
         ):
             decoded = _python_value(
-                ValueT(
-                    kindType=ValueKind.NonFiniteFloatValue,
-                    kind=NonFiniteFloatValueT(kind=kind),
+                semantic.ValueT(
+                    kindType=semantic.ValueKind.NonFiniteFloatValue,
+                    kind=semantic.NonFiniteFloatValueT(kind=kind),
                 )
             )
             # Keep the public Value helper out of this regression: non-finite
@@ -620,15 +608,15 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                 self.assertEqual(decoded, expected)
 
         sparse = _python_value(
-            ValueT(
-                kindType=ValueKind.TensorValue,
-                kind=TensorValueT(
+            semantic.ValueT(
+                kindType=semantic.ValueKind.TensorValue,
+                kind=semantic.TensorValueT(
                     typeSpec="tensor<float>(x{})",
-                    payloadType=TensorPayloadKind.SparseTensorCells,
-                    payload=SparseTensorCellsT(
+                    payloadType=semantic.TensorPayloadKind.SparseTensorCells,
+                    payload=semantic.SparseTensorCellsT(
                         cells=[
-                            TensorCellT(
-                                address=[TensorAddressEntryT(dimension="x", label="a")],
+                            semantic.TensorCellT(
+                                address=[semantic.TensorAddressEntryT(dimension="x", label="a")],
                                 value=0.5,
                             )
                         ]
@@ -637,15 +625,15 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             )
         )
         mixed = _python_value(
-            ValueT(
-                kindType=ValueKind.TensorValue,
-                kind=TensorValueT(
+            semantic.ValueT(
+                kindType=semantic.ValueKind.TensorValue,
+                kind=semantic.TensorValueT(
                     typeSpec="tensor<float>(x{},y[2])",
-                    payloadType=TensorPayloadKind.MixedTensorBlocks,
-                    payload=MixedTensorBlocksT(
+                    payloadType=semantic.TensorPayloadKind.MixedTensorBlocks,
+                    payload=semantic.MixedTensorBlocksT(
                         blocks=[
-                            TensorBlockT(
-                                address=[TensorAddressEntryT(dimension="x", label="a")],
+                            semantic.TensorBlockT(
+                                address=[semantic.TensorAddressEntryT(dimension="x", label="a")],
                                 values=[0.25, 0.75],
                             )
                         ]
@@ -658,20 +646,20 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
 
     def test_result_value_decoder_rejects_malformed_tensor_state(self):
         malformed_addresses = [
-            TensorAddressEntryT(dimension=None, label="a"),
-            TensorAddressEntryT(dimension="x", label=None),
+            semantic.TensorAddressEntryT(dimension=None, label="a"),
+            semantic.TensorAddressEntryT(dimension="x", label=None),
         ]
         for address in malformed_addresses:
             with self.subTest(address=address):
                 with self.assertRaisesRegex(ValueError, "malformed tensor address"):
                     _python_value(
-                        ValueT(
-                            kindType=ValueKind.TensorValue,
-                            kind=TensorValueT(
+                        semantic.ValueT(
+                            kindType=semantic.ValueKind.TensorValue,
+                            kind=semantic.TensorValueT(
                                 typeSpec="tensor<float>(x{})",
-                                payloadType=TensorPayloadKind.SparseTensorCells,
-                                payload=SparseTensorCellsT(
-                                    cells=[TensorCellT(address=[address], value=0.5)]
+                                payloadType=semantic.TensorPayloadKind.SparseTensorCells,
+                                payload=semantic.SparseTensorCellsT(
+                                    cells=[semantic.TensorCellT(address=[address], value=0.5)]
                                 ),
                             ),
                         )
@@ -679,26 +667,26 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
 
         for payload_type, payload in (
             (
-                TensorPayloadKind.DenseTensorValues,
-                DenseTensorValuesT(values=[math.nan]),
+                semantic.TensorPayloadKind.DenseTensorValues,
+                semantic.DenseTensorValuesT(values=[math.nan]),
             ),
             (
-                TensorPayloadKind.SparseTensorCells,
-                SparseTensorCellsT(
+                semantic.TensorPayloadKind.SparseTensorCells,
+                semantic.SparseTensorCellsT(
                     cells=[
-                        TensorCellT(
-                            address=[TensorAddressEntryT(dimension="x", label="a")],
+                        semantic.TensorCellT(
+                            address=[semantic.TensorAddressEntryT(dimension="x", label="a")],
                             value=math.inf,
                         )
                     ]
                 ),
             ),
             (
-                TensorPayloadKind.MixedTensorBlocks,
-                MixedTensorBlocksT(
+                semantic.TensorPayloadKind.MixedTensorBlocks,
+                semantic.MixedTensorBlocksT(
                     blocks=[
-                        TensorBlockT(
-                            address=[TensorAddressEntryT(dimension="x", label="a")],
+                        semantic.TensorBlockT(
+                            address=[semantic.TensorAddressEntryT(dimension="x", label="a")],
                             values=[-math.inf],
                         )
                     ]
@@ -708,9 +696,9 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             with self.subTest(payload_type=payload_type):
                 with self.assertRaisesRegex(ValueError, "tensor cells must be finite"):
                     _python_value(
-                        ValueT(
-                            kindType=ValueKind.TensorValue,
-                            kind=TensorValueT(
+                        semantic.ValueT(
+                            kindType=semantic.ValueKind.TensorValue,
+                            kind=semantic.TensorValueT(
                                 typeSpec="tensor<float>(x{})",
                                 payloadType=payload_type,
                                 payload=payload,
@@ -727,18 +715,18 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             _value_entries(entries)
 
         with self.assertRaisesRegex(ValueError, "unknown Value union"):
-            _python_value(ValueT(kindType=255))
+            _python_value(semantic.ValueT(kindType=255))
         with self.assertRaisesRegex(ValueError, "mismatched Value union"):
             _python_value(
-                ValueT(
-                    kindType=ValueKind.BytesValue,
-                    kind=Int64ValueT(value=1),
+                semantic.ValueT(
+                    kindType=semantic.ValueKind.BytesValue,
+                    kind=semantic.Int64ValueT(value=1),
                 )
             )
         with self.assertRaisesRegex(ValueError, "unknown ResultNode union"):
             _node(SimpleNamespace(nodeType=255, node=SimpleNamespace()))
         with self.assertRaisesRegex(ValueError, "missing ResultNode payload"):
-            _node(SimpleNamespace(nodeType=ResultNodeKind.Hit, node=None))
+            _node(SimpleNamespace(nodeType=semantic.ResultNodeKind.Hit, node=None))
 
     def test_feature_value_lists_are_not_reinterpreted_as_bytes(self):
         entry = ValueEntryT(key="numbers", value=value([1, 2]))
@@ -885,10 +873,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             fields=[],
             relevance=None,
             matchFeatures=[
-                __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                __import__("searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
                     key="scalar", value=value(3.5)
                 ),
-                __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                __import__("searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
                     key="opaque", value=value(b"native-data")
                 ),
             ],
@@ -908,17 +896,17 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             source="catalog",
             types=["product", "featured"],
             matchFeatures=[
-                __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                __import__("searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
                     key="match", value=value(["one", True])
                 )
             ],
             summaryFeatures=[
-                __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                __import__("searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
                     key="summary", value=value({"ready": True})
                 )
             ],
             rankFeatures=[
-                __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                __import__("searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
                     key="rank", value=value(7)
                 )
             ],
@@ -993,7 +981,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                     FilterClauseT(
                         source="price <= :value",
                         bindings=[
-                            __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                            __import__("searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
                                 key="value", value=value(120)
                             )
                         ],
@@ -1001,7 +989,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                     FilterClauseT(
                         source="rating >= :value",
                         bindings=[
-                            __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                            __import__("searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
                                 key="value", value=value(4)
                             )
                         ],

@@ -13,8 +13,8 @@ use searchkernel_ir::{
 };
 use searchkernel_protocol::{
     json::{request_flatbuffer_to_json, request_json_to_flatbuffer, response_json_to_flatbuffer},
-    protocol::v2 as wire,
-    v2 as api, PROTOCOL_VERSION,
+    protocol::v1::{self as wire, PROTOCOL_VERSION},
+    wire::v1 as api,
 };
 use searchkerneld::{rpc, start_multi, IndexRegistry, ServerConfig, JSON_EXECUTE_PATH};
 use std::{
@@ -116,7 +116,7 @@ fn create_request_with_definition_name(
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
             payload: Some(payload.as_union_value()),
         },
     );
@@ -136,7 +136,7 @@ fn create_request_without_definition(target_name: &str) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_CreateIndexRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
             payload: Some(payload.as_union_value()),
         },
     );
@@ -154,7 +154,7 @@ fn open_request(target_name: Option<&str>) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target,
-            payload_type: wire::RequestPayload::SearchKernel_V2_OpenIndexRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
             payload: Some(payload.as_union_value()),
         },
     );
@@ -172,7 +172,7 @@ fn delete_index_request(target_name: &str) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_DeleteIndexRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest,
             payload: Some(payload.as_union_value()),
         },
     );
@@ -222,7 +222,7 @@ fn upsert_request(target_name: &str, id: &str, field_name: &str, text: &str) -> 
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_UpsertRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_UpsertRequest,
             payload: Some(payload.as_union_value()),
         },
     );
@@ -257,7 +257,7 @@ fn search_request(target_name: &str, text: &str) -> Vec<u8> {
         &wire::RequestEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
             target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
             payload: Some(payload.as_union_value()),
         },
     );
@@ -307,7 +307,7 @@ fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
 fn assert_lifecycle(bytes: &[u8], kind: wire::ResponsePayload) {
     let envelope = response(bytes);
     let error_message = envelope
-        .payload_as_search_kernel_v2_error()
+        .payload_as_search_kernel_wire_error()
         .and_then(|error| error.message())
         .unwrap_or_default();
     assert_eq!(
@@ -326,10 +326,10 @@ fn assert_portable_error(
     let envelope = response(bytes);
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     let error = envelope
-        .payload_as_search_kernel_v2_error()
+        .payload_as_search_kernel_wire_error()
         .expect("error payload");
     assert_eq!(error.code(), code);
     let details = error.details().expect("canonical error detail");
@@ -345,10 +345,10 @@ fn portable_error_semantics(
     let envelope = response(bytes);
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     let error = envelope
-        .payload_as_search_kernel_v2_error()
+        .payload_as_search_kernel_wire_error()
         .expect("error payload");
     let details = error.details().expect("portable error details");
     assert_eq!(details.len(), 1);
@@ -366,7 +366,7 @@ fn ir_portable_error_semantics(
     error: searchkernel_ir::PortableError,
 ) -> (api::ErrorCode, String, Option<String>, String, String) {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let error = searchkernel_ir::error_offset(&mut builder, &error);
+    let error = searchkernel_ir::wire::v1::error_offset(&mut builder, &error);
     builder.finish(error, None);
     let error = root::<api::Error<'_>>(builder.finished_data()).expect("canonical IR error");
     let details = error.details().expect("canonical IR error details");
@@ -383,8 +383,8 @@ fn ir_portable_error_semantics(
 
 fn resolved_ir_request_error(request: &[u8]) -> searchkernel_ir::PortableError {
     let envelope = root::<wire::RequestEnvelope<'_>>(request).expect("request envelope");
-    match searchkernel_ir::resolve_control_plane_request(envelope) {
-        Err(searchkernel_ir::ControlPlaneResolutionError::Semantic(error)) => error,
+    match searchkernel_ir::wire::v1::resolve_control_plane_request(envelope) {
+        Err(searchkernel_ir::wire::v1::ControlPlaneResolutionError::Semantic(error)) => error,
         result => panic!("expected canonical IR semantic error, got {result:?}"),
     }
 }
@@ -392,7 +392,7 @@ fn resolved_ir_request_error(request: &[u8]) -> searchkernel_ir::PortableError {
 fn assert_upsert(bytes: &[u8]) {
     assert_eq!(
         response(bytes).payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_UpsertResult
+        wire::ResponsePayload::SearchKernel_Wire_UpsertResult
     );
 }
 
@@ -400,10 +400,10 @@ fn total_hits(bytes: &[u8]) -> u64 {
     let envelope = response(bytes);
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_SearchResult
+        wire::ResponsePayload::SearchKernel_Wire_SearchResult
     );
     envelope
-        .payload_as_search_kernel_v2_search_result()
+        .payload_as_search_kernel_wire_search_result()
         .expect("search result")
         .total_hits()
         .expect("total hits")
@@ -446,10 +446,10 @@ async fn php_emitted_create_index_json_reaches_multi_index_registry() {
         .expect("daemon request verifier must accept PHP create-index bytes");
     assert_eq!(
         envelope.payload_type(),
-        wire::RequestPayload::SearchKernel_V2_CreateIndexRequest
+        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest
     );
     let payload = envelope
-        .payload_as_search_kernel_v2_create_index_request()
+        .payload_as_search_kernel_wire_create_index_request()
         .expect("daemon must access PHP create-index union payload");
     let definition = payload.definition().expect("PHP create-index definition");
     assert_eq!(definition.fields().map(|fields| fields.len()), Some(13));
@@ -481,7 +481,7 @@ async fn php_emitted_create_index_json_reaches_multi_index_registry() {
         response_json_to_flatbuffer(&body).expect("decode PHP create-index HTTP response JSON");
     assert_lifecycle(
         &response,
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
 
     let php_http_script = repo_root.join("clients/php/tests/create_index_http_smoke.php");
@@ -546,7 +546,7 @@ async fn grpc_and_http_json_share_one_registry() {
         .payload;
     assert_lifecycle(
         &create,
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
 
     let upsert = execute_http_json(
@@ -579,13 +579,13 @@ fn routes_two_different_indexes_without_cross_index_leakage_and_reopens_them() {
         &registry
             .dispatch(&create_request("products", "title"))
             .expect("create products"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     assert_lifecycle(
         &registry
             .dispatch(&create_request("articles", "body"))
             .expect("create articles"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
 
     assert_upsert(
@@ -645,13 +645,13 @@ fn routes_two_different_indexes_without_cross_index_leakage_and_reopens_them() {
         &reopened
             .dispatch(&open_request(Some("products")))
             .expect("open products"),
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
     );
     assert_lifecycle(
         &reopened
             .dispatch(&open_request(Some("articles")))
             .expect("open articles"),
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
     );
     assert_eq!(
         total_hits(
@@ -680,14 +680,14 @@ fn delete_unloads_removes_persistence_and_allows_recreate() {
         &registry
             .dispatch(&create_request("products", "title"))
             .expect("create products"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     assert!(temp.0.join("products").is_dir());
     assert_lifecycle(
         &registry
             .dispatch(&delete_index_request("products"))
             .expect("delete products"),
-        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
     );
     assert!(registry
         .loaded_targets()
@@ -706,7 +706,7 @@ fn delete_unloads_removes_persistence_and_allows_recreate() {
         &registry
             .dispatch(&create_request("products", "title"))
             .expect("recreate products"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     registry.close_all().expect("close recreated registry");
 }
@@ -719,7 +719,7 @@ fn delete_persisted_but_unloaded_index() {
         &first
             .dispatch(&create_request("products", "title"))
             .expect("create products"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     first.close_all().expect("close first registry");
     drop(first);
@@ -728,7 +728,7 @@ fn delete_persisted_but_unloaded_index() {
         &second
             .dispatch(&delete_index_request("products"))
             .expect("delete persisted products"),
-        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
     );
     assert!(!temp.0.join("products").exists());
     assert_portable_error(
@@ -771,7 +771,7 @@ fn delete_rejects_storage_owned_by_another_runtime() {
         &registry
             .dispatch(&delete_index_request("products"))
             .expect("delete after owner close"),
-        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
     );
     assert!(!path.exists());
 }
@@ -806,7 +806,7 @@ fn open_rejects_storage_owned_by_another_runtime_as_conflict() {
         &registry
             .dispatch(&open_request(Some("products")))
             .expect("open after owner close"),
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
     );
     registry.close_all().expect("close registry");
 }
@@ -831,10 +831,10 @@ fn concurrent_same_name_create_has_one_winner() {
         let bytes = worker.join().expect("create worker");
         let envelope = response(&bytes);
         match envelope.payload_type() {
-            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult => created += 1,
-            wire::ResponsePayload::SearchKernel_V2_Error => {
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => created += 1,
+            wire::ResponsePayload::SearchKernel_Wire_Error => {
                 let error = envelope
-                    .payload_as_search_kernel_v2_error()
+                    .payload_as_search_kernel_wire_error()
                     .expect("error payload");
                 assert_eq!(error.code(), api::ErrorCode::AlreadyExists);
                 already_exists += 1;
@@ -893,7 +893,7 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
         .expect("unrelated target lifecycle must not wait for products");
     assert_lifecycle(
         &articles,
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
 
     assert_eq!(
@@ -903,7 +903,7 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
     );
     assert_lifecycle(
         &blocked.join().expect("join blocked creator"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     independent.join().expect("join independent creator");
     registry.close_all().expect("close registry");
@@ -960,7 +960,7 @@ fn close_all_waits_for_in_flight_create_and_prevents_republication() {
     );
     assert_lifecycle(
         &creator.join().expect("join creator"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     closed_rx
         .recv_timeout(std::time::Duration::from_secs(5))
@@ -1009,16 +1009,16 @@ fn concurrent_create_and_open_are_linearizable() {
     let create_bytes = creator.join().expect("creator");
     assert_eq!(
         response(&create_bytes).payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult
     );
 
     let open_bytes = opener.join().expect("opener");
     let open_envelope = response(&open_bytes);
     match open_envelope.payload_type() {
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult => {}
-        wire::ResponsePayload::SearchKernel_V2_Error => {
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult => {}
+        wire::ResponsePayload::SearchKernel_Wire_Error => {
             let error = open_envelope
-                .payload_as_search_kernel_v2_error()
+                .payload_as_search_kernel_wire_error()
                 .expect("open error payload");
             assert_eq!(
                 error.code(),
@@ -1037,7 +1037,7 @@ fn concurrent_create_and_open_are_linearizable() {
         &registry
             .dispatch(&open_request(Some("products")))
             .expect("final open"),
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
     );
     registry.close_all().expect("close registry");
 }
@@ -1054,10 +1054,10 @@ fn rejects_non_directory_target_entry() {
     let envelope = response(&bytes);
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     let error = envelope
-        .payload_as_search_kernel_v2_error()
+        .payload_as_search_kernel_wire_error()
         .expect("error payload");
     assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
     assert_eq!(
@@ -1082,10 +1082,10 @@ fn rejects_symlinked_target_directory_without_following_it() {
     let envelope = response(&bytes);
     assert_eq!(
         envelope.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error
+        wire::ResponsePayload::SearchKernel_Wire_Error
     );
     let error = envelope
-        .payload_as_search_kernel_v2_error()
+        .payload_as_search_kernel_wire_error()
         .expect("error payload");
     assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
     assert_eq!(
@@ -1137,7 +1137,7 @@ fn daemon_control_errors_use_the_canonical_portable_error_contract() {
         &registry
             .dispatch(&create_request("products", "title"))
             .expect("create products"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     assert_portable_error(
         &registry
@@ -1329,7 +1329,7 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
                 "boundary_schema",
             ))
             .expect("create exactly 128-byte target"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     assert_lifecycle(
         &grpc
@@ -1340,11 +1340,11 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
             .expect("open boundary target via gRPC")
             .into_inner()
             .payload,
-        wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
     );
     assert_lifecycle(
         &execute_http_json(http_address, &delete_index_request(&boundary_target)).await,
-        wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
     );
 
     assert_lifecycle(
@@ -1355,7 +1355,7 @@ async fn direct_grpc_and_http_share_lifecycle_semantics() {
                 "already_there",
             ))
             .expect("seed duplicate target"),
-        wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
     let already_exists_expected =
         ir_portable_error_semantics(searchkernel_ir::already_exists_error());

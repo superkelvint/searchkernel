@@ -1,5 +1,6 @@
 use searchkernel_ir::__flatbuffers::{root, FlatBufferBuilder};
-use searchkernel_ir::{api, IndexContext, QueryIr};
+use searchkernel_ir::wire::v1::{self as wire_ir, schema as api};
+use searchkernel_ir::{IndexContext, QueryIr};
 
 fn context() -> IndexContext {
     let mut builder = FlatBufferBuilder::new();
@@ -54,7 +55,8 @@ fn context() -> IndexContext {
         },
     );
     builder.finish(definition, None);
-    IndexContext::from_api(root::<api::IndexDefinition>(builder.finished_data()).unwrap()).unwrap()
+    wire_ir::index_context_from_api(root::<api::IndexDefinition>(builder.finished_data()).unwrap())
+        .unwrap()
 }
 
 fn string_type<'a>(
@@ -155,7 +157,7 @@ fn representative_v2_converters_use_direct_core_calls() {
         .find(|field| field.name().as_str() == "title")
         .unwrap();
     assert_eq!(title.name().as_str(), "title");
-    let converted = context.search_to_ir(request).unwrap();
+    let converted = wire_ir::search_to_ir(&context, request).unwrap();
     assert!(matches!(converted.query(), QueryIr::Text(text) if text == "headphones"));
     assert!(converted.filter().is_some());
     assert_eq!(converted.ranking_request().profile, "default");

@@ -197,7 +197,7 @@ impl SearchKernel for TestService {
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
         let request = request.into_inner().payload;
-        let envelope = searchkernel_protocol::protocol::v2::root_as_request_envelope(&request)
+        let envelope = searchkernel_protocol::protocol::v1::root_as_request_envelope(&request)
             .map_err(|_| Status::invalid_argument("invalid request envelope"))?;
         let target = envelope
             .target()
@@ -207,20 +207,26 @@ impl SearchKernel for TestService {
             .lock()
             .expect("target log")
             .push(target.to_owned());
+        if target == "blocked-create"
+            && envelope.payload_type()
+                == searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
+        {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
         if target == "slow-create"
             && envelope.payload_type()
-                == searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest
+                == searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
         {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         let payload = match envelope.payload_type() {
-            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest => {
+            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
                 lifecycle_definition_response(&self.definition, true)
             }
-            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_OpenIndexRequest => {
+            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_OpenIndexRequest => {
                 lifecycle_definition_response(&self.definition, target == "wrong-response")
             }
-            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_DeleteIndexRequest => {
+            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_DeleteIndexRequest => {
                 lifecycle_delete_response()
             }
             _ => {
@@ -235,8 +241,8 @@ impl SearchKernel for TestService {
         let mut response = Response::new(FlatBufferFrame { payload });
         if matches!(
             envelope.payload_type(),
-            searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_CreateIndexRequest
-                | searchkernel_protocol::protocol::v2::RequestPayload::SearchKernel_V2_OpenIndexRequest
+            searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
+                | searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_OpenIndexRequest
         ) {
             response.metadata_mut().insert(
                 INDEX_GENERATION_METADATA_KEY,
@@ -251,16 +257,19 @@ fn lifecycle_definition_response(
     definition: &searchkernel_ir::IndexDefinitionIr,
     create: bool,
 ) -> Vec<u8> {
-    use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+    use searchkernel_protocol::{
+        protocol::v1::{self as wire, PROTOCOL_VERSION},
+        wire::v1 as api,
+    };
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let index = searchkernel_ir::index_definition_offset(&mut builder, definition);
+    let index = searchkernel_ir::wire::v1::index_definition_offset(&mut builder, definition);
     let (payload_type, payload) = if create {
         let result = api::CreateIndexResult::create(
             &mut builder,
             &api::CreateIndexResultArgs { index: Some(index) },
         );
         (
-            wire::ResponsePayload::SearchKernel_V2_CreateIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
             result.as_union_value(),
         )
     } else {
@@ -269,7 +278,7 @@ fn lifecycle_definition_response(
             &api::OpenIndexResultArgs { index: Some(index) },
         );
         (
-            wire::ResponsePayload::SearchKernel_V2_OpenIndexResult,
+            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
             result.as_union_value(),
         )
     };
@@ -286,14 +295,17 @@ fn lifecycle_definition_response(
 }
 
 fn lifecycle_delete_response() -> Vec<u8> {
-    use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+    use searchkernel_protocol::{
+        protocol::v1::{self as wire, PROTOCOL_VERSION},
+        wire::v1 as api,
+    };
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let result = api::DeleteIndexResult::create(&mut builder, &api::DeleteIndexResultArgs {});
     let envelope = wire::ResponseEnvelope::create(
         &mut builder,
         &wire::ResponseEnvelopeArgs {
             protocol_version: PROTOCOL_VERSION,
-            payload_type: wire::ResponsePayload::SearchKernel_V2_DeleteIndexResult,
+            payload_type: wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
             payload: Some(result.as_union_value()),
         },
     );
@@ -624,6 +636,59 @@ async fn lifecycle_mutation_deadlines_report_ambiguous_create() {
         .iter()
         .any(|detail| detail.code == "remote_outcome_unknown"));
 
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn slow_create_does_not_block_lifecycle_on_another_target() {
+    let server = TestServer::start(Arc::new(ProbeBackend::default())).await;
+    let client = RemoteClient::connect(&server.endpoint).expect("connect remote daemon");
+    let creating_client = client.clone();
+    let (created_tx, created_rx) = std::sync::mpsc::sync_channel(1);
+    let creating = std::thread::spawn(move || {
+        let definition = IndexDefinition::new().field(Field::text("title"));
+        created_tx
+            .send(creating_client.create_index("blocked-create", definition))
+            .expect("report create result");
+    });
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if server
+                .targets
+                .lock()
+                .expect("target log")
+                .iter()
+                .any(|target| target == "blocked-create")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("create reached daemon");
+
+    let opening_client = client.clone();
+    let (opened_tx, opened_rx) = std::sync::mpsc::sync_channel(1);
+    let opening = std::thread::spawn(move || {
+        opened_tx
+            .send(opening_client.open_index("other"))
+            .expect("report open result");
+    });
+    let opened = opened_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("unrelated open must finish while create is blocked")
+        .expect("open unrelated target");
+    opened.close().expect("close unrelated handle");
+    creating.join().expect("join create caller");
+    opening.join().expect("join open caller");
+    created_rx
+        .recv()
+        .expect("create result")
+        .expect("create target")
+        .close()
+        .expect("close created handle");
     server.shutdown().await;
 }
 

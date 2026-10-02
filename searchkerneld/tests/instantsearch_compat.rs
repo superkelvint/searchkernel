@@ -5,7 +5,10 @@ use std::sync::Arc;
 use flatbuffers::root;
 use searchkernel_dispatch::Dispatcher;
 use searchkernel_ir::{IndexContext, OperationIr, QueryIr};
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+use searchkernel_protocol::{
+    protocol::v1::{self as wire, PROTOCOL_VERSION},
+    wire::v1 as api,
+};
 use searchkernel_testkit::RecordingBackend;
 use searchkerneld::search_endpoint_test_support::{
     SearchEndpointBindError, SearchEndpointConfig, SearchEndpointPolicy, SearchEndpointRouteError,
@@ -26,10 +29,10 @@ fn decode_search(bytes: &[u8]) -> api::SearchRequest<'_> {
     assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
     assert_eq!(
         envelope.payload_type(),
-        wire::RequestPayload::SearchKernel_V2_SearchRequest
+        wire::RequestPayload::SearchKernel_Wire_SearchRequest
     );
     envelope
-        .payload_as_search_kernel_v2_search_request()
+        .payload_as_search_kernel_wire_search_request()
         .expect("search payload")
 }
 
@@ -82,7 +85,9 @@ fn context() -> Arc<IndexContext> {
 
     let definition =
         root::<api::IndexDefinition<'_>>(builder.finished_data()).expect("valid index definition");
-    Arc::new(IndexContext::from_api(definition).expect("valid index context"))
+    Arc::new(
+        searchkernel_ir::wire::v1::index_context_from_api(definition).expect("valid index context"),
+    )
 }
 
 #[test]

@@ -266,7 +266,7 @@ describe("managed-local host binary resolution", () => {
 
       const { Index } = await import("../src/node/index.js");
       const { IndexDefinitionT } = await import(
-        "../src/generated/flatbuffers/search-kernel/v2/index-definition.js"
+        "../src/semantic.js"
       );
       await expect(
         Index.create(join(root, "index"), { fields: new IndexDefinitionT() }),

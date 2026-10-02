@@ -11,11 +11,6 @@
       "require": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./low-level": {
-      "types": "./dist/low-level.d.ts",
-      "require": "./dist/low-level.js",
-      "default": "./dist/low-level.js"
-    },
     "./node": {
       "types": "./dist/node.d.ts",
       "require": "./dist/node.js",
@@ -27,7 +22,6 @@
     "bin",
     "lib",
     "manifest.json",
-    "src/generated",
     "examples"
   ],
   "scripts": {

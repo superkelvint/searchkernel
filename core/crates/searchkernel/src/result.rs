@@ -1128,7 +1128,7 @@ mod tests {
 
     #[test]
     fn response_byte_fixtures_reach_the_public_rust_result_projection() {
-        use searchkernel_protocol::protocol::v2 as wire;
+        use searchkernel_protocol::protocol::v1 as wire;
 
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../");
         let corpus: serde_json::Value = serde_json::from_slice(
@@ -1150,9 +1150,9 @@ mod tests {
             let envelope = core::__flatbuffers::root::<wire::ResponseEnvelope>(&bytes)
                 .unwrap_or_else(|error| panic!("decode {}: {error:?}", path.display()));
             let encoded = envelope
-                .payload_as_search_kernel_v2_search_result()
+                .payload_as_search_kernel_wire_search_result()
                 .unwrap_or_else(|| panic!("{} must contain SearchResult", path.display()));
-            let decoded = core::search_result_from_api(encoded)
+            let decoded = core::wire::v1::search_result_from_api(encoded)
                 .unwrap_or_else(|error| panic!("{name} failed IR decoding: {error:?}"));
             let actual: SearchResult<serde_json::Value> = search_result(decoded, &[])
                 .unwrap_or_else(|error| panic!("{name} failed public projection: {error:?}"));
@@ -1227,16 +1227,16 @@ mod tests {
             if case["failure_class"] == "response_payload_union" {
                 assert!(
                     envelope
-                        .payload_as_search_kernel_v2_search_result()
+                        .payload_as_search_kernel_wire_search_result()
                         .is_none(),
                     "Rust response projection accepted malformed response payload {name}"
                 );
             } else {
                 let result = envelope
-                    .payload_as_search_kernel_v2_search_result()
+                    .payload_as_search_kernel_wire_search_result()
                     .unwrap_or_else(|| panic!("{name} must reach the SearchResult decoder"));
                 assert!(
-                    core::search_result_from_api(result).is_err(),
+                    core::wire::v1::search_result_from_api(result).is_err(),
                     "Rust public result decoding accepted malformed scenario {name}"
                 );
             }
@@ -1258,7 +1258,7 @@ mod tests {
 
     #[test]
     fn production_encoded_result_preserves_non_finite_scalar_values_in_public_projection() {
-        use searchkernel_protocol::protocol::v2 as wire;
+        use searchkernel_protocol::protocol::v1 as wire;
 
         let mut result = searchkernel_ir::SearchResult::empty(searchkernel_ir::TotalHits {
             value: 1,
@@ -1280,11 +1280,11 @@ mod tests {
             ..Default::default()
         });
 
-        let bytes = core::search_result_to_api(&result)
+        let bytes = core::wire::v1::search_result_to_api(&result)
             .expect("production encoder must accept non-finite scalar values");
         let encoded = core::__flatbuffers::root::<wire::SearchResult>(&bytes)
             .expect("production-encoded SearchResult must decode as FlatBuffers");
-        let decoded = core::search_result_from_api(encoded)
+        let decoded = core::wire::v1::search_result_from_api(encoded)
             .expect("production-encoded non-finite values must decode to IR");
         let projection: SearchResult<serde_json::Value> = search_result(decoded, &[])
             .expect("public result projection must retain non-finite values");

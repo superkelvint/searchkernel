@@ -1,0 +1,2017 @@
+// Search Kernel portable API model. This schema is the normative contract.
+//
+// This schema is internal plumbing. Application developers should use idiomatic
+// language clients rather than generated FlatBuffers APIs directly.
+//
+// This is the current version-neutral wire payload schema. Compatible schema
+// evolution stays in this namespace; an incompatible wire major is selected at
+// the private codec/envelope boundary instead of by renaming payload types.
+//
+// Evolution rules within the current wire major:
+//   * existing table fields must not be reordered or removed;
+//   * new table fields are appended at the end;
+//   * removed fields are retained and may be marked deprecated;
+//   * enum numeric values and union variant order are permanent once released;
+//   * binary FlatBuffers are the interchange format; JSON is not the durable
+//     compatibility contract.
+//
+// No root_type is declared intentionally. Payload tables are framed by the
+// versioned request/response envelopes in searchkernel_request.fbs and
+// searchkernel_response.fbs. Embedded/per-index data operations execute against
+// an already-bound Index handle. Multi-index daemon routing and CreateIndex /
+// OpenIndex / DeleteIndex lifecycle operations are control-plane semantics handled above the
+// per-index dispatcher.
+
+namespace SearchKernel.Wire;
+
+// -----------------------------------------------------------------------------
+// Presence helpers
+// -----------------------------------------------------------------------------
+//
+// These single-field structs preserve proto3 optional-scalar presence without
+// relying on FlatBuffers optional-scalar support in every target language.
+// A null struct means "absent"; a present struct may contain the scalar's normal
+// default value (false/0/Unspecified) explicitly.
+
+struct OptionalBool {
+  value:bool;
+}
+
+struct OptionalDouble {
+  value:double;
+}
+
+struct OptionalUInt32 {
+  value:uint;
+}
+
+struct OptionalUInt64 {
+  value:ulong;
+}
+
+// -----------------------------------------------------------------------------
+// Common values
+// -----------------------------------------------------------------------------
+
+enum NullValue:ubyte {
+  Unspecified = 0,
+  Null = 1
+}
+
+table NullValueValue {
+  value:NullValue = Unspecified;
+}
+
+table BoolValue {
+  value:bool;
+}
+
+table Int64Value {
+  value:long;
+}
+
+table UInt64Value {
+  value:ulong;
+}
+
+// Finite IEEE-754 double. NaN and infinities use NonFiniteFloatValue so
+// standard FlatBuffers JSON can represent them without non-portable JSON numbers.
+table Float64Value {
+  value:double;
+}
+
+enum NonFiniteFloatKind:ubyte {
+  Unspecified = 0,
+  NaN = 1,
+  PositiveInfinity = 2,
+  NegativeInfinity = 3
+}
+
+table NonFiniteFloatValue {
+  kind:NonFiniteFloatKind = Unspecified;
+}
+
+table StringValue {
+  value:string;
+}
+
+table BytesValue {
+  value:[ubyte];
+}
+
+// Forward references are intentional: ValueList and ValueObject contain Value,
+// while Value's union can in turn contain ValueList and ValueObject.
+table ValueList {
+  values:[Value];
+}
+
+// All vectors used semantically as maps have one global invariant: duplicate
+// keys are invalid. Canonical producers sort by key; decoders/IR conversion must
+// reject duplicate semantic keys rather than use first/last-wins behavior.
+table ValueEntry {
+  key:string (key);
+  value:Value;
+}
+
+table StringEntry {
+  key:string (key);
+  value:string;
+}
+
+table ValueObject {
+  // Semantic map<string, Value>; global duplicate-key/canonical-order rules apply.
+  fields:[ValueEntry];
+}
+
+// General Vespa tensor value. The type_spec uses Vespa tensor type syntax,
+// for example `tensor<float>(x[384])` or
+// `tensor<float>(paragraph{},x[384])`. Dense, sparse, and mixed encodings are
+// separate so common embedding vectors remain compact without giving up the
+// general tensor model required by Vespa.
+table TensorAddressEntry {
+  dimension:string (key);
+  label:string;
+}
+
+table DenseTensorValues {
+  // Row-major cell order implied by the indexed dimensions in type_spec.
+  // Portable TensorValue cell values MUST be finite. C1/C2 rejects NaN and
+  // +/-Infinity in tensor payloads even though generic Value can represent
+  // non-finite scalar doubles explicitly via NonFiniteFloatValue.
+  values:[double];
+}
+
+table TensorCell {
+  address:[TensorAddressEntry];
+  // Portable tensor cells MUST be finite; see DenseTensorValues.
+  value:double;
+}
+
+table SparseTensorCells {
+  cells:[TensorCell];
+}
+
+table TensorBlock {
+  // Address of the mapped dimensions for this dense subspace.
+  address:[TensorAddressEntry];
+  // Row-major values for the indexed dimensions in type_spec. Portable tensor
+  // cells MUST be finite; see DenseTensorValues.
+  values:[double];
+}
+
+table MixedTensorBlocks {
+  blocks:[TensorBlock];
+}
+
+union TensorPayloadKind {
+  DenseTensorValues,
+  SparseTensorCells,
+  MixedTensorBlocks
+}
+
+table TensorValue {
+  // All cell values in every portable tensor encoding MUST be finite. This is
+// a portable semantic invariant enforced by C1/C2 and by standard JSON decoding.
+  type_spec:string;
+  payload:TensorPayloadKind;
+}
+
+union ValueKind {
+  NullValueValue,
+  BoolValue,
+  Int64Value,
+  UInt64Value,
+  Float64Value,
+  NonFiniteFloatValue,
+  StringValue,
+  BytesValue,
+  ValueList,
+  ValueObject,
+  TensorValue
+}
+
+table Value {
+  // Float64Value is finite-only at the portable semantic layer. NaN and
+// +/-Infinity MUST use NonFiniteFloatValue so binary and standard JSON
+  // transports preserve the same value.
+  kind:ValueKind;
+}
+
+table Document {
+  id:string;
+  // Protobuf map<string, Value>.
+  fields:[ValueEntry];
+}
+
+// -----------------------------------------------------------------------------
+// Index definition
+// -----------------------------------------------------------------------------
+
+// The schema separates physical/document data types from Search Kernel matching/indexing
+// behavior. Text/Keyword remain facade concepts and must not be used as recursive
+// data types.
+enum PrimitiveDataTypeKind:ubyte {
+  Unspecified = 0,
+  String = 1,
+  Bool = 2,
+  Byte = 3,
+  Int32 = 4,
+  Int64 = 5,
+  Float32 = 6,
+  Float64 = 7,
+  Raw = 8
+}
+
+table PrimitiveDataType {
+  kind:PrimitiveDataTypeKind = Unspecified;
+}
+
+table TensorDataType {
+  // Vespa tensor type syntax, e.g. tensor<float>(x[384]) or
+  // tensor<float>(paragraph{},x[384]).
+  type_spec:string;
+}
+
+table ArrayDataType {
+  element_type:DataType;
+}
+
+table MapDataType {
+  key_type:DataType;
+  value_type:DataType;
+}
+
+table WeightedSetDataType {
+  element_type:DataType;
+}
+
+table StructFieldDefinition {
+  name:string (key);
+  data_type:DataType;
+}
+
+// Named document structs are schema-level declarations in Vespa. The existing
+// inline StructDataType remains available for anonymous portable shapes, while
+// StructReferenceDataType points a field at a named schema struct.
+table NamedStructDefinition {
+  name:string (key);
+  fields:[StructFieldDefinition];
+  properties:[ValueEntry];
+}
+
+table StructDataType {
+  fields:[StructFieldDefinition];
+}
+
+table StructReferenceDataType {
+  name:string;
+}
+
+table PredicateDataType {
+}
+
+table PositionDataType {
+}
+
+// Vespa document reference type: reference<document-type>. Runtime values use
+// the normal document-id string representation; the schema retains the target
+// document type so reference semantics are not lost.
+table ReferenceDataType {
+  document_type:string;
+}
+
+union DataTypeKind {
+  PrimitiveDataType,
+  TensorDataType,
+  ArrayDataType,
+  MapDataType,
+  WeightedSetDataType,
+  StructDataType,
+  StructReferenceDataType,
+  PredicateDataType,
+  PositionDataType,
+  ReferenceDataType
+}
+
+table DataType {
+  kind:DataTypeKind;
+}
+
+enum MatchingMode:ubyte {
+  Unspecified = 0,
+  Text = 1,
+  Word = 2,
+  Exact = 3,
+  Gram = 4
+}
+
+table MatchingConfig {
+  mode:MatchingMode = Unspecified;
+  // Long-tail Vespa matching settings. Typed fields own their canonical paths;
+  // duplicate semantic keys in options are invalid.
+  options:[ValueEntry];
+}
+
+enum DistanceMetric:ubyte {
+  Unspecified = 0,
+  Euclidean = 1,
+  Angular = 2,
+  DotProduct = 3,
+  PrenormalizedAngular = 4,
+  GeoDegrees = 5,
+  Hamming = 6
+}
+
+table HnswIndexConfig {
+  // Presence of this table requests ANN/HNSW indexing. Distance metric belongs
+  // canonically to AttributeConfig; HNSW owns graph-construction controls only.
+  max_links_per_node:OptionalUInt32;
+  neighbors_to_explore_at_insert:OptionalUInt32;
+  options:[ValueEntry];
+}
+
+table IndexConfig {
+  enabled:OptionalBool;
+  hnsw:HnswIndexConfig;
+  options:[ValueEntry];
+}
+
+table AttributeConfig {
+  enabled:OptionalBool;
+  fast_search:OptionalBool;
+  fast_access:OptionalBool;
+  distance_metric:DistanceMetric = Unspecified;
+  options:[ValueEntry];
+}
+
+table SummaryConfig {
+  enabled:OptionalBool;
+  options:[ValueEntry];
+}
+
+// Search/index configuration for a nested struct/map sub-field. `path` uses
+// Vespa struct-field path syntax, e.g. `first_name`, `value.last_name`, or
+// `key`. Document data type and search configuration remain deliberately
+// separate: StructFieldDefinition describes the document type, while this table
+// describes how a nested path is materialized for matching/ranking/summary.
+table StructFieldConfig {
+  path:string (key);
+  indexing_script:string;
+  matching:MatchingConfig;
+  index:IndexConfig;
+  attribute:AttributeConfig;
+  summary:SummaryConfig;
+  rank:string;
+  query_commands:[string];
+  properties:[ValueEntry];
+}
+
+table Analyzer {
+  name:string;
+  version:uint;
+  options:[ValueEntry];
+}
+
+table FieldDefinition {
+  name:string (key);
+  data_type:DataType;
+
+  // Product-level capabilities/conveniences. C2 resolves these to explicit
+  // backend-neutral semantics before lowering. `facetable` is caller convenience
+  // only: facetable=true resolves to explicit grouping/attribute capability and
+  // does not survive as a canonical resolved facet concept.
+  stored:OptionalBool;
+  searchable:OptionalBool;
+  filterable:OptionalBool;
+  sortable:OptionalBool;
+  facetable:OptionalBool;
+
+  analyzer:Analyzer;
+  matching:MatchingConfig;
+  index:IndexConfig;
+  attribute:AttributeConfig;
+  summary:SummaryConfig;
+
+  // Raw Vespa indexing expression escape hatch. When supplied it is caller
+  // intent and must round-trip unchanged; backends may return Unsupported.
+  //
+  // FieldDefinition has no precedence rules between product conveniences,
+  // typed Vespa configuration, and indexing_script. Contradictory representations
+  // are invalid. For example searchable=false + index.enabled=true is invalid,
+  // and stored=false + summary.enabled=true is invalid. If indexing_script
+  // expresses semantics also represented by typed fields, C2 must prove they
+  // agree or reject the request; "last one wins" is forbidden.
+  indexing_script:string;
+
+  // Future field settings which are not yet promoted. Typed fields above own
+  // their canonical Vespa paths; overlap is a validation error, never precedence.
+  properties:[ValueEntry];
+
+  // Per-struct-field search/index configuration. Paths are relative to this
+  // field and may identify nested members such as `value.first_name`. Duplicate
+  // paths are invalid under the global semantic-map rule.
+  struct_fields:[StructFieldConfig];
+}
+
+table SearchField {
+  field:string;
+  weight:OptionalDouble;
+}
+
+table SearchFieldSelection {
+  fields:[SearchField];
+}
+
+table FieldProjection {
+  fields:[string];
+}
+
+table HighlightRequest {
+  fields:[string];
+}
+
+// Schema-level fieldset. `matching` and query_commands mirror the Vespa
+// fieldset settings; long-tail settings remain in properties.
+table FieldSetDefinition {
+  name:string (key);
+  fields:[string];
+  matching:MatchingConfig;
+  query_commands:[string];
+  properties:[ValueEntry];
+}
+
+// A field defined at schema scope rather than inside the document type. These
+// fields cannot be fed directly and normally derive their value via
+// indexing_script / input expressions.
+table SearchOnlyFieldDefinition {
+  field:FieldDefinition;
+}
+
+table ImportedFieldDefinition {
+  // Reference field in this document, target attribute field in the parent, and
+  // local alias exposed for matching/ranking/grouping/sorting.
+  reference_field:string;
+  target_field:string;
+  alias:string (key);
+  properties:[ValueEntry];
+}
+
+table DocumentSummaryFieldDefinition {
+  name:string (key);
+  source:string;
+  data_type:DataType;
+  struct_fields:[string];
+  properties:[ValueEntry];
+}
+
+table DocumentSummaryDefinition {
+  name:string (key);
+  inherits:[string];
+  fields:[DocumentSummaryFieldDefinition];
+  from_disk:OptionalBool;
+  omit_summary_features:OptionalBool;
+  properties:[ValueEntry];
+}
+
+// Ranking expression text remains Vespa-owned. Search Kernel models the
+// surrounding schema structure and preserves expressions losslessly as strings.
+table RankProfileInput {
+  name:string (key);
+  data_type:DataType;
+  default_value:Value;
+}
+
+table RankFunctionDefinition {
+  name:string (key);
+  arguments:[string];
+  expression:string;
+  inline:OptionalBool;
+}
+
+table RankPhaseDefinition {
+  expression:string;
+  rerank_count:OptionalUInt32;
+  rank_score_drop_limit:OptionalDouble;
+  properties:[ValueEntry];
+
+  // Stable Vespa rank-phase controls. Applicability is phase-specific and C2
+  // validates illegal combinations: rerank counts apply to reranking phases;
+  // keep-rank counts apply where Vespa exposes first-phase retention controls.
+  // Typed fields own these canonical properties; duplicates in properties are
+  // invalid rather than precedence-based.
+  total_rerank_count:OptionalUInt32;
+  keep_rank_count:OptionalUInt32;
+  total_keep_rank_count:OptionalUInt32;
+}
+
+table LiteralConstantSource {
+  value:Value;
+}
+
+table FileConstantSource {
+  path:string;
+}
+
+union ConstantSourceKind {
+  LiteralConstantSource,
+  FileConstantSource
+}
+
+table ConstantDefinition {
+  name:string (key);
+  data_type:DataType;
+  source:ConstantSourceKind;
+  properties:[ValueEntry];
+}
+
+table OnnxModelDefinition {
+  name:string (key);
+  file:string;
+  // ONNX input/output names map to Vespa ranking expressions / aliases.
+  inputs:[StringEntry];
+  outputs:[StringEntry];
+  gpu_device:OptionalUInt32;
+  intraop_threads:OptionalUInt32;
+  interop_threads:OptionalUInt32;
+  properties:[ValueEntry];
+}
+
+table RankProfileDefinition {
+  name:string (key);
+  inherits:[string];
+  inputs:[RankProfileInput];
+  functions:[RankFunctionDefinition];
+  first_phase:RankPhaseDefinition;
+  second_phase:RankPhaseDefinition;
+  global_phase:RankPhaseDefinition;
+  rank_features:[string];
+  match_features:[string];
+  summary_features:[string];
+  sort_features:[string];
+  constants:[ConstantDefinition];
+  onnx_models:[OnnxModelDefinition];
+  rank_properties:[StringEntry];
+  strict:OptionalBool;
+  properties:[ValueEntry];
+}
+
+// Logical daemon index identity. This is deliberately not a filesystem path.
+// Multi-index daemon callers use the same target for lifecycle and ordinary
+// operations. The protocol validator accepts only lowercase ASCII slugs.
+table IndexTarget {
+  name:string;
+}
+
+// Strict lifecycle semantics: create fails with AlreadyExists when the target
+// already exists; open and delete fail with NotFound when the target does not exist. The logical
+// daemon target is carried by the enclosing request envelope. IndexDefinition.name
+// is independent schema identity (and contributes to document-type resolution);
+// it is not an alternate target and need not equal the logical target.
+// Client-handle close is local and does not implicitly unload a shared daemon index.
+table CreateIndexRequest {
+  definition:IndexDefinition;
+}
+
+table CreateIndexResult {
+  index:IndexDefinition;
+}
+
+table OpenIndexRequest {
+}
+
+table OpenIndexResult {
+  index:IndexDefinition;
+}
+
+// Delete removes the logical target from the daemon registry and deletes its
+// persisted directory beneath the configured data root. Client-handle close is
+// still local-only and never implies index deletion.
+table DeleteIndexRequest {
+}
+
+table DeleteIndexResult {
+}
+
+table IndexDefinition {
+  name:string;
+  fields:[FieldDefinition];
+  default_search_fields:SearchFieldSelection;
+  properties:[ValueEntry];
+
+  // Full schema/document identity and inheritance are distinct concepts in
+  // Vespa and must remain distinct in the portable contract.
+  document_type:string;
+  schema_inherits:[string];
+  document_inherits:[string];
+
+  structs:[NamedStructDefinition];
+  fieldsets:[FieldSetDefinition];
+  schema_fields:[SearchOnlyFieldDefinition];
+  imported_fields:[ImportedFieldDefinition];
+  document_summaries:[DocumentSummaryDefinition];
+  rank_profiles:[RankProfileDefinition];
+  constants:[ConstantDefinition];
+  onnx_models:[OnnxModelDefinition];
+}
+
+// -----------------------------------------------------------------------------
+// Document operations
+// -----------------------------------------------------------------------------
+
+// Search Kernel create-only convenience. Canonical Vespa Put-style mutation
+// semantics, including test-and-set, are represented by UpsertRequest below.
+table InsertRequest {
+  document:Document;
+}
+
+table UpsertRequest {
+  document:Document;
+  // Vespa document-selection test-and-set condition. Empty means absent.
+  condition:string;
+}
+
+table SetField {
+  field:string;
+  value:Value;
+}
+
+table UnsetField {
+  field:string;
+}
+
+// PatchRequest is the intentionally small Search Kernel convenience surface.
+// C2 may normalize SetField/UnsetField into the broader UpdateRequest model,
+// but the high-level patch builder does not need to expose every Vespa update.
+union PatchOperationKind {
+  SetField,
+  UnsetField
+}
+
+table PatchOperation {
+  operation:PatchOperationKind;
+}
+
+table PatchRequest {
+  id:string;
+  operations:[PatchOperation];
+}
+
+// -----------------------------------------------------------------------------
+// Full Vespa document-update model
+// -----------------------------------------------------------------------------
+
+// Lossless Vespa field-path syntax, e.g. `people[34]`, `mymap{key}`, or
+// `nested{first}{second}[4].title`. Search Kernel may add a typed field-path
+// builder later without changing this canonical representation.
+table FieldPath {
+  path:string;
+}
+
+table AssignUpdate {
+  value:Value;
+}
+
+table ClearUpdate {
+}
+
+table AddUpdate {
+  value:Value;
+}
+
+table RemoveUpdate {
+  value:Value;
+}
+
+enum ArithmeticUpdateOperator:ubyte {
+  Unspecified = 0,
+  Increment = 1,
+  Decrement = 2,
+  Multiply = 3,
+  Divide = 4
+}
+
+table ArithmeticUpdate {
+  operator:ArithmeticUpdateOperator = Unspecified;
+  operand:Value;
+}
+
+// `match` selects one array/weighted-set element, then applies a supported
+// element-local operation. Nested MatchUpdate is deliberately not permitted.
+union MatchedElementUpdateKind {
+  AssignUpdate,
+  ClearUpdate,
+  ArithmeticUpdate
+}
+
+table MatchedElementUpdate {
+  operation:MatchedElementUpdateKind;
+}
+
+table MatchUpdate {
+  element:Value;
+  update:MatchedElementUpdate;
+}
+
+enum TensorModifyOperator:ubyte {
+  Unspecified = 0,
+  Replace = 1,
+  Add = 2,
+  Multiply = 3
+}
+
+union TensorModifyPayloadKind {
+  SparseTensorCells,
+  MixedTensorBlocks
+}
+
+table TensorModifyUpdate {
+  operator:TensorModifyOperator = Unspecified;
+  // Vespa modify accepts explicit addressed cells and mixed-tensor dense blocks.
+  // No tensor type_spec is required in caller intent; C2 resolves the target
+  // field's tensor type from the index schema.
+  payload:TensorModifyPayloadKind;
+  create:OptionalBool;
+}
+
+union UpdateOperationKind {
+  AssignUpdate,
+  ClearUpdate,
+  AddUpdate,
+  RemoveUpdate,
+  ArithmeticUpdate,
+  MatchUpdate,
+  TensorModifyUpdate
+}
+
+table UpdateOperation {
+  target:FieldPath;
+  operation:UpdateOperationKind;
+}
+
+table UpdateRequest {
+  id:string;
+  operations:[UpdateOperation];
+  // Vespa document-selection test-and-set expression. Empty means absent.
+  condition:string;
+  // create=true creates an empty document before applying the update when the
+  // document does not exist. Presence is significant.
+  create:OptionalBool;
+}
+
+table DeleteRequest {
+  id:string;
+  // Vespa document-selection test-and-set condition. Empty means absent.
+  condition:string;
+}
+
+table GetRequest {
+  id:string;
+
+  // Null => normal/default projection. Present-empty => explicitly no fields.
+  projection:FieldProjection;
+}
+
+table InsertResult {
+  id:string;
+}
+
+table UpsertResult {
+  id:string;
+}
+
+table PatchResult {
+  id:string;
+}
+
+table UpdateResult {
+  id:string;
+}
+
+table DeleteResult {
+  id:string;
+  deleted:bool;
+}
+
+table GetResult {
+  // Null represents a missing document; this is not a transport failure.
+  document:Document;
+}
+
+// -----------------------------------------------------------------------------
+// Search
+// -----------------------------------------------------------------------------
+
+// The schema is the parity-oriented request model. The client-facing facade may expose
+// smaller conveniences, but every such operation must lower losslessly into the
+// structures below before API -> IR conversion.
+
+enum ComparisonOp:ubyte {
+  Unspecified = 0,
+  Eq = 1,
+  Ne = 2,
+  Lt = 3,
+  Lte = 4,
+  Gt = 5,
+  Gte = 6
+}
+
+table FiniteRangeBound {
+  value:Value;
+}
+
+table NegativeInfinityBound {
+}
+
+table PositiveInfinityBound {
+}
+
+table UnboundedRangeBound {
+}
+
+union RangeBoundKind {
+  FiniteRangeBound,
+  NegativeInfinityBound,
+  PositiveInfinityBound,
+  UnboundedRangeBound
+}
+
+table RangeBound {
+  bound:RangeBoundKind;
+}
+
+// Typed reference to a query/filter field. `path` is the field name/path;
+// element_index represents Vespa's semantic single-element form such as
+// `my_numbers[2]` without forcing IR code to parse magic syntax from a string.
+// Absence of element_index means the field as a whole.
+table QueryFieldRef {
+  path:string;
+  element_index:OptionalUInt32;
+}
+
+table FilterAnd {
+  clauses:[FilterExpr];
+}
+
+table FilterOr {
+  clauses:[FilterExpr];
+}
+
+table FilterNot {
+  clause:FilterExpr;
+}
+
+table FilterComparison {
+  field:QueryFieldRef;
+  op:ComparisonOp = Unspecified;
+  value:Value;
+}
+
+table FilterRange {
+  field:QueryFieldRef;
+  lower:RangeBound;
+  upper:RangeBound;
+  include_lower:OptionalBool;
+  include_upper:OptionalBool;
+}
+
+table FilterExists {
+  field:QueryFieldRef;
+}
+
+table FilterIn {
+  field:QueryFieldRef;
+  values:[Value];
+}
+
+union FilterExprKind {
+  FilterAnd,
+  FilterOr,
+  FilterNot,
+  FilterComparison,
+  FilterRange,
+  FilterExists,
+  FilterIn
+}
+
+table FilterExpr {
+  expr:FilterExprKind;
+}
+
+// Search Kernel filter-language clauses stay as separate source units so spans
+// and diagnostics are preserved. C2 parses/binds them and ANDs them with the
+// structured clauses.
+table FilterClause {
+  source:string;
+  bindings:[ValueEntry];
+}
+
+table FilterRequest {
+  structured:[FilterExpr];
+
+  // These fields occupy released schema slots and cannot be removed or reused.
+  // They are deprecated: API -> IR rejects them and never resolves them.
+  sources:[string];
+  parameters:[ValueEntry];
+
+  // The active textual-filter representation. This field is appended so the
+  // incompatible legacy slots above are not reused.
+  textual:[FilterClause];
+}
+
+enum SortDirection:ubyte {
+  Unspecified = 0,
+  Asc = 1,
+  Desc = 2
+}
+
+table MissingFirst {
+}
+
+table MissingLast {
+}
+
+table MissingAs {
+  value:Value;
+}
+
+union MissingPolicyKind {
+  MissingFirst,
+  MissingLast,
+  MissingAs
+}
+
+table MissingPolicy {
+  policy:MissingPolicyKind;
+}
+
+table FieldSortTarget {
+  field:string;
+}
+
+table RelevanceSortTarget {
+}
+
+table RankFeatureSortTarget {
+  feature:string;
+}
+
+table RawSortTarget {
+  expression:string;
+}
+
+union SortTargetKind {
+  FieldSortTarget,
+  RelevanceSortTarget,
+  RankFeatureSortTarget,
+  RawSortTarget
+}
+
+table SortTarget {
+  target:SortTargetKind;
+}
+
+table SortExpr {
+  // Caller-intent sort target; RawSortTarget is allowed here as an escape hatch.
+  target:SortTarget;
+  direction:SortDirection = Unspecified;
+  missing:MissingPolicy;
+  // locale, strength, function annotations, and future Vespa sort annotations.
+  annotations:[ValueEntry];
+}
+
+// Canonical resolved sort targets deliberately exclude RawSortTarget. C2 must
+// normalize or reject raw sort expressions before producing ResolvedSearchRequest.
+union ResolvedSortTargetKind {
+  FieldSortTarget,
+  RelevanceSortTarget,
+  RankFeatureSortTarget
+}
+
+table ResolvedSortTarget {
+  target:ResolvedSortTargetKind;
+}
+
+table ResolvedSortExpr {
+  target:ResolvedSortTarget;
+  direction:SortDirection = Unspecified;
+  missing:MissingPolicy;
+  annotations:[ValueEntry];
+}
+
+
+// Query inputs are request/query context, not ranking-policy state: input.query()
+// may participate in matching (for example nearestNeighbor) as well as ranking.
+table LiteralQueryInput {
+  value:Value;
+}
+
+table ExpressionQueryInput {
+  // Vespa query-input expression, e.g. embed(transformer,@query). This is
+  // intentionally distinct from a literal StringValue with the same text.
+  expression:string;
+}
+
+union QueryInputKind {
+  LiteralQueryInput,
+  ExpressionQueryInput
+}
+
+table QueryInput {
+  name:string (key);
+  input:QueryInputKind;
+}
+
+// Ranking selects an opaque configured Vespa rank profile and carries the
+// rank-property namespace. Query inputs live on SearchRequest.
+table RankingRequest {
+  profile:string;
+  // Actual Vespa rank-property namespace. This is deliberately distinct from
+  // SearchRequest.properties, which owns the long-tail Query API namespace.
+  // Global map invariants apply: unique keys, canonical producer ordering, and
+  // duplicate rejection.
+  properties:[StringEntry];
+}
+
+// -----------------------------------------------------------------------------
+// Typed query tree
+// -----------------------------------------------------------------------------
+
+// Each QueryExpr has one structural operator plus an annotation map. Common
+// Vespa annotations such as label, weight, ranked, filter, distance,
+// totalTargetHits, approximate, distanceThreshold, linguistic controls, and
+// future custom annotations live in QueryExpr.annotations. There is exactly one
+// canonical representation for an annotation: do not duplicate it in a node.
+//
+// QueryContains supplies field context to fieldless item operators such as
+// TermQuery, QueryPhrase, QueryNear, QueryONear, QuerySameElement,
+// QueryAlternatives, QueryFuzzy, and QueryText. C2 validates item placement and
+// rejects context-free item nodes where Vespa would require a containing field.
+
+// Fieldless literal query item. Field context is supplied by QueryContains or
+// by an enclosing item such as sameElement(). C2 rejects a fieldless item where
+// no enclosing operator supplies a legal field context.
+table TermQuery {
+  value:Value;
+}
+
+// Vespa's basic text-matching structure is `field contains item`. The RHS is a
+// query item, allowing literals as well as phrase/near/equiv/alternatives/etc.
+table QueryContains {
+  field:QueryFieldRef;
+  item:QueryExpr;
+}
+
+table QueryAnd {
+  clauses:[QueryExpr];
+}
+
+table QueryOr {
+  clauses:[QueryExpr];
+}
+
+table QueryNot {
+  clause:QueryExpr;
+}
+
+table QueryTrue {
+}
+
+table QueryFalse {
+}
+
+table QueryComparison {
+  field:QueryFieldRef;
+  op:ComparisonOp = Unspecified;
+  value:Value;
+}
+
+table QueryRange {
+  field:QueryFieldRef;
+  lower:RangeBound;
+  upper:RangeBound;
+  include_lower:OptionalBool;
+  include_upper:OptionalBool;
+}
+
+table QueryIn {
+  field:QueryFieldRef;
+  values:[Value];
+}
+
+// Phrase/proximity children are query items, not raw values. C2 validates the
+// subset of child node kinds Vespa permits. This preserves negative and
+// independently annotated child terms without another tree redesign.
+table QueryPhrase {
+  terms:[QueryExpr];
+}
+
+table QueryNear {
+  terms:[QueryExpr];
+}
+
+table QueryONear {
+  terms:[QueryExpr];
+}
+
+// sameElement() is a fieldless item used under QueryContains. Its clauses may
+// themselves use relative field names, e.g. first_name contains "Joe".
+table QuerySameElement {
+  clauses:[QueryExpr];
+}
+
+table QueryEquiv {
+  clauses:[QueryExpr];
+}
+
+table QueryAlternative {
+  query:QueryExpr;
+  exactness:OptionalDouble;
+}
+
+table QueryAlternatives {
+  alternatives:[QueryAlternative];
+}
+
+table QueryFuzzy {
+  value:Value;
+}
+
+table QueryMatches {
+  field:QueryFieldRef;
+  pattern:string;
+}
+
+table QueryText {
+  text:string;
+}
+
+// defaultIndex belongs either to QueryExpr.annotations or QueryModel; it is not
+// duplicated here.
+table QueryUserInput {
+  value:string;
+}
+
+// userQuery() reads QueryModel.query_string.
+table QueryUserQuery {
+}
+
+table WeightedQueryItem {
+  key:Value;
+  weight:long;
+}
+
+table QueryDotProduct {
+  field:QueryFieldRef;
+  items:[WeightedQueryItem];
+}
+
+table QueryWeightedSet {
+  field:QueryFieldRef;
+  items:[WeightedQueryItem];
+}
+
+table QueryWand {
+  field:QueryFieldRef;
+  items:[WeightedQueryItem];
+}
+
+table QueryWeakAnd {
+  clauses:[QueryExpr];
+}
+
+table QueryRank {
+  match:QueryExpr;
+  rank:[QueryExpr];
+}
+
+// Vespa labeled(subQuery, "label", score) is a structural operator, distinct
+// from the generic `label` annotation: it attaches an explicit raw score that
+// ranking can read through itemRawScore(label).
+table QueryLabeled {
+  query:QueryExpr;
+  label:string;
+  score:double;
+}
+
+table QueryNonEmpty {
+  query:QueryExpr;
+}
+
+table QueryGeoLocation {
+  field:QueryFieldRef;
+  latitude:double;
+  longitude:double;
+  radius:string;
+}
+
+table QueryGeoBoundingBox {
+  field:QueryFieldRef;
+  south:double;
+  west:double;
+  north:double;
+  east:double;
+}
+
+table QueryNearestNeighbor {
+  document_field:QueryFieldRef;
+  // Name of a SearchRequest.inputs entry, not an inline tensor value.
+  query_tensor:string;
+}
+
+// Predicate feature maps use the general ValueObject representation because
+// Vespa accepts scalar values, multi-valued attributes, and bitmap-keyed nested
+// subquery maps such as {"0x1":{"hobby":["music","hiking"]}}. C2 validates
+// the predicate-specific leaf types rather than narrowing the portable shape.
+table QueryPredicate {
+  field:QueryFieldRef;
+  features:ValueObject;
+  range_features:ValueObject;
+}
+
+union QueryExprKind {
+  TermQuery,
+  QueryContains,
+  QueryAnd,
+  QueryOr,
+  QueryNot,
+  QueryTrue,
+  QueryFalse,
+  QueryComparison,
+  QueryRange,
+  QueryIn,
+  QueryPhrase,
+  QueryNear,
+  QueryONear,
+  QuerySameElement,
+  QueryEquiv,
+  QueryAlternatives,
+  QueryFuzzy,
+  QueryMatches,
+  QueryText,
+  QueryUserInput,
+  QueryUserQuery,
+  QueryDotProduct,
+  QueryWeightedSet,
+  QueryWand,
+  QueryWeakAnd,
+  QueryRank,
+  QueryLabeled,
+  QueryNonEmpty,
+  QueryGeoLocation,
+  QueryGeoBoundingBox,
+  QueryNearestNeighbor,
+  QueryPredicate
+}
+
+table QueryExpr {
+  expr:QueryExprKind;
+  annotations:[ValueEntry];
+}
+
+// -----------------------------------------------------------------------------
+// Query source and query model
+// -----------------------------------------------------------------------------
+
+table SearchKernelTextQuery {
+  text:string;
+}
+
+table TypedQuery {
+  query:QueryExpr;
+}
+
+table YqlQuery {
+  source:string;
+  // @name substitutions only. input.query(), rank properties, and generic Query
+  // API properties use separate namespaces below.
+  parameters:[ValueEntry];
+}
+
+table MatchAllQuery {
+}
+
+union QuerySourceKind {
+  SearchKernelTextQuery,
+  TypedQuery,
+  YqlQuery,
+  MatchAllQuery
+}
+
+table QuerySource {
+  source:QuerySourceKind;
+}
+
+// Mirrors Vespa's model.type.* family rather than collapsing it into invented
+// grammar/query_type names.
+table QueryModelType {
+  composite:string;
+  tokenization:string;
+  syntax:string;
+  profile:string;
+  is_yql_default:OptionalBool;
+}
+
+table QueryModel {
+  // model.queryString / query. QueryUserQuery consumes this value.
+  query_string:string;
+  default_index:string;
+  encoding:string;
+  filter:string;
+  language:string;
+  locale:string;
+  type:QueryModelType;
+  sources:[string];
+  restrict:[string];
+  search_path:string;
+  search_group:OptionalUInt32;
+}
+
+// Grouping is the canonical aggregation/faceting mechanism. High-level SDK
+// conveniences such as `.facet("brand")` normalize into structured grouping
+// operations (for example all -> group(attribute(brand)) -> each -> output(count))
+// before canonical IR. Facet is deliberately not a portable protocol concept.
+//
+// RawGroupingSource is the lossless Vespa grouping escape hatch. Structured
+// grouping is a real syntax tree suitable for canonical C2 resolution. Raw
+// fragments are not permitted inside StructuredGroupingSource or
+// ResolvedGroupingRequest: a raw source must be parsed/normalized before it can
+// appear as resolved semantics.
+table RawGroupingSource {
+  expression:string;
+}
+
+// -----------------------------------------------------------------------------
+// Grouping expressions
+// -----------------------------------------------------------------------------
+
+// attribute(field)
+table GroupingAttributeExpression {
+  field:string;
+}
+
+// Literal values used as grouping-function arguments.
+table GroupingLiteralExpression {
+  value:Value;
+}
+
+// Stable generic representation for the large/evolving Vespa grouping function
+// family, e.g. cat(...), md5(...), fixedwidth(...), predefined(...), time.year(...),
+// math.sqrt(...), array.at(...). C2 validates `name` against the supported
+// function set for the pinned Vespa revision.
+table GroupingFunctionExpression {
+  name:string;
+  arguments:[GroupingExpression];
+}
+
+enum GroupingUnaryOperator:ubyte {
+  Unspecified = 0,
+  Positive = 1,
+  Negative = 2
+}
+
+table GroupingUnaryExpression {
+  op:GroupingUnaryOperator = Unspecified;
+  expression:GroupingExpression;
+}
+
+enum GroupingBinaryOperator:ubyte {
+  Unspecified = 0,
+  Add = 1,
+  Subtract = 2,
+  Multiply = 3,
+  Divide = 4,
+  Modulo = 5
+}
+
+table GroupingBinaryExpression {
+  op:GroupingBinaryOperator = Unspecified;
+  left:GroupingExpression;
+  right:GroupingExpression;
+}
+
+// $alias
+table GroupingAliasReference {
+  name:string;
+}
+
+// Structured accessors required by Vespa grouping expressions such as
+// my_map{"foo"}.my_field and attributes.key/value. These remain explicit in
+// resolved IR instead of hiding raw grouping fragments in field names.
+table GroupingMemberExpression {
+  base:GroupingExpression;
+  member:string;
+}
+
+table GroupingMapLookupExpression {
+  base:GroupingExpression;
+  key:GroupingExpression;
+}
+
+// predefined(...) bucket argument. Boundaries are explicit so resolved IR
+// preserves finite/infinite endpoints and inclusion semantics without relying
+// on source spelling such as bucket[0,1000>.
+table GroupingBucketExpression {
+  lower:RangeBound;
+  upper:RangeBound;
+  include_lower:OptionalBool;
+  include_upper:OptionalBool;
+}
+
+// -----------------------------------------------------------------------------
+// Grouping aggregations
+// -----------------------------------------------------------------------------
+
+table CountAggregation {
+}
+
+table SumAggregation {
+  expression:GroupingExpression;
+}
+
+table AvgAggregation {
+  expression:GroupingExpression;
+}
+
+table MinAggregation {
+  expression:GroupingExpression;
+}
+
+table MaxAggregation {
+  expression:GroupingExpression;
+}
+
+table XorAggregation {
+  expression:GroupingExpression;
+}
+
+table StdDevAggregation {
+  expression:GroupingExpression;
+}
+
+table QuantilesAggregation {
+  // C2 validates finite quantiles and the admissible Vespa quantile domain.
+  quantiles:[double];
+  expression:GroupingExpression;
+}
+
+table SummaryAggregation {
+  // Empty means the backend/default summary class. A summary aggregation may
+  // not share a level with GroupingMaxOperation until the portable API has a
+  // distinct per-group hit-limit representation.
+  summary:string;
+}
+
+union AggregationKind {
+  CountAggregation,
+  SumAggregation,
+  AvgAggregation,
+  MinAggregation,
+  MaxAggregation,
+  XorAggregation,
+  StdDevAggregation,
+  QuantilesAggregation,
+  SummaryAggregation
+}
+
+// Aggregations are also expressions, since Vespa allows constructs such as
+// order(-count()) and order(max(price) * count()).  `AggregationKind` must be
+// declared before this field because flatc does not permit forward union
+// references.
+table GroupingAggregationExpression {
+  aggregation:AggregationKind;
+}
+
+union GroupingExpressionKind {
+  GroupingAttributeExpression,
+  GroupingLiteralExpression,
+  GroupingFunctionExpression,
+  GroupingUnaryExpression,
+  GroupingBinaryExpression,
+  GroupingAliasReference,
+  GroupingMemberExpression,
+  GroupingMapLookupExpression,
+  GroupingBucketExpression,
+  GroupingAggregationExpression
+}
+
+table GroupingExpression {
+  expr:GroupingExpressionKind;
+}
+
+// output(...) accepts a grouping expression rather than only an aggregator so
+// aliases can be emitted as output($alias). Ordinary aggregators are wrapped by
+// GroupingAggregationExpression.
+table GroupingOutput {
+  // Optional stable result label, including labels introduced by high-level
+  // conveniences such as `.facet()`.
+  label:string;
+  expression:GroupingExpression;
+}
+
+// -----------------------------------------------------------------------------
+// Grouping filter/keep expressions
+// -----------------------------------------------------------------------------
+
+// Normal Vespa grouping filtering is structurally distinct from ordinary
+// grouping value expressions. Keep this tree typed so resolved grouping never
+// embeds raw filter source.
+table GroupingFilterAnd {
+  clauses:[GroupingFilterExpr];
+}
+
+table GroupingFilterOr {
+  clauses:[GroupingFilterExpr];
+}
+
+table GroupingFilterNot {
+  clause:GroupingFilterExpr;
+}
+
+table GroupingFilterRegex {
+  expression:GroupingExpression;
+  pattern:string;
+}
+
+table GroupingFilterRange {
+  expression:GroupingExpression;
+  lower:GroupingExpression;
+  upper:GroupingExpression;
+  // Vespa range(min,max,expr) defaults to inclusive lower and exclusive upper.
+  // C2 resolves absent values to true/false respectively.
+  include_lower:OptionalBool;
+  include_upper:OptionalBool;
+}
+
+table GroupingFilterIsTrue {
+  expression:GroupingExpression;
+}
+
+union GroupingFilterExprKind {
+  GroupingFilterAnd,
+  GroupingFilterOr,
+  GroupingFilterNot,
+  GroupingFilterRegex,
+  GroupingFilterRange,
+  GroupingFilterIsTrue
+}
+
+table GroupingFilterExpr {
+  expr:GroupingFilterExprKind;
+}
+
+// -----------------------------------------------------------------------------
+// Grouping operations
+// -----------------------------------------------------------------------------
+
+// Labels attach to branches/list-producing operations, not group(...), matching
+// Vespa forms such as each(...) as(by_year). Parallel branches can therefore
+// carry independent labels.
+table GroupingAllOperation {
+  operations:[GroupingOperation];
+  label:string;
+}
+
+table GroupingEachOperation {
+  operations:[GroupingOperation];
+  label:string;
+}
+
+table GroupingGroupOperation {
+  // group(expr) selects the grouping key; nested branches remain sibling
+  // all(...)/each(...) operations in the enclosing operation list.
+  expression:GroupingExpression;
+}
+
+table GroupingOutputOperation {
+  outputs:[GroupingOutput];
+}
+
+table FiniteGroupingMax {
+  value:uint;
+}
+
+table InfiniteGroupingMax {
+}
+
+union GroupingMaxKind {
+  FiniteGroupingMax,
+  InfiniteGroupingMax
+}
+
+table GroupingMaxOperation {
+  value:GroupingMaxKind;
+}
+
+table GroupingPrecisionOperation {
+  value:uint;
+}
+
+// Vespa ordering is represented by the expression itself. Descending/ascending
+// forms use GroupingUnaryExpression Negative/Positive instead of a second
+// direction channel, avoiding duplicate canonical encodings.
+table GroupingOrderExpr {
+  expression:GroupingExpression;
+}
+
+table GroupingOrderOperation {
+  expressions:[GroupingOrderExpr];
+}
+
+// alias(name, expression)
+table GroupingAliasOperation {
+  name:string;
+  expression:GroupingExpression;
+}
+
+// Normal grouping filter(...) and keep(...) operations.
+table GroupingFilterOperation {
+  filter:GroupingFilterExpr;
+}
+
+table GroupingKeepOperation {
+  filter:GroupingFilterExpr;
+}
+
+// Streaming-search where(...) is retained separately. It is not a substitute
+// for ordinary grouping filter(...) / keep(...).
+table GroupingWhereOperation {
+  expression:GroupingExpression;
+}
+
+union GroupingOperationKind {
+  GroupingAllOperation,
+  GroupingEachOperation,
+  GroupingGroupOperation,
+  GroupingOutputOperation,
+  GroupingMaxOperation,
+  GroupingPrecisionOperation,
+  GroupingOrderOperation,
+  GroupingAliasOperation,
+  GroupingFilterOperation,
+  GroupingKeepOperation,
+  GroupingWhereOperation
+}
+
+table GroupingOperation {
+  operation:GroupingOperationKind;
+}
+
+table StructuredGroupingSource {
+  // One Vespa grouping statement has all(...) as its structural root. Multiple
+  // grouping statements are represented by multiple GroupingRequest entries.
+  root:GroupingAllOperation;
+}
+
+union GroupingSourceKind {
+  RawGroupingSource,
+  StructuredGroupingSource
+}
+
+table GroupingRequest {
+  source:GroupingSourceKind;
+  continuations:[string];
+}
+
+// Resolved grouping contains canonical structured semantics only. It cannot
+// contain raw grouping source or raw expression/filter fragments. A
+// RawGroupingSource must be compiled/normalized first; until that compiler is
+// available, inspection of such a request may return Unsupported rather than
+// lie about resolution.
+table ResolvedGroupingRequest {
+  // Resolved grouping is canonical and rooted exactly like a Vespa grouping
+  // statement; no alternative top-level operation-vector encoding exists.
+  root:GroupingAllOperation;
+  continuations:[string];
+}
+
+table PresentationRequest {
+  summary:string;
+  fields:FieldProjection;
+  highlighting:HighlightRequest;
+  format:string;
+  bolding:OptionalBool;
+  timing:OptionalBool;
+}
+
+// Typed fields own their canonical Vespa property paths. If SearchRequest.properties
+// contains a key which overlaps a populated typed field, C2 MUST reject the
+// request. There is no precedence rule. Request-level generic properties are the
+// single escape hatch for long-tail Query API fields not promoted above.
+//
+// Raw YQL conflict matrix. C2 deliberately does NOT parse YQL merely to detect
+// clauses duplicated inside the source text:
+//   YQL + high-level filters             -> invalid
+//   YQL + high-level sort                -> invalid
+//   YQL + SearchRequest.grouping         -> valid; Vespa programmatic grouping
+//                                           requests may coexist with YQL
+//   YQL + high-level projection/highlight-> invalid where YQL owns SELECT/output
+//   YQL + ranking/profile                -> valid
+//   YQL + query inputs                   -> valid
+//   YQL + rank properties                -> valid
+//   YQL + generic properties             -> valid
+//   YQL + offset/limit/timeout            -> preserved as separate request controls
+//
+// C2 preserves YqlQuery.source and the outer offset/limit/timeout without
+// inspecting raw YQL for duplicates. Any semantic interaction with clauses
+// contained inside raw YQL is resolved by the YQL compiler/backend that
+// understands YQL. SearchRequest.grouping is intentionally independent: it
+// models Vespa's programmatic GroupingRequest path, which can be supplied in
+// addition to a YQL query.
+//
+// search_fields applicability is source-specific and validated without guessing:
+//   SearchKernelTextQuery + search_fields -> valid
+//   TypedQuery + search_fields            -> invalid
+//   YqlQuery + search_fields              -> invalid
+//   MatchAllQuery + search_fields         -> invalid
+table SearchRequest {
+  query:QuerySource;
+  search_fields:SearchFieldSelection;
+  filters:FilterRequest;
+  sort:[SortExpr];
+  grouping:[GroupingRequest];
+
+  ranking:RankingRequest;
+  inputs:[QueryInput];
+
+  limit:OptionalUInt32;
+  offset:OptionalUInt32;
+  timeout_ms:OptionalUInt64;
+
+  query_model:QueryModel;
+  presentation:PresentationRequest;
+
+  // Long-tail/evolving Vespa Query API property namespace. Duplicate keys are
+  // invalid and semantic overlap with typed fields is invalid.
+  properties:[ValueEntry];
+
+  // Container-oriented controls are representable even if embedded execution
+  // returns Unsupported.
+  query_profile:string;
+  search_chain:string;
+}
+
+// -----------------------------------------------------------------------------
+// Search results
+// -----------------------------------------------------------------------------
+
+enum TotalHitsRelation:ubyte {
+  Unspecified = 0,
+  Exact = 1,
+  LowerBound = 2,
+  Approximate = 3,
+  Unknown = 4
+}
+
+table TotalHits {
+  value:ulong;
+  relation:TotalHitsRelation = Unspecified;
+}
+
+table HighlightSpan {
+  start_byte:uint;
+  end_byte:uint;
+}
+
+table HighlightFragment {
+  text:string;
+  matches:[HighlightSpan];
+}
+
+table HighlightResult {
+  field:string;
+  fragments:[HighlightFragment];
+}
+
+// Relevance is explicit because standard JSON rejects non-finite JSON numbers,
+// while Vespa results may legitimately carry +/-Infinity relevance.
+table FiniteRelevance {
+  value:double;
+}
+
+table NegativeInfinityRelevance {
+}
+
+table PositiveInfinityRelevance {
+}
+
+union RelevanceKind {
+  FiniteRelevance,
+  NegativeInfinityRelevance,
+  PositiveInfinityRelevance
+}
+
+table Relevance {
+  value:RelevanceKind;
+}
+
+table Hit {
+  id:string;
+  relevance:Relevance;
+  fields:[ValueEntry];
+  highlights:[HighlightResult];
+  source:string;
+  types:[string];
+  match_features:[ValueEntry];
+  summary_features:[ValueEntry];
+  rank_features:[ValueEntry];
+  sort_values:[Value];
+}
+
+
+table CoverageDegraded {
+  match_phase:OptionalBool;
+  timeout:OptionalBool;
+  adaptive_timeout:OptionalBool;
+  ann_timeout:OptionalBool;
+  non_ideal_state:OptionalBool;
+  metadata:[ValueEntry];
+}
+
+table Coverage {
+  coverage_percent:OptionalDouble;
+  documents:OptionalUInt64;
+  full:OptionalBool;
+  nodes:OptionalUInt32;
+  results:OptionalUInt64;
+  results_full:OptionalUInt64;
+  degraded:CoverageDegraded;
+  metadata:[ValueEntry];
+}
+
+// Vespa's result timing values are represented in seconds. Clients may expose
+// duration helpers, but the portable contract does not silently rescale them.
+table SearchTiming {
+  query_time_seconds:OptionalDouble;
+  search_time_seconds:OptionalDouble;
+  summary_fetch_time_seconds:OptionalDouble;
+  metadata:[ValueEntry];
+}
+
+table SearchResultError {
+  code:long;
+  summary:string;
+  message:string;
+  source:string;
+  stack_trace:string;
+  transient:OptionalBool;
+  metadata:[ValueEntry];
+}
+
+// Heterogeneous recursive result tree. A group can contain hits and/or nested
+// groups, matching Vespa grouping/result-tree semantics without stuffing hits
+// into a generic fields map.
+table ResultLimits {
+  from:Value;
+  to:Value;
+}
+
+table ResultGroup {
+  id:string;
+  label:string;
+  value:Value;
+  fields:[ValueEntry];
+  children:[ResultNode];
+  continuations:[StringEntry];
+  source:string;
+  types:[string];
+  relevance:Relevance;
+  limits:ResultLimits;
+  metadata:[ValueEntry];
+}
+
+union ResultNodeKind {
+  Hit,
+  ResultGroup
+}
+
+table ResultNode {
+  node:ResultNodeKind;
+}
+
+table SearchResult {
+  // SearchResult.root is the canonical result tree. Ordinary searches contain
+  // Hit nodes; grouping queries may interleave/nest ResultGroup and Hit nodes.
+  // Client-level facet/group/aggregation conveniences are projections over this
+  // tree and MUST NOT define an independent result semantic.
+  root:ResultNode;
+  total_hits:TotalHits;
+  coverage:Coverage;
+  timing:SearchTiming;
+  errors:[SearchResultError];
+  trace:Value;
+  metadata:[ValueEntry];
+}
+
+
+// -----------------------------------------------------------------------------
+// Introspection
+// -----------------------------------------------------------------------------
+
+// FlatBuffers unions do not portably include raw strings across all target
+// languages, so the protobuf oneof string field is wrapped in a table.
+table AnalyzeFieldTarget {
+  field:string;
+}
+
+union AnalyzeTarget {
+  Analyzer,
+  AnalyzeFieldTarget
+}
+
+table AnalyzeRequest {
+  target:AnalyzeTarget;
+  text:string;
+  language:string;
+}
+
+table AnalyzedToken {
+  surface:string;
+  term:string;
+  position:uint;
+  start_byte:uint;
+  end_byte:uint;
+}
+
+table AnalyzeResult {
+  tokens:[AnalyzedToken];
+}
+
+table DescribeRequest {
+}
+
+table DescribeResult {
+  index:IndexDefinition;
+}
+
+table InspectQueryRequest {
+  request:SearchRequest;
+}
+
+// Stable public projection of normalized C2 semantics. This is deliberately not
+// SearchRequest: caller-intent constructs such as filter source text are gone
+// after resolution, defaults are explicit, and future facade conveniences may
+// normalize into different canonical structures.
+table ResolvedSearchRequest {
+  query:QuerySource;
+  search_fields:[SearchField];
+  filters:[FilterExpr];
+  sort:[ResolvedSortExpr];
+  grouping:[ResolvedGroupingRequest];
+  ranking:RankingRequest;
+  inputs:[QueryInput];
+  limit:uint;
+  offset:uint;
+  timeout_ms:OptionalUInt64;
+  query_model:QueryModel;
+  presentation:PresentationRequest;
+  properties:[ValueEntry];
+  query_profile:string;
+  search_chain:string;
+}
+
+table InspectQueryResult {
+  resolved_request:ResolvedSearchRequest;
+}
+
+// -----------------------------------------------------------------------------
+// Portable errors
+// -----------------------------------------------------------------------------
+
+enum ErrorCode:ubyte {
+  Unspecified = 0,
+  InvalidArgument = 1,
+  NotFound = 2,
+  AlreadyExists = 3,
+  FailedPrecondition = 4,
+  Conflict = 5,
+  Unsupported = 6,
+  ResourceExhausted = 7,
+  Internal = 8,
+  Unavailable = 9,
+  DeadlineExceeded = 10
+}
+
+table ErrorDetail {
+  // Stable machine-readable detail code, e.g. "unknown_field".
+  code:string;
+
+  // Null means absent.
+  path:string;
+
+  // Human-readable explanation. Clients must not branch on this text.
+  message:string;
+
+  // Protobuf map<string, string>.
+  metadata:[StringEntry];
+}
+
+table Error {
+  code:ErrorCode = Unspecified;
+  message:string;
+  details:[ErrorDetail];
+  retryable:bool;
+}
+
+// Transport framing deliberately does not live in this schema. Index lifecycle
+// is part of the canonical request/response envelopes; gRPC and HTTP remain
+// framing/representation layers around the same domain operations.

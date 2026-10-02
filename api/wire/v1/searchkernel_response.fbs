@@ -1,0 +1,30 @@
+include "searchkernel.fbs";
+
+namespace SearchKernel.Protocol;
+
+union ResponsePayload {
+  // Append-only: existing union discriminator numbers are wire ABI.
+  SearchKernel.Wire.InsertResult,
+  SearchKernel.Wire.UpsertResult,
+  SearchKernel.Wire.PatchResult,
+  SearchKernel.Wire.DeleteResult,
+  SearchKernel.Wire.GetResult,
+  SearchKernel.Wire.SearchResult,
+  SearchKernel.Wire.AnalyzeResult,
+  SearchKernel.Wire.Error,
+  SearchKernel.Wire.DescribeResult,
+  SearchKernel.Wire.InspectQueryResult,
+  SearchKernel.Wire.UpdateResult,
+  SearchKernel.Wire.CreateIndexResult,
+  SearchKernel.Wire.OpenIndexResult,
+  SearchKernel.Wire.DeleteIndexResult
+}
+
+table ResponseEnvelope {
+  // Zero is deliberately invalid; senders must write the selected major.
+  protocol_version:uint = 0;
+  payload:ResponsePayload;
+}
+
+root_type ResponseEnvelope;
+file_identifier "SKRS";

@@ -1,6 +1,6 @@
 use super::fixtures::*;
 use super::*;
-use searchkernel_ir::api as ir_api;
+use searchkernel_ir::wire::v1::schema as ir_api;
 
 pub(super) fn test_index() -> (IndexRuntime, Index, Arc<RecordingBackend>) {
     let backend = Arc::new(RecordingBackend::new());
@@ -469,7 +469,7 @@ pub(super) fn portable_typed_request(
         searchkernel_ir::TypoPolicy::Disabled,
     )
     .with_inputs(inputs);
-    searchkernel_ir::search_request_ir_to_api(&request)
+    searchkernel_ir::wire::v1::search_request_ir_to_api(&request)
 }
 
 pub(super) fn typed_field(path: &str) -> searchkernel_ir::QueryFieldRefIr {
@@ -573,10 +573,10 @@ pub(super) fn assert_rust_and_portable_schema_error_match(
     let rust_error = definition_to_ir(&described)
         .expect_err("Rust schema ingress should reject invalid semantic state");
 
-    let bytes = searchkernel_ir::index_definition_ir_to_api(&definition);
+    let bytes = searchkernel_ir::wire::v1::index_definition_ir_to_api(&definition);
     let portable = searchkernel_ir::__flatbuffers::root::<ir_api::IndexDefinition>(&bytes)
         .expect("portable invalid fixture should still decode structurally");
-    let portable_error = searchkernel_ir::index_definition_to_ir(portable)
+    let portable_error = searchkernel_ir::wire::v1::index_definition_to_ir(portable)
         .expect_err("portable schema ingress should reject the same semantic state");
 
     assert_eq!(rust_error.details()[0].code, expected_detail_code);

@@ -2,7 +2,7 @@
 // @generated
 pub mod search_kernel {
     use super::*;
-    pub mod v2 {
+    pub mod wire {
         use super::*;
         mod null_value_generated;
         pub use self::null_value_generated::*;
@@ -574,5 +574,5 @@ pub mod search_kernel {
         pub use self::error_detail_generated::*;
         mod error_generated;
         pub use self::error_generated::*;
-    } // v2
+    } // wire
 } // search_kernel

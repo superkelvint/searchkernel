@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::*;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The deliberately small schema intent accepted by the ergonomic Rust
@@ -922,7 +922,7 @@ pub fn analyzer_to_ir(
 }
 
 impl IndexContext {
-    pub fn from_api(definition: api::IndexDefinition<'_>) -> Result<Self> {
+    pub(crate) fn from_api(definition: api::IndexDefinition<'_>) -> Result<Self> {
         let definition = index_definition_to_ir(definition)?;
         Ok(Self::from_definition_ir(definition))
     }

@@ -15,12 +15,17 @@ const packedDryRun = JSON.parse(execFileSync(
   { cwd: packageRoot, encoding: "utf8" },
 ));
 const files = new Set((packedDryRun[0]?.files ?? []).map((file) => file.path));
-for (const required of ["dist/index.js", "dist/index.d.ts", "dist/low-level.js", "dist/low-level.d.ts", "dist/node.js", "dist/node.d.ts"]) {
+for (const required of ["dist/index.js", "dist/index.d.ts", "dist/node.js", "dist/node.d.ts"]) {
   if (!files.has(required)) fail(`packed package is missing ${required}`);
 }
 
 require("@searchkernel/client");
-require("@searchkernel/client/low-level");
+try {
+  require("@searchkernel/client/low-level");
+  fail("package unexpectedly exports generated FlatBuffers bindings");
+} catch (error) {
+  if (error?.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+}
 require("@searchkernel/client/node");
 
 async function verifyInstalledManagedLocalContract() {
@@ -95,7 +100,12 @@ delete process.env.SEARCHKERNEL_LOCAL_HOST;
 
 (async () => {
   await import("@searchkernel/client");
-  await import("@searchkernel/client/low-level");
+  try {
+    await import("@searchkernel/client/low-level");
+    fail("package unexpectedly exports generated FlatBuffers bindings");
+  } catch (error) {
+    if (error?.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+  }
   await import("@searchkernel/client/node");
   await verifyInstalledManagedLocalContract();
 })().catch((error) => {

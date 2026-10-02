@@ -28,10 +28,10 @@ fn schema_field_builder_adds_schema_only_field_to_ir() {
 #[test]
 fn canonical_index_definition_round_trips_through_flatbuffers_without_loss() {
     let canonical = canonical_fixture_ir();
-    let bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+    let bytes = searchkernel_ir::wire::v1::index_definition_ir_to_api(&canonical);
     let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("encoded canonical fixture should parse");
-    let round_tripped = searchkernel_ir::index_definition_to_ir(root)
+    let round_tripped = searchkernel_ir::wire::v1::index_definition_to_ir(root)
         .expect("encoded canonical fixture should resolve");
     assert_eq!(canonical, round_tripped);
 }
@@ -44,8 +44,8 @@ fn portable_definition_encoding_uses_public_state_without_a_canonical_sidecar() 
     let described_bytes = crate::portable_definition::encode_portable_definition(&described);
     let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&described_bytes)
         .expect("portable definition should parse");
-    let encoded =
-        searchkernel_ir::index_definition_to_ir(root).expect("portable definition should resolve");
+    let encoded = searchkernel_ir::wire::v1::index_definition_to_ir(root)
+        .expect("portable definition should resolve");
 
     assert_eq!(encoded.default_search_fields()[0].weight().get(), 0.125);
 }
@@ -56,8 +56,8 @@ fn portable_definition_round_trips_all_public_schema_state() {
     let bytes = crate::portable_definition::encode_portable_definition(&described);
     let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("portable definition should parse");
-    let encoded =
-        searchkernel_ir::index_definition_to_ir(root).expect("portable definition should resolve");
+    let encoded = searchkernel_ir::wire::v1::index_definition_to_ir(root)
+        .expect("portable definition should resolve");
 
     assert_eq!(encoded, canonical);
 }

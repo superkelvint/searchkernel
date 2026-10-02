@@ -8,7 +8,10 @@ use std::{
 use flatbuffers::root;
 use searchkernel_dispatch::Dispatcher;
 use searchkernel_ir::{IndexContext, OperationIr, QueryIr};
-use searchkernel_protocol::{protocol::v2 as wire, v2 as api, PROTOCOL_VERSION};
+use searchkernel_protocol::{
+    protocol::v1::{self as wire, PROTOCOL_VERSION},
+    wire::v1 as api,
+};
 use searchkernel_testkit::RecordingBackend;
 use searchkerneld::search_endpoint_test_support::{
     await_blocking_with_timeout, SearchEndpointBindError, SearchEndpointConcurrency,
@@ -30,10 +33,10 @@ fn decode_search(bytes: &[u8]) -> api::SearchRequest<'_> {
     assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
     assert_eq!(
         envelope.payload_type(),
-        wire::RequestPayload::SearchKernel_V2_SearchRequest
+        wire::RequestPayload::SearchKernel_Wire_SearchRequest
     );
     envelope
-        .payload_as_search_kernel_v2_search_request()
+        .payload_as_search_kernel_wire_search_request()
         .expect("search payload")
 }
 
@@ -77,7 +80,9 @@ fn context() -> Arc<IndexContext> {
 
     let definition =
         root::<api::IndexDefinition<'_>>(builder.finished_data()).expect("valid index definition");
-    Arc::new(IndexContext::from_api(definition).expect("valid index context"))
+    Arc::new(
+        searchkernel_ir::wire::v1::index_context_from_api(definition).expect("valid index context"),
+    )
 }
 
 async fn wait_for_execution_capacity(
@@ -462,7 +467,7 @@ fn bound_request_reaches_canonical_dispatcher_and_ir_backend() {
     let response = wire::root_as_response_envelope(&response).expect("response envelope");
     assert_eq!(
         response.payload_type(),
-        wire::ResponsePayload::SearchKernel_V2_Error,
+        wire::ResponsePayload::SearchKernel_Wire_Error,
         "recording backend deliberately returns a portable error after recording"
     );
 
@@ -613,7 +618,7 @@ fn generated_hostile_query_properties_preserve_determinism_and_execution_boundar
                 assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
                 assert_eq!(
                     envelope.payload_type(),
-                    wire::RequestPayload::SearchKernel_V2_SearchRequest
+                    wire::RequestPayload::SearchKernel_Wire_SearchRequest
                 );
 
                 dispatcher.dispatch(&bytes).unwrap_or_else(|error| {

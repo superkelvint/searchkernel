@@ -2,13 +2,18 @@
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 flatc_bin=$(bash "$root/tools/resolve-flatbuffers.sh" flatc)
-generated_root=${TYPESCRIPT_GENERATED_DIR:-"$root/clients/typescript/src/generated"}
+generated_root=${TYPESCRIPT_GENERATED_DIR:-"$root/clients/typescript/src/_wire/v1/generated"}
 out="$generated_root/flatbuffers"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-"$flatc_bin" --ts --gen-object-api --gen-all -I "$root/api" -o "$tmp" \
-  "$root/api/searchkernel.fbs" "$root/api/searchkernel_request.fbs" "$root/api/searchkernel_response.fbs"
+"$flatc_bin" --ts --gen-object-api --gen-all -I "$root/api/wire/v1" -o "$tmp" \
+  "$root/api/wire/v1/searchkernel.fbs" "$root/api/wire/v1/searchkernel_request.fbs" "$root/api/wire/v1/searchkernel_response.fbs"
 rm -rf "$out"
 mkdir -p "$(dirname "$out")"
 mv "$tmp" "$out"
 trap - EXIT
+python=$(bash "$root/tools/resolve-python.sh")
+"$python" "$root/tools/normalize-generated-text.py" "$out"
+semantic_output=${TYPESCRIPT_SEMANTIC_MODEL_OUTPUT:-"$root/clients/typescript/src/semantic.ts"}
+"$python" "$root/tools/generate-typescript-semantic-model.py" \
+  "$root/core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs" "$semantic_output"

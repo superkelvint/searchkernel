@@ -724,7 +724,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 849
+              "line": 837
             },
             {
               "capability": "query.prefix_suffix_substring",
@@ -754,7 +754,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 204
+              "line": 206
             }
           ],
           "overrides": []
@@ -861,7 +861,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 179
+              "line": 181
             }
           ],
           "overrides": []
@@ -1414,7 +1414,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 261
+              "line": 263
             }
           ],
           "overrides": []
@@ -1572,7 +1572,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_flatbuffers_objects.py",
-              "line": 260
+              "line": 262
             }
           ],
           "overrides": []
@@ -2074,7 +2074,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 180
+              "line": 182
             }
           ],
           "overrides": []
@@ -2212,7 +2212,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 181
+              "line": 183
             }
           ],
           "overrides": []

@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
 import { Index } from "../src/client/index.js";
 import { value } from "../src/client/values.js";
-import { DocumentT } from "../src/generated/flatbuffers/search-kernel/v2/document.js";
-import { GetResultT } from "../src/generated/flatbuffers/search-kernel/v2/get-result.js";
-import { ValueEntryT } from "../src/generated/flatbuffers/search-kernel/v2/value-entry.js";
+import { DocumentT } from "../src/semantic.js";
+import { GetResultT } from "../src/semantic.js";
+import { ValueEntryT } from "../src/semantic.js";
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
 
 function indexWith(fields: Array<ValueEntryT | null>): Index {

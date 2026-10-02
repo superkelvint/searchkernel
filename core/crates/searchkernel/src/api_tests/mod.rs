@@ -5,7 +5,7 @@ use crate::{
     Tensor, WandOptions,
 };
 use searchkernel_ir::{BackendSession, IndexContext, OperationIr};
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
 use serde_json::json;
 use std::collections::BTreeMap;

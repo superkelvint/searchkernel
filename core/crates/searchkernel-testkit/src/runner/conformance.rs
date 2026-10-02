@@ -198,7 +198,7 @@ fn execute(
             let bytes = WireBuilder::new().build("index_definition_to_ir", index)?;
             let root = flatbuffers::root::<api::IndexDefinition>(&bytes)
                 .map_err(|error| error.to_string())?;
-            IndexContext::from_api(root).map_err(ExecError::Portable)
+            wire_ir::index_context_from_api(root).map_err(ExecError::Portable)
         })
         .transpose()?;
     let result = match operation {
@@ -214,7 +214,7 @@ fn execute(
             let bytes = WireBuilder::new().build("search_to_ir", &request)?;
             let root = flatbuffers::root::<api::SearchRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
-            let ir = context.inspect_query(root).map_err(ExecError::Portable)?;
+            let ir = wire_ir::inspect_query(&context, root).map_err(ExecError::Portable)?;
             ok(inspect_json(&ir))
         }
         "index_definition_to_ir" => {
@@ -250,15 +250,15 @@ fn execute(
             let root =
                 flatbuffers::root::<api::Value>(&bytes).map_err(|error| error.to_string())?;
             ok(field_value_json(
-                &context
-                    .value_to_ir(
-                        input
-                            .get("field")
-                            .and_then(JsonValue::as_str)
-                            .unwrap_or_default(),
-                        root,
-                    )
-                    .map_err(ExecError::Portable)?,
+                &wire_ir::value_to_ir(
+                    &context,
+                    input
+                        .get("field")
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or_default(),
+                    root,
+                )
+                .map_err(ExecError::Portable)?,
             ))
         }
         "document_to_ir" => {
@@ -266,7 +266,7 @@ fn execute(
             let root =
                 flatbuffers::root::<api::Document>(&bytes).map_err(|error| error.to_string())?;
             ok(document_json(
-                &context.document_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::document_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "search_fields_to_ir" => {
@@ -274,9 +274,7 @@ fn execute(
             let fields = if input.get("selection").is_some_and(|value| !value.is_null()) {
                 let root = flatbuffers::root::<api::SearchFieldSelection>(&bytes)
                     .map_err(|error| error.to_string())?;
-                context
-                    .search_fields_to_ir(root)
-                    .map_err(ExecError::Portable)?
+                wire_ir::search_fields_to_ir(&context, root).map_err(ExecError::Portable)?
             } else {
                 context.definition().default_search_fields().to_vec()
             };
@@ -290,13 +288,9 @@ fn execute(
             {
                 let root = flatbuffers::root::<api::FieldProjection>(&bytes)
                     .map_err(|error| error.to_string())?;
-                context
-                    .projection_to_ir(Some(root))
-                    .map_err(ExecError::Portable)?
+                wire_ir::projection_to_ir(&context, Some(root)).map_err(ExecError::Portable)?
             } else {
-                context
-                    .projection_to_ir(None)
-                    .map_err(ExecError::Portable)?
+                wire_ir::projection_to_ir(&context, None).map_err(ExecError::Portable)?
             };
             ok(projection_json(&projection))
         }
@@ -308,13 +302,9 @@ fn execute(
             {
                 let root = flatbuffers::root::<api::HighlightRequest>(&bytes)
                     .map_err(|error| error.to_string())?;
-                context
-                    .highlighting_to_ir(Some(root))
-                    .map_err(ExecError::Portable)?
+                wire_ir::highlighting_to_ir(&context, Some(root)).map_err(ExecError::Portable)?
             } else {
-                context
-                    .highlighting_to_ir(None)
-                    .map_err(ExecError::Portable)?
+                wire_ir::highlighting_to_ir(&context, None).map_err(ExecError::Portable)?
             };
             ok(highlighting_json(&highlighting))
         }
@@ -323,9 +313,7 @@ fn execute(
             let root = flatbuffers::root::<api::FilterComparison>(&bytes)
                 .map_err(|error| error.to_string())?;
             ok(comparison_json(
-                &context
-                    .comparison_to_ir(root)
-                    .map_err(ExecError::Portable)?,
+                &wire_ir::comparison_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "range_to_ir" => {
@@ -333,7 +321,7 @@ fn execute(
             let root =
                 flatbuffers::root::<api::FilterRange>(&bytes).map_err(|error| error.to_string())?;
             ok(range_json(
-                &context.range_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::range_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "filter_to_ir" => {
@@ -341,14 +329,14 @@ fn execute(
             let root =
                 flatbuffers::root::<api::FilterExpr>(&bytes).map_err(|error| error.to_string())?;
             ok(filter_json(
-                &context.filter_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::filter_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "filters_to_ir" => {
             let context = context.ok_or("operation requires index fixture")?;
             let root = flatbuffers::root::<api::SearchRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
-            let request = context.search_to_ir(root).map_err(ExecError::Portable)?;
+            let request = wire_ir::search_to_ir(&context, root).map_err(ExecError::Portable)?;
             ok(request.filter().map(filter_json).unwrap_or(JsonValue::Null))
         }
         "sort_to_ir" => {
@@ -356,7 +344,7 @@ fn execute(
             let root =
                 flatbuffers::root::<api::SortExpr>(&bytes).map_err(|error| error.to_string())?;
             ok(sort_json(
-                &context.sort_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::sort_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "facet_to_ir" => {
@@ -367,8 +355,7 @@ fn execute(
             let context = context.ok_or("operation requires index fixture")?;
             let root = flatbuffers::root::<api::RankingRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
-            let ranking = context
-                .ranking_request_to_ir(Some(root))
+            let ranking = wire_ir::ranking_request_to_ir(&context, Some(root))
                 .map_err(ExecError::Portable)?;
             ok(json!({"profile": ranking.profile, "properties": ranking.properties}))
         }
@@ -380,25 +367,25 @@ fn execute(
             {
                 let root = flatbuffers::root::<api::QueryExpr>(&bytes)
                     .map_err(|error| error.to_string())?;
-                context
-                    .query_to_ir(
-                        input
-                            .get("query")
-                            .and_then(JsonValue::as_str)
-                            .unwrap_or_default(),
-                        Some(root),
-                    )
-                    .map_err(ExecError::Portable)?
+                wire_ir::query_to_ir(
+                    &context,
+                    input
+                        .get("query")
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or_default(),
+                    Some(root),
+                )
+                .map_err(ExecError::Portable)?
             } else {
-                context
-                    .query_to_ir(
-                        input
-                            .get("query")
-                            .and_then(JsonValue::as_str)
-                            .unwrap_or_default(),
-                        None,
-                    )
-                    .map_err(ExecError::Portable)?
+                wire_ir::query_to_ir(
+                    &context,
+                    input
+                        .get("query")
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or_default(),
+                    None,
+                )
+                .map_err(ExecError::Portable)?
             };
             ok(query_json(&query))
         }
@@ -406,7 +393,8 @@ fn execute(
             let context = context.ok_or("operation requires index fixture")?;
             let root = flatbuffers::root::<api::SearchRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
-            let mut output = search_json(&context.search_to_ir(root).map_err(ExecError::Portable)?);
+            let mut output =
+                search_json(&wire_ir::search_to_ir(&context, root).map_err(ExecError::Portable)?);
             if let Some(items) = input.get("facets").and_then(JsonValue::as_array) {
                 let parsed = items
                     .iter()
@@ -432,7 +420,7 @@ fn execute(
             let root = flatbuffers::root::<api::AnalyzeRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
             ok(analyze_json(
-                &context.analyze_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::analyze_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "insert_to_ir" => {
@@ -440,7 +428,7 @@ fn execute(
             let root = flatbuffers::root::<api::InsertRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
             ok(insert_json(
-                &context.insert_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::insert_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "upsert_to_ir" => {
@@ -448,7 +436,7 @@ fn execute(
             let root = flatbuffers::root::<api::UpsertRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
             ok(upsert_json(
-                &context.upsert_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::upsert_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "patch_to_ir" => {
@@ -456,7 +444,7 @@ fn execute(
             let root = flatbuffers::root::<api::PatchRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
             ok(patch_json(
-                &context.patch_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::patch_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "update_to_ir" => {
@@ -464,7 +452,7 @@ fn execute(
             let root = flatbuffers::root::<api::UpdateRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
             ok(update_json(
-                &context.update_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::update_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "delete_to_ir" => {
@@ -472,7 +460,7 @@ fn execute(
             let root = flatbuffers::root::<api::DeleteRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
             ok(delete_json(
-                &context.delete_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::delete_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "get_to_ir" => {
@@ -480,7 +468,7 @@ fn execute(
             let root =
                 flatbuffers::root::<api::GetRequest>(&bytes).map_err(|error| error.to_string())?;
             ok(get_json(
-                &context.get_to_ir(root).map_err(ExecError::Portable)?,
+                &wire_ir::get_to_ir(&context, root).map_err(ExecError::Portable)?,
             ))
         }
         "write_to_ir" => {
@@ -493,27 +481,27 @@ fn execute(
                 "insert" => {
                     let root = flatbuffers::root::<api::InsertRequest>(&bytes)
                         .map_err(|error| error.to_string())?;
-                    context.write_to_ir(WriteRequestRef::Insert(root))
+                    wire_ir::write_to_ir(&context, WriteRequestRef::Insert(root))
                 }
                 "upsert" => {
                     let root = flatbuffers::root::<api::UpsertRequest>(&bytes)
                         .map_err(|error| error.to_string())?;
-                    context.write_to_ir(WriteRequestRef::Upsert(root))
+                    wire_ir::write_to_ir(&context, WriteRequestRef::Upsert(root))
                 }
                 "patch" => {
                     let root = flatbuffers::root::<api::PatchRequest>(&bytes)
                         .map_err(|error| error.to_string())?;
-                    context.write_to_ir(WriteRequestRef::Patch(root))
+                    wire_ir::write_to_ir(&context, WriteRequestRef::Patch(root))
                 }
                 "update" => {
                     let root = flatbuffers::root::<api::UpdateRequest>(&bytes)
                         .map_err(|error| error.to_string())?;
-                    context.write_to_ir(WriteRequestRef::Update(root))
+                    wire_ir::write_to_ir(&context, WriteRequestRef::Update(root))
                 }
                 "delete" => {
                     let root = flatbuffers::root::<api::DeleteRequest>(&bytes)
                         .map_err(|error| error.to_string())?;
-                    context.write_to_ir(WriteRequestRef::Delete(root))
+                    wire_ir::write_to_ir(&context, WriteRequestRef::Delete(root))
                 }
                 other => return Err(format!("unknown write kind {other}").into()),
             }

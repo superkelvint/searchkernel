@@ -6,11 +6,12 @@ from pathlib import Path
 
 from searchkernel.ergonomic import Hit, ResultGroup, SearchResults
 from searchkernel.protocol import unpack_response
+from searchkernel._semantic import is_semantic_table
 
-# Importing searchkernel.protocol installs the packaged FlatBuffers generation
+# The version-neutral protocol helper delegates to its private wire codec.
 # root on sys.path. Keep generated-wire imports after that production bootstrap.
-from SearchKernel.V2.SearchResult import SearchResultT
-from SearchKernel.V2.TotalHitsRelation import TotalHitsRelation
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchResult import SearchResultT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHitsRelation import TotalHitsRelation
 
 
 def _value(value):
@@ -182,7 +183,7 @@ class ResultResponseConformance(unittest.TestCase):
             with self.subTest(scenario=case["id"]):
                 encoded = (case_directory / case["file"]).read_bytes()
                 envelope = unpack_response(encoded, "search")
-                self.assertIsInstance(envelope.payload, SearchResultT)
+                self.assertTrue(is_semantic_table(envelope.payload, "SearchResult"))
                 result = SearchResults(envelope.payload)
                 self.assertIsNotNone(result.root)
                 traces[case["id"]] = _trace(result)

@@ -1,4 +1,4 @@
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 
 pub(in crate::index::api_tests) fn analyzer<'a>(
     builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,

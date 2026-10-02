@@ -1,9 +1,9 @@
 use super::*;
 use crate::model::*;
-use searchkernel_protocol::v2 as api;
+use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 impl IndexContext {
-    pub fn ranking_request_to_ir(
+    pub(crate) fn ranking_request_to_ir(
         &self,
         ranking: Option<api::RankingRequest<'_>>,
     ) -> Result<RankingRequestIr> {
