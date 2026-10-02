@@ -152,10 +152,17 @@ impl IndexRegistry {
     }
 
     pub fn dispatch(&self, request: &[u8]) -> Result<Vec<u8>, RegistryDispatchError> {
-        Ok(self.dispatch_internal(request)?.payload)
+        Ok(self.dispatch_routed(request)?.payload)
     }
 
-    fn dispatch_internal(
+    pub(crate) fn dispatch_grpc(
+        &self,
+        request: &[u8],
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+        self.dispatch_routed(request)
+    }
+
+    fn dispatch_routed(
         &self,
         request: &[u8],
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
@@ -188,10 +195,7 @@ impl IndexRegistry {
         match control {
             ControlPlaneRequest::Create { target, definition } => self.create(target, definition),
             ControlPlaneRequest::Open { target } => self.open(target),
-            ControlPlaneRequest::Delete {
-                target,
-                expected_generation,
-            } => self.delete_index(target, expected_generation),
+            ControlPlaneRequest::Delete { target } => self.delete_index(target),
             ControlPlaneRequest::Route {
                 target,
                 expected_generation,
@@ -375,11 +379,7 @@ impl IndexRegistry {
         )))
     }
 
-    fn delete_index(
-        &self,
-        target: &str,
-        expected_generation: Option<&str>,
-    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+    fn delete_index(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let transition = self.transition_lock(target)?;
         let _transition = transition
             .lock()
@@ -389,24 +389,11 @@ impl IndexRegistry {
             Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
         };
 
-        let entry = {
-            let mut entries = self
-                .entries
-                .lock()
-                .map_err(|_| RegistryDispatchError::Poisoned)?;
-            if let Some(entry) = entries.get(target) {
-                if let Err(error) =
-                    wire_ir::check_expected_generation(expected_generation, &entry.generation)
-                {
-                    return Ok(RegistryDispatchResult::payload(encode_error(error)));
-                }
-            } else if expected_generation.is_some() {
-                return Ok(RegistryDispatchResult::payload(encode_error(
-                    searchkernel_ir::stale_index_handle_error(),
-                )));
-            }
-            entries.remove(target)
-        };
+        let entry = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?
+            .remove(target);
         if entry.is_none() && !path.exists() {
             return Ok(RegistryDispatchResult::payload(encode_error(
                 searchkernel_ir::not_found_error(),
@@ -458,10 +445,10 @@ impl IndexRegistry {
                 searchkernel_ir::not_found_error(),
             )));
         };
-        if let Err(error) =
-            wire_ir::check_expected_generation(expected_generation, &entry.generation)
-        {
-            return Ok(RegistryDispatchResult::payload(encode_error(error)));
+        if expected_generation.is_some_and(|generation| generation != entry.generation.as_str()) {
+            return Ok(RegistryDispatchResult::payload(encode_error(
+                searchkernel_ir::stale_index_handle_error(),
+            )));
         }
         let lifecycle = entry
             .lifecycle
@@ -533,11 +520,11 @@ fn lifecycle_index_error_to_portable(
 fn encode_lifecycle_result(
     definition: &searchkernel_ir::IndexDefinitionIr,
     payload_type: wire::ResponsePayload,
-    generation: &str,
+    index_generation: &str,
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = wire_ir::index_definition_offset(&mut builder, definition);
-    let generation = builder.create_string(generation);
+    let generation = builder.create_string(index_generation);
     let payload = match payload_type {
         wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => {
             api::CreateIndexResult::create(

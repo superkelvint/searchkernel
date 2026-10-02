@@ -21,6 +21,7 @@ impl<'a> ::flatbuffers::Follow<'a> for IndexTarget<'a> {
 
 impl<'a> IndexTarget<'a> {
     pub const VT_NAME: ::flatbuffers::VOffsetT = 4;
+    pub const VT_GENERATION: ::flatbuffers::VOffsetT = 6;
 
     #[inline]
     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -37,6 +38,9 @@ impl<'a> IndexTarget<'a> {
         args: &'args IndexTargetArgs<'args>,
     ) -> ::flatbuffers::WIPOffset<IndexTarget<'bldr>> {
         let mut builder = IndexTargetBuilder::new(_fbb);
+        if let Some(x) = args.generation {
+            builder.add_generation(x);
+        }
         if let Some(x) = args.name {
             builder.add_name(x);
         }
@@ -53,6 +57,16 @@ impl<'a> IndexTarget<'a> {
                 .get::<::flatbuffers::ForwardsUOffset<&str>>(IndexTarget::VT_NAME, None)
         }
     }
+    #[inline]
+    pub fn generation(&self) -> Option<&'a str> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<::flatbuffers::ForwardsUOffset<&str>>(IndexTarget::VT_GENERATION, None)
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for IndexTarget<'_> {
@@ -63,17 +77,26 @@ impl ::flatbuffers::Verifiable for IndexTarget<'_> {
     ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
         v.visit_table(pos)?
             .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("name", Self::VT_NAME, false)?
+            .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                "generation",
+                Self::VT_GENERATION,
+                false,
+            )?
             .finish();
         Ok(())
     }
 }
 pub struct IndexTargetArgs<'a> {
     pub name: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub generation: Option<::flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for IndexTargetArgs<'a> {
     #[inline]
     fn default() -> Self {
-        IndexTargetArgs { name: None }
+        IndexTargetArgs {
+            name: None,
+            generation: None,
+        }
     }
 }
 
@@ -86,6 +109,13 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> IndexTargetBuilder<'a, 'b, A>
     pub fn add_name(&mut self, name: ::flatbuffers::WIPOffset<&'b str>) {
         self.fbb_
             .push_slot_always::<::flatbuffers::WIPOffset<_>>(IndexTarget::VT_NAME, name);
+    }
+    #[inline]
+    pub fn add_generation(&mut self, generation: ::flatbuffers::WIPOffset<&'b str>) {
+        self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+            IndexTarget::VT_GENERATION,
+            generation,
+        );
     }
     #[inline]
     pub fn new(
@@ -108,6 +138,7 @@ impl ::core::fmt::Debug for IndexTarget<'_> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         let mut ds = f.debug_struct("IndexTarget");
         ds.field("name", &self.name());
+        ds.field("generation", &self.generation());
         ds.finish()
     }
 }

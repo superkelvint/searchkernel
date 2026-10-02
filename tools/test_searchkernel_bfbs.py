@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import unittest
+import subprocess
+import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from searchkernel_bfbs import ReflectedSchema
 
@@ -32,6 +35,26 @@ class SearchKernelBfbsTest(unittest.TestCase):
         self.assertEqual(self.schema.ts_default(self.field("OptionalBool", "value")), "false")
         self.assertEqual(self.schema.ts_type(self.field("TotalHits", "value")), "bigint")
         self.assertEqual(self.schema.ts_default(self.field("TotalHits", "value")), "BigInt('0')")
+
+    def test_typescript_generation_handles_optional_vectors_and_reserved_parameters(self) -> None:
+        self.assertEqual(
+            self.schema.ts_default(self.field("AnalyzeResult", "tokens")),
+            "[]",
+        )
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "semantic.ts"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "tools/generate-typescript-semantic-model.py"),
+                    str(BFBS),
+                    str(output),
+                ],
+                check=True,
+            )
+            generated = output.read_text(encoding="utf-8")
+        self.assertIn("arguments_: (GroupingExpressionT)[] = []", generated)
+        self.assertIn("['name', 'arguments'], [name, arguments_]", generated)
 
     def test_struct_references_are_supported_by_semantic_generation(self) -> None:
         stored = self.field("FieldDefinition", "stored")

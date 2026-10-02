@@ -135,8 +135,10 @@ fn context() -> Arc<IndexContext> {
     );
     builder.finish(definition, None);
     Arc::new(
-        IndexContext::from_api(root::<api::IndexDefinition<'_>>(builder.finished_data()).unwrap())
-            .unwrap(),
+        searchkernel_ir::wire::v1::index_context_from_api(
+            root::<api::IndexDefinition<'_>>(builder.finished_data()).unwrap(),
+        )
+        .unwrap(),
     )
 }
 
@@ -164,6 +166,7 @@ fn lifecycle_request(kind: wire::RequestPayload) -> Vec<u8> {
         &mut builder,
         &api::IndexTargetArgs {
             name: Some(target_name),
+            generation: None,
         },
     );
     let payload = match kind {

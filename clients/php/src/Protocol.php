@@ -47,7 +47,7 @@ final class Protocol
         string $payloadType,
         array|JsonObject $payload,
         ?string $target = null,
-        ?string $expectedGeneration = null,
+        ?string $expectedIndexGeneration = null,
     ): array
     {
         $envelope = [
@@ -57,9 +57,14 @@ final class Protocol
         ];
         if ($target !== null) {
             $envelope['target'] = ['name' => $target];
-        }
-        if ($expectedGeneration !== null) {
-            $envelope['expected_generation'] = $expectedGeneration;
+            if ($expectedIndexGeneration !== null) {
+                if ($expectedIndexGeneration === '') {
+                    throw new InvalidArgumentException(
+                        'expected index generation must be a non-empty string',
+                    );
+                }
+                $envelope['target']['generation'] = $expectedIndexGeneration;
+            }
         }
         return $envelope;
     }

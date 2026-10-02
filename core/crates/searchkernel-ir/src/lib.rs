@@ -25,11 +25,6 @@ pub mod session;
 pub mod snapshot;
 pub mod wire;
 
-#[cfg(test)]
-pub use wire::v1::schema as api;
-#[cfg(test)]
-pub use wire::v1::*;
-
 pub use api_to_ir::control_plane::{
     already_exists_error, check_expected_generation, index_in_use_error, lifecycle_failure,
     not_found_error, path_failure, stale_index_handle_error, validate_index_target,
@@ -64,6 +59,7 @@ pub use filter_expression::{
     bind_filter_expression, bind_filter_expression_with_references, BoundFilter, FilterBindings,
     FilterParameters,
 };
+pub use ir_to_api::{encode_delete_index_request, encode_open_index_request};
 pub use model::*;
 pub use session::{BackendSession, SessionError};
 

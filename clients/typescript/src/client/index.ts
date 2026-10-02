@@ -108,7 +108,7 @@ export interface ClientTransport {
 }
 
 export class Client {
-  private expectedGeneration?: string;
+  private indexGeneration?: string;
   private bindOnUse = false;
   private binding?: Promise<void>;
 
@@ -116,17 +116,15 @@ export class Client {
 
   bindGeneration(generation: string | Uint8Array | null): void {
     if (typeof generation !== "string" || generation.length === 0) {
-      throw new ProtocolError("lifecycle result is missing canonical target generation");
+      throw new ProtocolError("lifecycle result is missing canonical index generation");
     }
-    this.expectedGeneration = generation;
+    this.indexGeneration = generation;
   }
 
   requireOpenBeforeOperations(): void {
     this.bindOnUse = true;
     this.binding = this.openIndex()
       .then((result) => { this.bindGeneration(result.generation); });
-    // The synchronous connect method starts the open immediately. The first
-    // operation still observes the rejection through this.binding.
     void this.binding.catch(() => undefined);
   }
 
@@ -135,13 +133,23 @@ export class Client {
     request: OperationRequestMap[K],
     options?: ExecuteOptions,
   ): Promise<OperationResponseMap[K]> {
-    if (this.bindOnUse && this.expectedGeneration === undefined &&
+    if (this.bindOnUse && this.indexGeneration === undefined &&
         operation !== "createIndex" && operation !== "openIndex") {
       await this.binding;
     }
     try {
+      const lifecycleOperation =
+        operation === "createIndex" || operation === "openIndex" || operation === "deleteIndex";
       const decoded = unpackResponse(
-        await this.transport.execute(packRequest(operation, request, this.target, this.expectedGeneration), options),
+        await this.transport.execute(
+          packRequest(
+            operation,
+            request,
+            this.target,
+            lifecycleOperation ? undefined : this.indexGeneration,
+          ),
+          options,
+        ),
         operation,
       );
       if (decoded.isError) {
@@ -150,6 +158,15 @@ export class Client {
           typeof error.message === "string" ? error.message : "Search Kernel request failed",
           error,
         );
+      }
+      if (operation === "createIndex" || operation === "openIndex") {
+        const lifecycle = decoded.payload as CreateIndexResultT | OpenIndexResultT;
+        if (typeof lifecycle.generation !== "string" || lifecycle.generation.length === 0) {
+          throw new ProtocolError(
+            `${operation} response is missing canonical index generation`,
+          );
+        }
+        this.indexGeneration = lifecycle.generation;
       }
       return decoded.payload as OperationResponseMap[K];
     } catch (error) {
@@ -249,9 +266,7 @@ export class Index {
   ): Index {
     const target = typeof targetOrTransport === "string" ? targetOrTransport : undefined;
     const transport = typeof targetOrTransport === "string" ? selectedTransport : targetOrTransport;
-    const client = new Client(transport ?? new GrpcWebTransport(endpoint), target);
-    if (target !== undefined) client.requireOpenBeforeOperations();
-    return new Index(client);
+    return new Index(new Client(transport ?? new GrpcWebTransport(endpoint), target));
   }
 
   static async create(
@@ -264,7 +279,6 @@ export class Index {
     try {
       const result = await client.createIndex(definition);
       if (result.index === null) throw new ProtocolError("CreateIndexResult.index is missing");
-      client.bindGeneration(result.generation);
       return new Index(client);
     } catch (error) {
       await client.close();
@@ -281,7 +295,6 @@ export class Index {
     try {
       const result = await client.openIndex();
       if (result.index === null) throw new ProtocolError("OpenIndexResult.index is missing");
-      client.bindGeneration(result.generation);
       return new Index(client);
     } catch (error) {
       await client.close();

@@ -922,7 +922,7 @@ pub fn analyzer_to_ir(
 }
 
 impl IndexContext {
-    pub fn from_api(definition: api::IndexDefinition<'_>) -> Result<Self> {
+    pub(crate) fn from_api(definition: api::IndexDefinition<'_>) -> Result<Self> {
         let definition = index_definition_to_ir(definition)?;
         Ok(Self::from_definition_ir(definition))
     }

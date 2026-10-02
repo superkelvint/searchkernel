@@ -192,6 +192,10 @@ pub struct SearchKernelTransport {
     execution_limit: Arc<Semaphore>,
 }
 
+struct GrpcDispatchResult {
+    payload: Vec<u8>,
+}
+
 impl SearchKernelTransport {
     fn single(dispatcher: Arc<Dispatcher>, execution_limit: Arc<Semaphore>) -> Self {
         Self {
@@ -208,7 +212,7 @@ impl SearchKernelTransport {
         }
     }
 
-    fn dispatch_grpc(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
+    fn dispatch_grpc(&self, payload: &[u8]) -> Result<GrpcDispatchResult, Box<Status>> {
         match &self.target {
             DispatchTarget::Single(dispatcher) => {
                 reject_targeted_single_request(payload)
@@ -216,12 +220,17 @@ impl SearchKernelTransport {
                 let payload = dispatcher
                     .dispatch(payload)
                     .map_err(|error| Box::new(dispatch_error_status(error)))?;
-                Ok(payload)
+                Ok(GrpcDispatchResult { payload })
             }
             #[cfg(feature = "native")]
-            DispatchTarget::Registry(registry) => registry
-                .dispatch(payload)
-                .map_err(|error| Box::new(registry_error_status(error))),
+            DispatchTarget::Registry(registry) => {
+                let result = registry
+                    .dispatch_grpc(payload)
+                    .map_err(|error| Box::new(registry_error_status(error)))?;
+                Ok(GrpcDispatchResult {
+                    payload: result.payload,
+                })
+            }
         }
     }
 
@@ -289,7 +298,9 @@ impl SearchKernel for SearchKernelTransport {
         .map_err(|status| *status)?
         .map_err(|status| *status)?;
 
-        Ok(Response::new(FlatBufferFrame { payload: result }))
+        Ok(Response::new(FlatBufferFrame {
+            payload: result.payload,
+        }))
     }
 }
 

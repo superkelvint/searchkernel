@@ -79,8 +79,8 @@ fn rust_rank_profile_empty_phase_matches_portable_normalization() {
         }],
     )
     .expect("Rust rank profile should resolve");
-    let bytes = crate::index_definition_ir_to_api(&rust_definition);
-    let portable_definition = crate::index_definition_to_ir(
+    let bytes = crate::wire::v1::index_definition_ir_to_api(&rust_definition);
+    let portable_definition = crate::wire::v1::index_definition_to_ir(
         crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
             .expect("encoded Rust definition should parse"),
     )
@@ -119,8 +119,8 @@ fn rust_rank_profile_resolution_matches_portable_resolution() {
         }],
     )
     .expect("Rust rank profile should resolve");
-    let bytes = crate::index_definition_ir_to_api(&rust_definition);
-    let portable_definition = crate::index_definition_to_ir(
+    let bytes = crate::wire::v1::index_definition_ir_to_api(&rust_definition);
+    let portable_definition = crate::wire::v1::index_definition_to_ir(
         crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
             .expect("encoded Rust definition should parse"),
     )
@@ -159,8 +159,8 @@ fn rust_rank_profile_rerank_count_without_second_phase_matches_portable_resoluti
         }],
     )
     .expect("Rust rank profile should resolve");
-    let bytes = crate::index_definition_ir_to_api(&rust_definition);
-    let portable_definition = crate::index_definition_to_ir(
+    let bytes = crate::wire::v1::index_definition_ir_to_api(&rust_definition);
+    let portable_definition = crate::wire::v1::index_definition_to_ir(
         crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
             .expect("encoded Rust definition should parse"),
     )
@@ -203,8 +203,8 @@ fn rust_rank_profile_validation_matches_portable_errors() {
         query_inputs: vec![("query_vector".to_owned(), "tensor<float>(x[3])".to_owned())],
     };
     let portable_error_code = |definition: IndexDefinitionIr| {
-        let bytes = crate::index_definition_ir_to_api(&definition);
-        crate::index_definition_to_ir(
+        let bytes = crate::wire::v1::index_definition_ir_to_api(&definition);
+        crate::wire::v1::index_definition_to_ir(
             crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
                 .expect("encoded definition should parse"),
         )

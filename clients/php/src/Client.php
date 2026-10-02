@@ -14,7 +14,7 @@ namespace SearchKernel;
 final class Client
 {
     private bool $closed = false;
-    private ?string $expectedGeneration = null;
+    private ?string $indexGeneration = null;
     private bool $bindOnUse = false;
 
     public function __construct(
@@ -39,15 +39,35 @@ final class Client
         if ($this->closed) {
             throw new TransportException('Search Kernel client is closed');
         }
-        if ($this->bindOnUse && $this->expectedGeneration === null &&
+        if ($this->bindOnUse && $this->indexGeneration === null &&
             !in_array($operation, ['create_index', 'open_index'], true)) {
-            $this->bindGeneration($this->openIndex()['generation'] ?? null);
+            $this->openIndex();
         }
         [$requestType, $responseType] = Protocol::operation($operation);
-        $response = $this->transport->execute(
-            Protocol::envelope($requestType, $payload, $this->target, $this->expectedGeneration),
+        $lifecycle = in_array(
+            $operation,
+            ['create_index', 'open_index', 'delete_index'],
+            true,
         );
-        return Protocol::expectPayload($response, $responseType);
+        $response = $this->transport->execute(
+            Protocol::envelope(
+                $requestType,
+                $payload,
+                $this->target,
+                $lifecycle ? null : $this->indexGeneration,
+            ),
+        );
+        $result = Protocol::expectPayload($response, $responseType);
+        if ($operation === 'create_index' || $operation === 'open_index') {
+            $generation = $result['generation'] ?? null;
+            if (!is_string($generation) || $generation === '') {
+                throw new ProtocolException(
+                    $responseType . ' is missing canonical index generation',
+                );
+            }
+            $this->indexGeneration = $generation;
+        }
+        return $result;
     }
 
     public function requireOpenBeforeOperations(): void
@@ -58,9 +78,9 @@ final class Client
     public function bindGeneration(mixed $generation): void
     {
         if (!is_string($generation) || $generation === '') {
-            throw new ProtocolException('lifecycle result is missing canonical target generation');
+            throw new ProtocolException('lifecycle result is missing canonical index generation');
         }
-        $this->expectedGeneration = $generation;
+        $this->indexGeneration = $generation;
     }
 
     /** @param array<string,mixed> $payload @return array<string,mixed> */

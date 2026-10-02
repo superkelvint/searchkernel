@@ -885,17 +885,22 @@ class Client:
     def __init__(self, transport: GrpcTransport, *, target: str | None = None):
         self.transport = transport
         self.target = target
-        self.expected_generation: str | None = None
+        self.index_generation: str | None = None
 
-    def execute(self, operation: str, request: Any) -> Any:
+    def _execute_envelope(self, operation: str, request: Any) -> Any:
         try:
+            expected_generation = (
+                None
+                if operation in {"create_index", "open_index", "delete_index"}
+                else self.index_generation
+            )
             envelope = unpack_response(
                 self.transport.call(
                     pack_request(
                         operation,
                         request,
                         target=self.target,
-                        expected_generation=self.expected_generation,
+                        expected_index_generation=expected_generation,
                     )
                 ),
                 operation,
@@ -903,11 +908,14 @@ class Client:
             if envelope.payloadType == ERROR_TYPE:
                 error = envelope.payload
                 raise ClientError(error.message or "Search Kernel request failed", error=error)
-            return envelope.payload
+            return envelope
         except ClientError:
             raise
         except (GrpcTransportError, ValueError, TypeError) as exc:
             raise ClientError(str(exc), cause=exc) from exc
+
+    def execute(self, operation: str, request: Any) -> Any:
+        return self._execute_envelope(operation, request).payload
 
     def insert(self, document: DocumentT) -> Any:
         return self.execute("insert", InsertRequestT(document=document))
@@ -946,15 +954,27 @@ class Client:
         return self.execute("inspect_query", InspectQueryRequestT(request=request))
 
     def create_index(self, definition: IndexDefinitionT) -> Any:
-        result = self.execute("create_index", CreateIndexRequestT(definition=definition))
+        envelope = self._execute_envelope(
+            "create_index", CreateIndexRequestT(definition=definition)
+        )
+        result = envelope.payload
         if getattr(result, "index", None) is None:
             raise ClientError("CreateIndexResult.index is missing")
+        generation = getattr(result, "generation", None)
+        if not isinstance(generation, str) or not generation:
+            raise ClientError("CreateIndexResult is missing canonical index generation")
+        self.index_generation = generation
         return result
 
     def open_index(self) -> Any:
-        result = self.execute("open_index", OpenIndexRequestT())
+        envelope = self._execute_envelope("open_index", OpenIndexRequestT())
+        result = envelope.payload
         if getattr(result, "index", None) is None:
             raise ClientError("OpenIndexResult.index is missing")
+        generation = getattr(result, "generation", None)
+        if not isinstance(generation, str) or not generation:
+            raise ClientError("OpenIndexResult is missing canonical index generation")
+        self.index_generation = generation
         return result
 
     def delete_index(self) -> Any:
@@ -975,8 +995,6 @@ class Index:
 
     def __init__(self, client: Client, owner: _ManagedLocalHost | None = None, *, ergonomic: bool = False):
         self.client = client
-        if isinstance(client, Client) and client.target is not None and client.expected_generation is None:
-            self._bind_generation(client, client.open_index())
         self._owner = owner
         self._ergonomic = ergonomic
 
@@ -985,18 +1003,11 @@ class Index:
         client = Client(GrpcTransport(endpoint), target=target)
         if target is not None:
             try:
-                cls._bind_generation(client, client.open_index())
+                client.open_index()
             except Exception:
                 client.close()
                 raise
         return cls(client, ergonomic=True)
-
-    @staticmethod
-    def _bind_generation(client: Client, result: Any) -> None:
-        generation = result.generation
-        if not isinstance(generation, str) or not generation:
-            raise ClientError("lifecycle result is missing canonical target generation")
-        client.expected_generation = generation
 
     @classmethod
     def create(
@@ -1010,7 +1021,7 @@ class Index:
         if target is not None:
             client = Client(GrpcTransport(os.fspath(path)), target=target)
             try:
-                cls._bind_generation(client, client.create_index(_index_definition(fields, rank_profiles)))
+                client.create_index(_index_definition(fields, rank_profiles))
             except Exception:
                 client.close()
                 raise
@@ -1023,7 +1034,7 @@ class Index:
         try:
             owner = _ManagedLocalHost.acquire(data_root)
             client = Client(GrpcTransport(owner.endpoint), target=target)
-            cls._bind_generation(client, client.create_index(_index_definition(fields, rank_profiles)))
+            client.create_index(_index_definition(fields, rank_profiles))
         except Exception:
             if client is not None:
                 client.close()
@@ -1038,7 +1049,7 @@ class Index:
         if target is not None:
             client = Client(GrpcTransport(os.fspath(path)), target=target)
             try:
-                cls._bind_generation(client, client.open_index())
+                client.open_index()
             except Exception:
                 client.close()
                 raise
@@ -1051,7 +1062,7 @@ class Index:
         owner = _ManagedLocalHost.acquire(data_root)
         client = Client(GrpcTransport(owner.endpoint), target=target)
         try:
-            cls._bind_generation(client, client.open_index())
+            client.open_index()
         except Exception:
             client.close()
             owner.close()

@@ -61,7 +61,7 @@ fn highlighting_resolution_preserves_multi_valued_field_shape_for_the_adapter() 
         ["tags"]
     );
 
-    let request_bytes = crate::search_request_ir_to_api(&request);
+    let request_bytes = crate::wire::v1::search_request_ir_to_api(&request);
     let portable_request = crate::__flatbuffers::root::<api::SearchRequest>(&request_bytes)
         .expect("decode portable highlighting request");
     assert_eq!(
@@ -306,7 +306,7 @@ fn schema_only_fields_are_query_visible_but_not_feedable() {
         None,
         FieldCapabilities::new(true, true, true, true, false),
     )]);
-    let bytes = crate::index_definition_ir_to_api(&definition);
+    let bytes = crate::wire::v1::index_definition_ir_to_api(&definition);
     let context =
         IndexContext::from_api(crate::__flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap())
             .unwrap();

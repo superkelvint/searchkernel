@@ -398,8 +398,8 @@ export class GroupingFilterRegexT extends SemanticTable {
 }
 export class GroupingFunctionExpressionT extends SemanticTable {
   declare name: string|Uint8Array|null;
-  declare arguments_: (GroupingExpressionT)[];
-  constructor(name: string|Uint8Array|null = null, arguments_: (GroupingExpressionT)[] = []) { super('GroupingFunctionExpression', ['name', 'arguments_'], [name, arguments_], [null, []]); }
+  declare arguments: (GroupingExpressionT)[];
+  constructor(name: string|Uint8Array|null = null, arguments_: (GroupingExpressionT)[] = []) { super('GroupingFunctionExpression', ['name', 'arguments'], [name, arguments_], [null, []]); }
 }
 export class GroupingGroupOperationT extends SemanticTable {
   declare expression: GroupingExpressionT|null;
@@ -540,7 +540,8 @@ export class IndexDefinitionT extends SemanticTable {
 }
 export class IndexTargetT extends SemanticTable {
   declare name: string|Uint8Array|null;
-  constructor(name: string|Uint8Array|null = null) { super('IndexTarget', ['name'], [name], [null]); }
+  declare generation: string|Uint8Array|null;
+  constructor(name: string|Uint8Array|null = null, generation: string|Uint8Array|null = null) { super('IndexTarget', ['name', 'generation'], [name, generation], [null, null]); }
 }
 export class InfiniteGroupingMaxT extends SemanticTable {
   constructor() { super('InfiniteGroupingMax', [], [], []); }
@@ -928,10 +929,10 @@ export class RankFeatureSortTargetT extends SemanticTable {
 }
 export class RankFunctionDefinitionT extends SemanticTable {
   declare name: string|Uint8Array|null;
-  declare arguments_: (string)[];
+  declare arguments: (string)[];
   declare expression: string|Uint8Array|null;
   declare inline: OptionalBoolT|null;
-  constructor(name: string|Uint8Array|null = null, arguments_: (string)[] = [], expression: string|Uint8Array|null = null, inline: OptionalBoolT|null = null) { super('RankFunctionDefinition', ['name', 'arguments_', 'expression', 'inline'], [name, arguments_, expression, inline], [null, [], null, null]); }
+  constructor(name: string|Uint8Array|null = null, arguments_: (string)[] = [], expression: string|Uint8Array|null = null, inline: OptionalBoolT|null = null) { super('RankFunctionDefinition', ['name', 'arguments', 'expression', 'inline'], [name, arguments_, expression, inline], [null, [], null, null]); }
 }
 export class RankPhaseDefinitionT extends SemanticTable {
   declare expression: string|Uint8Array|null;

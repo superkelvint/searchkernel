@@ -70,6 +70,7 @@ fn targeted_describe_request(version: u32, target_name: &str) -> Vec<u8> {
         &mut builder,
         &wire::IndexTargetArgs {
             name: Some(target_name),
+            generation: None,
         },
     );
     let envelope = wire::RequestEnvelope::create(

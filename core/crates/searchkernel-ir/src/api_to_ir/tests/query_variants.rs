@@ -641,7 +641,7 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
         } else {
             expected
         };
-        let bytes = crate::search_request_ir_to_api(&request(expected.clone()));
+        let bytes = crate::wire::v1::search_request_ir_to_api(&request(expected.clone()));
         let api_request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
         let actual = query_context.search_to_ir(api_request).unwrap();
         assert_eq!(

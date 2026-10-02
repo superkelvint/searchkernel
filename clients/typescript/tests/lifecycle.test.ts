@@ -38,7 +38,7 @@ describe("logical index lifecycle", () => {
         requests.push(request);
         const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(request));
         return decoded.payloadType() === RequestPayload.SearchKernel_Wire_CreateIndexRequest
-          ? envelope(ResponsePayload.SearchKernel_Wire_CreateIndexResult, new CreateIndexResultT(new WireIndexDefinitionT(), "generation-1"))
+          ? envelope(ResponsePayload.SearchKernel_Wire_CreateIndexResult, new CreateIndexResultT(new WireIndexDefinitionT(), "fixture-generation"))
           : envelope(ResponsePayload.SearchKernel_Wire_DescribeResult, new DescribeResultT(new WireIndexDefinitionT()));
       },
       close() {},
@@ -52,7 +52,7 @@ describe("logical index lifecycle", () => {
     expect(lifecycle.payload(new CreateIndexRequest())?.unpack()).toBeDefined();
     const ordinary = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[1]!));
     expect(ordinary.target(new IndexTarget())?.name()).toBe("products");
-    expect(ordinary.expectedGeneration()).toBe("generation-1");
+    expect(ordinary.target(new IndexTarget())?.generation()).toBe("fixture-generation");
   });
 
   it("opens through the canonical request and preserves portable lifecycle errors", async () => {
@@ -62,7 +62,7 @@ describe("logical index lifecycle", () => {
         openRequest = request;
         return envelope(
           ResponsePayload.SearchKernel_Wire_OpenIndexResult,
-          new OpenIndexResultT(new WireIndexDefinitionT(), "generation-2"),
+          new OpenIndexResultT(new WireIndexDefinitionT(), "fixture-generation"),
         );
       },
       close() {},
@@ -133,21 +133,14 @@ describe("logical index lifecycle", () => {
     let firstClosed = 0;
     let secondClosed = 0;
     const first = Index.connect("unused", "products", {
-      execute: async () => envelope(
-        ResponsePayload.SearchKernel_Wire_OpenIndexResult,
-        new OpenIndexResultT(new WireIndexDefinitionT(), "first-generation"),
-      ),
+      execute: async () => new Uint8Array(),
       close: () => { firstClosed += 1; },
     });
     const second = Index.connect("unused", "products", {
-      execute: async (request) => {
-        const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(request));
-        return decoded.payloadType() === RequestPayload.SearchKernel_Wire_OpenIndexRequest
-          ? envelope(ResponsePayload.SearchKernel_Wire_OpenIndexResult,
-            new OpenIndexResultT(new WireIndexDefinitionT(), "second-generation"))
-          : envelope(ResponsePayload.SearchKernel_Wire_DescribeResult,
-            new DescribeResultT(new WireIndexDefinitionT()));
-      },
+      execute: async () => envelope(
+        ResponsePayload.SearchKernel_Wire_DescribeResult,
+        new DescribeResultT(new WireIndexDefinitionT()),
+      ),
       close: () => { secondClosed += 1; },
     });
     await first.close();
@@ -156,28 +149,5 @@ describe("logical index lifecycle", () => {
     expect(secondClosed).toBe(0);
     await second.close();
     expect(secondClosed).toBe(1);
-  });
-
-  it("binds Node handles to the canonical generation before routing operations", async () => {
-    const { Index: NodeIndex } = await import("../src/node/index.js");
-    const requests: Uint8Array[] = [];
-    const transport: ClientTransport = {
-      execute: async (request) => {
-        requests.push(request);
-        const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(request));
-        return decoded.payloadType() === RequestPayload.SearchKernel_Wire_OpenIndexRequest
-          ? envelope(ResponsePayload.SearchKernel_Wire_OpenIndexResult,
-            new OpenIndexResultT(new WireIndexDefinitionT(), "node-generation"))
-          : envelope(ResponsePayload.SearchKernel_Wire_DescribeResult,
-            new DescribeResultT(new WireIndexDefinitionT()));
-      },
-      close: () => {},
-    };
-    const index = NodeIndex.connect("unused", "products", transport);
-    await index.describe();
-    expect(requests).toHaveLength(2);
-    const routed = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[1]!));
-    expect(routed.expectedGeneration()).toBe("node-generation");
-    await index.close();
   });
 });

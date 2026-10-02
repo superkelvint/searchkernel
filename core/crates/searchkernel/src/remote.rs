@@ -594,7 +594,7 @@ fn response_error(envelope: wire::ResponseEnvelope<'_>) -> ir::Result<Option<Por
 impl Backend for RemoteBackend {
     fn insert(&self, request: ir::InsertRequestIr) -> ir::Result<ir::InsertResult> {
         let payload = self.call(
-            wire_ir::encode_insert_request_for_target(
+            wire_ir::encode_insert_request_for_target_generation(
                 &request,
                 self.target(),
                 self.generation.as_deref(),
@@ -616,7 +616,7 @@ impl Backend for RemoteBackend {
 
     fn upsert(&self, request: ir::UpsertRequestIr) -> ir::Result<ir::UpsertResult> {
         let payload = self.call(
-            wire_ir::encode_upsert_request_for_target(
+            wire_ir::encode_upsert_request_for_target_generation(
                 &request,
                 self.target(),
                 self.generation.as_deref(),
@@ -638,7 +638,7 @@ impl Backend for RemoteBackend {
 
     fn patch(&self, request: ir::PatchRequestIr) -> ir::Result<ir::PatchResult> {
         let payload = self.call(
-            wire_ir::encode_patch_request_for_target(
+            wire_ir::encode_patch_request_for_target_generation(
                 &request,
                 self.target(),
                 self.generation.as_deref(),
@@ -660,7 +660,7 @@ impl Backend for RemoteBackend {
 
     fn update(&self, request: ir::UpdateRequestIr) -> ir::Result<ir::UpdateResult> {
         let payload = self.call(
-            wire_ir::encode_update_request_for_target(
+            wire_ir::encode_update_request_for_target_generation(
                 &request,
                 self.target(),
                 self.generation.as_deref(),
@@ -682,7 +682,7 @@ impl Backend for RemoteBackend {
 
     fn delete(&self, request: ir::DeleteRequestIr) -> ir::Result<ir::DeleteResult> {
         let payload = self.call(
-            wire_ir::encode_delete_request_for_target(
+            wire_ir::encode_delete_request_for_target_generation(
                 &request,
                 self.target(),
                 self.generation.as_deref(),
@@ -704,7 +704,7 @@ impl Backend for RemoteBackend {
 
     fn get(&self, request: ir::GetRequestIr) -> ir::Result<ir::GetResult> {
         let payload = self.call(
-            wire_ir::encode_get_request_for_target(
+            wire_ir::encode_get_request_for_target_generation(
                 &request,
                 self.target(),
                 self.generation.as_deref(),
@@ -726,7 +726,7 @@ impl Backend for RemoteBackend {
 
     fn search(&self, request: ir::SearchRequestIr) -> ir::Result<ir::SearchResult> {
         let payload = self.call(
-            wire_ir::encode_search_request_for_target(
+            wire_ir::encode_search_request_for_target_generation(
                 &request,
                 self.target(),
                 self.generation.as_deref(),
@@ -746,7 +746,7 @@ impl Backend for RemoteBackend {
 
     fn analyze(&self, request: ir::AnalyzeRequestIr) -> ir::Result<ir::AnalyzeResult> {
         let payload = self.call(
-            wire_ir::encode_analyze_request_for_target(
+            wire_ir::encode_analyze_request_for_target_generation(
                 &request,
                 self.target(),
                 self.generation.as_deref(),
@@ -781,7 +781,7 @@ impl Backend for RemoteBackend {
 pub struct RemoteClient {
     transport: Arc<RemoteTransport>,
     sessions: Arc<Mutex<HashMap<String, Vec<Weak<BackendSession>>>>>,
-    lifecycle_lock: Arc<Mutex<()>>,
+    lifecycle_locks: Arc<Mutex<HashMap<String, Weak<Mutex<()>>>>>,
 }
 
 impl RemoteClient {
@@ -802,7 +802,7 @@ impl RemoteClient {
         Ok(Self {
             transport: Arc::new(transport),
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            lifecycle_lock: Arc::new(Mutex::new(())),
+            lifecycle_locks: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -812,8 +812,11 @@ impl RemoteClient {
         target: impl AsRef<str>,
         definition: IndexDefinition,
     ) -> Result<Index> {
-        let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
+        let lifecycle = self.lifecycle_lock(target)?;
+        let _lifecycle = lifecycle
+            .lock()
+            .map_err(|_| self.poisoned_lifecycle_error())?;
         let input = crate::schema::index_definition_to_input(&definition)?;
         let request = wire_ir::encode_create_index_request(target, &input);
         let response = self
@@ -834,21 +837,26 @@ impl RemoteClient {
                 "create result index definition is missing",
             ))
         })?;
-        let generation = result
-            .generation()
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                crate::Error::from_ir(invalid_remote_response(
-                    "create-index response is missing canonical target generation",
-                ))
-            })?;
+        let generation = result.generation().ok_or_else(|| {
+            crate::Error::from_ir(invalid_remote_response(
+                "create-index response is missing canonical index generation",
+            ))
+        })?;
+        if generation.is_empty() {
+            return Err(crate::Error::from_ir(invalid_remote_response(
+                "create-index response has an empty canonical index generation",
+            )));
+        }
         self.index_from_api_definition(target, definition, generation.to_owned())
     }
 
     /// Open an existing logical target and return an index handle bound to it.
     pub fn open_index(&self, target: impl AsRef<str>) -> Result<Index> {
-        let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
+        let lifecycle = self.lifecycle_lock(target)?;
+        let _lifecycle = lifecycle
+            .lock()
+            .map_err(|_| self.poisoned_lifecycle_error())?;
         let request = wire_ir::encode_open_index_request(target);
         let response = self
             .transport
@@ -868,21 +876,26 @@ impl RemoteClient {
                 "open result index definition is missing",
             ))
         })?;
-        let generation = result
-            .generation()
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                crate::Error::from_ir(invalid_remote_response(
-                    "open-index response is missing canonical target generation",
-                ))
-            })?;
+        let generation = result.generation().ok_or_else(|| {
+            crate::Error::from_ir(invalid_remote_response(
+                "open-index response is missing canonical index generation",
+            ))
+        })?;
+        if generation.is_empty() {
+            return Err(crate::Error::from_ir(invalid_remote_response(
+                "open-index response has an empty canonical index generation",
+            )));
+        }
         self.index_from_api_definition(target, definition, generation.to_owned())
     }
 
     /// Delete one logical target from the daemon registry.
     pub fn delete_index(&self, target: impl AsRef<str>) -> Result<()> {
-        let _lifecycle = self.lifecycle_guard()?;
         let target = target.as_ref();
+        let lifecycle = self.lifecycle_lock(target)?;
+        let _lifecycle = lifecycle
+            .lock()
+            .map_err(|_| self.poisoned_lifecycle_error())?;
         let request = wire_ir::encode_delete_index_request(target);
         let response = self
             .transport
@@ -903,12 +916,27 @@ impl RemoteClient {
         Ok(())
     }
 
-    fn lifecycle_guard(&self) -> Result<std::sync::MutexGuard<'_, ()>> {
-        self.lifecycle_lock.lock().map_err(|_| {
-            crate::Error::from_ir(invalid_remote_response(
-                "remote client lifecycle lock is poisoned",
-            ))
-        })
+    fn lifecycle_lock(&self, target: &str) -> Result<Arc<Mutex<()>>> {
+        let mut locks = self
+            .lifecycle_locks
+            .lock()
+            .map_err(|_| self.poisoned_lifecycle_error())?;
+        if let Some(lock) = locks.get(target).and_then(Weak::upgrade) {
+            return Ok(lock);
+        }
+
+        // Weak entries keep the table bounded after callers finish transitions
+        // on targets that are never used again.
+        locks.retain(|_, lock| lock.strong_count() != 0);
+        let lock = Arc::new(Mutex::new(()));
+        locks.insert(target.to_owned(), Arc::downgrade(&lock));
+        Ok(lock)
+    }
+
+    fn poisoned_lifecycle_error(&self) -> crate::Error {
+        crate::Error::from_ir(invalid_remote_response(
+            "remote client lifecycle lock is poisoned",
+        ))
     }
 
     fn register_target_session(&self, target: &str, session: &Arc<BackendSession>) -> Result<()> {

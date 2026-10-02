@@ -28,7 +28,10 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{net::TcpListener, sync::oneshot};
+use tokio::{
+    net::TcpListener,
+    sync::{oneshot, Notify},
+};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
 
@@ -183,6 +186,8 @@ struct TestService {
     dispatcher: Arc<Dispatcher>,
     definition: searchkernel_ir::IndexDefinitionIr,
     targets: Arc<Mutex<Vec<String>>>,
+    slow_create_started: Arc<Notify>,
+    slow_create_release: Arc<Notify>,
 }
 
 #[tonic::async_trait]
@@ -202,11 +207,18 @@ impl SearchKernel for TestService {
             .lock()
             .expect("target log")
             .push(target.to_owned());
+        if target == "blocked-create"
+            && envelope.payload_type()
+                == searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
+        {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
         if target == "slow-create"
             && envelope.payload_type()
                 == searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest
         {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            self.slow_create_started.notify_one();
+            self.slow_create_release.notified().await;
         }
         let payload = match envelope.payload_type() {
             searchkernel_protocol::protocol::v1::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
@@ -219,9 +231,13 @@ impl SearchKernel for TestService {
                 lifecycle_delete_response()
             }
             _ => {
-                if envelope.expected_generation() != Some("probe-generation") {
+                if envelope
+                    .target()
+                    .and_then(|target| target.generation())
+                    != Some("probe-generation")
+                {
                     return Err(Status::failed_precondition(
-                        "target-bound request is missing the expected generation",
+                        "target-bound request is missing the canonical expected generation",
                     ));
                 }
                 self.dispatcher.dispatch(&request).map_err(dispatch_status)?
@@ -241,8 +257,8 @@ fn lifecycle_definition_response(
     };
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = searchkernel_ir::wire::v1::index_definition_offset(&mut builder, definition);
-    let generation = builder.create_string("probe-generation");
     let (payload_type, payload) = if create {
+        let generation = builder.create_string("probe-generation");
         let result = api::CreateIndexResult::create(
             &mut builder,
             &api::CreateIndexResultArgs {
@@ -255,6 +271,7 @@ fn lifecycle_definition_response(
             result.as_union_value(),
         )
     } else {
+        let generation = builder.create_string("probe-generation");
         let result = api::OpenIndexResult::create(
             &mut builder,
             &api::OpenIndexResultArgs {
@@ -310,6 +327,8 @@ fn dispatch_status(error: DispatchError) -> Status {
 struct TestServer {
     endpoint: String,
     targets: Arc<Mutex<Vec<String>>>,
+    slow_create_started: Arc<Notify>,
+    slow_create_release: Arc<Notify>,
     shutdown: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
 }
@@ -324,6 +343,8 @@ impl TestServer {
         let definition = context.definition().clone();
         let dispatcher = Arc::new(Dispatcher::new(context, session));
         let targets = Arc::new(Mutex::new(Vec::new()));
+        let slow_create_started = Arc::new(Notify::new());
+        let slow_create_release = Arc::new(Notify::new());
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -335,6 +356,8 @@ impl TestServer {
             dispatcher,
             definition,
             targets: Arc::clone(&targets),
+            slow_create_started: Arc::clone(&slow_create_started),
+            slow_create_release: Arc::clone(&slow_create_release),
         })
         .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
         .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
@@ -348,6 +371,8 @@ impl TestServer {
         Self {
             endpoint: address.to_string(),
             targets,
+            slow_create_started,
+            slow_create_release,
             shutdown: Some(shutdown),
             task,
         }
@@ -601,6 +626,46 @@ async fn mutation_deadlines_do_not_claim_ambiguous_writes_are_retryable() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unrelated_remote_lifecycle_operations_do_not_share_one_client_lock() {
+    let backend = Arc::new(ProbeBackend::default());
+    let server = TestServer::start(backend).await;
+    let client = RemoteClient::connect(&server.endpoint).expect("connect remote daemon");
+    let definition = IndexDefinition::new().field(Field::text("title").stored(true));
+
+    let slow_client = client.clone();
+    let slow =
+        tokio::task::spawn_blocking(move || slow_client.create_index("slow-create", definition));
+    server.slow_create_started.notified().await;
+
+    let fast_client = client.clone();
+    let mut fast = tokio::task::spawn_blocking(move || fast_client.open_index("probe"));
+    let completed_before_release =
+        tokio::time::timeout(Duration::from_millis(500), &mut fast).await;
+
+    server.slow_create_release.notify_one();
+
+    let slow_index = tokio::time::timeout(Duration::from_secs(2), slow)
+        .await
+        .expect("slow create must finish after release")
+        .expect("slow create task")
+        .expect("slow create");
+    slow_index.close().expect("close slow-created index");
+
+    let fast_index = match completed_before_release {
+        Ok(result) => result
+            .expect("unrelated open task")
+            .expect("unrelated open"),
+        Err(_) => {
+            let _ = fast.await;
+            panic!("slow lifecycle operation for target A blocked unrelated target B");
+        }
+    };
+    fast_index.close().expect("close unrelated index");
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn lifecycle_mutation_deadlines_report_ambiguous_create() {
     let backend = Arc::new(ProbeBackend::default());
     let server = TestServer::start(backend).await;
@@ -621,6 +686,59 @@ async fn lifecycle_mutation_deadlines_report_ambiguous_create() {
         .iter()
         .any(|detail| detail.code == "remote_outcome_unknown"));
 
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn slow_create_does_not_block_lifecycle_on_another_target() {
+    let server = TestServer::start(Arc::new(ProbeBackend::default())).await;
+    let client = RemoteClient::connect(&server.endpoint).expect("connect remote daemon");
+    let creating_client = client.clone();
+    let (created_tx, created_rx) = std::sync::mpsc::sync_channel(1);
+    let creating = std::thread::spawn(move || {
+        let definition = IndexDefinition::new().field(Field::text("title"));
+        created_tx
+            .send(creating_client.create_index("blocked-create", definition))
+            .expect("report create result");
+    });
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if server
+                .targets
+                .lock()
+                .expect("target log")
+                .iter()
+                .any(|target| target == "blocked-create")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("create reached daemon");
+
+    let opening_client = client.clone();
+    let (opened_tx, opened_rx) = std::sync::mpsc::sync_channel(1);
+    let opening = std::thread::spawn(move || {
+        opened_tx
+            .send(opening_client.open_index("other"))
+            .expect("report open result");
+    });
+    let opened = opened_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("unrelated open must finish while create is blocked")
+        .expect("open unrelated target");
+    opened.close().expect("close unrelated handle");
+    creating.join().expect("join create caller");
+    opening.join().expect("join open caller");
+    created_rx
+        .recv()
+        .expect("create result")
+        .expect("create target")
+        .close()
+        .expect("close created handle");
     server.shutdown().await;
 }
 
