@@ -13,6 +13,9 @@ final class Index
     public function __construct(Transport $transport, ?string $target = null)
     {
         $this->client = new Client($transport, $target);
+        if ($target !== null) {
+            $this->client->requireOpenBeforeOperations();
+        }
     }
 
     /** Close this client handle; shared server indexes remain available. */
@@ -23,7 +26,11 @@ final class Index
 
     public static function connect(string $baseUrl, string $target): self
     {
-        return new self(new HttpTransport($baseUrl), $target);
+        $index = new self(new HttpTransport($baseUrl), $target);
+        $payload = $index->client->openIndex();
+        self::lifecycleIndex($payload, 'OpenIndexResult');
+        $index->client->bindGeneration($payload['generation'] ?? null);
+        return $index;
     }
 
     public static function create(
@@ -31,18 +38,16 @@ final class Index
         string $target,
         IndexDefinition $definition,
     ): self {
-        $index = self::connect($baseUrl, $target);
+        $index = new self(new HttpTransport($baseUrl), $target);
         $payload = $index->client->createIndex(['definition' => $definition->toWire()]);
         self::lifecycleIndex($payload, 'CreateIndexResult');
+        $index->client->bindGeneration($payload['generation'] ?? null);
         return $index;
     }
 
     public static function open(string $baseUrl, string $target): self
     {
-        $index = self::connect($baseUrl, $target);
-        $payload = $index->client->openIndex();
-        self::lifecycleIndex($payload, 'OpenIndexResult');
-        return $index;
+        return self::connect($baseUrl, $target);
     }
 
     public static function deleteTarget(string $baseUrl, string $target): bool

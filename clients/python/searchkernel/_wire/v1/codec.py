@@ -49,6 +49,12 @@ def _semantic_enum_to_wire(value: SemanticEnumValue) -> int:
         ) from exc
 
 
+def wire_enum_matches(value: Any, expected: SemanticEnumValue) -> bool:
+    if value == expected:
+        return True
+    return isinstance(value, int) and value == _semantic_enum_to_wire(expected)
+
+
 def _wire_enum_to_semantic(enum_name: str, value: int) -> SemanticEnumValue:
     _, by_value = _enum_maps(enum_name)
     try:

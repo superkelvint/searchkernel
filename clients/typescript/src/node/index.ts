@@ -213,7 +213,9 @@ export class Index extends RemoteIndex {
   ): Index {
     const target = typeof targetOrTransport === "string" ? targetOrTransport : undefined;
     const transport = typeof targetOrTransport === "string" ? selectedTransport : targetOrTransport;
-    return new Index(new Client(transport ?? new NodeGrpcTransport(endpoint), target));
+    const client = new Client(transport ?? new NodeGrpcTransport(endpoint), target);
+    if (target !== undefined) client.requireOpenBeforeOperations();
+    return new Index(client);
   }
 
   static create(endpoint: string, target: string, definition: IndexDefinitionT | CreateIndexOptions): Promise<Index>;
@@ -234,6 +236,7 @@ export class Index extends RemoteIndex {
       try {
         const result = await client.createIndex(definition);
         if (result.index === null) throw new Error("CreateIndexResult.index is missing");
+        client.bindGeneration(result.generation);
         return new Index(client);
       } catch (error) {
         await client.close();
@@ -251,6 +254,7 @@ export class Index extends RemoteIndex {
       client = new Client(new NodeGrpcTransport(owner.endpoint), target);
       const result = await client.createIndex(indexDefinition(targetOrOptions));
       if (result.index === null) throw new Error("CreateIndexResult.index is missing");
+      client.bindGeneration(result.generation);
       return new Index(client, owner);
     } catch (error) {
       await client?.close();
@@ -266,6 +270,7 @@ export class Index extends RemoteIndex {
       try {
         const result = await client.openIndex();
         if (result.index === null) throw new Error("OpenIndexResult.index is missing");
+        client.bindGeneration(result.generation);
         return new Index(client);
       } catch (error) {
         await client.close();
@@ -284,6 +289,7 @@ export class Index extends RemoteIndex {
     try {
       const result = await client.openIndex();
       if (result.index === null) throw new Error("OpenIndexResult.index is missing");
+      client.bindGeneration(result.generation);
       return new Index(client, owner);
     } catch (error) {
       await client.close();

@@ -12,7 +12,10 @@ use searchkernel_ir::{
     TARGET_PATH,
 };
 use searchkernel_protocol::{
-    json::{request_flatbuffer_to_json, request_json_to_flatbuffer, response_json_to_flatbuffer},
+    json::{
+        request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
+        response_json_to_flatbuffer,
+    },
     protocol::v1::{self as wire, PROTOCOL_VERSION},
     wire::v1 as api,
 };
@@ -306,6 +309,13 @@ async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec
     response_json_to_flatbuffer(&body).expect("decode response JSON")
 }
 
+fn request_json_with_generation(payload: &[u8], generation: &str) -> Vec<u8> {
+    let json = request_flatbuffer_to_json(payload).expect("request JSON");
+    let mut value: serde_json::Value = serde_json::from_slice(&json).expect("request JSON value");
+    value["target"]["generation"] = serde_json::Value::String(generation.to_owned());
+    serde_json::to_vec(&value).expect("request JSON with target generation")
+}
+
 fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
     root::<wire::ResponseEnvelope<'_>>(bytes).expect("response envelope")
 }
@@ -571,6 +581,111 @@ async fn grpc_and_http_json_share_one_registry() {
         .into_inner()
         .payload;
     assert_eq!(total_hits(&search), 1);
+
+    server.shutdown().await.expect("shutdown daemon");
+    registry.close_all().expect("close registry");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
+    let temp = TempDir::new("canonical-generation");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().expect("gRPC address"))
+            .with_web_listen_addr("127.0.0.1:0".parse().expect("HTTP address")),
+        registry.clone(),
+    )
+    .await
+    .expect("start multi-index daemon");
+    let mut grpc = rpc::search_kernel_client::SearchKernelClient::connect(format!(
+        "http://{}",
+        server.tcp_addr().expect("gRPC listener")
+    ))
+    .await
+    .expect("connect gRPC client");
+    let http_address = server.web_tcp_addr().expect("HTTP listener");
+
+    let created = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: create_request("reused", "title"),
+        }))
+        .await
+        .expect("create over gRPC")
+        .into_inner()
+        .payload;
+    let created_json: serde_json::Value = serde_json::from_slice(
+        &response_flatbuffer_to_json(&created).expect("canonical create result JSON"),
+    )
+    .expect("create result JSON");
+    let old_generation = created_json["payload"]["generation"]
+        .as_str()
+        .expect("canonical create result generation")
+        .to_owned();
+
+    assert_lifecycle(
+        &execute_http_json(http_address, &delete_index_request("reused")).await,
+        wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
+    );
+    let recreated = execute_http_json(http_address, &create_request("reused", "title")).await;
+    assert_lifecycle(
+        &recreated,
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+    );
+    let recreated_json: serde_json::Value = serde_json::from_slice(
+        &response_flatbuffer_to_json(&recreated).expect("canonical recreate result JSON"),
+    )
+    .expect("recreate result JSON");
+    let new_generation = recreated_json["payload"]["generation"]
+        .as_str()
+        .expect("canonical recreate result generation");
+    assert_ne!(old_generation, new_generation);
+
+    let stale_json = request_json_with_generation(
+        &upsert_request("reused", "doc", "title", "stale"),
+        &old_generation,
+    );
+    let stale_bytes = request_json_to_flatbuffer(&stale_json)
+        .expect("canonical expected generation in request envelope");
+    let grpc_stale = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: stale_bytes,
+        }))
+        .await
+        .expect("stale gRPC request")
+        .into_inner()
+        .payload;
+    assert_portable_error(
+        &grpc_stale,
+        api::ErrorCode::FailedPrecondition,
+        STALE_INDEX_HANDLE_DETAIL_CODE,
+        Some("target"),
+    );
+    let (status, body) = execute_http_json_raw(http_address, Bytes::from(stale_json)).await;
+    assert_eq!(status, http::StatusCode::OK);
+    let http_stale = response_json_to_flatbuffer(&body).expect("stale HTTP response");
+    assert_eq!(
+        portable_error_semantics(&grpc_stale),
+        portable_error_semantics(&http_stale)
+    );
+
+    let stale_delete =
+        request_json_with_generation(&delete_index_request("reused"), &old_generation);
+    let (status, body) = execute_http_json_raw(http_address, Bytes::from(stale_delete)).await;
+    assert_eq!(status, http::StatusCode::OK);
+    assert_portable_error(
+        &response_json_to_flatbuffer(&body).expect("stale delete response"),
+        api::ErrorCode::FailedPrecondition,
+        STALE_INDEX_HANDLE_DETAIL_CODE,
+        Some("target"),
+    );
+
+    let current = request_json_with_generation(
+        &upsert_request("reused", "doc", "title", "current"),
+        new_generation,
+    );
+    let (status, body) = execute_http_json_raw(http_address, Bytes::from(current)).await;
+    assert_eq!(status, http::StatusCode::OK);
+    assert_upsert(&response_json_to_flatbuffer(&body).expect("current handle response"));
 
     server.shutdown().await.expect("shutdown daemon");
     registry.close_all().expect("close registry");

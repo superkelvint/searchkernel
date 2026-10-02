@@ -9,6 +9,7 @@ from .v1.codec import (
     pack_object,
     pack_request,
     unpack_response,
+    wire_enum_matches,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "pack_object",
     "pack_request",
     "unpack_response",
+    "wire_enum_matches",
 ]

@@ -15,6 +15,7 @@ final class Client
 {
     private bool $closed = false;
     private ?string $indexGeneration = null;
+    private bool $bindOnUse = false;
 
     public function __construct(
         private readonly Transport $transport,
@@ -37,6 +38,10 @@ final class Client
     {
         if ($this->closed) {
             throw new TransportException('Search Kernel client is closed');
+        }
+        if ($this->bindOnUse && $this->indexGeneration === null &&
+            !in_array($operation, ['create_index', 'open_index'], true)) {
+            $this->openIndex();
         }
         [$requestType, $responseType] = Protocol::operation($operation);
         $lifecycle = in_array(
@@ -63,6 +68,19 @@ final class Client
             $this->indexGeneration = $generation;
         }
         return $result;
+    }
+
+    public function requireOpenBeforeOperations(): void
+    {
+        $this->bindOnUse = true;
+    }
+
+    public function bindGeneration(mixed $generation): void
+    {
+        if (!is_string($generation) || $generation === '') {
+            throw new ProtocolException('lifecycle result is missing canonical index generation');
+        }
+        $this->indexGeneration = $generation;
     }
 
     /** @param array<string,mixed> $payload @return array<string,mixed> */

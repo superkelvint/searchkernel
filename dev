@@ -232,7 +232,8 @@ run_client_e2e() {
 }
 
 run_python_tests() {
-    "$PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
+    PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
+        "$PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
     run_client_e2e python
 }
 

@@ -41,6 +41,13 @@ through these schemas merely to reach the local engine.
   `NotFound`). `IndexDefinition.name` is schema identity, not daemon routing
   identity, and may differ from the enclosing logical target. Closing a client
   handle is not a server-side unload operation.
+- Create/Open return an opaque `generation` in their canonical results. An
+  `Index` handle retains that token and carries it as
+  `IndexTarget.generation` on target-scoped operations. If the
+  target has been deleted and recreated, the daemon returns
+  `FailedPrecondition` / `stale_index_handle` at `target` through either gRPC
+  or HTTP. Raw requests that omit the token explicitly address the current
+  target by name; they do not represent a bound handle.
 - Multi-index routing uses stable portable lifecycle details: CreateIndex without
   a schema is `InvalidArgument` / `missing_index_definition` at
   `payload.definition`; missing target is `InvalidArgument` /

@@ -217,11 +217,11 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
 
         self.assertEqual(
             SearchBuilder(Index(), "wireless").sort("price", "asc")._sort[0].direction,
-            SortDirection.Asc,
+            semantic.SortDirection.Asc,
         )
         self.assertEqual(
             SearchBuilder(Index(), "wireless").sort("price", "desc")._sort[0].direction,
-            SortDirection.Desc,
+            semantic.SortDirection.Desc,
         )
 
     def test_field_sorts_match_canonical_rust_ir(self):
@@ -335,24 +335,24 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(
             [operation.operationType for operation in root_operations],
             [
-                GroupingOperationKind.GroupingGroupOperation,
-                GroupingOperationKind.GroupingEachOperation,
+                semantic.GroupingOperationKind.GroupingGroupOperation,
+                semantic.GroupingOperationKind.GroupingEachOperation,
             ],
         )
         parent_each = root_operations[1].operation
         self.assertEqual(
             [operation.operationType for operation in parent_each.operations],
             [
-                GroupingOperationKind.GroupingOutputOperation,
-                GroupingOperationKind.GroupingAllOperation,
+                semantic.GroupingOperationKind.GroupingOutputOperation,
+                semantic.GroupingOperationKind.GroupingAllOperation,
             ],
         )
         nested_all = parent_each.operations[1].operation
         self.assertEqual(
             [operation.operationType for operation in nested_all.operations],
             [
-                GroupingOperationKind.GroupingGroupOperation,
-                GroupingOperationKind.GroupingEachOperation,
+                semantic.GroupingOperationKind.GroupingGroupOperation,
+                semantic.GroupingOperationKind.GroupingEachOperation,
             ],
         )
 
@@ -362,16 +362,16 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         definition = Text().definition("title")
         self.assertIsInstance(definition, SemanticTable)
         self.assertIsInstance(definition.dataType.kind.kind, SemanticEnumValue)
-        self.assertEqual(definition.dataType.kind.kind, PrimitiveDataTypeKind.String)
-        self.assertEqual(definition.matching.mode, MatchingMode.Text)
-        self.assertEqual(Keyword().definition("sku").matching.mode, MatchingMode.Exact)
-        self.assertEqual(Integer().definition("count").dataType.kind.kind, PrimitiveDataTypeKind.Int64)
-        self.assertEqual(Float().definition("score").dataType.kind.kind, PrimitiveDataTypeKind.Float64)
-        self.assertEqual(Boolean().definition("active").dataType.kind.kind, PrimitiveDataTypeKind.Bool)
-        self.assertEqual((g.field("price") + 1).model.expr.op, GroupingBinaryOperator.Add)
-        self.assertEqual((g.field("price") - 1).model.expr.op, GroupingBinaryOperator.Subtract)
-        self.assertEqual((g.field("price") * 1).model.expr.op, GroupingBinaryOperator.Multiply)
-        self.assertEqual((g.field("price") / 1).model.expr.op, GroupingBinaryOperator.Divide)
+        self.assertEqual(definition.dataType.kind.kind, semantic.PrimitiveDataTypeKind.String)
+        self.assertEqual(definition.matching.mode, semantic.MatchingMode.Text)
+        self.assertEqual(Keyword().definition("sku").matching.mode, semantic.MatchingMode.Exact)
+        self.assertEqual(Integer().definition("count").dataType.kind.kind, semantic.PrimitiveDataTypeKind.Int64)
+        self.assertEqual(Float().definition("score").dataType.kind.kind, semantic.PrimitiveDataTypeKind.Float64)
+        self.assertEqual(Boolean().definition("active").dataType.kind.kind, semantic.PrimitiveDataTypeKind.Bool)
+        self.assertEqual((g.field("price") + 1).model.expr.op, semantic.GroupingBinaryOperator.Add)
+        self.assertEqual((g.field("price") - 1).model.expr.op, semantic.GroupingBinaryOperator.Subtract)
+        self.assertEqual((g.field("price") * 1).model.expr.op, semantic.GroupingBinaryOperator.Multiply)
+        self.assertEqual((g.field("price") / 1).model.expr.op, semantic.GroupingBinaryOperator.Divide)
         self.assertEqual(
             ClientError("bad", error=SimpleNamespace(code=ErrorCode.InvalidArgument)).code,
             "invalid_argument",
@@ -468,10 +468,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         builder = SearchBuilder(index, None)
         sorts = ["count_desc", "count_asc", "value_asc", "value_desc"]
         expected_kinds = [
-            GroupingExpressionKind.GroupingUnaryExpression,
-            GroupingExpressionKind.GroupingAggregationExpression,
-            GroupingExpressionKind.GroupingAttributeExpression,
-            GroupingExpressionKind.GroupingUnaryExpression,
+            semantic.GroupingExpressionKind.GroupingUnaryExpression,
+            semantic.GroupingExpressionKind.GroupingAggregationExpression,
+            semantic.GroupingExpressionKind.GroupingAttributeExpression,
+            semantic.GroupingExpressionKind.GroupingUnaryExpression,
         ]
         for position, sort in enumerate(sorts):
             builder.facet(
@@ -741,7 +741,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                 neighbors_to_explore_at_insert=16,
             ),
         ).definition("embedding")
-        self.assertEqual(definition.attribute.distanceMetric, DistanceMetric.Euclidean)
+        self.assertEqual(definition.attribute.distanceMetric, semantic.DistanceMetric.Euclidean)
         self.assertEqual(definition.index.hnsw.maxLinksPerNode.value, 4)
         self.assertEqual(definition.index.hnsw.neighborsToExploreAtInsert.value, 16)
 
@@ -772,7 +772,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             "query_embedding", Tensor.dense("tensor<float>(x[2])", [1, 0])
         ).execute()
         query = index.client.request.query.source.query
-        self.assertEqual(query.exprType, QueryExprKind.QueryNearestNeighbor)
+        self.assertEqual(query.exprType, semantic.QueryExprKind.QueryNearestNeighbor)
         self.assertEqual(query.expr.documentField.path, "embedding")
         self.assertEqual(query.expr.queryTensor, "query_embedding")
 
@@ -797,10 +797,10 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             q.nearest_neighbor("embedding", "query_embedding"),
         )
 
-        self.assertEqual(query.source.query.exprType, QueryExprKind.QueryAnd)
+        self.assertEqual(query.source.query.exprType, semantic.QueryExprKind.QueryAnd)
         self.assertEqual(
             [clause.exprType for clause in query.source.query.expr.clauses],
-            [QueryExprKind.QueryContains, QueryExprKind.QueryNearestNeighbor],
+            [semantic.QueryExprKind.QueryContains, semantic.QueryExprKind.QueryNearestNeighbor],
         )
 
     def test_typed_query_helpers_lower_to_generated_objects(self):
@@ -818,15 +818,15 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(
             [query.source.query.exprType for query in queries],
             [
-                QueryExprKind.QueryContains,
-                QueryExprKind.QueryContains,
-                QueryExprKind.QueryContains,
-                QueryExprKind.QueryContains,
-                QueryExprKind.QuerySameElement,
-                QueryExprKind.QueryWand,
-                QueryExprKind.QueryRank,
-                QueryExprKind.QueryGeoLocation,
-                QueryExprKind.QueryGeoBoundingBox,
+                semantic.QueryExprKind.QueryContains,
+                semantic.QueryExprKind.QueryContains,
+                semantic.QueryExprKind.QueryContains,
+                semantic.QueryExprKind.QueryContains,
+                semantic.QueryExprKind.QuerySameElement,
+                semantic.QueryExprKind.QueryWand,
+                semantic.QueryExprKind.QueryRank,
+                semantic.QueryExprKind.QueryGeoLocation,
+                semantic.QueryExprKind.QueryGeoBoundingBox,
             ],
         )
         self.assertEqual(
@@ -837,8 +837,8 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
     # SKC: query.prefix_suffix_substring/basic kinds=ergonomic runtime=shared
     def test_literal_term_prefix_substring_suffix_helpers_lower_canonically(self):
         term = q.term("title", "quick")
-        self.assertEqual(term.source.query.exprType, QueryExprKind.QueryContains)
-        self.assertEqual(term.source.query.expr.item.exprType, QueryExprKind.TermQuery)
+        self.assertEqual(term.source.query.exprType, semantic.QueryExprKind.QueryContains)
+        self.assertEqual(term.source.query.expr.item.exprType, semantic.QueryExprKind.TermQuery)
 
         cases = [
             (q.prefix("brand", "A.c+"), r"A\.c\+.*"),
@@ -846,7 +846,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             (q.suffix("brand", "A.c+"), r".*A\.c\+"),
         ]
         for query, pattern in cases:
-            self.assertEqual(query.source.query.exprType, QueryExprKind.QueryMatches)
+            self.assertEqual(query.source.query.exprType, semantic.QueryExprKind.QueryMatches)
             self.assertEqual(query.source.query.expr.pattern, pattern)
 
     def test_grouping_filter_boolean_helpers_have_readable_names(self):
@@ -854,15 +854,15 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
 
         self.assertEqual(
             gf.all_of(clause, clause).exprType,
-            GroupingFilterExprKind.GroupingFilterAnd,
+            semantic.GroupingFilterExprKind.GroupingFilterAnd,
         )
         self.assertEqual(
             gf.any_of(clause, clause).exprType,
-            GroupingFilterExprKind.GroupingFilterOr,
+            semantic.GroupingFilterExprKind.GroupingFilterOr,
         )
         self.assertEqual(
             gf.negate(clause).exprType,
-            GroupingFilterExprKind.GroupingFilterNot,
+            semantic.GroupingFilterExprKind.GroupingFilterNot,
         )
 
     def test_hit_preserves_scalar_and_opaque_features(self):

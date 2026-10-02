@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from .grpc_transport import GrpcTransport, GrpcTransportError
-from ._wire import ERROR_TYPE, pack_request, unpack_response
+from ._wire import ERROR_TYPE, pack_request, unpack_response, wire_enum_matches
 from .scalars import check_int64
 from ._semantic import is_semantic_table, table_type
 
@@ -250,47 +250,47 @@ def _python_value(item: ValueT | None) -> Any:
     # even when its elements could also be represented as bytes.
     if item is None:
         return None
-    if item.kindType == ValueKind.NullValueValue:
+    if wire_enum_matches(item.kindType, ValueKind.NullValueValue):
         payload = _value_payload(item, "NullValueValue", NullValueValueT)
-        if payload.value != NullValue.Null:
+        if not wire_enum_matches(payload.value, NullValue.Null):
             raise ValueError(f"unknown NullValue kind: {payload.value}")
         return None
-    if item.kindType == ValueKind.BoolValue:
+    if wire_enum_matches(item.kindType, ValueKind.BoolValue):
         return _value_payload(item, "BoolValue", BoolValueT).value
-    if item.kindType == ValueKind.Int64Value:
+    if wire_enum_matches(item.kindType, ValueKind.Int64Value):
         return _value_payload(item, "Int64Value", Int64ValueT).value
-    if item.kindType == ValueKind.UInt64Value:
+    if wire_enum_matches(item.kindType, ValueKind.UInt64Value):
         return _value_payload(item, "UInt64Value", UInt64ValueT).value
-    if item.kindType == ValueKind.Float64Value:
+    if wire_enum_matches(item.kindType, ValueKind.Float64Value):
         return _value_payload(item, "Float64Value", Float64ValueT).value
-    if item.kindType == ValueKind.NonFiniteFloatValue:
+    if wire_enum_matches(item.kindType, ValueKind.NonFiniteFloatValue):
         kind = _value_payload(item, "NonFiniteFloatValue", NonFiniteFloatValueT).kind
-        if kind == NonFiniteFloatKind.NaN:
+        if wire_enum_matches(kind, NonFiniteFloatKind.NaN):
             return math.nan
-        if kind == NonFiniteFloatKind.PositiveInfinity:
+        if wire_enum_matches(kind, NonFiniteFloatKind.PositiveInfinity):
             return math.inf
-        if kind == NonFiniteFloatKind.NegativeInfinity:
+        if wire_enum_matches(kind, NonFiniteFloatKind.NegativeInfinity):
             return -math.inf
         raise ValueError("unknown NonFiniteFloat kind")
-    if item.kindType == ValueKind.StringValue:
+    if wire_enum_matches(item.kindType, ValueKind.StringValue):
         string = _value_payload(item, "StringValue", StringValueT).value
         if string is None:
             raise ValueError("missing StringValue payload")
         return string
-    if item.kindType == ValueKind.BytesValue:
+    if wire_enum_matches(item.kindType, ValueKind.BytesValue):
         bytes_value = _value_payload(item, "BytesValue", BytesValueT).value
         if bytes_value is None:
             raise ValueError("missing BytesValue payload")
         return bytes(bytes_value)
-    if item.kindType == ValueKind.ValueList:
+    if wire_enum_matches(item.kindType, ValueKind.ValueList):
         payload = _value_payload(item, "ValueList", ValueListT)
         if payload.values is None:
             raise ValueError("malformed ValueList payload")
         return [_python_value(child) for child in payload.values]
-    if item.kindType == ValueKind.ValueObject:
+    if wire_enum_matches(item.kindType, ValueKind.ValueObject):
         payload = _value_payload(item, "ValueObject", ValueObjectT)
         return _decode_value_entries(payload.fields)
-    if item.kindType == ValueKind.TensorValue:
+    if wire_enum_matches(item.kindType, ValueKind.TensorValue):
         return _tensor_value(_value_payload(item, "TensorValue", TensorValueT))
     raise ValueError(f"unknown Value union kind: {item.kindType}")
 
@@ -318,7 +318,15 @@ class ClientError(RuntimeError):
             ErrorCode.Unavailable: "unavailable",
             ErrorCode.DeadlineExceeded: "deadline_exceeded",
         }
-        return names.get(getattr(self.error, "code", ErrorCode.Internal), "internal")
+        code = getattr(self.error, "code", ErrorCode.Internal)
+        if isinstance(code, int):
+            from ._wire.v1.codec import _wire_enum_to_semantic
+
+            try:
+                code = _wire_enum_to_semantic("ErrorCode", code)
+            except ValueError:
+                return "internal"
+        return names.get(code, "internal")
 
     @property
     def message(self) -> str:
@@ -995,12 +1003,21 @@ class Index:
 
     def __init__(self, client: Client, owner: _ManagedLocalHost | None = None, *, ergonomic: bool = False):
         self.client = client
+        if getattr(client, "target", None) is not None and getattr(client, "index_generation", None) is None:
+            self.client.open_index()
         self._owner = owner
         self._ergonomic = ergonomic
 
     @classmethod
     def connect(cls, endpoint: str, target: str | None = None) -> "Index":
-        return cls(Client(GrpcTransport(endpoint), target=target), ergonomic=True)
+        client = Client(GrpcTransport(endpoint), target=target)
+        if target is not None:
+            try:
+                client.open_index()
+            except Exception:
+                client.close()
+                raise
+        return cls(client, ergonomic=True)
 
     @classmethod
     def create(

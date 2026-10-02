@@ -54,7 +54,7 @@ class SearchKernelBfbsTest(unittest.TestCase):
             )
             generated = output.read_text(encoding="utf-8")
         self.assertIn("arguments_: (GroupingExpressionT)[] = []", generated)
-        self.assertIn("['name', 'arguments'], [name, arguments_]", generated)
+        self.assertIn("['name', 'arguments_'], [name, arguments_]", generated)
 
     def test_struct_references_are_supported_by_semantic_generation(self) -> None:
         stored = self.field("FieldDefinition", "stored")

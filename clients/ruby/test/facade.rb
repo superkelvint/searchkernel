@@ -63,6 +63,8 @@ class FacadeRecordingTransport
     raise "unknown request type #{request_type}" unless operation
 
     payload = case operation
+              when :open_index
+                { "index" => {}, "generation" => "recorded-generation" }
               when :insert, :upsert, :patch, :update
                 { "id" => request.dig("payload", "id") || request.dig("payload", "document", "id") || "doc-1" }
               when :delete
@@ -106,6 +108,12 @@ end
 
 transport = FacadeRecordingTransport.new
 index = SearchKernel::Index.new(SearchKernel::Client.new(transport))
+
+bound_transport = FacadeRecordingTransport.new
+bound_index = SearchKernel::Index.new(SearchKernel::Client.new(bound_transport, target: "products"))
+bound_index.describe
+same("SearchKernel_Wire_OpenIndexRequest", bound_transport.requests[0].fetch("payload_type"), "bound index opens target")
+same("recorded-generation", bound_transport.requests[1].fetch("target").fetch("generation"), "bound index carries generation")
 
 same("doc-1", index.insert("_id" => "doc-1", "title" => "Running Shoes", "price" => 99.0), "facade insert id")
 insert_request = transport.requests.last.fetch("payload")
@@ -242,10 +250,8 @@ raises(RuntimeError, "owner still closes when client close fails") { failing_ind
 same(1, failing_owner.close_count, "owner cleanup runs despite client close failure")
 assert(failing_index.closed?, "index remains closed after cleanup failure")
 
-connected_index = SearchKernel::Index.connect("http://127.0.0.1:1", target: "products")
-connected_index.close
-raises(SearchKernel::TransportError, "connect-to-daemon index rejects operations after close") do
-  connected_index.get("doc-1")
+raises(SearchKernel::TransportError, "connect opens the target before returning a handle") do
+  SearchKernel::Index.connect("http://127.0.0.1:1", target: "products")
 end
 
 nearest = SearchKernel::Query.nearest_neighbor(
@@ -522,7 +528,7 @@ Dir.mktmpdir("searchkernel-ruby-managed-test-") do |root|
         body = JSON.generate(
           "protocol_version" => 1,
           "payload_type" => "SearchKernel_Wire_#{response_name}",
-          "payload" => { "index" => {} }
+          "payload" => { "index" => {}, "generation" => "fake-generation" }
         )
         socket.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
         socket.close

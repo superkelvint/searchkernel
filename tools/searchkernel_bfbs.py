@@ -89,7 +89,8 @@ class ReflectedSchema:
         return sorted((obj.Fields(i) for i in range(obj.FieldsLength())), key=lambda field: field.Id())
 
     def field_name(self, field: Any) -> str:
-        return _camel(_decode(field.Name()))
+        name = _camel(_decode(field.Name()))
+        return "arguments_" if name == "arguments" else name
 
     def _enum(self, index: int) -> Any:
         if index < 0 or index >= len(self.enums):
