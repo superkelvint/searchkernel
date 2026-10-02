@@ -3442,7 +3442,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "searchkerneld/tests/multi_index.rs",
-              "line": 1452
+              "line": 1458
             },
             {
               "capability": "daemon.multi_index_lifecycle",
@@ -3452,7 +3452,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "searchkerneld/tests/multi_index.rs",
-              "line": 1452
+              "line": 1458
             }
           ],
           "overrides": []
