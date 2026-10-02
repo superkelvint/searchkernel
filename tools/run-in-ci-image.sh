@@ -11,6 +11,7 @@ KEEP_STATE=${SEARCHKERNEL_CI_KEEP_STATE:-0}
 EXACT_SOURCE=${SEARCHKERNEL_CI_EXACT_SOURCE:-0}
 COVERAGE_SNAPSHOT=0
 [[ "${1:-}" == "coverage" ]] && COVERAGE_SNAPSHOT=1
+CONSUMER_RELEASE_EXPORT=${SEARCHKERNEL_CONSUMER_RELEASE_EXPORT:-}
 NATIVE_BASE_NEEDS_PRODUCER=0
 NATIVE_BASE_OUTPUT=
 NATIVE_BASE_VERIFY_ARCHIVE=
@@ -46,7 +47,21 @@ case "${1:-}:${2:-}" in
     test:native-base-artifact)
         NATIVE_BASE_NEEDS_PRODUCER=1
         ;;
+    test:consumer-release)
+        if [[ -n "$CONSUMER_RELEASE_EXPORT" ]]; then
+            mkdir -p "$CONSUMER_RELEASE_EXPORT"
+            CONSUMER_RELEASE_EXPORT=$(cd -- "$CONSUMER_RELEASE_EXPORT" && pwd -P)
+            if find "$CONSUMER_RELEASE_EXPORT" -mindepth 1 -print -quit | grep -q .; then
+                die "consumer-release export directory must be empty: $CONSUMER_RELEASE_EXPORT"
+            fi
+        fi
+        ;;
 esac
+
+if [[ -n "$CONSUMER_RELEASE_EXPORT" &&
+      "${1:-}:${2:-}" != "test:consumer-release" ]]; then
+    die "SEARCHKERNEL_CONSUMER_RELEASE_EXPORT is only valid with ./dev test consumer-release"
+fi
 
 if [[ "$NATIVE_BASE_NEEDS_PRODUCER" == "1" ]]; then
     VESPA_PRODUCER_INPUT=${VESPA_ROOT:-}
@@ -167,7 +182,7 @@ else
 fi
 
 artifact_volume=""
-if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
+if [[ "$COVERAGE_SNAPSHOT" == "1" || -n "$CONSUMER_RELEASE_EXPORT" ]]; then
     artifact_volume="searchkernel-dev-artifacts-$invocation_id"
 fi
 producer_vespa_volume=""
@@ -454,8 +469,15 @@ if [[ -n "$artifact_volume" ]]; then
     docker_volume_args+=(
         -v "$artifact_volume:/artifacts"
     )
+fi
+if [[ "$COVERAGE_SNAPSHOT" == "1" ]]; then
     docker_env+=(
         -e SEARCHKERNEL_COVERAGE_DIR=/artifacts/coverage
+    )
+fi
+if [[ -n "$CONSUMER_RELEASE_EXPORT" ]]; then
+    docker_env+=(
+        -e SEARCHKERNEL_CONSUMER_RELEASE_OUTPUT=/artifacts/consumer-release
     )
 fi
 [[ -z "$producer_vespa_volume" ]] || docker_volume_args+=(-v "$producer_vespa_volume:/native-base-producer/vespa:ro")
@@ -483,6 +505,19 @@ if [[ -n "$NATIVE_BASE_OUTPUT" ]]; then
         echo "==> dev: exported native-base artifacts to $NATIVE_BASE_OUTPUT"
     else
         echo "==> dev: native-base build failed; no artifacts were exported" >&2
+    fi
+fi
+
+if [[ -n "$CONSUMER_RELEASE_EXPORT" ]]; then
+    if [[ "$status" -eq 0 ]]; then
+        if ! docker run --rm "${docker_resource_labels[@]}" -v "$artifact_volume:/artifacts:ro" "$IMAGE_ID"             test -f /artifacts/consumer-release/manifest.json; then
+            die "consumer-release qualification succeeded without producing a release manifest"
+        fi
+        docker run --rm "${docker_resource_labels[@]}"             -v "$artifact_volume:/artifacts:ro" "$IMAGE_ID"             tar -C /artifacts/consumer-release -cf - . |
+            tar -C "$CONSUMER_RELEASE_EXPORT" -xf -
+        echo "==> dev: exported qualified consumer release to $CONSUMER_RELEASE_EXPORT"
+    else
+        echo "==> dev: consumer-release qualification failed; no artifacts were exported" >&2
     fi
 fi
 
