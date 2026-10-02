@@ -48,6 +48,9 @@
     "native-base-policy": {
       "description": "Native-base container dispatch, publication boundary, and shell policy regressions"
     },
+    "consumer-release": {
+      "description": "Build and qualify the exact consumer release candidate"
+    },
     "verification-control-plane": {
       "description": "Trusted exact-SHA verification workflow and request ingress contracts"
     },
