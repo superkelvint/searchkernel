@@ -178,10 +178,11 @@ comment creation—as the verification result, and must rerun required checks
 after the head SHA changes. The operational agent procedure is documented in
 `docs/agent-workflow.md`.
 
-For comment-triggered requests, the trusted workflow posts a result comment back
-to the same pull request after the run completes. The comment records PASS/FAIL,
-the canonical `./dev` command, requested and observed exact SHAs, and a
-clickable link to the GitHub Actions run.
+For comment-triggered requests, the trusted workflow immediately posts one
+RUNNING status comment with a clickable Actions link, then updates that same
+comment in place when verification completes. The final comment records
+PASS/FAIL, the canonical `./dev` command, requested and observed exact SHAs,
+and the Actions run link.
 
 ### Remote evidence requirements
 
@@ -221,8 +222,10 @@ associations and a single-line, bounded command grammar. Remote verification mus
 - validate targets against the canonical repository-owned target registry;
 - expose no arbitrary shell input;
 - keep subject verification on read-only GitHub repository permissions;
-- grant only the isolated post-run reporter `issues: write`, with no subject checkout;
-- receive no release/deploy/write secrets;
+- keep subject verification read-only and secret-free;
+- grant write permission only to isolated status/reporter jobs that never
+  checkout or execute subject code;
+- the subject verification job receives no release, deployment, or write secrets;
 - accept only exact commit SHAs available from this repository; fork-only or
   unavailable SHAs fail closed;
 - use job-private writable state;
