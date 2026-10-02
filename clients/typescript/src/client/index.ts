@@ -266,7 +266,9 @@ export class Index {
   ): Index {
     const target = typeof targetOrTransport === "string" ? targetOrTransport : undefined;
     const transport = typeof targetOrTransport === "string" ? selectedTransport : targetOrTransport;
-    return new Index(new Client(transport ?? new GrpcWebTransport(endpoint), target));
+    const client = new Client(transport ?? new GrpcWebTransport(endpoint), target);
+    if (target !== undefined) client.requireOpenBeforeOperations();
+    return new Index(client);
   }
 
   static async create(
