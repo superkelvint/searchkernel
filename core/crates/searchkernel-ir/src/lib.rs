@@ -27,11 +27,11 @@ pub mod wire;
 
 pub use api_to_ir::control_plane::{
     already_exists_error, index_in_use_error, lifecycle_failure, not_found_error, path_failure,
-    stale_index_handle_error, validate_index_target, LifecycleFailure, LifecycleFailureCode,
-    LifecycleFailureDetail, LifecycleOperation, PathFailure, TargetValidationError,
-    CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE, INDEX_IN_USE_DETAIL_CODE,
-    INDEX_NOT_FOUND_DETAIL_CODE, INVALID_INDEX_TARGET_DETAIL_CODE, MAX_INDEX_TARGET_LEN,
-    MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE,
+    stale_index_handle_error, validate_index_target, ControlPlaneRequest, LifecycleFailure,
+    LifecycleFailureCode, LifecycleFailureDetail, LifecycleOperation, PathFailure,
+    TargetValidationError, CREATE_INDEX_DEFINITION_PATH, INDEX_ALREADY_EXISTS_DETAIL_CODE,
+    INDEX_IN_USE_DETAIL_CODE, INDEX_NOT_FOUND_DETAIL_CODE, INVALID_INDEX_TARGET_DETAIL_CODE,
+    MAX_INDEX_TARGET_LEN, MISSING_INDEX_DEFINITION_DETAIL_CODE, MISSING_INDEX_TARGET_DETAIL_CODE,
     STALE_INDEX_HANDLE_DETAIL_CODE, TARGET_NAME_PATH, TARGET_PATH,
 };
 pub use api_to_ir::{

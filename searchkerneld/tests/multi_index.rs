@@ -398,9 +398,8 @@ fn ir_portable_error_semantics(
 }
 
 fn resolved_ir_request_error(request: &[u8]) -> searchkernel_ir::PortableError {
-    let envelope = root::<wire::RequestEnvelope<'_>>(request).expect("request envelope");
-    match searchkernel_ir::wire::v1::resolve_control_plane_request(envelope) {
-        Err(searchkernel_ir::wire::v1::ControlPlaneResolutionError::Semantic(error)) => error,
+    match searchkernel_ir::wire::decode_control_plane_request(request) {
+        Err(searchkernel_ir::wire::ControlPlaneDecodeError::Semantic { error, .. }) => error,
         result => panic!("expected canonical IR semantic error, got {result:?}"),
     }
 }
