@@ -1,13 +1,8 @@
-use flatbuffers::root;
 use searchkernel::{Error as IndexError, ErrorCode as IndexErrorCode, Index};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
 use searchkernel_ir::{
-    wire::v1::{self as wire_ir, ControlPlaneRequest},
-    PortableError,
-};
-use searchkernel_protocol::{
-    protocol::v1::{self as wire, PROTOCOL_VERSION},
-    wire::v1 as api,
+    wire::{self, ControlPlaneDecodeError, WireVersion},
+    ControlPlaneRequest, IndexDefinitionIr, PortableError,
 };
 use std::{
     collections::BTreeMap,
@@ -19,9 +14,6 @@ use std::{
     },
     time::{SystemTime, UNIX_EPOCH},
 };
-
-const REQUEST_IDENTIFIER: &[u8; 4] = b"SKRQ";
-const RESPONSE_IDENTIFIER: &str = "SKRS";
 
 static NEXT_GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -176,30 +168,32 @@ impl IndexRegistry {
             return Err(RegistryDispatchError::Closed);
         }
 
-        let envelope = parse_request(request)?;
-        if envelope.protocol_version() != PROTOCOL_VERSION {
-            return Err(RegistryDispatchError::UnsupportedProtocol(
-                envelope.protocol_version(),
-            ));
-        }
-        let control = match wire_ir::resolve_control_plane_request(envelope) {
-            Ok(control) => control,
-            Err(wire_ir::ControlPlaneResolutionError::InvalidEnvelope) => {
+        let decoded = match wire::decode_control_plane_request(request) {
+            Ok(decoded) => decoded,
+            Err(ControlPlaneDecodeError::InvalidRequest) => {
                 return Err(RegistryDispatchError::InvalidRequest)
             }
-            Err(wire_ir::ControlPlaneResolutionError::Semantic(error)) => {
-                return Ok(RegistryDispatchResult::payload(encode_error(error)))
+            Err(ControlPlaneDecodeError::UnsupportedProtocol(version)) => {
+                return Err(RegistryDispatchError::UnsupportedProtocol(version))
+            }
+            Err(ControlPlaneDecodeError::Semantic { version, error }) => {
+                return Ok(RegistryDispatchResult::payload(wire::encode_error(
+                    version, &error,
+                )))
             }
         };
+        let version = decoded.version;
 
-        match control {
-            ControlPlaneRequest::Create { target, definition } => self.create(target, definition),
-            ControlPlaneRequest::Open { target } => self.open(target),
-            ControlPlaneRequest::Delete { target } => self.delete_index(target),
+        match decoded.request {
+            ControlPlaneRequest::Create { target, definition } => {
+                self.create(&target, *definition, version)
+            }
+            ControlPlaneRequest::Open { target } => self.open(&target, version),
+            ControlPlaneRequest::Delete { target } => self.delete_index(&target, version),
             ControlPlaneRequest::Route {
                 target,
                 expected_generation,
-            } => self.dispatch_loaded(target, request, expected_generation),
+            } => self.dispatch_loaded(&target, request, expected_generation.as_deref(), version),
         }
     }
 
@@ -267,13 +261,10 @@ impl IndexRegistry {
     fn create(
         &self,
         target: &str,
-        definition: api::IndexDefinition<'_>,
+        definition: IndexDefinitionIr,
+        version: WireVersion,
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
-        let definition_ir = match wire_ir::index_definition_to_ir(definition) {
-            Ok(definition) => definition,
-            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
-        };
-        let definition_bytes = wire_ir::index_definition_ir_to_api(&definition_ir);
+        let definition_bytes = wire::encode_persisted_index_definition(&definition);
 
         let transition = self.transition_lock(target)?;
         let _transition = transition
@@ -285,7 +276,8 @@ impl IndexRegistry {
                 .lock()
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if entries.contains_key(target) {
-                return Ok(RegistryDispatchResult::payload(encode_error(
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
                     searchkernel_ir::already_exists_error(),
                 )));
             }
@@ -293,12 +285,17 @@ impl IndexRegistry {
 
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
+            Err(error) => {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version, error,
+                )))
+            }
         };
         let index = match Index::create_from_definition_bytes(&path, &definition_bytes) {
             Ok(index) => index,
             Err(error) => {
-                return Ok(RegistryDispatchResult::payload(encode_error(
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
                     lifecycle_index_error_to_portable(
                         searchkernel_ir::LifecycleOperation::Create,
                         error,
@@ -318,14 +315,16 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .insert(target.to_owned(), entry);
-        Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
-            context.definition(),
-            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
-            &generation,
-        )))
+        Ok(RegistryDispatchResult::payload(
+            wire::encode_create_index_result(version, context.definition(), &generation),
+        ))
     }
 
-    fn open(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+    fn open(
+        &self,
+        target: &str,
+        version: WireVersion,
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let transition = self.transition_lock(target)?;
         let _transition = transition
             .lock()
@@ -337,22 +336,29 @@ impl IndexRegistry {
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if let Some(entry) = entries.get(target) {
                 let (context, _) = entry.index.clone().into_session_parts();
-                return Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
-                    context.definition(),
-                    wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
-                    &entry.generation,
-                )));
+                return Ok(RegistryDispatchResult::payload(
+                    wire::encode_open_index_result(
+                        version,
+                        context.definition(),
+                        &entry.generation,
+                    ),
+                ));
             }
         }
 
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
+            Err(error) => {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version, error,
+                )))
+            }
         };
         let index = match Index::open(&path) {
             Ok(index) => index,
             Err(error) => {
-                return Ok(RegistryDispatchResult::payload(encode_error(
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
                     lifecycle_index_error_to_portable(
                         searchkernel_ir::LifecycleOperation::Open,
                         error,
@@ -372,21 +378,27 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .insert(target.to_owned(), entry);
-        Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
-            context.definition(),
-            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
-            &generation,
-        )))
+        Ok(RegistryDispatchResult::payload(
+            wire::encode_open_index_result(version, context.definition(), &generation),
+        ))
     }
 
-    fn delete_index(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+    fn delete_index(
+        &self,
+        target: &str,
+        version: WireVersion,
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let transition = self.transition_lock(target)?;
         let _transition = transition
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
-            Err(error) => return Ok(RegistryDispatchResult::payload(encode_error(error))),
+            Err(error) => {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version, error,
+                )))
+            }
         };
 
         let entry = self
@@ -395,7 +407,8 @@ impl IndexRegistry {
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .remove(target);
         if entry.is_none() && !path.exists() {
-            return Ok(RegistryDispatchResult::payload(encode_error(
+            return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version,
                 searchkernel_ir::not_found_error(),
             )));
         }
@@ -406,7 +419,8 @@ impl IndexRegistry {
                 .write()
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if let Err(error) = entry.index.close() {
-                return Ok(RegistryDispatchResult::payload(encode_error(
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
                     lifecycle_index_error_to_portable(
                         searchkernel_ir::LifecycleOperation::Delete,
                         error,
@@ -416,8 +430,11 @@ impl IndexRegistry {
         }
 
         match Index::delete_storage(&path) {
-            Ok(()) => Ok(RegistryDispatchResult::payload(encode_delete_index_result())),
-            Err(error) => Ok(RegistryDispatchResult::payload(encode_error(
+            Ok(()) => Ok(RegistryDispatchResult::payload(
+                wire::encode_delete_index_result(version),
+            )),
+            Err(error) => Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version,
                 lifecycle_index_error_to_portable(
                     searchkernel_ir::LifecycleOperation::Delete,
                     error,
@@ -431,6 +448,7 @@ impl IndexRegistry {
         target: &str,
         request: &[u8],
         expected_generation: Option<&str>,
+        version: WireVersion,
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         // Acquire the per-entry admission guard while the entry is still
         // reachable from the registry. Delete removes the entry under the same
@@ -441,12 +459,14 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         let Some(entry) = entries.get(target).cloned() else {
-            return Ok(RegistryDispatchResult::payload(encode_error(
+            return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version,
                 searchkernel_ir::not_found_error(),
             )));
         };
         if expected_generation.is_some_and(|generation| generation != entry.generation.as_str()) {
-            return Ok(RegistryDispatchResult::payload(encode_error(
+            return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version,
                 searchkernel_ir::stale_index_handle_error(),
             )));
         }
@@ -490,11 +510,8 @@ impl IndexRegistry {
     }
 }
 
-fn parse_request(bytes: &[u8]) -> Result<wire::RequestEnvelope<'_>, RegistryDispatchError> {
-    if bytes.len() < 8 || bytes[4..8] != *REQUEST_IDENTIFIER {
-        return Err(RegistryDispatchError::InvalidRequest);
-    }
-    root::<wire::RequestEnvelope<'_>>(bytes).map_err(|_| RegistryDispatchError::InvalidRequest)
+fn encode_registry_error(version: WireVersion, error: PortableError) -> Vec<u8> {
+    wire::encode_error(version, &error)
 }
 
 fn map_dispatch_error(error: DispatchError) -> RegistryDispatchError {
@@ -515,75 +532,4 @@ fn lifecycle_index_error_to_portable(
     error: IndexError,
 ) -> PortableError {
     searchkernel_ir::lifecycle_failure(operation, error.to_lifecycle_failure())
-}
-
-fn encode_lifecycle_result(
-    definition: &searchkernel_ir::IndexDefinitionIr,
-    payload_type: wire::ResponsePayload,
-    index_generation: &str,
-) -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let index = wire_ir::index_definition_offset(&mut builder, definition);
-    let generation = builder.create_string(index_generation);
-    let payload = match payload_type {
-        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => {
-            api::CreateIndexResult::create(
-                &mut builder,
-                &api::CreateIndexResultArgs {
-                    index: Some(index),
-                    generation: Some(generation),
-                },
-            )
-            .as_union_value()
-        }
-        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult => api::OpenIndexResult::create(
-            &mut builder,
-            &api::OpenIndexResultArgs {
-                index: Some(index),
-                generation: Some(generation),
-            },
-        )
-        .as_union_value(),
-        _ => unreachable!("lifecycle result kind is fixed by caller"),
-    };
-    encode_response(&mut builder, payload_type, payload)
-}
-
-fn encode_delete_index_result() -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let payload =
-        api::DeleteIndexResult::create(&mut builder, &api::DeleteIndexResultArgs::default())
-            .as_union_value();
-    encode_response(
-        &mut builder,
-        wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
-        payload,
-    )
-}
-
-fn encode_error(error: PortableError) -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let payload = wire_ir::error_offset(&mut builder, &error).as_union_value();
-    encode_response(
-        &mut builder,
-        wire::ResponsePayload::SearchKernel_Wire_Error,
-        payload,
-    )
-}
-
-fn encode_response(
-    builder: &mut flatbuffers::FlatBufferBuilder<'_>,
-    payload_type: wire::ResponsePayload,
-    payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
-) -> Vec<u8> {
-    let envelope = wire::ResponseEnvelope::create(
-        builder,
-        &wire::ResponseEnvelopeArgs {
-            protocol_version: PROTOCOL_VERSION,
-            payload_type,
-            payload: Some(payload),
-        },
-    );
-    builder.finish(envelope, Some(RESPONSE_IDENTIFIER));
-    builder.finished_data().to_vec()
 }

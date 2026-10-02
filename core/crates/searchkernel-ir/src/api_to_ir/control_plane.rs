@@ -1,9 +1,10 @@
-//! FlatBuffers-to-IR resolution for multi-index targets and lifecycle requests.
+//! Wire-neutral multi-index lifecycle semantics.
 //!
-//! Keep generated envelope and target views inside this API-to-IR boundary.
+//! Version-specific envelope decoding lives under `crate::wire`; this module
+//! owns only canonical target validation, lifecycle commands, and portable
+//! lifecycle error meaning.
 
-use crate::{ErrorCode, ErrorDetail, PortableError};
-use searchkernel_protocol::{protocol::v1 as wire, wire::v1 as api};
+use crate::{ErrorCode, ErrorDetail, IndexDefinitionIr, PortableError};
 use std::collections::BTreeMap;
 
 pub const MAX_INDEX_TARGET_LEN: usize = 128;
@@ -67,84 +68,22 @@ pub enum PathFailure {
     InspectFailed,
 }
 
-#[derive(Debug)]
-pub enum ControlPlaneRequest<'a> {
+#[derive(Clone, Debug)]
+pub enum ControlPlaneRequest {
     Create {
-        target: &'a str,
-        definition: api::IndexDefinition<'a>,
+        target: String,
+        definition: Box<IndexDefinitionIr>,
     },
     Open {
-        target: &'a str,
+        target: String,
     },
     Delete {
-        target: &'a str,
+        target: String,
     },
     Route {
-        target: &'a str,
-        expected_generation: Option<&'a str>,
+        target: String,
+        expected_generation: Option<String>,
     },
-}
-
-#[derive(Debug)]
-pub enum ControlPlaneResolutionError {
-    InvalidEnvelope,
-    Semantic(PortableError),
-}
-
-/// Resolve target and lifecycle meaning from a mechanically verified envelope.
-/// Malformed payload unions remain envelope errors; valid wire objects with
-/// missing or invalid domain values produce canonical portable errors.
-pub fn resolve_control_plane_request<'a>(
-    envelope: wire::RequestEnvelope<'a>,
-) -> Result<ControlPlaneRequest<'a>, ControlPlaneResolutionError> {
-    let target_view = envelope.target();
-    let target =
-        resolve_index_target(target_view).map_err(ControlPlaneResolutionError::Semantic)?;
-    match envelope.payload_type() {
-        wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
-            let payload = envelope
-                .payload_as_search_kernel_wire_create_index_request()
-                .ok_or(ControlPlaneResolutionError::InvalidEnvelope)?;
-            let definition = payload
-                .definition()
-                .ok_or_else(|| ControlPlaneResolutionError::Semantic(missing_definition_error()))?;
-            Ok(ControlPlaneRequest::Create { target, definition })
-        }
-        wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest => {
-            envelope
-                .payload_as_search_kernel_wire_open_index_request()
-                .ok_or(ControlPlaneResolutionError::InvalidEnvelope)?;
-            Ok(ControlPlaneRequest::Open { target })
-        }
-        wire::RequestPayload::SearchKernel_Wire_DeleteIndexRequest => {
-            envelope
-                .payload_as_search_kernel_wire_delete_index_request()
-                .ok_or(ControlPlaneResolutionError::InvalidEnvelope)?;
-            Ok(ControlPlaneRequest::Delete { target })
-        }
-        wire::RequestPayload::NONE => Err(ControlPlaneResolutionError::InvalidEnvelope),
-        _ => Ok(ControlPlaneRequest::Route {
-            target,
-            expected_generation: target_view.and_then(|target| target.generation()),
-        }),
-    }
-}
-
-pub fn resolve_index_target<'a>(
-    target: Option<api::IndexTarget<'a>>,
-) -> Result<&'a str, PortableError> {
-    let Some(target) = target else {
-        return Err(control_error(
-            ErrorCode::InvalidArgument,
-            MISSING_INDEX_TARGET_DETAIL_CODE,
-            Some(TARGET_PATH),
-            "Search Kernel request is missing an index target".to_owned(),
-        ));
-    };
-    let Some(name) = target.name() else {
-        return Err(invalid_target_error(TargetValidationError::Empty));
-    };
-    validate_index_target(name).map_err(invalid_target_error)
 }
 
 pub fn validate_index_target(value: &str) -> Result<&str, TargetValidationError> {
@@ -293,7 +232,16 @@ pub fn stale_index_handle_error() -> PortableError {
     )
 }
 
-fn missing_definition_error() -> PortableError {
+pub(crate) fn missing_target_error() -> PortableError {
+    control_error(
+        ErrorCode::InvalidArgument,
+        MISSING_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_PATH),
+        "Search Kernel request is missing an index target".to_owned(),
+    )
+}
+
+pub(crate) fn missing_definition_error() -> PortableError {
     control_error(
         ErrorCode::InvalidArgument,
         MISSING_INDEX_DEFINITION_DETAIL_CODE,
@@ -302,7 +250,7 @@ fn missing_definition_error() -> PortableError {
     )
 }
 
-fn invalid_target_error(error: TargetValidationError) -> PortableError {
+pub(crate) fn invalid_target_error(error: TargetValidationError) -> PortableError {
     control_error(
         ErrorCode::InvalidArgument,
         INVALID_INDEX_TARGET_DETAIL_CODE,
@@ -417,7 +365,7 @@ mod tests {
 
     #[test]
     fn missing_target_and_definition_have_canonical_portable_errors() {
-        let missing_target = resolve_index_target(None).unwrap_err();
+        let missing_target = missing_target_error();
         assert_eq!(missing_target.code, ErrorCode::InvalidArgument);
         assert_eq!(
             missing_target.message,
@@ -447,100 +395,6 @@ mod tests {
         assert_eq!(
             missing_definition.details[0].message,
             missing_definition.message
-        );
-    }
-
-    #[test]
-    fn direct_target_resolution_returns_the_canonical_error() {
-        let mut builder = flatbuffers::FlatBufferBuilder::new();
-        let name = builder.create_string("Products");
-        let target = api::IndexTarget::create(
-            &mut builder,
-            &api::IndexTargetArgs {
-                name: Some(name),
-                generation: None,
-            },
-        );
-        builder.finish(target, None);
-        let target = flatbuffers::root::<api::IndexTarget<'_>>(builder.finished_data())
-            .expect("valid target view");
-        let error = resolve_index_target(Some(target)).expect_err("uppercase target is invalid");
-        assert_eq!(error.code, ErrorCode::InvalidArgument);
-        assert_eq!(error.message, "invalid Search Kernel index target: index target must start with a lowercase ASCII letter or digit; got byte 0x50");
-        assert_eq!(error.details[0].code, INVALID_INDEX_TARGET_DETAIL_CODE);
-        assert_eq!(error.details[0].path.as_deref(), Some(TARGET_NAME_PATH));
-        assert_eq!(error.details[0].message, error.message);
-    }
-
-    #[test]
-    fn request_resolution_owns_presence_and_lifecycle_meaning() {
-        use searchkernel_protocol::protocol::v1 as wire;
-
-        let mut builder = flatbuffers::FlatBufferBuilder::new();
-        let open =
-            api::OpenIndexRequest::create(&mut builder, &api::OpenIndexRequestArgs::default());
-        let open_envelope = wire::RequestEnvelope::create(
-            &mut builder,
-            &wire::RequestEnvelopeArgs {
-                protocol_version: searchkernel_protocol::protocol::v1::PROTOCOL_VERSION,
-                payload_type: wire::RequestPayload::SearchKernel_Wire_OpenIndexRequest,
-                payload: Some(open.as_union_value()),
-                ..Default::default()
-            },
-        );
-        wire::finish_request_envelope_buffer(&mut builder, open_envelope);
-        let missing_target_envelope =
-            flatbuffers::root::<wire::RequestEnvelope<'_>>(builder.finished_data())
-                .expect("valid target-less open envelope");
-        let missing_target = match resolve_control_plane_request(missing_target_envelope) {
-            Err(ControlPlaneResolutionError::Semantic(error)) => error,
-            result => panic!("expected canonical missing-target error, got {result:?}"),
-        };
-        assert_eq!(missing_target.code, ErrorCode::InvalidArgument);
-        assert_eq!(
-            missing_target.details[0].code,
-            MISSING_INDEX_TARGET_DETAIL_CODE
-        );
-        assert_eq!(missing_target.details[0].path.as_deref(), Some(TARGET_PATH));
-
-        let mut builder = flatbuffers::FlatBufferBuilder::new();
-        let name = builder.create_string("products");
-        let target = api::IndexTarget::create(
-            &mut builder,
-            &api::IndexTargetArgs {
-                name: Some(name),
-                generation: None,
-            },
-        );
-        let create = api::CreateIndexRequest::create(
-            &mut builder,
-            &api::CreateIndexRequestArgs { definition: None },
-        );
-        let create_envelope = wire::RequestEnvelope::create(
-            &mut builder,
-            &wire::RequestEnvelopeArgs {
-                protocol_version: searchkernel_protocol::protocol::v1::PROTOCOL_VERSION,
-                target: Some(target),
-                payload_type: wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest,
-                payload: Some(create.as_union_value()),
-            },
-        );
-        wire::finish_request_envelope_buffer(&mut builder, create_envelope);
-        let missing_definition_envelope =
-            flatbuffers::root::<wire::RequestEnvelope<'_>>(builder.finished_data())
-                .expect("valid create envelope with missing definition");
-        let missing_definition = match resolve_control_plane_request(missing_definition_envelope) {
-            Err(ControlPlaneResolutionError::Semantic(error)) => error,
-            result => panic!("expected canonical missing-definition error, got {result:?}"),
-        };
-        assert_eq!(missing_definition.code, ErrorCode::InvalidArgument);
-        assert_eq!(
-            missing_definition.details[0].code,
-            MISSING_INDEX_DEFINITION_DETAIL_CODE
-        );
-        assert_eq!(
-            missing_definition.details[0].path.as_deref(),
-            Some(CREATE_INDEX_DEFINITION_PATH)
         );
     }
 
