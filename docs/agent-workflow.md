@@ -198,8 +198,9 @@ Rules:
   the same comment;
 - the comment author must be accepted by the repository's bounded authorization
   policy (`OWNER`, `MEMBER`, or `COLLABORATOR`);
-- after posting, locate the resulting **On-demand verification** workflow run
-  and inspect its structured evidence and failed-step logs when applicable.
+- after posting, confirm the workflow creates a **RUNNING** status comment with
+  the Actions link, then updates that same comment to **PASS** or **FAIL**;
+- inspect the structured evidence and failed-step logs when applicable.
 
 The PR comment is only a request envelope. It cannot supply arbitrary shell
 text, workflow YAML, runner configuration, or secrets. The trusted default-
@@ -221,8 +222,8 @@ and evidence requirements.
 
 For either ingress, confirm the workflow evidence identifies the
 requested/observed revision, operation, canonical target/command, result, run
-ID, and run URL. For a PR comment request, also confirm the trusted reporter
-posts the PASS/FAIL result back to that PR with a clickable Actions run link.
+ID, and run URL. For a PR comment request, also confirm the trusted reporter updates the existing
+RUNNING status comment to PASS/FAIL with the clickable Actions run link.
 Inspect failed-step logs when the result is not successful. Never treat a
 successfully posted request comment or accepted dispatch as proof that the test
 itself passed.
