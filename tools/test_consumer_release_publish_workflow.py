@@ -43,7 +43,7 @@ class ConsumerReleasePublishWorkflowTests(unittest.TestCase):
         self.assertIn("actions/upload-artifact@v7", text)
         self.assertIn("actions/download-artifact@v8", text)
 
-        self.assertIn('"consumer-release"', self.targets["test"])
+        self.assertIn("consumer-release", self.targets["test"])
         self.assertIn("package-consumer-release.py", self.dev)
         self.assertIn("check-consumer-release.py", self.dev)
         self.assertIn(
@@ -59,6 +59,8 @@ class ConsumerReleasePublishWorkflowTests(unittest.TestCase):
         text = self.workflow
         for fragment in (
             'manifest.get("commit"',
+            'manifest.get("version")',
+            'release tag version mismatch',
             'entry.get("sha256") != digest',
             'runtime.get("compressed_bytes") != size',
             "transferred runtime bytes changed after qualification",
