@@ -57,12 +57,21 @@ fn target<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     name: &str,
 ) -> flatbuffers::WIPOffset<api::IndexTarget<'a>> {
+    target_with_generation(builder, name, None)
+}
+
+fn target_with_generation<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    name: &str,
+    generation: Option<&str>,
+) -> flatbuffers::WIPOffset<api::IndexTarget<'a>> {
     let name = builder.create_string(name);
+    let generation = generation.map(|generation| builder.create_string(generation));
     api::IndexTarget::create(
         builder,
         &api::IndexTargetArgs {
             name: Some(name),
-            generation: None,
+            generation,
         },
     )
 }
@@ -172,10 +181,14 @@ fn open_request(target_name: Option<&str>) -> Vec<u8> {
 }
 
 fn delete_index_request(target_name: &str) -> Vec<u8> {
+    delete_index_request_with_generation(target_name, None)
+}
+
+fn delete_index_request_with_generation(target_name: &str, generation: Option<&str>) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let payload =
         api::DeleteIndexRequest::create(&mut builder, &api::DeleteIndexRequestArgs::default());
-    let target = target(&mut builder, target_name);
+    let target = target_with_generation(&mut builder, target_name, generation);
     let envelope = wire::RequestEnvelope::create(
         &mut builder,
         &wire::RequestEnvelopeArgs {
@@ -190,6 +203,16 @@ fn delete_index_request(target_name: &str) -> Vec<u8> {
 }
 
 fn upsert_request(target_name: &str, id: &str, field_name: &str, text: &str) -> Vec<u8> {
+    upsert_request_with_generation(target_name, id, field_name, text, None)
+}
+
+fn upsert_request_with_generation(
+    target_name: &str,
+    id: &str,
+    field_name: &str,
+    text: &str,
+    generation: Option<&str>,
+) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let text = builder.create_string(text);
     let string_value =
@@ -225,7 +248,7 @@ fn upsert_request(target_name: &str, id: &str, field_name: &str, text: &str) -> 
             ..Default::default()
         },
     );
-    let target = target(&mut builder, target_name);
+    let target = target_with_generation(&mut builder, target_name, generation);
     let envelope = wire::RequestEnvelope::create(
         &mut builder,
         &wire::RequestEnvelopeArgs {
@@ -307,13 +330,6 @@ async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec
         String::from_utf8_lossy(&body)
     );
     response_json_to_flatbuffer(&body).expect("decode response JSON")
-}
-
-fn request_json_with_generation(payload: &[u8], generation: &str) -> Vec<u8> {
-    let json = request_flatbuffer_to_json(payload).expect("request JSON");
-    let mut value: serde_json::Value = serde_json::from_slice(&json).expect("request JSON value");
-    value["target"]["generation"] = serde_json::Value::String(generation.to_owned());
-    serde_json::to_vec(&value).expect("request JSON with target generation")
 }
 
 fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
@@ -639,10 +655,10 @@ async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
         .expect("canonical recreate result generation");
     assert_ne!(old_generation, new_generation);
 
-    let stale_json = request_json_with_generation(
-        &upsert_request("reused", "doc", "title", "stale"),
-        &old_generation,
-    );
+    let stale_bytes =
+        upsert_request_with_generation("reused", "doc", "title", "stale", Some(&old_generation));
+    let stale_json =
+        request_flatbuffer_to_json(&stale_bytes).expect("canonical stale request JSON");
     let stale_bytes = request_json_to_flatbuffer(&stale_json)
         .expect("canonical expected generation in request envelope");
     let grpc_stale = grpc
@@ -667,9 +683,10 @@ async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
         portable_error_semantics(&http_stale)
     );
 
-    let stale_delete =
-        request_json_with_generation(&delete_index_request("reused"), &old_generation);
-    let (status, body) = execute_http_json_raw(http_address, Bytes::from(stale_delete)).await;
+    let stale_delete = delete_index_request_with_generation("reused", Some(&old_generation));
+    let stale_delete_json =
+        request_flatbuffer_to_json(&stale_delete).expect("canonical stale delete JSON");
+    let (status, body) = execute_http_json_raw(http_address, Bytes::from(stale_delete_json)).await;
     assert_eq!(status, http::StatusCode::OK);
     assert_portable_error(
         &response_json_to_flatbuffer(&body).expect("stale delete response"),
@@ -678,11 +695,11 @@ async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
         Some("target"),
     );
 
-    let current = request_json_with_generation(
-        &upsert_request("reused", "doc", "title", "current"),
-        new_generation,
-    );
-    let (status, body) = execute_http_json_raw(http_address, Bytes::from(current)).await;
+    let current =
+        upsert_request_with_generation("reused", "doc", "title", "current", Some(new_generation));
+    let current_json =
+        request_flatbuffer_to_json(&current).expect("canonical current request JSON");
+    let (status, body) = execute_http_json_raw(http_address, Bytes::from(current_json)).await;
     assert_eq!(status, http::StatusCode::OK);
     assert_upsert(&response_json_to_flatbuffer(&body).expect("current handle response"));
 
@@ -1008,8 +1025,12 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
             .expect("independent articles create");
         sender.send(response).expect("send independent response");
     });
+    // Native index creation can contend with the rest of this real-engine suite.
+    // Keep enough headroom for a slow but independent target. A daemon-wide
+    // registry lock still fails deterministically because the products lifecycle
+    // lock remains held until this unrelated request completes.
     let articles = receiver
-        .recv_timeout(std::time::Duration::from_secs(2))
+        .recv_timeout(std::time::Duration::from_secs(10))
         .expect("unrelated target lifecycle must not wait for products");
     assert_lifecycle(
         &articles,

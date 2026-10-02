@@ -545,5 +545,5 @@ has real-runtime evidence.
 ### Targeted multi-index daemon lifecycle protocol (daemon.multi_index_lifecycle)
 
 - **Basic behavior** (basic)
-  - rust / grpc / e2e / runtime — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1572)
-  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1572)
+  - rust / grpc / e2e / runtime — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1593)
+  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1593)
