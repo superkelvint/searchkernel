@@ -37,7 +37,7 @@ jobs:
         id: announce
         uses: actions/github-script@v9
         with:
-          github-token: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN || github.token }}
+          github-token: ${{ github.token }}
           script: |
             const runId = process.env.GITHUB_RUN_ID;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
@@ -367,7 +367,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
-          github-token: ${{ secrets.RUSTFMT_AUTOFIX_TOKEN || github.token }}
+          github-token: ${{ github.token }}
           script: |
             const result = process.env.VERIFICATION_RESULT;
             const passed = result === "success";
