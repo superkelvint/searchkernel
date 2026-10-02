@@ -274,7 +274,7 @@ def stop_daemon(proc, log) -> None:
 
 
 def extract_daemon(root: Path) -> Path:
-    bundle = artifact("searchkerneld-", ".tar.gz")
+    bundle = artifact("searchkernel-runtime-", ".tar.gz")
     daemon_root = root / "daemon"
     daemon_root.mkdir()
     with tarfile.open(bundle) as archive:
@@ -378,6 +378,22 @@ def create_index_target(gem_home: Path, target: str, endpoint: str, root: Path) 
         "ruby", "-e", CREATE_TARGET_RUBY, target, endpoint,
         cwd=root, env=env,
     )
+
+
+def with_quickstart_daemon(
+    root: Path, daemon: Path, index_name: str, probe,
+) -> None:
+    data_root = root / f"{index_name}-data-root"
+    socket_path = root / f"{index_name}.sock"
+    target = index_name
+    port = free_port()
+    endpoint = f"unix://{socket_path}"
+    http = f"http://127.0.0.1:{port}"
+    proc, log = start_multi_daemon(daemon, data_root, socket_path, port)
+    try:
+        probe(endpoint, http, target)
+    finally:
+        stop_daemon(proc, log)
 
 
 def with_restarted_daemon(
@@ -631,23 +647,41 @@ def main() -> None:
             )
 
         def typescript_node_connect_probe_runner() -> None:
-            def probe(phase, endpoint, _http, target):
-                if phase == "initial":
-                    run_node_quickstart(installs["node"], endpoint, target)
-                typescript_connect_probe(installs["node"], phase, endpoint, target)
-
+            with_quickstart_daemon(
+                root,
+                context["daemon"],
+                "typescript-node-quickstart",
+                lambda endpoint, _http, target: run_node_quickstart(
+                    installs["node"], endpoint, target
+                ),
+            )
             with_restarted_daemon(
-                root, context["daemon"], "typescript-node-index", installs["ruby"], probe,
+                root,
+                context["daemon"],
+                "typescript-node-index",
+                installs["ruby"],
+                lambda phase, endpoint, _http, target: typescript_connect_probe(
+                    installs["node"], phase, endpoint, target
+                ),
             )
 
         def ruby_connect_probe_runner() -> None:
-            def probe(phase, _endpoint, http, target):
-                if phase == "initial":
-                    run_ruby_quickstart(installs["ruby"], root, http, target)
-                ruby_connect_probe(installs["ruby"], root, phase, http, target)
-
+            with_quickstart_daemon(
+                root,
+                context["daemon"],
+                "ruby-quickstart",
+                lambda _endpoint, http, target: run_ruby_quickstart(
+                    installs["ruby"], root, http, target
+                ),
+            )
             with_restarted_daemon(
-                root, context["daemon"], "ruby-connect-index", installs["ruby"], probe,
+                root,
+                context["daemon"],
+                "ruby-connect-index",
+                installs["ruby"],
+                lambda phase, _endpoint, http, target: ruby_connect_probe(
+                    installs["ruby"], root, phase, http, target
+                ),
             )
 
         runners = {
