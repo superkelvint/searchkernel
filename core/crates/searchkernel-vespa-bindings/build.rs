@@ -251,6 +251,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_HARDENING");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_CXX_FLAGS");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_LINK_FLAGS");
+    println!("cargo:rerun-if-env-changed=SK_NATIVE_ADAPTER_RPATH");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SANITIZER");
     println!("cargo:rerun-if-env-changed=SEARCHKERNEL_BUILD_ENV");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_TARGET");
