@@ -33,11 +33,12 @@ jobs:
         working-directory: source
         run: |
           docker pull docker.io/superkelvint/searchkernel-ci:latest
-          docker run --rm -v "$PWD:/work" -w /work docker.io/superkelvint/searchkernel-ci:latest bash -lc './dev regen protocol'
+          docker run --rm -e TASK_UID="$(id -u)" -e TASK_GID="$(id -g)" -v "$PWD:/work" -w /work docker.io/superkelvint/searchkernel-ci:latest bash -lc 'git config --global --add safe.directory /work; ./dev regen protocol; chown -R "$TASK_UID:$TASK_GID" core/crates/searchkernel-protocol clients/python/searchkernel clients/typescript/src/semantic.ts'
           git diff --binary --full-index > "$RUNNER_TEMP/protocol.patch"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add core/crates/searchkernel-protocol clients/python/searchkernel clients/typescript/src/semantic.ts
+          git add -f core/crates/searchkernel-protocol/src/generated/search_kernel/wire/list_indexes* clients/python/searchkernel/_wire/v1/generated/SearchKernel/Wire/ListIndexes* clients/python/searchkernel/_wire/v1/generated/semantic_metadata.py
           git commit -m 'chore(protocol): regenerate canonical discovery artifacts' || test -z "$(git diff --cached --name-only)"
           git push origin HEAD:agent/web-real-daemon-1022
       - uses: actions/upload-artifact@v7
