@@ -7,7 +7,7 @@ describe('daemon dashboard boundary', () => {
   it('lists without open, hydrates only the selected target, and retains its bound handle', async () => {
     vi.spyOn(Daemon.prototype, 'listIndexes').mockResolvedValue(['alpha', 'beta'])
     const get = vi.fn().mockResolvedValue({ _id: 'one', title: 'real title', quantity: 9007199254740993n })
-    const definition = new IndexDefinitionT('different-schema', [Text({ stored: true, searchable: true }).definition('title')])
+    const definition = new IndexDefinitionT('different-schema', [new Text({ stored: true, searchable: true }).definition('title')])
     const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition, get } as unknown as RemoteIndex)
     const client = createDaemonSearchKernelClient('http://daemon')
     expect(await client.listIndexes()).toEqual([{ id: 'alpha' }, { id: 'beta' }])

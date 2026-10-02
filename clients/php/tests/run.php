@@ -107,6 +107,10 @@ final class RecordingTransport implements Transport
         $payload = is_array($request['payload'] ?? null) ? $request['payload'] : [];
 
         $result = match ($requestType) {
+            'SearchKernel_Wire_ListIndexesRequest' => [
+                'payload_type' => 'SearchKernel_Wire_ListIndexesResult',
+                'payload' => ['targets' => ['alpha', 'beta']],
+            ],
             'SearchKernel_Wire_InsertRequest' => [
                 'payload_type' => 'SearchKernel_Wire_InsertResult',
                 'payload' => ['id' => $payload['document']['id'] ?? ''],
@@ -202,6 +206,13 @@ throws(
 // --------------------------------------------------------------------------
 
 $handleTransport = new RecordingTransport();
+// SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=http
+$discoveryTransport = new RecordingTransport();
+$discoveryClient = new Client($discoveryTransport, 'must-not-open');
+$discoveryClient->requireOpenBeforeOperations();
+same(['alpha', 'beta'], $discoveryClient->listIndexes(), 'discover logical targets');
+same(1, count($discoveryTransport->requests), 'discovery never opens targets');
+same(null, $discoveryTransport->requests[0]['target'] ?? null, 'discovery is server scoped');
 $firstHandle = new Index($handleTransport, 'products');
 $secondHandle = new Index($handleTransport, 'products');
 $firstHandle->close();

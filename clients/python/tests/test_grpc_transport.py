@@ -115,6 +115,7 @@ class GrpcTransportTest(unittest.TestCase):
         )
         self.assertIsNotNone(client.delete_index())
 
+    # SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=grpc
     def test_discovery_needs_no_index_target_or_open(self):
         transport = _FrameTransport([_response(
             ResponsePayload.SearchKernel_Wire_ListIndexesResult,

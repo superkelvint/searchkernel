@@ -5,7 +5,7 @@ import { once } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { createServer } from 'node:net'
+import { createServer, createConnection } from 'node:net'
 import { Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client'
 import { NodeGrpcTransport } from '../../clients/typescript/src/transport/grpc-node'
 
@@ -26,7 +26,15 @@ async function stop(process: ChildProcess | undefined) {
 async function reachable(endpoint: string, process: ChildProcess) {
   for (let attempt = 0; attempt < 200; attempt++) {
     if (process.exitCode !== null) throw new Error(`process exited: ${process.exitCode}`)
-    try { await fetch(endpoint); return } catch { await new Promise(done => setTimeout(done, 50)) }
+    try {
+      const address = new URL(endpoint)
+      await new Promise<void>((done, reject) => {
+        const socket = createConnection({ host: address.hostname, port: Number(address.port) })
+        socket.once('connect', () => { socket.destroy(); done() })
+        socket.once('error', reject)
+      })
+      return
+    } catch { await new Promise(done => setTimeout(done, 50)) }
   }
   throw new Error(`listener did not start: ${endpoint}`)
 }
@@ -38,9 +46,9 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
   let daemon: ChildProcess | undefined, vite: ChildProcess | undefined, browser: Browser | undefined
   const transports: NodeGrpcTransport[] = []
   const transport = () => { const value = new NodeGrpcTransport(endpoint); transports.push(value); return value }
-  const definition = () => new IndexDefinitionT('schema-name-differs-from-target', [
-    Text({ stored: true, searchable: true }).definition('title'),
-    Integer({ stored: true }).definition('quantity'),
+  const definition = () => new IndexDefinitionT('document_schema', [
+    new Text({ stored: true, searchable: true }).definition('title'),
+    new Integer({ stored: true }).definition('quantity'),
   ])
   async function start() {
     daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'),

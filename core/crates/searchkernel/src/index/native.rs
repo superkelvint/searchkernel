@@ -229,9 +229,10 @@ impl Index {
             Ok(())
         }
         fn no_links(path: &std::path::Path) -> Result<()> {
-            for entry in
-                std::fs::read_dir(path).map_err(|error| Error::Infrastructure(error.to_string()))?
-            {
+            let mut pending = vec![path.to_path_buf()];
+            while let Some(directory) = pending.pop() {
+              for entry in std::fs::read_dir(directory)
+                .map_err(|error| Error::Infrastructure(error.to_string()))? {
                 let entry = entry.map_err(|error| Error::Infrastructure(error.to_string()))?;
                 let kind = entry
                     .file_type()
@@ -242,8 +243,9 @@ impl Index {
                     ));
                 }
                 if kind.is_dir() {
-                    no_links(&entry.path())?;
+                    pending.push(entry.path());
                 }
+              }
             }
             Ok(())
         }

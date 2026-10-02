@@ -32,6 +32,7 @@ function successfulTransport(responses: Uint8Array[]): ClientTransport {
 }
 
 describe("logical index lifecycle", () => {
+  // SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=browser
   it("discovers targets without a target or opening every index", async () => {
     const requests: Uint8Array[] = [];
     const daemon = new Daemon("unused", { execute: async bytes => {
