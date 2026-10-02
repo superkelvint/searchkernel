@@ -714,6 +714,18 @@ test_target() {
     local requested=${1:-} target
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
+        frontend|frontend-real-engine)
+            "$NPM" run build --prefix "$ROOT/clients/typescript"
+            "$NPM" ci --prefix "$ROOT/searchkernel-web"
+            "$NPM" run build --prefix "$ROOT/searchkernel-web"
+            if [[ "$target" == "frontend-real-engine" ]]; then
+                "$CARGO" build -p searchkerneld
+                "$NPM" exec --prefix "$ROOT/searchkernel-web" -- playwright install --with-deps chromium
+                SEARCHKERNEL_FRONTEND_REAL_ENGINE=1 "$NPM" test --prefix "$ROOT/searchkernel-web" -- tests/real-daemon.test.ts
+            else
+                "$NPM" test --prefix "$ROOT/searchkernel-web"
+            fi
+            ;;
         native-base-artifact)
             "$PYTHON" "$ROOT/tools/test_check_native_runtime_closure.py"
             "$PYTHON" "$ROOT/tools/test_bundle_native_runtime_closure.py"
@@ -787,6 +799,9 @@ verify_target() {
     set -- "$target" "$@"
 
     case "$target" in
+        frontend.f8)
+            "$ROOT/tools/frontend-harness/frontend-accept" F8
+            ;;
         product.integration)
             "$ROOT/reference/vespa/verify-through.sh" "$@"
             ;;

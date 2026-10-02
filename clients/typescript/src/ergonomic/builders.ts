@@ -83,6 +83,7 @@ export class SearchBuilder {
   protected readonly aggregates: GroupingOutput[] = [];
   protected readonly facets: FacetSpec[] = [];
   protected rankingProfile?: string;
+  protected summaryName?: string;
   protected readonly inputs = new Map<string, ValueInput>();
   protected readonly rankProperties = new Map<string, string>();
   protected readonly properties = new Map<string, ValueInput>();
@@ -131,6 +132,11 @@ export class SearchBuilder {
 
   ranking(profile: string): this {
     this.rankingProfile = profile;
+    return this;
+  }
+
+  summary(name: string): this {
+    this.summaryName = name;
     return this;
   }
 
@@ -238,7 +244,10 @@ export class SearchBuilder {
       this.offsetValue === undefined ? null : new OptionalUInt32T(this.offsetValue),
       null,
       null,
-      this.selectedFields ? new PresentationRequestT(null, new FieldProjectionT(this.selectedFields)) : null,
+      this.selectedFields || this.summaryName !== undefined
+        ? new PresentationRequestT(this.summaryName ?? null,
+            this.selectedFields ? new FieldProjectionT(this.selectedFields) : null)
+        : null,
       [...this.properties]
         .sort(([a], [b]) => comparePortableKeys(a, b))
         .map(([key, item]) => new ValueEntryT(key, value(item))),

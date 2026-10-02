@@ -21,7 +21,8 @@ module SearchKernel
       inspect_query: { request: "InspectQueryRequest", response: "InspectQueryResult" },
       create_index: { request: "CreateIndexRequest", response: "CreateIndexResult" },
       open_index: { request: "OpenIndexRequest", response: "OpenIndexResult" },
-      delete_index: { request: "DeleteIndexRequest", response: "DeleteIndexResult" }
+      delete_index: { request: "DeleteIndexRequest", response: "DeleteIndexResult" },
+      list_indexes: { request: "ListIndexesRequest", response: "ListIndexesResult" }
     }.transform_values(&:freeze).freeze
 
     module_function

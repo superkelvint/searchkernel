@@ -41,6 +41,7 @@ from ._semantic import Float64ValueT
 from ._semantic import GetRequestT
 from ._semantic import CreateIndexRequestT
 from ._semantic import OpenIndexRequestT
+from ._semantic import ListIndexesRequestT
 from ._semantic import IndexDefinitionT
 from ._semantic import InsertRequestT
 from ._semantic import Int64ValueT
@@ -899,7 +900,7 @@ class Client:
         try:
             expected_generation = (
                 None
-                if operation in {"create_index", "open_index", "delete_index"}
+                if operation in {"create_index", "open_index", "delete_index", "list_indexes"}
                 else self.index_generation
             )
             envelope = unpack_response(
@@ -907,7 +908,7 @@ class Client:
                     pack_request(
                         operation,
                         request,
-                        target=self.target,
+                        target=None if operation == "list_indexes" else self.target,
                         expected_index_generation=expected_generation,
                     )
                 ),
@@ -987,6 +988,14 @@ class Client:
 
     def delete_index(self) -> Any:
         return self.execute("delete_index", DeleteIndexRequestT())
+
+    def list_indexes(self) -> list[str]:
+        """List durable logical targets without opening an index."""
+        result = self.execute("list_indexes", ListIndexesRequestT())
+        targets = getattr(result, "targets", None)
+        if not isinstance(targets, list) or not all(isinstance(name, str) for name in targets):
+            raise ClientError("ListIndexesResult.targets is missing or malformed")
+        return targets
 
     def close(self) -> None:
         self.transport.close()

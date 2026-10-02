@@ -7,8 +7,8 @@ describe('search lab URL state', () => {
     const index = (await createFixtureSearchKernelClient().getIndex('products'))!
     expect(readSearchParams(new URLSearchParams('q=sony&ranking=semantic&limit=10&summary=compact'), index)).toEqual({ query: 'sony', ranking: 'semantic', limit: 10, summary: 'compact' })
   })
-  it('falls back to client-provided defaults for unsupported values', async () => {
+  it('preserves explicit controls for canonical validation', async () => {
     const index = (await createFixtureSearchKernelClient().getIndex('products'))!
-    expect(readSearchParams(new URLSearchParams('ranking=missing&limit=3&summary=missing'), index)).toEqual({ query: '', ranking: 'default', limit: 20, summary: 'search-result' })
+    expect(readSearchParams(new URLSearchParams('ranking=missing&limit=3&summary=missing'), index)).toEqual({ query: '', ranking: 'missing', limit: 3, summary: 'missing' })
   })
 })

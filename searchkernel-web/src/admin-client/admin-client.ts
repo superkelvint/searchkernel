@@ -1,5 +1,5 @@
 export type AdminOverview = {
-  indexCount: number
+  indexCount?: number
   documentCount: string
   storage: string
   daemon: string

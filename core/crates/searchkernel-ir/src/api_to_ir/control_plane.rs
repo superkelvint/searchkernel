@@ -70,6 +70,7 @@ pub enum PathFailure {
 
 #[derive(Clone, Debug)]
 pub enum ControlPlaneRequest {
+    ListIndexes,
     Create {
         target: String,
         definition: Box<IndexDefinitionIr>,
@@ -84,6 +85,11 @@ pub enum ControlPlaneRequest {
         target: String,
         expected_generation: Option<String>,
     },
+}
+
+/// Discovery cannot reveal server paths or underlying filesystem diagnostics.
+pub fn index_discovery_failure() -> PortableError {
+    PortableError::new(ErrorCode::Unavailable, "Index discovery failed")
 }
 
 pub fn validate_index_target(value: &str) -> Result<&str, TargetValidationError> {

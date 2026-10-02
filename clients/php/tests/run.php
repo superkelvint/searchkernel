@@ -1538,6 +1538,7 @@ $expectedOperations = [
     'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
     'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
     'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult'],
+    'list_indexes' => ['ListIndexesRequest', 'ListIndexesResult'],
 ];
 same(array_keys($expectedOperations), Protocol::operations(), 'low-level portable operation list');
 foreach ($expectedOperations as $operation => $types) {

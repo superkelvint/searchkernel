@@ -185,6 +185,7 @@ impl IndexRegistry {
         let version = decoded.version;
 
         match decoded.request {
+            ControlPlaneRequest::ListIndexes => self.list_indexes(version),
             ControlPlaneRequest::Create { target, definition } => {
                 self.create(&target, *definition, version)
             }
@@ -256,6 +257,40 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?;
         Ok(entries.keys().cloned().collect())
+    }
+
+    fn list_indexes(&self, version: WireVersion) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+        let listing = match std::fs::read_dir(&self.data_root) {
+            Ok(listing) => listing,
+            Err(_) => return Ok(RegistryDispatchResult::payload(wire::encode_error(
+                version, &searchkernel_ir::index_discovery_failure(),
+            ))),
+        };
+        let mut candidates = Vec::new();
+        for entry in listing {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => return Ok(RegistryDispatchResult::payload(wire::encode_error(
+                    version, &searchkernel_ir::index_discovery_failure(),
+                ))),
+            };
+            let Some(name) = entry.file_name().to_str().map(ToOwned::to_owned) else { continue; };
+            if searchkernel_ir::validate_index_target(&name).is_ok() { candidates.push(name); }
+        }
+        candidates.sort();
+        candidates.dedup();
+        let mut targets = Vec::new();
+        for target in candidates {
+            // The directory iteration is a candidate snapshot, not a global
+            // transaction. Inspect each candidate under the SAME transition
+            // lock as create/open/delete. Siblings remain independently usable.
+            let transition = self.transition_lock(&target)?;
+            let _transition = transition.lock().map_err(|_| RegistryDispatchError::Poisoned)?;
+            if let Ok(path) = self.checked_index_path(&target) {
+                if Index::inspect_storage(path).is_ok() { targets.push(target); }
+            }
+        }
+        Ok(RegistryDispatchResult::payload(wire::encode_list_indexes_result(version, &targets)))
     }
 
     fn create(

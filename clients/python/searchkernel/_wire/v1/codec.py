@@ -164,6 +164,7 @@ def _from_generated(value: Any) -> Any:
     return value
 
 _REQUEST_TYPES = {
+    "list_indexes": RequestPayload.RequestPayload.SearchKernel_Wire_ListIndexesRequest,
     "insert": RequestPayload.RequestPayload.SearchKernel_Wire_InsertRequest,
     "upsert": RequestPayload.RequestPayload.SearchKernel_Wire_UpsertRequest,
     "patch": RequestPayload.RequestPayload.SearchKernel_Wire_PatchRequest,
@@ -179,6 +180,7 @@ _REQUEST_TYPES = {
     "delete_index": RequestPayload.RequestPayload.SearchKernel_Wire_DeleteIndexRequest,
 }
 _RESPONSE_TYPES = {
+    "list_indexes": ResponsePayload.ResponsePayload.SearchKernel_Wire_ListIndexesResult,
     "insert": ResponsePayload.ResponsePayload.SearchKernel_Wire_InsertResult,
     "upsert": ResponsePayload.ResponsePayload.SearchKernel_Wire_UpsertResult,
     "patch": ResponsePayload.ResponsePayload.SearchKernel_Wire_PatchResult,

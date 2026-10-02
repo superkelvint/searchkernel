@@ -28,6 +28,7 @@ import { CreateIndexRequestT } from "../semantic.js";
 import { OpenIndexRequestT } from "../semantic.js";
 import { CreateIndexResultT } from "../semantic.js";
 import { OpenIndexResultT } from "../semantic.js";
+import { ListIndexesRequestT, ListIndexesResultT } from "../semantic.js";
 import { IndexDefinitionT } from "../semantic.js";
 import { ValueEntryT } from "../semantic.js";
 import { packRequest, unpackResponse, type Operation, type OperationRequestMap, ProtocolError } from "../protocol/envelope.js";
@@ -87,6 +88,7 @@ function document(id: string, fields: Record<string, ValueInput>): DocumentT {
 }
 
 export interface OperationResponseMap {
+  listIndexes: ListIndexesResultT;
   insert: InsertResultT;
   upsert: UpsertResultT;
   patch: PatchResultT;
@@ -108,6 +110,7 @@ export interface ClientTransport {
 }
 
 export class Client {
+  indexDefinition?: IndexDefinitionT;
   private indexGeneration?: string;
   private bindOnUse = false;
   private binding?: Promise<void>;
@@ -134,7 +137,7 @@ export class Client {
     options?: ExecuteOptions,
   ): Promise<OperationResponseMap[K]> {
     if (this.bindOnUse && this.indexGeneration === undefined &&
-        operation !== "createIndex" && operation !== "openIndex") {
+        operation !== "createIndex" && operation !== "openIndex" && operation !== "listIndexes") {
       await this.binding;
     }
     try {
@@ -145,7 +148,7 @@ export class Client {
           packRequest(
             operation,
             request,
-            this.target,
+            operation === "listIndexes" ? undefined : this.target,
             lifecycleOperation ? undefined : this.indexGeneration,
           ),
           options,
@@ -167,6 +170,8 @@ export class Client {
           );
         }
         this.indexGeneration = lifecycle.generation;
+        if (lifecycle.index === null) throw new ProtocolError("lifecycle response is missing index definition");
+        this.indexDefinition = lifecycle.index;
       }
       return decoded.payload as OperationResponseMap[K];
     } catch (error) {
@@ -244,6 +249,10 @@ export class Client {
     return this.execute("deleteIndex", new DeleteIndexRequestT(), options);
   }
 
+  listIndexes(options?: ExecuteOptions): Promise<ListIndexesResultT> {
+    return this.execute("listIndexes", new ListIndexesRequestT(), options);
+  }
+
   async close(): Promise<void> {
     await this.transport.close?.();
   }
@@ -252,6 +261,12 @@ export class Client {
 /** Public remote-index façade. Browser SDK intentionally has no local daemon lifecycle. */
 export class Index {
   readonly client: Client;
+
+  /** Definition returned by the lifecycle request, without a second open/describe. */
+  get definition(): IndexDefinitionT {
+    if (!this.client.indexDefinition) throw new ProtocolError("index has not finished opening");
+    return this.client.indexDefinition;
+  }
 
   protected constructor(client: Client) {
     this.client = client;
@@ -292,10 +307,11 @@ export class Index {
     endpoint: string,
     target: string,
     transport?: ClientTransport,
+    options?: ExecuteOptions,
   ): Promise<Index> {
     const client = new Client(transport ?? new GrpcWebTransport(endpoint), target);
     try {
-      const result = await client.openIndex();
+      const result = await client.openIndex(options);
       if (result.index === null) throw new ProtocolError("OpenIndexResult.index is missing");
       return new Index(client);
     } catch (error) {
@@ -437,4 +453,20 @@ export class Index {
   async close(): Promise<void> {
     await this.client.close();
   }
+}
+
+/** Server-scoped public API. Discovery never opens or binds an index. */
+export class Daemon {
+  readonly client: Client;
+  constructor(readonly endpoint: string, transport?: ClientTransport) {
+    this.client = new Client(transport ?? new GrpcWebTransport(endpoint));
+  }
+  async listIndexes(options?: ExecuteOptions): Promise<string[]> {
+    const result = await this.client.listIndexes(options);
+    return result.targets.map((target) => {
+      if (typeof target !== "string") throw new ProtocolError("index target must be a string");
+      return target;
+    });
+  }
+  close(): Promise<void> { return this.client.close(); }
 }

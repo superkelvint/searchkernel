@@ -33,11 +33,11 @@ jobs:
         working-directory: source
         run: |
           docker pull docker.io/superkelvint/searchkernel-ci:latest
-          docker run --rm -e TASK_UID="$(id -u)" -e TASK_GID="$(id -g)" -v "$PWD:/work" -w /work docker.io/superkelvint/searchkernel-ci:latest bash -lc 'git config --global --add safe.directory /work; ./dev regen protocol; chown -R "$TASK_UID:$TASK_GID" core/crates/searchkernel-protocol clients/python/searchkernel clients/typescript/src/semantic.ts'
+          docker run --rm -e TASK_UID="$(id -u)" -e TASK_GID="$(id -g)" -v "$PWD:/work" -w /work docker.io/superkelvint/searchkernel-ci:latest bash -lc 'set -euo pipefail; git config --global --add safe.directory /work; ./dev regen protocol; "$(bash tools/resolve-node.sh npm)" install --package-lock-only --ignore-scripts --prefix searchkernel-web; "$(bash tools/resolve-rust.sh cargo)" fmt --all; "$(bash tools/resolve-python.sh)" tools/check-capabilities.py --write; "$(bash tools/resolve-python.sh)" tools/check-client-contracts.py --write; chown -R "$TASK_UID:$TASK_GID" core/crates clients/python/searchkernel clients/typescript/src/semantic.ts searchkerneld docs searchkernel-web/package-lock.json LIMITATIONS.md'
           git diff --binary --full-index > "$RUNNER_TEMP/protocol.patch"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add core/crates/searchkernel-protocol clients/python/searchkernel clients/typescript/src/semantic.ts
+          git add core/crates clients/python/searchkernel clients/typescript/src/semantic.ts searchkerneld docs LIMITATIONS.md searchkernel-web/package-lock.json
           git add -f core/crates/searchkernel-protocol/src/generated/search_kernel/wire/list_indexes* clients/python/searchkernel/_wire/v1/generated/SearchKernel/Wire/ListIndexes* clients/python/searchkernel/_wire/v1/generated/semantic_metadata.py
           git commit -m 'chore(protocol): regenerate canonical discovery artifacts' || test -z "$(git diff --cached --name-only)"
           git push origin HEAD:agent/web-real-daemon-1022

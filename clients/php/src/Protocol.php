@@ -25,6 +25,7 @@ final class Protocol
         'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
         'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
         'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult'],
+        'list_indexes' => ['ListIndexesRequest', 'ListIndexesResult'],
     ];
 
     /** @return array{0:string,1:string} */

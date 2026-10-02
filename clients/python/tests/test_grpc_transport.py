@@ -24,6 +24,7 @@ from searchkernel._wire.v1.generated.SearchKernel.Wire.DeleteIndexResult import 
 from searchkernel._wire.v1.generated.SearchKernel.Wire.IndexDefinition import IndexDefinitionT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.InsertResult import InsertResultT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.OpenIndexResult import OpenIndexResultT  # noqa: E402
+from searchkernel._wire.v1.generated.SearchKernel.Wire.ListIndexesResult import ListIndexesResultT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Protocol.RequestEnvelope import RequestEnvelope  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.InsertRequest import InsertRequestT  # noqa: E402
 
@@ -113,6 +114,14 @@ class GrpcTransportTest(unittest.TestCase):
             target="products",
         )
         self.assertIsNotNone(client.delete_index())
+
+    def test_discovery_needs_no_index_target_or_open(self):
+        transport = _FrameTransport([_response(
+            ResponsePayload.SearchKernel_Wire_ListIndexesResult,
+            ListIndexesResultT(targets=["alpha", "beta"]),
+        )])
+        client = Client(transport)
+        self.assertEqual(client.list_indexes(), ["alpha", "beta"])
 
     def test_channel_uses_symmetric_large_message_limits(self):
         channel = object()

@@ -42,6 +42,8 @@
     }
   },
   "test": {
+    "frontend": { "description": "Dashboard build and adapter unit tests" },
+    "frontend-real-engine": { "description": "Real browser gRPC-Web discovery/open/search/browse/get across daemon restart and reincarnation" },
     "native-base-artifact": {
       "description": "Clean-room native-base production, archive install, adapter link, and runtime load"
     },
@@ -86,6 +88,7 @@
     }
   },
   "verify": {
+    "frontend.f8": { "description": "Immutable F8 acceptance route" },
     "api-conformance": {
       "description": "Portable API conformance"
     },

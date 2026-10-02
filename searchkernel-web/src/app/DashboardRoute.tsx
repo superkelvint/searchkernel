@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { InformationCircleIcon } from '@heroicons/react/24/outline'
 import { useAdminClient, useCapabilities, useSearchKernelClient } from './client-context'
 import { IndexContext } from './index-context'
 import { Loading, NotFound, QueryErrorState, UnavailableFeature } from './fallback-pages'
@@ -22,7 +21,7 @@ export function DashboardRoute({page}:{page: PageName}) {
   const capabilities = useCapabilities()
   const workspace = tabFor(page)
   const navigation = navigationFor(capabilities.capabilities)
-  const { data: index, isLoading, error, refetch } = useQuery({ queryKey: ['index', indexId], queryFn: clientQuery(() => client.getIndex(indexId!)), ...clientQueryDefaults, enabled: Boolean(workspace && indexId) })
+  const { data: index, isLoading, error, refetch } = useQuery({ queryKey: ['index', indexId], queryFn: clientQuery(signal => client.getIndex(indexId!, { signal })), ...clientQueryDefaults, enabled: Boolean(workspace && indexId) })
   const { data: summary, error: summaryError, refetch: refetchSummary } = useQuery({ queryKey: ['index-summary', indexId], queryFn: clientQuery(() => adminClient.getIndexSummary(indexId!)), ...clientQueryDefaults, enabled: Boolean(workspace && indexId) })
   const navigate: Nav = (next, targetIndexId = indexId) => { routerNavigate(pagePath(next, targetIndexId)); setMobileNav(false) }
   useEffect(() => {
@@ -44,7 +43,6 @@ export function DashboardRoute({page}:{page: PageName}) {
         {Boolean(error) && index && <QueryErrorBanner error={error} retry={() => { void refetch() }} />}
         {Boolean(summaryError) && <QueryErrorBanner error={summaryError} retry={() => { void refetchSummary() }} />}
         {capabilities.error && <QueryErrorBanner error={capabilities.error} retry={() => { void capabilities.retry() }} />}
-        {workspace && <div className="mb-4 flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-900"><InformationCircleIcon className="size-4 shrink-0"/>Static preview fixture for <code>{index?.id}</code>. Values and explanations are representative, not daemon output.</div>}
         <IndexContext.Provider value={index ?? null}>{workspace && navigation.sections[workspace].length > 0 ? <div className="grid gap-6 lg:grid-cols-[180px_minmax(0,1fr)]"><SectionNavigation tab={workspace} page={page} navigate={navigate}/><Page page={page} navigate={navigate}/></div> : <Page page={page} navigate={navigate}/>}</IndexContext.Provider>
       </div>
     </main>
