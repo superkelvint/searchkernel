@@ -26,7 +26,7 @@ pub fn build_component_transport_case(
                 target: None,
                 payload_type,
                 payload: Some(payload),
-                },
+            },
         );
         builder
             .finish_with_identifier(envelope, Some("SKRQ"))
