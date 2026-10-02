@@ -399,6 +399,69 @@ def main() -> int:
             env=env,
         )
 
+        # A packaged executable may keep its adapter lookup under
+        # $ORIGIN/.searchkernel-native while that hidden entry is only a
+        # package-local alias into the canonical bundled lib directory.
+        # The resolved bytes are still inside the runtime bundle and must not
+        # be rejected merely because the extra ELF itself lives under bin/.
+        package_bin = root / "package" / "bin"
+        package_private = package_bin / ".searchkernel-native"
+        package_private.mkdir(parents=True)
+        package_origin_name = "libsearchkernel_fixture_package_origin.so.1"
+        (root / "package-origin.c").write_text(
+            "int searchkernel_fixture_package_origin(void) { return 17; }\n",
+            encoding="utf-8",
+        )
+        package_origin_library = bundle / package_origin_name
+        compile_shared(
+            cc,
+            root / "package-origin.c",
+            package_origin_library,
+            "$ORIGIN/.searchkernel-native/" + package_origin_name,
+        )
+        (package_private / package_origin_name).symlink_to(
+            pathlib.Path("../../..") / "bundle" / package_origin_name
+        )
+        (root / "package-consumer.c").write_text(
+            "extern int searchkernel_fixture_package_origin(void);\n"
+            "int searchkernel_fixture_package_consumer(void) { "
+            "return searchkernel_fixture_package_origin(); }\n",
+            encoding="utf-8",
+        )
+        package_consumer = package_bin / "searchkernel-fixture"
+        compile_shared(
+            cc,
+            root / "package-consumer.c",
+            package_consumer,
+            "searchkernel-fixture",
+            "-L",
+            str(package_private),
+            "-Wl,--no-as-needed",
+            "-l:" + package_origin_name,
+        )
+        package_check = subprocess.run(
+            [sys.executable, str(CHECKER), str(bundle), str(package_consumer)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if package_check.returncode != 0:
+            raise SystemExit(
+                "closure checker rejected package-local origin alias into lib/:\n"
+                + package_check.stderr
+            )
+        run(
+            sys.executable,
+            str(BUNDLER),
+            str(bundle),
+            "--extra-elf",
+            str(package_consumer),
+            "--search-dir",
+            str(producer),
+            "--source-root", f"producer={producer}",
+            env=env,
+        )
+
         # Link-time aliases need to survive package staging and runtime
         # pruning so an isolated consumer can rebuild with the configured
         # -lNAME inputs. The alias must remain a symlink to the kept SONAME
