@@ -122,34 +122,44 @@ class ConsumerReleaseTests(unittest.TestCase):
         ):
             self.assertNotIn(key, environment)
 
-    def test_runtime_adapter_rebases_producer_rpath_to_origin(self) -> None:
+    def test_runtime_adapter_requires_origin_only_rpath(self) -> None:
         adapter = Path("/tmp/libsearchkernel_vespa.so.2")
-        with mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/patchelf"):
-            with mock.patch.object(MODULE, "run") as run:
-                with mock.patch.object(
-                    MODULE.subprocess,
-                    "check_output",
-                    return_value="$ORIGIN\n",
-                ) as check_output:
-                    MODULE.make_runtime_adapter_relocatable(adapter)
-        run.assert_called_once_with(
-            "/usr/bin/patchelf",
-            "--force-rpath",
-            "--set-rpath",
-            "$ORIGIN",
-            str(adapter),
+        readelf = (
+            " 0x000000000000000f (RPATH)              "
+            "Library rpath: [$ORIGIN]\n"
         )
+        with mock.patch.object(
+            MODULE.subprocess,
+            "check_output",
+            return_value=readelf,
+        ) as check_output:
+            MODULE.verify_runtime_adapter_relocatable(adapter)
         check_output.assert_called_once_with(
-            ["/usr/bin/patchelf", "--print-rpath", str(adapter)],
+            ["readelf", "-d", str(adapter)],
             text=True,
         )
 
-    def test_runtime_adapter_requires_patchelf(self) -> None:
-        with mock.patch.object(MODULE.shutil, "which", return_value=None):
-            with self.assertRaisesRegex(RuntimeError, "requires patchelf"):
-                MODULE.make_runtime_adapter_relocatable(
-                    Path("/tmp/libsearchkernel_vespa.so.2")
-                )
+        leaked = (
+            " 0x000000000000000f (RPATH)              "
+            "Library rpath: [/opt/searchkernel/native-sdk-cache/base/lib]\n"
+        )
+        with mock.patch.object(MODULE.subprocess, "check_output", return_value=leaked):
+            with self.assertRaisesRegex(RuntimeError, "must use only \\$ORIGIN"):
+                MODULE.verify_runtime_adapter_relocatable(adapter)
+
+    def test_release_build_contract_requests_origin_adapter_rpath(self) -> None:
+        packager = (ROOT / "tools/package-consumer-release.py").read_text(
+            encoding="utf-8"
+        )
+        build_sdk = (ROOT / "core/native/vespa/build-sdk.sh").read_text(
+            encoding="utf-8"
+        )
+        build_rs = (
+            ROOT / "core/crates/searchkernel-vespa-bindings/build.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn('release_env["SK_NATIVE_ADAPTER_RPATH"] = "$ORIGIN"', packager)
+        self.assertIn('ADAPTER_RPATH_OVERRIDE=${SK_NATIVE_ADAPTER_RPATH:-}', build_sdk)
+        self.assertIn('cargo:rerun-if-env-changed=SK_NATIVE_ADAPTER_RPATH', build_rs)
 
     def test_runtime_probe_requires_application_level_argument_error(self) -> None:
         launcher = Path("/tmp/packaged-searchkerneld")
