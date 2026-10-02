@@ -373,7 +373,6 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
     assert_eq!(wire::RequestEnvelope::VT_PAYLOAD_TYPE, 6);
     assert_eq!(wire::RequestEnvelope::VT_PAYLOAD, 8);
     assert_eq!(wire::RequestEnvelope::VT_TARGET, 10);
-    assert_eq!(wire::RequestEnvelope::VT_EXPECTED_GENERATION, 12);
     assert_eq!(wire::ResponseEnvelope::VT_PROTOCOL_VERSION, 4);
     assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD_TYPE, 6);
     assert_eq!(wire::ResponseEnvelope::VT_PAYLOAD, 8);
@@ -381,6 +380,7 @@ fn multi_index_protocol_baseline_pins_wire_layout() {
     // Lifecycle tables introduced by #848 are part of the same durable
     // compatibility baseline. Their field slots must remain append-only too.
     assert_eq!(wire::IndexTarget::VT_NAME, 4);
+    assert_eq!(wire::IndexTarget::VT_GENERATION, 6);
     assert_eq!(wire::CreateIndexRequest::VT_DEFINITION, 4);
     assert_eq!(wire::CreateIndexResult::VT_INDEX, 4);
     assert_eq!(wire::CreateIndexResult::VT_GENERATION, 6);
