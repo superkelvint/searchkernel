@@ -19,6 +19,17 @@ VERSION = "0.1.0"
 RUNTIME_MANIFEST_FORMAT = 1
 RUNTIME_PACKAGE_GENERATION = 1
 CONSUMER_RUNTIME_DIRS = {"bin", "lib"}
+CANONICAL_IMAGE_MARKER = Path("/opt/searchkernel/native-validation-pass")
+
+
+def require_canonical_release_environment() -> None:
+    if os.environ.get("SEARCHKERNEL_IN_CI_IMAGE") == "1" or CANONICAL_IMAGE_MARKER.is_file():
+        return
+    raise SystemExit(
+        "consumer release packaging is an internal canonical-image step; "
+        "run './dev test consumer-release' instead of invoking "
+        "tools/package-consumer-release.py directly"
+    )
 
 
 
@@ -331,6 +342,7 @@ def copy_runtime_into(package_root: Path, stage: Path) -> list[Path]:
 
 
 def main() -> None:
+    require_canonical_release_environment()
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default="dist/release")
     args = parser.parse_args()
