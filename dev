@@ -735,11 +735,6 @@ test_target() {
             bash "$ROOT/tools/test-dev-ci-image.sh"
             bash "$ROOT/tools/test-native-base-publish-policy.sh"
             ;;
-        consumer-release)
-            output=${SEARCHKERNEL_CONSUMER_RELEASE_OUTPUT:-$ROOT/dist/release}
-            "$PYTHON" "$ROOT/tools/package-consumer-release.py" --output "$output"
-            "$PYTHON" "$ROOT/tools/check-consumer-release.py" "$output"
-            ;;
         verification-control-plane)
             "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
             "$PYTHON" "$ROOT/tools/test_verification_request_normalizer.py"
@@ -755,6 +750,21 @@ test_target() {
             ;;
         client-real-e2e-parity)
             "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"
+            ;;
+        consumer-release)
+            local release_root release_output
+            release_root=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-consumer-release.XXXXXX")
+            trap 'rm -rf -- "$release_root"' RETURN
+            release_output=${SEARCHKERNEL_CONSUMER_RELEASE_OUTPUT:-$release_root/release}
+            "$PYTHON" "$ROOT/tools/check-release-support.py"
+            "$PYTHON" "$ROOT/tools/test_qualify_consumer_release.py"
+            "$PYTHON" "$ROOT/tools/render-release-quickstarts.py" --check
+            "$PYTHON" "$ROOT/tools/package-consumer-release.py" --output "$release_output"
+            "$PYTHON" "$ROOT/tools/check-consumer-release.py" "$release_output"
+            mkdir -p "$release_root/qualification"
+            cp "$ROOT/tools/qualify-consumer-release.py" "$release_root/qualification/"
+            cp -R "$ROOT/examples/release-quickstart" "$release_root/qualification/quickstarts"
+            "$PYTHON" "$release_root/qualification/qualify-consumer-release.py" "$release_output"
             ;;
         native-crud)
             "$CARGO" test -p searchkernel-vespa-engine --test native_crud
