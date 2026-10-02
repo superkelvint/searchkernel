@@ -7,13 +7,16 @@ use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 
 impl IndexContext {
-    pub fn inspect_query(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
+    pub(crate) fn inspect_query(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
         self.search_to_ir(request)
     }
-    pub fn search_to_ir(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
+    pub(crate) fn search_to_ir(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
         resolve_search(self, decode_search_input(self, request)?)
     }
-    pub fn analyze_to_ir(&self, request: api::AnalyzeRequest<'_>) -> Result<AnalyzeRequestIr> {
+    pub(crate) fn analyze_to_ir(
+        &self,
+        request: api::AnalyzeRequest<'_>,
+    ) -> Result<AnalyzeRequestIr> {
         let target = match request.target_type() {
             api::AnalyzeTarget::Analyzer => request
                 .target_as_analyzer()
@@ -57,7 +60,7 @@ impl IndexContext {
             },
         )
     }
-    pub fn search_fields_to_ir(
+    pub(crate) fn search_fields_to_ir(
         &self,
         selection: api::SearchFieldSelection<'_>,
     ) -> Result<Vec<SearchFieldIr>> {
@@ -75,7 +78,7 @@ impl IndexContext {
             .unwrap_or_default();
         resolve_search_fields_at(self, &fields, "search_fields")
     }
-    pub fn query_to_ir(
+    pub(crate) fn query_to_ir(
         &self,
         text: &str,
         expression: Option<api::QueryExpr<'_>>,
@@ -274,12 +277,12 @@ impl IndexContext {
             annotations,
         })
     }
-    pub fn sort_to_ir(&self, sort: api::SortExpr<'_>) -> Result<SortIr> {
+    pub(crate) fn sort_to_ir(&self, sort: api::SortExpr<'_>) -> Result<SortIr> {
         let input = self.sort_to_input(sort, "sort")?;
         resolve_sort(self, &input, "sort")
     }
 
-    pub fn projection_to_ir(
+    pub(crate) fn projection_to_ir(
         &self,
         projection: Option<api::FieldProjection<'_>>,
     ) -> Result<ProjectionIr> {
@@ -291,7 +294,7 @@ impl IndexContext {
         });
         resolve_projection(self, fields.as_deref())
     }
-    pub fn highlighting_to_ir(
+    pub(crate) fn highlighting_to_ir(
         &self,
         highlighting: Option<api::HighlightRequest<'_>>,
     ) -> Result<HighlightingIr> {

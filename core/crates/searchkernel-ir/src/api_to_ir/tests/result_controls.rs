@@ -88,7 +88,7 @@ fn container_control_presence_matches_direct_and_portable_round_trips() {
             assert_eq!(portable.query_profile(), query_profile);
             assert_eq!(portable.search_chain(), search_chain);
 
-            let encoded = crate::search_request_ir_to_api(&portable);
+            let encoded = crate::wire::v1::search_request_ir_to_api(&portable);
             let encoded = crate::__flatbuffers::root::<api::SearchRequest>(&encoded).unwrap();
             assert_eq!(encoded.query_profile(), query_profile, "{field} IR-to-API");
             assert_eq!(encoded.search_chain(), search_chain, "{field} IR-to-API");
@@ -100,7 +100,7 @@ fn container_control_presence_matches_direct_and_portable_round_trips() {
                 "{field} {value:?} IR-to-API-to-IR"
             );
 
-            let inspected = crate::inspect_query_result_to_api(&portable);
+            let inspected = crate::wire::v1::inspect_query_result_to_api(&portable);
             let inspected = crate::__flatbuffers::root::<api::InspectQueryResult>(&inspected)
                 .expect("resolved request decodes");
             let resolved = inspected

@@ -26,7 +26,7 @@ fn equivalent_filter_representations_resolve_to_one_owned_ir() {
         crate::snapshot::search_request(&portable)
     );
 
-    let round_trip_bytes = crate::search_request_ir_to_api(&portable);
+    let round_trip_bytes = crate::wire::v1::search_request_ir_to_api(&portable);
     let round_trip = crate::__flatbuffers::root::<api::SearchRequest>(&round_trip_bytes)
         .expect("IR-to-API search request should decode");
     let round_trip = context()

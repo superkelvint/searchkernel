@@ -1,6 +1,7 @@
 use super::*;
+use crate::wire::v1::schema as api;
 use crate::{
-    api, AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexContext,
+    AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexContext,
     PrimitiveDataTypeIr,
 };
 use std::collections::BTreeSet;

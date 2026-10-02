@@ -1,8 +1,8 @@
 //! Corpus-runner API.
 
 use searchkernel_ir::wire::v1::{
-    analyzer_to_ir, error_to_api, field_to_ir, index_definition_to_ir, schema as api,
-    WriteRequestRef,
+    self as wire_ir, analyzer_to_ir, error_to_api, field_to_ir, index_definition_to_ir,
+    schema as api, WriteRequestRef,
 };
 use searchkernel_ir::{
     resolve_facets, resolve_facets_at, AnalyzeRequestIr, AnalyzerIdentity, ComparisonIr,

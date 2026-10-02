@@ -201,9 +201,11 @@ fn canonical_grouping_round_trips_through_flatbuffers_and_ir() {
         searchkernel_ir::wire::v1::schema::SearchRequest,
     >(&bytes)
     .expect("encoded search request");
-    let round_tripped = IndexContext::from_definition_ir(definition)
-        .search_to_ir(api_request)
-        .expect("FlatBuffers request should resolve to IR");
+    let round_tripped = searchkernel_ir::wire::v1::search_to_ir(
+        &IndexContext::from_definition_ir(definition),
+        api_request,
+    )
+    .expect("FlatBuffers request should resolve to IR");
     let lowered = lower_groupings(round_tripped.grouping()).expect("grouping should lower");
     assert!(matches!(
         lowered.as_slice(),

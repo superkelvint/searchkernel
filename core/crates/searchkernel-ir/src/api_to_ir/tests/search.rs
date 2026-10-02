@@ -89,7 +89,7 @@ fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
     // capabilities, matching configuration, and default search fields.
     let schema = parity_schema();
     let rust_definition = resolve_rust_index_definition(schema).unwrap();
-    let schema_bytes = crate::index_definition_ir_to_api(&rust_definition);
+    let schema_bytes = crate::wire::v1::index_definition_ir_to_api(&rust_definition);
     let schema = crate::__flatbuffers::root::<api::IndexDefinition>(&schema_bytes)
         .expect("valid index definition");
     assert_eq!(
@@ -269,7 +269,7 @@ fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
         },
     )
     .unwrap();
-    let search_bytes = crate::search_request_ir_to_api(&rust_search);
+    let search_bytes = crate::wire::v1::search_request_ir_to_api(&rust_search);
     let search = crate::__flatbuffers::root::<api::SearchRequest>(&search_bytes)
         .expect("valid search request");
     assert_eq!(
@@ -416,7 +416,7 @@ fn imported_aliases_are_preserved_but_explicitly_not_query_bound() {
         alias: FieldName::parse("parent_name").unwrap(),
         properties: BTreeMap::new(),
     }]);
-    let bytes = crate::index_definition_ir_to_api(&definition);
+    let bytes = crate::wire::v1::index_definition_ir_to_api(&definition);
     let context =
         IndexContext::from_api(crate::__flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap())
             .unwrap();
@@ -453,8 +453,8 @@ fn imported_aliases_are_preserved_but_explicitly_not_query_bound() {
         alias: FieldName::parse("derived_name").unwrap(),
         properties: BTreeMap::new(),
     }]);
-    let bytes = crate::index_definition_ir_to_api(&invalid);
-    let error = crate::index_definition_to_ir(
+    let bytes = crate::wire::v1::index_definition_ir_to_api(&invalid);
+    let error = crate::wire::v1::index_definition_to_ir(
         crate::__flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap(),
     )
     .unwrap_err();
@@ -671,7 +671,7 @@ fn typed_matching_annotations_are_resolved_into_ir_parameters() {
             kind,
             annotations: BTreeMap::new(),
         }));
-        let bytes = crate::search_request_ir_to_api(&request(expected.clone()));
+        let bytes = crate::wire::v1::search_request_ir_to_api(&request(expected.clone()));
         let api_request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
         let actual = query_context.search_to_ir(api_request).unwrap();
         assert_eq!(actual.query(), &expected, "{name} was not resolved in IR");

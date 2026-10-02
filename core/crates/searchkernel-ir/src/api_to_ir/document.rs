@@ -4,7 +4,7 @@ use searchkernel_protocol::wire::v1 as api;
 use std::collections::BTreeMap;
 
 impl IndexContext {
-    pub fn insert_to_ir(&self, request: api::InsertRequest<'_>) -> Result<InsertRequestIr> {
+    pub(crate) fn insert_to_ir(&self, request: api::InsertRequest<'_>) -> Result<InsertRequestIr> {
         Ok(InsertRequestIr {
             document: resolve_document(
                 self,
@@ -12,7 +12,7 @@ impl IndexContext {
             )?,
         })
     }
-    pub fn upsert_to_ir(&self, request: api::UpsertRequest<'_>) -> Result<UpsertRequestIr> {
+    pub(crate) fn upsert_to_ir(&self, request: api::UpsertRequest<'_>) -> Result<UpsertRequestIr> {
         Ok(UpsertRequestIr {
             document: resolve_document(
                 self,
@@ -21,7 +21,7 @@ impl IndexContext {
             condition: condition_to_ir(request.condition()),
         })
     }
-    pub fn patch_to_ir(&self, request: api::PatchRequest<'_>) -> Result<PatchRequestIr> {
+    pub(crate) fn patch_to_ir(&self, request: api::PatchRequest<'_>) -> Result<PatchRequestIr> {
         let operations = request
             .operations()
             .map(|operations| {
@@ -75,7 +75,7 @@ impl IndexContext {
             .unwrap_or_default();
         resolve_patch(self, request.id().unwrap_or_default(), &operations)
     }
-    pub fn update_to_ir(&self, request: api::UpdateRequest<'_>) -> Result<UpdateRequestIr> {
+    pub(crate) fn update_to_ir(&self, request: api::UpdateRequest<'_>) -> Result<UpdateRequestIr> {
         let operations = request
             .operations()
             .map(|operations| {
@@ -243,10 +243,10 @@ impl IndexContext {
             request.create_().map(|create| create.value()),
         )
     }
-    pub fn delete_to_ir(&self, request: api::DeleteRequest<'_>) -> Result<DeleteRequestIr> {
+    pub(crate) fn delete_to_ir(&self, request: api::DeleteRequest<'_>) -> Result<DeleteRequestIr> {
         resolve_delete(request.id().unwrap_or_default(), request.condition())
     }
-    pub fn get_to_ir(&self, request: api::GetRequest<'_>) -> Result<GetRequestIr> {
+    pub(crate) fn get_to_ir(&self, request: api::GetRequest<'_>) -> Result<GetRequestIr> {
         let projection = request.projection().map(|projection| {
             projection
                 .fields()
@@ -261,17 +261,17 @@ impl IndexContext {
             },
         )
     }
-    pub fn value_to_ir(&self, field: &str, value: api::Value<'_>) -> Result<FieldValueIr> {
+    pub(crate) fn value_to_ir(&self, field: &str, value: api::Value<'_>) -> Result<FieldValueIr> {
         let field = self.field(field, "field".to_owned())?;
         self.value_to_ir_at(field, value, "value".to_owned())
     }
-    pub fn document_to_ir(&self, document: api::Document<'_>) -> Result<DocumentIr> {
+    pub(crate) fn document_to_ir(&self, document: api::Document<'_>) -> Result<DocumentIr> {
         resolve_document(
             self,
             document_input_from_optional(Some(document), "document")?,
         )
     }
-    pub fn write_to_ir(&self, request: WriteRequestRef<'_>) -> Result<WriteRequestIr> {
+    pub(crate) fn write_to_ir(&self, request: WriteRequestRef<'_>) -> Result<WriteRequestIr> {
         match request {
             WriteRequestRef::Insert(r) => self.insert_to_ir(r).map(WriteRequestIr::Insert),
             WriteRequestRef::Upsert(r) => self.upsert_to_ir(r).map(WriteRequestIr::Upsert),
@@ -280,7 +280,7 @@ impl IndexContext {
             WriteRequestRef::Delete(r) => self.delete_to_ir(r).map(WriteRequestIr::Delete),
         }
     }
-    pub fn bulk_write_to_ir<'a>(
+    pub(crate) fn bulk_write_to_ir<'a>(
         &self,
         requests: impl IntoIterator<Item = WriteRequestRef<'a>>,
     ) -> Result<Vec<WriteRequestIr>> {
