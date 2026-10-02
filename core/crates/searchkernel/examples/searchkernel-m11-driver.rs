@@ -272,8 +272,8 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     wait_for_scalar_field(
         engine,
         "publication-gated-put",
-        "qty",
-        Some(ScalarValue::Integer(61)),
+        "title",
+        Some(ScalarValue::String("gatedputmarker".to_owned())),
     )?;
     if term_search_ids(engine, "title", "gatedputmarker")?
         .iter()
@@ -318,8 +318,8 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     wait_for_scalar_field(
         engine,
         "publication-gated-upsert",
-        "qty",
-        Some(ScalarValue::Integer(72)),
+        "title",
+        Some(ScalarValue::String("gatedupsertnew".to_owned())),
     )?;
     if !term_search_ids(engine, "title", "gatedupsertold")?
         .iter()
