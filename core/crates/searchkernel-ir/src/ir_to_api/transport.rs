@@ -4,8 +4,15 @@ use std::collections::BTreeMap;
 
 pub fn encode_list_indexes_request() -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let payload = api::ListIndexesRequest::create(&mut builder, &Default::default()).as_union_value();
-    finish_request(&mut builder, wire::RequestPayload::SearchKernel_Wire_ListIndexesRequest, payload, None, None)
+    let payload =
+        api::ListIndexesRequest::create(&mut builder, &Default::default()).as_union_value();
+    finish_request(
+        &mut builder,
+        wire::RequestPayload::SearchKernel_Wire_ListIndexesRequest,
+        payload,
+        None,
+        None,
+    )
 }
 
 fn finish_request(

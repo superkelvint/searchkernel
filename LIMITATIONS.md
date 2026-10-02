@@ -263,7 +263,11 @@ approximated.
 
 ### Targeted multi-index daemon lifecycle protocol (`daemon.multi_index_lifecycle`)
 
-- Target-less envelopes remain valid only for embedded/per-index callers; multi-index daemon ingress reports a canonical missing-target error.
+- Target-bound operations require an explicit logical target; server-scoped ListIndexes requires none.
+
+### Server-scoped durable logical index discovery (`daemon.durable_index_discovery`)
+
+- Listing is an ordered candidate snapshot with per-target inspection, not a transaction across all targets; OpenIndex remains authoritative for definition and generation.
 
 ## Evidence and versioning
 

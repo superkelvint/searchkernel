@@ -78,6 +78,7 @@ has real-runtime evidence.
 | Coverage and degradation metadata (result.degradation_metadata) | result | — | — | — | — | ergonomic · conformance · real-runtime (http) | ergonomic · real-runtime (managed-local) |
 | Embedded single-node Vespa scope (platform.embedded_vespa_scope) | platform | — | — | — | — | — | — |
 | Targeted multi-index daemon lifecycle protocol (daemon.multi_index_lifecycle) | daemon | — | ergonomic · real-runtime (grpc) | — | — | — | — |
+| Server-scoped durable logical index discovery (daemon.durable_index_discovery) | daemon | — | — | — | — | — | — |
 
 ## Scenario evidence
 
@@ -316,7 +317,7 @@ has real-runtime evidence.
 ### Summary-feature readback (result.summary_features)
 
 - **Basic behavior** (basic)
-  - ruby / http / conformance / conformance — [clients/ruby/test/run.rb](../clients/ruby/test/run.rb#L957)
+  - ruby / http / conformance / conformance — [clients/ruby/test/run.rb](../clients/ruby/test/run.rb#L958)
 
 ### Highlighting (result.highlighting)
 
@@ -545,5 +546,5 @@ has real-runtime evidence.
 ### Targeted multi-index daemon lifecycle protocol (daemon.multi_index_lifecycle)
 
 - **Basic behavior** (basic)
-  - rust / grpc / e2e / runtime — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1593)
-  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1593)
+  - rust / grpc / e2e / runtime — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1695)
+  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1695)

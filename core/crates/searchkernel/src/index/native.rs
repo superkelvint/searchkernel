@@ -229,14 +229,21 @@ impl Index {
             Ok(())
         }
         fn no_links(path: &std::path::Path) -> Result<()> {
-            for entry in std::fs::read_dir(path)
-                .map_err(|error| Error::Infrastructure(error.to_string()))? {
+            for entry in
+                std::fs::read_dir(path).map_err(|error| Error::Infrastructure(error.to_string()))?
+            {
                 let entry = entry.map_err(|error| Error::Infrastructure(error.to_string()))?;
-                let kind = entry.file_type().map_err(|error| Error::Infrastructure(error.to_string()))?;
+                let kind = entry
+                    .file_type()
+                    .map_err(|error| Error::Infrastructure(error.to_string()))?;
                 if kind.is_symlink() || (!kind.is_file() && !kind.is_dir()) {
-                    return Err(Error::corrupt_index("invalid persisted index metadata entry"));
+                    return Err(Error::corrupt_index(
+                        "invalid persisted index metadata entry",
+                    ));
                 }
-                if kind.is_dir() { no_links(&entry.path())?; }
+                if kind.is_dir() {
+                    no_links(&entry.path())?;
+                }
             }
             Ok(())
         }

@@ -259,23 +259,36 @@ impl IndexRegistry {
         Ok(entries.keys().cloned().collect())
     }
 
-    fn list_indexes(&self, version: WireVersion) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+    fn list_indexes(
+        &self,
+        version: WireVersion,
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let listing = match std::fs::read_dir(&self.data_root) {
             Ok(listing) => listing,
-            Err(_) => return Ok(RegistryDispatchResult::payload(wire::encode_error(
-                version, &searchkernel_ir::index_discovery_failure(),
-            ))),
+            Err(_) => {
+                return Ok(RegistryDispatchResult::payload(wire::encode_error(
+                    version,
+                    &searchkernel_ir::index_discovery_failure(),
+                )))
+            }
         };
         let mut candidates = Vec::new();
         for entry in listing {
             let entry = match entry {
                 Ok(entry) => entry,
-                Err(_) => return Ok(RegistryDispatchResult::payload(wire::encode_error(
-                    version, &searchkernel_ir::index_discovery_failure(),
-                ))),
+                Err(_) => {
+                    return Ok(RegistryDispatchResult::payload(wire::encode_error(
+                        version,
+                        &searchkernel_ir::index_discovery_failure(),
+                    )))
+                }
             };
-            let Some(name) = entry.file_name().to_str().map(ToOwned::to_owned) else { continue; };
-            if searchkernel_ir::validate_index_target(&name).is_ok() { candidates.push(name); }
+            let Some(name) = entry.file_name().to_str().map(ToOwned::to_owned) else {
+                continue;
+            };
+            if searchkernel_ir::validate_index_target(&name).is_ok() {
+                candidates.push(name);
+            }
         }
         candidates.sort();
         candidates.dedup();
@@ -285,12 +298,18 @@ impl IndexRegistry {
             // transaction. Inspect each candidate under the SAME transition
             // lock as create/open/delete. Siblings remain independently usable.
             let transition = self.transition_lock(&target)?;
-            let _transition = transition.lock().map_err(|_| RegistryDispatchError::Poisoned)?;
+            let _transition = transition
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
             if let Ok(path) = self.checked_index_path(&target) {
-                if Index::inspect_storage(path).is_ok() { targets.push(target); }
+                if Index::inspect_storage(path).is_ok() {
+                    targets.push(target);
+                }
             }
         }
-        Ok(RegistryDispatchResult::payload(wire::encode_list_indexes_result(version, &targets)))
+        Ok(RegistryDispatchResult::payload(
+            wire::encode_list_indexes_result(version, &targets),
+        ))
     }
 
     fn create(

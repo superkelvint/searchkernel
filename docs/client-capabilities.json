@@ -1777,7 +1777,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 957
+              "line": 958
             }
           ],
           "overrides": []
@@ -3442,7 +3442,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "searchkerneld/tests/multi_index.rs",
-              "line": 1593
+              "line": 1695
             },
             {
               "capability": "daemon.multi_index_lifecycle",
@@ -3452,9 +3452,22 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "searchkerneld/tests/multi_index.rs",
-              "line": 1593
+              "line": 1695
             }
           ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "daemon.durable_index_discovery",
+      "title": "Server-scoped durable logical index discovery",
+      "area": "daemon",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
           "overrides": []
         }
       ]

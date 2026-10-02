@@ -132,7 +132,8 @@ pub mod v1 {
 
         // Discovery is server-scoped. It never resolves or binds an index target.
         if envelope.payload_type() == wire::RequestPayload::SearchKernel_Wire_ListIndexesRequest {
-            envelope.payload_as_search_kernel_wire_list_indexes_request()
+            envelope
+                .payload_as_search_kernel_wire_list_indexes_request()
                 .ok_or(ControlPlaneDecodeError::InvalidRequest)?;
             return Ok(ControlPlaneRequest::ListIndexes);
         }
@@ -271,13 +272,23 @@ pub mod v1 {
 
     pub(super) fn encode_list_indexes_result(targets: &[String]) -> Vec<u8> {
         let mut builder = flatbuffers::FlatBufferBuilder::new();
-        let names: Vec<_> = targets.iter().map(|name| builder.create_string(name)).collect();
+        let names: Vec<_> = targets
+            .iter()
+            .map(|name| builder.create_string(name))
+            .collect();
         let targets = builder.create_vector(&names);
         let payload = schema::ListIndexesResult::create(
             &mut builder,
-            &schema::ListIndexesResultArgs { targets: Some(targets) },
-        ).as_union_value();
-        encode_response(&mut builder, wire::ResponsePayload::SearchKernel_Wire_ListIndexesResult, payload)
+            &schema::ListIndexesResultArgs {
+                targets: Some(targets),
+            },
+        )
+        .as_union_value();
+        encode_response(
+            &mut builder,
+            wire::ResponsePayload::SearchKernel_Wire_ListIndexesResult,
+            payload,
+        )
     }
 
     pub(super) fn encode_error(error: &crate::PortableError) -> Vec<u8> {
@@ -521,26 +532,50 @@ mod tests {
 
     #[test]
     fn discovery_is_server_scoped_and_preserves_wire_discriminators() {
-        assert_eq!(protocol::RequestPayload::SearchKernel_Wire_DeleteIndexRequest.0, 13);
-        assert_eq!(protocol::RequestPayload::SearchKernel_Wire_ListIndexesRequest.0, 14);
-        assert_eq!(protocol::ResponsePayload::SearchKernel_Wire_DeleteIndexResult.0, 14);
-        assert_eq!(protocol::ResponsePayload::SearchKernel_Wire_ListIndexesResult.0, 15);
+        assert_eq!(
+            protocol::RequestPayload::SearchKernel_Wire_DeleteIndexRequest.0,
+            13
+        );
+        assert_eq!(
+            protocol::RequestPayload::SearchKernel_Wire_ListIndexesRequest.0,
+            14
+        );
+        assert_eq!(
+            protocol::ResponsePayload::SearchKernel_Wire_DeleteIndexResult.0,
+            14
+        );
+        assert_eq!(
+            protocol::ResponsePayload::SearchKernel_Wire_ListIndexesResult.0,
+            15
+        );
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let payload = v1::schema::ListIndexesRequest::create(&mut builder, &Default::default());
-        let envelope = protocol::RequestEnvelope::create(&mut builder, &protocol::RequestEnvelopeArgs {
-            protocol_version: protocol::PROTOCOL_VERSION,
-            payload_type: protocol::RequestPayload::SearchKernel_Wire_ListIndexesRequest,
-            payload: Some(payload.as_union_value()),
-            target: None,
-        });
+        let envelope = protocol::RequestEnvelope::create(
+            &mut builder,
+            &protocol::RequestEnvelopeArgs {
+                protocol_version: protocol::PROTOCOL_VERSION,
+                payload_type: protocol::RequestPayload::SearchKernel_Wire_ListIndexesRequest,
+                payload: Some(payload.as_union_value()),
+                target: None,
+            },
+        );
         protocol::finish_request_envelope_buffer(&mut builder, envelope);
-        assert!(matches!(decode_control_plane_request(builder.finished_data()).unwrap().request,
-            ControlPlaneRequest::ListIndexes));
+        assert!(matches!(
+            decode_control_plane_request(builder.finished_data())
+                .unwrap()
+                .request,
+            ControlPlaneRequest::ListIndexes
+        ));
         let targets = vec!["alpha".to_owned(), "zeta".to_owned()];
         let bytes = encode_list_indexes_result(WireVersion::V1, &targets);
         let envelope = flatbuffers::root::<protocol::ResponseEnvelope>(&bytes).unwrap();
-        let result = envelope.payload_as_search_kernel_wire_list_indexes_result().unwrap();
-        assert_eq!(result.targets().unwrap().iter().collect::<Vec<_>>(), ["alpha", "zeta"]);
+        let result = envelope
+            .payload_as_search_kernel_wire_list_indexes_result()
+            .unwrap();
+        assert_eq!(
+            result.targets().unwrap().iter().collect::<Vec<_>>(),
+            ["alpha", "zeta"]
+        );
     }
 
     #[test]

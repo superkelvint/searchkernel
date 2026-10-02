@@ -339,19 +339,28 @@ fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
 fn list_request() -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let payload = api::ListIndexesRequest::create(&mut builder, &Default::default());
-    let envelope = wire::RequestEnvelope::create(&mut builder, &wire::RequestEnvelopeArgs {
-        protocol_version: PROTOCOL_VERSION,
-        target: None,
-        payload_type: wire::RequestPayload::SearchKernel_Wire_ListIndexesRequest,
-        payload: Some(payload.as_union_value()),
-    });
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: None,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_ListIndexesRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
     wire::finish_request_envelope_buffer(&mut builder, envelope);
     builder.finished_data().to_vec()
 }
 
 fn listed_targets(bytes: &[u8]) -> Vec<String> {
-    response(bytes).payload_as_search_kernel_wire_list_indexes_result().expect("list result")
-        .targets().expect("targets").iter().map(ToOwned::to_owned).collect()
+    response(bytes)
+        .payload_as_search_kernel_wire_list_indexes_result()
+        .expect("list result")
+        .targets()
+        .expect("targets")
+        .iter()
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -360,10 +369,15 @@ async fn durable_discovery_without_opening_on_both_transports() {
     let registry = IndexRegistry::new(&temp.0).unwrap();
     assert!(listed_targets(&registry.dispatch(&list_request()).unwrap()).is_empty());
     for name in ["zeta", "alpha"] {
-        assert_lifecycle(&registry.dispatch(&create_request(name, "title")).unwrap(),
-            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult);
+        assert_lifecycle(
+            &registry.dispatch(&create_request(name, "title")).unwrap(),
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+        );
     }
-    assert_eq!(listed_targets(&registry.dispatch(&list_request()).unwrap()), ["alpha", "zeta"]);
+    assert_eq!(
+        listed_targets(&registry.dispatch(&list_request()).unwrap()),
+        ["alpha", "zeta"]
+    );
     registry.close_all().unwrap();
     drop(registry);
     fs::create_dir(temp.0.join("empty")).unwrap();
@@ -375,24 +389,51 @@ async fn durable_discovery_without_opening_on_both_transports() {
     fs::create_dir(temp.0.join("malformed")).unwrap();
     fs::create_dir(temp.0.join("malformed/data")).unwrap();
     fs::create_dir(temp.0.join("malformed/config")).unwrap();
-    std::os::unix::fs::symlink(temp.0.join("alpha/manifest"), temp.0.join("malformed/manifest")).unwrap();
+    std::os::unix::fs::symlink(
+        temp.0.join("alpha/manifest"),
+        temp.0.join("malformed/manifest"),
+    )
+    .unwrap();
 
     let registry = Arc::new(IndexRegistry::new(&temp.0).unwrap());
     assert!(registry.loaded_targets().unwrap().is_empty());
-    let server = start_multi(ServerConfig::new("127.0.0.1:0".parse().unwrap())
-        .with_web_listen_addr("127.0.0.1:0".parse().unwrap()), registry.clone()).await.unwrap();
-    let mut grpc = rpc::search_kernel_client::SearchKernelClient::connect(
-        format!("http://{}", server.tcp_addr().unwrap())).await.unwrap();
-    let binary = grpc.execute(Request::new(rpc::FlatBufferFrame { payload: list_request() }))
-        .await.unwrap().into_inner().payload;
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().unwrap())
+            .with_web_listen_addr("127.0.0.1:0".parse().unwrap()),
+        registry.clone(),
+    )
+    .await
+    .unwrap();
+    let mut grpc = rpc::search_kernel_client::SearchKernelClient::connect(format!(
+        "http://{}",
+        server.tcp_addr().unwrap()
+    ))
+    .await
+    .unwrap();
+    let binary = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: list_request(),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .payload;
     assert_eq!(listed_targets(&binary), ["alpha", "zeta"]);
     let json = execute_http_json(server.web_tcp_addr().unwrap(), &list_request()).await;
     assert_eq!(listed_targets(&json), ["alpha", "zeta"]);
-    assert!(registry.loaded_targets().unwrap().is_empty(), "discovery must never open targets");
+    assert!(
+        registry.loaded_targets().unwrap().is_empty(),
+        "discovery must never open targets"
+    );
     registry.dispatch(&delete_index_request("alpha")).unwrap();
-    assert_eq!(listed_targets(&registry.dispatch(&list_request()).unwrap()), ["zeta"]);
-    assert_lifecycle(&registry.dispatch(&open_request(Some("zeta"))).unwrap(),
-        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult);
+    assert_eq!(
+        listed_targets(&registry.dispatch(&list_request()).unwrap()),
+        ["zeta"]
+    );
+    assert_lifecycle(
+        &registry.dispatch(&open_request(Some("zeta"))).unwrap(),
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
+    );
     server.shutdown().await.unwrap();
     registry.close_all().unwrap();
 }
