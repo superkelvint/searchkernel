@@ -15,9 +15,10 @@ import tempfile
 import time
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
 DIST = Path(sys.argv[1]).resolve()
 MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
-QUICKSTARTS = Path(__file__).resolve().parent / "quickstarts"
+QUICKSTARTS = ROOT / "examples" / "release-quickstart"
 
 # The regression test compares this executable registry to release-support.json.
 # Every supported surface/runtime pair must map to one packaged consumer probe.
