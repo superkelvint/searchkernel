@@ -16,6 +16,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
+RUNTIME_MANIFEST_FORMAT = 1
+RUNTIME_PACKAGE_GENERATION = 1
+CONSUMER_RUNTIME_DIRS = {"bin", "lib"}
+
 
 
 def run(*cmd: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
@@ -28,6 +32,92 @@ def sha(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def native_contract() -> dict[str, object]:
+    data = json.loads((ROOT / "core/native/vespa/manifest.json").read_text(encoding="utf-8"))
+    abi = data.get("native_abi_version")
+    vespa_commit = data.get("vespa_commit")
+    if not isinstance(abi, int) or not isinstance(vespa_commit, str):
+        raise RuntimeError("native Vespa manifest lacks exact ABI/Vespa identity")
+    return {"native_abi_version": abi, "vespa_commit": vespa_commit}
+
+
+def native_target() -> str:
+    configured = os.environ.get("SK_NATIVE_TARGET")
+    if configured:
+        return configured
+    verbose = subprocess.check_output(["rustc", "-vV"], text=True)
+    for line in verbose.splitlines():
+        if line.startswith("host: "):
+            return line.removeprefix("host: ")
+    raise RuntimeError("could not determine native target from rustc -vV")
+
+
+def runtime_identity(revision: str, platform: str) -> dict[str, object]:
+    native = native_contract()
+    material = {
+        "searchkernel_version": VERSION,
+        "searchkernel_revision": revision,
+        "runtime_package_generation": RUNTIME_PACKAGE_GENERATION,
+        "platform": platform,
+        "native_target": native_target(),
+        "build_environment": os.environ.get("SEARCHKERNEL_BUILD_ENV", "host"),
+        **native,
+    }
+    canonical = json.dumps(material, sort_keys=True, separators=(",", ":")).encode()
+    material["runtime_identity"] = "skrt-v1-" + hashlib.sha256(canonical).hexdigest()
+    return material
+
+
+def runtime_payload_digest(stage: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(p for p in stage.rglob("*") if p.is_file() and p.name != "manifest.json"):
+        relative = path.relative_to(stage).as_posix().encode()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        data = path.read_bytes()
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def assert_consumer_runtime_surface(stage: Path) -> None:
+    extras = sorted(entry.name for entry in stage.iterdir() if entry.name not in CONSUMER_RUNTIME_DIRS | {"manifest.json"})
+    if extras:
+        raise RuntimeError(f"consumer runtime contains developer-only/unrecognized surface: {', '.join(extras)}")
+    for forbidden in ("include", "cmake", "toolchain", "src", "source"):
+        if (stage / forbidden).exists():
+            raise RuntimeError(f"consumer runtime contains developer-only surface: {forbidden}")
+
+
+def write_runtime_manifest(stage: Path, identity: dict[str, object]) -> dict[str, object]:
+    assert_consumer_runtime_surface(stage)
+    required = (stage / "bin/searchkerneld", stage / "bin/searchkerneld.real", stage / "lib/libsearchkernel_vespa.so.2")
+    missing = [str(path.relative_to(stage)) for path in required if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"consumer runtime missing required members: {', '.join(missing)}")
+    manifest = {"format_version": RUNTIME_MANIFEST_FORMAT, **identity, "payload_sha256": runtime_payload_digest(stage)}
+    (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest
+
+
+def validate_runtime_manifest(stage: Path, expected: dict[str, object]) -> dict[str, object]:
+    assert_consumer_runtime_surface(stage)
+    path = stage / "manifest.json"
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"invalid consumer runtime manifest: {exc}") from exc
+    if manifest.get("format_version") != RUNTIME_MANIFEST_FORMAT:
+        raise RuntimeError("runtime manifest format mismatch")
+    for key, value in expected.items():
+        if manifest.get(key) != value:
+            raise RuntimeError(f"runtime identity mismatch for {key}: expected {value!r}, found {manifest.get(key)!r}")
+    actual = runtime_payload_digest(stage)
+    if manifest.get("payload_sha256") != actual:
+        raise RuntimeError("runtime payload digest mismatch")
+    return manifest
 
 
 def cargo_metadata() -> dict[str, object]:
@@ -156,7 +246,7 @@ def probe_runtime_launcher(launcher: Path) -> None:
         )
 
 
-def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path) -> None:
+def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[str, object] | None = None) -> None:
     bindir = stage / "bin"
     libdir = stage / "lib"
     bindir.mkdir(parents=True)
@@ -217,6 +307,9 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path) -> None:
     launcher.chmod(0o755)
 
     probe_runtime_launcher(launcher)
+    if identity is not None:
+        write_runtime_manifest(stage, identity)
+        validate_runtime_manifest(stage, identity)
 
 
 def copy_runtime_into(package_root: Path, stage: Path) -> list[Path]:
@@ -229,6 +322,11 @@ def copy_runtime_into(package_root: Path, stage: Path) -> list[Path]:
             )
         shutil.copytree(stage / name, destination, copy_function=shutil.copy2)
         created.append(destination)
+    manifest = package_root / "manifest.json"
+    if manifest.exists():
+        raise SystemExit(f"refusing to overwrite pre-existing runtime manifest: {manifest}")
+    shutil.copy2(stage / "manifest.json", manifest)
+    created.append(manifest)
     return created
 
 
@@ -250,15 +348,27 @@ def main() -> None:
 
     target = target_dir(metadata)
     daemon, adapter_lib = build_release_daemon(target)
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    platform = "linux-x86_64-glibc"
+    identity = runtime_identity(commit, platform)
 
     with tempfile.TemporaryDirectory(prefix="searchkernel-release-runtime.") as raw:
         stage = Path(raw)
-        stage_runtime(daemon, adapter_lib, stage)
+        stage_runtime(daemon, adapter_lib, stage, identity)
 
-        daemon_bundle = out / f"searchkerneld-{VERSION}-linux-x86_64-glibc.tar.gz"
+        daemon_bundle = out / f"searchkernel-runtime-{identity['runtime_identity']}-{platform}.tar.gz"
         with tarfile.open(daemon_bundle, "w:gz") as archive:
+            archive.add(stage / "manifest.json", arcname="manifest.json")
             archive.add(stage / "bin", arcname="bin")
             archive.add(stage / "lib", arcname="lib")
+        expanded_bytes = sum(path.stat().st_size for path in stage.rglob("*") if path.is_file())
+        runtime_measurement = {
+            "file": daemon_bundle.name,
+            "runtime_identity": identity["runtime_identity"],
+            "payload_sha256": json.loads((stage / "manifest.json").read_text())["payload_sha256"],
+            "expanded_bytes": expanded_bytes,
+            "compressed_bytes": daemon_bundle.stat().st_size,
+        }
 
         # Managed-local packages carry the exact same daemon and native runtime
         # closure as the standalone distribution. A tiny POSIX launcher sets a
@@ -299,11 +409,11 @@ def main() -> None:
             )
         finally:
             for path in reversed(created):
-                shutil.rmtree(path, ignore_errors=True)
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    path.unlink(missing_ok=True)
 
-    commit = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-    ).strip()
     artifacts = []
     for path in sorted(out.iterdir()):
         if path.is_file() and path.name != "manifest.json":
@@ -319,7 +429,8 @@ def main() -> None:
             {
                 "version": VERSION,
                 "commit": commit,
-                "platform": "linux-x86_64-glibc",
+                "platform": platform,
+                "runtime": {**identity, **runtime_measurement},
                 "artifacts": artifacts,
             },
             indent=2,

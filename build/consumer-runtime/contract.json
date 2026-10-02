@@ -1,0 +1,87 @@
+{
+  "format_version": 1,
+  "cache_environment": "SEARCHKERNEL_RUNTIME_CACHE",
+  "runtime_override_environment": "SEARCHKERNEL_RUNTIME_DIR",
+  "runtime_origin_environment": "SEARCHKERNEL_RUNTIME_ORIGIN",
+  "default_cache_suffix": "searchkernel/runtime",
+  "object_key": "runtime_identity",
+  "object_path": "objects/{runtime_identity}",
+  "lock_path": "locks/{runtime_identity}.lock",
+  "publication": "same-filesystem-atomic-rename",
+  "platform_selection": {
+    "strategy": "descriptor-platform-must-match-qualified-host",
+    "qualified": {
+      "linux-x86_64-glibc": {
+        "os": "linux",
+        "machines": [
+          "x86_64",
+          "amd64"
+        ],
+        "libc": "glibc",
+        "native_target": "x86_64-unknown-linux-gnu"
+      }
+    }
+  },
+  "artifact_origin": {
+    "source": "descriptor.artifact_url",
+    "override_environment": "SEARCHKERNEL_RUNTIME_ORIGIN",
+    "allowed_schemes": [
+      "https",
+      "file"
+    ],
+    "filename_template": "searchkernel-runtime-{runtime_identity}-{platform}.tar.gz",
+    "checksum_field": "artifact_sha256",
+    "mutable_aliases_forbidden": true
+  },
+  "descriptor_required_fields": [
+    "format_version",
+    "artifact_url",
+    "artifact_sha256",
+    "searchkernel_version",
+    "searchkernel_revision",
+    "runtime_package_generation",
+    "platform",
+    "native_target",
+    "build_environment",
+    "native_abi_version",
+    "vespa_commit",
+    "runtime_identity"
+  ],
+  "runtime_manifest": {
+    "format_version": 1,
+    "required_members": [
+      "bin/searchkerneld",
+      "bin/searchkerneld.real",
+      "lib/libsearchkernel_vespa.so.2"
+    ],
+    "required_executables": [
+      "bin/searchkerneld",
+      "bin/searchkerneld.real"
+    ],
+    "symlinks_must_resolve_within_runtime_root": true
+  },
+  "error_codes": [
+    "descriptor-invalid",
+    "runtime-invalid",
+    "identity-mismatch",
+    "digest-mismatch",
+    "platform-mismatch",
+    "origin-invalid",
+    "offline-miss",
+    "acquire-failed",
+    "artifact-digest-mismatch",
+    "artifact-invalid",
+    "cache-io-failed"
+  ],
+  "identity_algorithm": "skrt-v1- + sha256(canonical-json(identity_material))",
+  "identity_material_fields": [
+    "searchkernel_version",
+    "searchkernel_revision",
+    "runtime_package_generation",
+    "platform",
+    "native_target",
+    "build_environment",
+    "native_abi_version",
+    "vespa_commit"
+  ]
+}

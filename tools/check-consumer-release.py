@@ -38,7 +38,27 @@ def clean_runtime_env() -> dict[str, str]:
             env.pop(key, None)
     return env
 
-def verify_daemon_tree(root: Path) -> None:
+def runtime_payload_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file() and p.name != "manifest.json"):
+        relative = path.relative_to(root).as_posix().encode()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        data = path.read_bytes()
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()
+
+def verify_daemon_tree(root: Path, expected_runtime: dict[str, object]) -> None:
+    runtime_manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    for key in ("runtime_identity", "searchkernel_version", "searchkernel_revision", "runtime_package_generation", "platform", "native_target", "build_environment", "native_abi_version", "vespa_commit"):
+        assert runtime_manifest.get(key) == expected_runtime.get(key), (
+            f"packaged runtime identity mismatch for {key}: "
+            f"{runtime_manifest.get(key)!r} != {expected_runtime.get(key)!r}"
+        )
+    assert runtime_manifest.get("payload_sha256") == runtime_payload_digest(root), (
+        "packaged runtime payload digest mismatch"
+    )
     daemon = root / "bin" / "searchkerneld"
     real_daemon = root / "bin" / "searchkerneld.real"
     libdir = root / "lib"
@@ -142,12 +162,12 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
         env=environment,
     )
 
-    daemon = next(out.glob("searchkerneld-*.tar.gz"))
+    daemon = next(out.glob("searchkernel-runtime-*.tar.gz"))
     daemon_root = temp / "daemon"
     daemon_root.mkdir()
     with tarfile.open(daemon) as archive:
         archive.extractall(daemon_root)
-    verify_daemon_tree(daemon_root)
+    verify_daemon_tree(daemon_root, manifest["runtime"])
 
     wheel = next(out.glob("searchkernel-*.whl"))
     assert wheel.name.endswith(f"-{expected_wheel_tag}.whl"), (
@@ -188,7 +208,7 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
         stdout=subprocess.DEVNULL,
     )
     assert (wheel_root / "searchkernel" / "__init__.py").is_file()
-    verify_daemon_tree(wheel_root / "searchkernel")
+    verify_daemon_tree(wheel_root / "searchkernel", manifest["runtime"])
 
     npm = next(out.glob("searchkernel-client-*.tgz"))
     npm_root = temp / "npm"
@@ -196,7 +216,7 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
     with tarfile.open(npm) as archive:
         archive.extractall(npm_root)
     assert (npm_root / "package" / "dist" / "node.js").is_file()
-    verify_daemon_tree(npm_root / "package")
+    verify_daemon_tree(npm_root / "package", manifest["runtime"])
 
     ruby_gems = sorted(out.glob("searchkernel-*.gem"))
     assert len(ruby_gems) == 1, f"expected exactly one packaged Ruby gem, found {ruby_gems}"

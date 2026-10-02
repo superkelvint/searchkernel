@@ -1004,6 +1004,24 @@
       "focused_check": "command:check-protocol",
       "strong_check": "verify:product.integration"
     },
+    "build/consumer-runtime/": {
+      "owner": "release",
+      "area": "Consumer runtime resolver/cache contract",
+      "read": [
+        "implementation-plan/build-system-roadmap.md",
+        "implementation-plan/audit/build-system/m4-consumer-runtime-resolver.md"
+      ],
+      "architecture": "implementation-plan/build-system-roadmap.md#m4-deliver-ecosystem-native-product-distribution",
+      "test": [],
+      "verify": [],
+      "generated": false,
+      "rules": [
+        "Keep runtime identity, platform/origin selection, cache semantics, and error taxonomy language-neutral and fail closed."
+      ],
+      "native_base_rebuild": false,
+      "focused_check": "command:check-fast",
+      "strong_check": "command:check-fast"
+    },
     "tools/": {
       "owner": "tooling",
       "area": "Build, generation, and verification tooling",

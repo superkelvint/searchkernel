@@ -376,6 +376,7 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/test_dev_targets.py"
     "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
     "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
+    "$PYTHON" "$ROOT/tools/test_consumer_runtime.py"
     "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
     "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
     "$PYTHON" "$ROOT/tools/test_check_verifier_build_ownership.py"
@@ -407,6 +408,9 @@ ci_gate() {
 
     echo "== bookkeeping contract =="
     bookkeeping_command check
+
+    echo "== consumer runtime resolver contract =="
+    "$PYTHON" "$ROOT/tools/test_consumer_runtime.py"
 
     echo "== verifier build ownership =="
     "$PYTHON" "$ROOT/tools/check-verifier-build-ownership.py"

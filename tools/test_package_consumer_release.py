@@ -144,6 +144,56 @@ class ConsumerReleaseTests(unittest.TestCase):
                 MODULE.probe_runtime_launcher(launcher)
 
 
+    def test_runtime_manifest_has_exact_identity_and_payload_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            stage = Path(tempdir) / "runtime"
+            (stage / "bin").mkdir(parents=True)
+            (stage / "lib").mkdir()
+            (stage / "bin" / "searchkerneld").write_text("launcher", encoding="utf-8")
+            (stage / "bin" / "searchkerneld.real").write_bytes(b"daemon")
+            (stage / "lib" / "libsearchkernel_vespa.so.2").write_bytes(b"adapter")
+            identity = MODULE.runtime_identity("deadbeef", "linux-x86_64-glibc")
+            manifest = MODULE.write_runtime_manifest(stage, identity)
+            self.assertEqual(manifest["format_version"], MODULE.RUNTIME_MANIFEST_FORMAT)
+            self.assertEqual(manifest["searchkernel_version"], MODULE.VERSION)
+            self.assertEqual(manifest["searchkernel_revision"], "deadbeef")
+            native = MODULE.native_contract()
+            self.assertEqual(manifest["native_abi_version"], native["native_abi_version"])
+            self.assertEqual(manifest["vespa_commit"], native["vespa_commit"])
+            self.assertEqual(manifest["platform"], "linux-x86_64-glibc")
+            self.assertEqual(manifest["native_target"], MODULE.native_target())
+            self.assertEqual(manifest["build_environment"], "host")
+            self.assertRegex(manifest["runtime_identity"], r"^skrt-v1-")
+            self.assertEqual(manifest["payload_sha256"], MODULE.runtime_payload_digest(stage))
+            MODULE.validate_runtime_manifest(stage, identity)
+
+    def test_runtime_manifest_rejects_identity_mismatch_and_payload_corruption(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            stage = Path(tempdir) / "runtime"
+            (stage / "bin").mkdir(parents=True)
+            (stage / "lib").mkdir()
+            (stage / "bin" / "searchkerneld").write_text("launcher", encoding="utf-8")
+            (stage / "bin" / "searchkerneld.real").write_bytes(b"daemon")
+            (stage / "lib" / "libsearchkernel_vespa.so.2").write_bytes(b"adapter")
+            identity = MODULE.runtime_identity("deadbeef", "linux-x86_64-glibc")
+            MODULE.write_runtime_manifest(stage, identity)
+            wrong = dict(identity)
+            wrong["native_abi_version"] += 1
+            with self.assertRaisesRegex(RuntimeError, "runtime identity mismatch"):
+                MODULE.validate_runtime_manifest(stage, wrong)
+            (stage / "lib" / "libsearchkernel_vespa.so.2").write_bytes(b"corrupt")
+            with self.assertRaisesRegex(RuntimeError, "runtime payload digest mismatch"):
+                MODULE.validate_runtime_manifest(stage, identity)
+
+    def test_consumer_runtime_rejects_developer_only_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            stage = Path(tempdir) / "runtime"
+            (stage / "bin").mkdir(parents=True)
+            (stage / "lib").mkdir()
+            (stage / "include").mkdir()
+            with self.assertRaisesRegex(RuntimeError, "developer-only"):
+                MODULE.assert_consumer_runtime_surface(stage)
+
     def test_rust_bundle_is_self_contained_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             bundle = Path(tempdir) / "searchkernel-rust-test.tar.gz"

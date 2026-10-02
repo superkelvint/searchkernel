@@ -34,4 +34,5 @@ searchkernel = [
     "bin/*",
     "bin/.searchkernel-native/*",
     "lib/*",
+    "manifest.json",
 ]

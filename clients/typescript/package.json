@@ -21,6 +21,7 @@
     "dist",
     "bin",
     "lib",
+    "manifest.json",
     "examples"
   ],
   "scripts": {
