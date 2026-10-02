@@ -117,6 +117,21 @@ class DevTargetsTest(unittest.TestCase):
             self.assertIn(script, bookkeeping)
 
 
+    def test_consumer_release_is_registered_and_dispatched(self):
+        data = json.loads(REGISTRY.read_text())
+        self.assertIn("consumer-release", data["test"])
+        out = subprocess.check_output(
+            [TOOL, "resolve", "test", "consumer-release"], text=True
+        ).strip()
+        self.assertEqual(out, "consumer-release")
+
+        driver = (ROOT / "dev").read_text()
+        case = driver.split("        consumer-release)\n", 1)[1].split(
+            "            ;;\n", 1
+        )[0]
+        self.assertIn("tools/package-consumer-release.py", case)
+        self.assertIn("tools/qualify-consumer-release.py", case)
+
     def test_client_semantic_parity_is_registered(self):
         data = json.loads(REGISTRY.read_text())
         self.assertIn("client-semantic-parity", data["verify"])

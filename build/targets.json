@@ -83,6 +83,9 @@
     },
     "client-real-e2e-parity": {
       "description": "Cross-client real-engine showcase parity"
+    },
+    "consumer-release": {
+      "description": "Publishable consumer artifacts and fresh-project package qualification"
     }
   },
   "verify": {
