@@ -239,6 +239,23 @@ def clean_runtime_env() -> dict[str, str]:
 RUNTIME_PROBE_ARGUMENT = "--searchkernel-runtime-probe"
 
 
+def make_runtime_adapter_relocatable(adapter: Path) -> None:
+    patchelf = shutil.which("patchelf")
+    if patchelf is None:
+        raise RuntimeError(
+            "consumer release packaging requires patchelf to remove producer RPATHs"
+        )
+    run(patchelf, "--force-rpath", "--set-rpath", "$ORIGIN", str(adapter))
+    actual = subprocess.check_output(
+        [patchelf, "--print-rpath", str(adapter)],
+        text=True,
+    ).strip()
+    if actual != "$ORIGIN":
+        raise RuntimeError(
+            f"packaged native adapter RPATH is not relocatable: {actual!r}"
+        )
+
+
 def probe_runtime_launcher(launcher: Path) -> None:
     result = subprocess.run(
         [str(launcher), RUNTIME_PROBE_ARGUMENT],
@@ -269,6 +286,11 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[s
         adapter_lib / "libsearchkernel_vespa.so.2",
         libdir / "libsearchkernel_vespa.so.2",
     )
+    # Cargo's development adapter deliberately points at the immutable native
+    # base with an absolute old-style RPATH. That producer path must never leak
+    # into a consumer artifact. Rebase the staged copy onto its packaged lib/
+    # directory before deriving or validating the runtime closure.
+    make_runtime_adapter_relocatable(libdir / "libsearchkernel_vespa.so.2")
     cargo_adapter = bindir / ".searchkernel-native"
     cargo_adapter.mkdir()
     (cargo_adapter / "libsearchkernel_vespa.so.2").symlink_to(
