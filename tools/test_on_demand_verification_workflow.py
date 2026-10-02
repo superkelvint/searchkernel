@@ -19,7 +19,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_uses_bounded_dispatch_and_pr_comment_ingress_with_isolated_reporter_write_permission(self):
+    def test_uses_bounded_dispatch_and_pr_comment_ingress_with_isolated_comment_write_permission(self):
         text = self.text
         self.assertIn("repository_dispatch:", text)
         self.assertIn("types: [searchkernel-verification]", text)
@@ -29,13 +29,23 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^\s+pull_request:")
         self.assertNotRegex(text, r"(?m)^\s+push:")
         self.assertIn("permissions:\n  contents: read\n", text)
+
+        status_start = text.index("  status-comment:")
         verify_start = text.index("  verify:")
         reporter_start = text.index("  report-comment:")
+        status = text[status_start:verify_start]
         verify = text[verify_start:reporter_start]
         reporter = text[reporter_start:]
+
+        self.assertIn("issues: write", status)
+        self.assertIn("pull-requests: write", status)
+        self.assertIn("issues: write", reporter)
+        self.assertIn("pull-requests: write", reporter)
+        self.assertIn("secrets.RUSTFMT_AUTOFIX_TOKEN", status)
+        self.assertIn("secrets.RUSTFMT_AUTOFIX_TOKEN", reporter)
         self.assertNotIn("issues: write", verify)
-        self.assertIn("permissions:\n      contents: read\n      issues: write\n", reporter)
-        self.assertNotIn("${{ secrets.", text)
+        self.assertNotIn("pull-requests: write", verify)
+        self.assertNotIn("${{ secrets.", verify)
 
     def test_control_plane_is_proven_before_subject_checkout(self):
         text = self.text
@@ -164,18 +174,28 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
             text,
         )
 
-    def test_comment_triggered_results_are_posted_back_with_clickable_run_evidence(self):
+    def test_comment_triggered_status_is_created_running_then_updated_with_result(self):
         text = self.text
+        status_start = text.index("  status-comment:")
+        verify_start = text.index("  verify:")
         reporter_start = text.index("  report-comment:")
+        status = text[status_start:verify_start]
         reporter = text[reporter_start:]
 
-        self.assertIn("needs: verify", reporter)
+        self.assertIn("Exact-head verification RUNNING", status)
+        self.assertIn("github.rest.issues.createComment", status)
+        self.assertIn('core.setOutput("comment_id"', status)
+        self.assertIn("[View Actions run]", status)
+
+        self.assertIn("needs: [status-comment, verify]", reporter)
         self.assertIn("always()", reporter)
         self.assertIn("github.event_name == 'issue_comment'", reporter)
         self.assertIn("github.event.issue.pull_request", reporter)
         self.assertIn("github.event.comment.author_association == 'OWNER'", reporter)
         self.assertIn("github.event.comment.author_association == 'MEMBER'", reporter)
         self.assertIn("github.event.comment.author_association == 'COLLABORATOR'", reporter)
+        self.assertIn("STATUS_COMMENT_ID: ${{ needs.status-comment.outputs.comment_id }}", reporter)
+        self.assertIn("github.rest.issues.updateComment", reporter)
         self.assertIn("github.rest.issues.createComment", reporter)
         self.assertIn(
             "RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
@@ -188,7 +208,9 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("[View Actions run]", reporter)
         self.assertIn("PASS", reporter)
         self.assertIn("FAIL", reporter)
+        self.assertNotIn("actions/checkout", status)
         self.assertNotIn("actions/checkout", reporter)
+        self.assertNotIn("path: subject", status)
         self.assertNotIn("path: subject", reporter)
 
     def test_reporter_github_script_is_valid_javascript(self):
