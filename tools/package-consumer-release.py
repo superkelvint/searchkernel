@@ -180,6 +180,8 @@ def build_release_daemon(target: Path) -> tuple[Path, Path]:
         messages_path = Path(messages.name)
     try:
         with messages_path.open("w", encoding="utf-8") as output:
+            release_env = os.environ.copy()
+            release_env["SK_NATIVE_ADAPTER_RPATH"] = "$ORIGIN"
             subprocess.run(
                 [
                     "cargo",
@@ -192,6 +194,7 @@ def build_release_daemon(target: Path) -> tuple[Path, Path]:
                     "--message-format=json-render-diagnostics",
                 ],
                 cwd=ROOT,
+                env=release_env,
                 check=True,
                 stdout=output,
             )
@@ -239,20 +242,21 @@ def clean_runtime_env() -> dict[str, str]:
 RUNTIME_PROBE_ARGUMENT = "--searchkernel-runtime-probe"
 
 
-def make_runtime_adapter_relocatable(adapter: Path) -> None:
-    patchelf = shutil.which("patchelf")
-    if patchelf is None:
+def verify_runtime_adapter_relocatable(adapter: Path) -> None:
+    dynamic = subprocess.check_output(["readelf", "-d", str(adapter)], text=True)
+    paths: list[str] = []
+    for line in dynamic.splitlines():
+        if "(RPATH)" not in line and "(RUNPATH)" not in line:
+            continue
+        start = line.find("[")
+        end = line.rfind("]")
+        if start < 0 or end <= start:
+            raise RuntimeError(f"could not parse packaged adapter RPATH line: {line}")
+        paths.extend(part for part in line[start + 1 : end].split(":") if part)
+    if paths != ["$ORIGIN"]:
         raise RuntimeError(
-            "consumer release packaging requires patchelf to remove producer RPATHs"
-        )
-    run(patchelf, "--force-rpath", "--set-rpath", "$ORIGIN", str(adapter))
-    actual = subprocess.check_output(
-        [patchelf, "--print-rpath", str(adapter)],
-        text=True,
-    ).strip()
-    if actual != "$ORIGIN":
-        raise RuntimeError(
-            f"packaged native adapter RPATH is not relocatable: {actual!r}"
+            "packaged native adapter must use only $ORIGIN for RPATH/RUNPATH; "
+            f"found {paths!r}"
         )
 
 
@@ -286,11 +290,10 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[s
         adapter_lib / "libsearchkernel_vespa.so.2",
         libdir / "libsearchkernel_vespa.so.2",
     )
-    # Cargo's development adapter deliberately points at the immutable native
-    # base with an absolute old-style RPATH. That producer path must never leak
-    # into a consumer artifact. Rebase the staged copy onto its packaged lib/
-    # directory before deriving or validating the runtime closure.
-    make_runtime_adapter_relocatable(libdir / "libsearchkernel_vespa.so.2")
+    # Release builds request a package-relative adapter RPATH at build time.
+    # Prove that no producer/native-cache path leaked into the staged ELF before
+    # deriving or validating its runtime closure.
+    verify_runtime_adapter_relocatable(libdir / "libsearchkernel_vespa.so.2")
     cargo_adapter = bindir / ".searchkernel-native"
     cargo_adapter.mkdir()
     (cargo_adapter / "libsearchkernel_vespa.so.2").symlink_to(
