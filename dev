@@ -715,6 +715,7 @@ test_target() {
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
         frontend|frontend-real-engine)
+            "$NPM" ci --prefix "$ROOT/clients/typescript"
             "$NPM" run build --prefix "$ROOT/clients/typescript"
             "$NPM" ci --prefix "$ROOT/searchkernel-web"
             "$NPM" run build --prefix "$ROOT/searchkernel-web"
