@@ -129,20 +129,64 @@ describe("logical index lifecycle", () => {
     expect(closed).toBe(1);
   });
 
+  it("connect binds the current generation before its first ordinary operation", async () => {
+    const requests: Uint8Array[] = [];
+    const transport: ClientTransport = {
+      execute: async (request) => {
+        requests.push(request);
+        const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(request));
+        return decoded.payloadType() === RequestPayload.SearchKernel_Wire_OpenIndexRequest
+          ? envelope(
+              ResponsePayload.SearchKernel_Wire_OpenIndexResult,
+              new OpenIndexResultT(new WireIndexDefinitionT(), "connected-generation"),
+            )
+          : envelope(
+              ResponsePayload.SearchKernel_Wire_DescribeResult,
+              new DescribeResultT(new WireIndexDefinitionT()),
+            );
+      },
+      close() {},
+    };
+
+    const index = Index.connect("unused", "products", transport);
+    await index.describe();
+
+    expect(requests).toHaveLength(2);
+    const open = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[0]!));
+    expect(open.payloadType()).toBe(RequestPayload.SearchKernel_Wire_OpenIndexRequest);
+    expect(open.target(new IndexTarget())?.name()).toBe("products");
+
+    const ordinary = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[1]!));
+    expect(ordinary.target(new IndexTarget())?.name()).toBe("products");
+    expect(ordinary.target(new IndexTarget())?.generation()).toBe("connected-generation");
+    await index.close();
+  });
+
   it("closing one handle closes only its transport and leaves another handle usable", async () => {
     let firstClosed = 0;
     let secondClosed = 0;
+    const responseFor = (request: Uint8Array) => {
+      const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(request));
+      return decoded.payloadType() === RequestPayload.SearchKernel_Wire_OpenIndexRequest
+        ? envelope(
+            ResponsePayload.SearchKernel_Wire_OpenIndexResult,
+            new OpenIndexResultT(new WireIndexDefinitionT(), "fixture-generation"),
+          )
+        : envelope(
+            ResponsePayload.SearchKernel_Wire_DescribeResult,
+            new DescribeResultT(new WireIndexDefinitionT()),
+          );
+    };
     const first = Index.connect("unused", "products", {
-      execute: async () => new Uint8Array(),
+      execute: async (request) => responseFor(request),
       close: () => { firstClosed += 1; },
     });
     const second = Index.connect("unused", "products", {
-      execute: async () => envelope(
-        ResponsePayload.SearchKernel_Wire_DescribeResult,
-        new DescribeResultT(new WireIndexDefinitionT()),
-      ),
+      execute: async (request) => responseFor(request),
       close: () => { secondClosed += 1; },
     });
+
+    await first.describe();
     await first.close();
     await second.describe();
     expect(firstClosed).toBe(1);
