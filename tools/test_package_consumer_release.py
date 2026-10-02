@@ -21,6 +21,23 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ConsumerReleaseTests(unittest.TestCase):
+    def test_packager_requires_canonical_image_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            missing_marker = Path(tempdir) / "native-validation-pass"
+            with mock.patch.object(MODULE, "CANONICAL_IMAGE_MARKER", missing_marker):
+                with mock.patch.dict(
+                    os.environ, {"SEARCHKERNEL_IN_CI_IMAGE": "0"}, clear=False
+                ):
+                    with self.assertRaisesRegex(
+                        SystemExit, r"\./dev test consumer-release"
+                    ):
+                        MODULE.require_canonical_release_environment()
+
+            with mock.patch.dict(
+                os.environ, {"SEARCHKERNEL_IN_CI_IMAGE": "1"}, clear=False
+            ):
+                MODULE.require_canonical_release_environment()
+
     def test_packaged_build_sdk_reexecs_through_bash_under_flock(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
