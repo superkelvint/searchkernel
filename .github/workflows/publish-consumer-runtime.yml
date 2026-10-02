@@ -1,0 +1,227 @@
+name: Publish consumer runtime
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: qualify exact consumer release candidate
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 120
+    outputs:
+      runtime_file: ${{ steps.candidate.outputs.runtime_file }}
+      runtime_sha256: ${{ steps.candidate.outputs.runtime_sha256 }}
+      runtime_identity: ${{ steps.candidate.outputs.runtime_identity }}
+      compressed_bytes: ${{ steps.candidate.outputs.compressed_bytes }}
+      expanded_bytes: ${{ steps.candidate.outputs.expanded_bytes }}
+
+    steps:
+      - name: Check out exact release revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove checked-out revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed=$(git rev-parse HEAD)
+          if [[ "${observed,,}" != "${GITHUB_SHA,,}" ]]; then
+            echo "error: expected ${GITHUB_SHA}, checked out ${observed}" >&2
+            exit 2
+          fi
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            tagged=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
+            if [[ "${tagged,,}" != "${GITHUB_SHA,,}" ]]; then
+              echo "error: tag ${GITHUB_REF_NAME} does not resolve to ${GITHUB_SHA}" >&2
+              exit 2
+            fi
+          fi
+
+      - name: Build and qualify candidate in canonical container
+        shell: bash
+        env:
+          SEARCHKERNEL_CI_EXACT_SOURCE: "1"
+          SEARCHKERNEL_CI_EPHEMERAL_TARGET: "1"
+          SEARCHKERNEL_CONSUMER_RELEASE_EXPORT: ${{ runner.temp }}/consumer-release
+        run: |
+          set -euo pipefail
+          rm -rf -- "${SEARCHKERNEL_CONSUMER_RELEASE_EXPORT}"
+          mkdir -p -- "${SEARCHKERNEL_CONSUMER_RELEASE_EXPORT}"
+          ./dev test consumer-release
+
+      - name: Validate exact candidate identity
+        id: candidate
+        shell: bash
+        env:
+          RELEASE_DIR: ${{ runner.temp }}/consumer-release
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          out = Path(os.environ["RELEASE_DIR"])
+          manifest_path = out / "manifest.json"
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          expected_commit = os.environ["GITHUB_SHA"].lower()
+          observed_commit = str(manifest.get("commit", "")).lower()
+          if observed_commit != expected_commit:
+              raise SystemExit(
+                  f"release manifest commit mismatch: expected {expected_commit}, found {observed_commit}"
+              )
+
+          runtime = manifest.get("runtime")
+          if not isinstance(runtime, dict):
+              raise SystemExit("release manifest has no runtime object")
+          runtime_file = runtime.get("file")
+          runtime_identity = runtime.get("runtime_identity")
+          if not isinstance(runtime_file, str) or not runtime_file.startswith("searchkernel-runtime-"):
+              raise SystemExit(f"invalid runtime artifact filename: {runtime_file!r}")
+          if not isinstance(runtime_identity, str) or not runtime_identity.startswith("skrt-v1-"):
+              raise SystemExit(f"invalid runtime identity: {runtime_identity!r}")
+
+          artifact_path = out / runtime_file
+          if not artifact_path.is_file():
+              raise SystemExit(f"runtime artifact is missing: {artifact_path}")
+          digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+          size = artifact_path.stat().st_size
+
+          artifacts = {
+              item.get("file"): item
+              for item in manifest.get("artifacts", [])
+              if isinstance(item, dict)
+          }
+          entry = artifacts.get(runtime_file)
+          if not isinstance(entry, dict):
+              raise SystemExit("runtime artifact is missing from release manifest artifacts")
+          if entry.get("sha256") != digest:
+              raise SystemExit("runtime archive SHA-256 does not match release manifest")
+          if entry.get("bytes") != size:
+              raise SystemExit("runtime archive byte size does not match release manifest")
+          if runtime.get("compressed_bytes") != size:
+              raise SystemExit("runtime compressed_bytes does not match archive size")
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as stream:
+              stream.write(f"runtime_file={runtime_file}\n")
+              stream.write(f"runtime_sha256={digest}\n")
+              stream.write(f"runtime_identity={runtime_identity}\n")
+              stream.write(f"compressed_bytes={size}\n")
+              stream.write(f"expanded_bytes={runtime.get('expanded_bytes')}\n")
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as stream:
+              stream.write("### Qualified consumer runtime\n\n")
+              stream.write(f"- Artifact: \`{runtime_file}\`\n")
+              stream.write(f"- Runtime identity: \`{runtime_identity}\`\n")
+              stream.write(f"- SHA-256: \`{digest}\`\n")
+              stream.write(f"- Download bytes: {size}\n")
+              stream.write(f"- Expanded bytes: {runtime.get('expanded_bytes')}\n")
+          PY
+
+      - name: Preserve qualified candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: consumer-release-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/consumer-release
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+
+  publish:
+    name: publish exact candidate to GitHub Release
+    needs: qualify
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Retrieve qualified candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: consumer-release-candidate-${{ github.sha }}
+          path: candidate
+
+      - name: Revalidate transferred runtime bytes
+        shell: bash
+        env:
+          EXPECTED_RUNTIME_FILE: ${{ needs.qualify.outputs.runtime_file }}
+          EXPECTED_RUNTIME_SHA256: ${{ needs.qualify.outputs.runtime_sha256 }}
+          EXPECTED_RUNTIME_IDENTITY: ${{ needs.qualify.outputs.runtime_identity }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("candidate")
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          if str(manifest.get("commit", "")).lower() != os.environ["GITHUB_SHA"].lower():
+              raise SystemExit("transferred release manifest does not name the tagged commit")
+          runtime = manifest.get("runtime", {})
+          if runtime.get("file") != os.environ["EXPECTED_RUNTIME_FILE"]:
+              raise SystemExit("transferred runtime filename changed after qualification")
+          if runtime.get("runtime_identity") != os.environ["EXPECTED_RUNTIME_IDENTITY"]:
+              raise SystemExit("transferred runtime identity changed after qualification")
+          artifact = root / os.environ["EXPECTED_RUNTIME_FILE"]
+          digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+          if digest != os.environ["EXPECTED_RUNTIME_SHA256"]:
+              raise SystemExit("transferred runtime bytes changed after qualification")
+          PY
+
+      - name: Publish immutable release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_FILE: ${{ needs.qualify.outputs.runtime_file }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          repo="${GITHUB_REPOSITORY}"
+          runtime="candidate/${RUNTIME_FILE}"
+          manifest="candidate/manifest.json"
+
+          verify_or_upload() {
+            local source=$1
+            local name
+            name=$(basename -- "$source")
+            if gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' |
+                grep -Fxq -- "$name"; then
+              local existing
+              existing=$(mktemp -d)
+              gh release download "$tag" --repo "$repo" --pattern "$name" --dir "$existing"
+              if ! cmp -s -- "$source" "$existing/$name"; then
+                echo "error: immutable release asset $name already exists with different bytes" >&2
+                exit 1
+              fi
+              echo "release asset already exists with identical bytes: $name"
+            else
+              gh release upload "$tag" "$source" --repo "$repo"
+            fi
+          }
+
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            verify_or_upload "$runtime"
+            verify_or_upload "$manifest"
+          else
+            args=(release create "$tag" --repo "$repo" --verify-tag --title "$tag" --generate-notes)
+            if [[ "$tag" == *-* ]]; then
+              args+=(--prerelease)
+            fi
+            args+=("$runtime" "$manifest")
+            gh "${args[@]}"
+          fi
