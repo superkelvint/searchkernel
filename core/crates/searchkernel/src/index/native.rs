@@ -231,21 +231,22 @@ impl Index {
         fn no_links(path: &std::path::Path) -> Result<()> {
             let mut pending = vec![path.to_path_buf()];
             while let Some(directory) = pending.pop() {
-              for entry in std::fs::read_dir(directory)
-                .map_err(|error| Error::Infrastructure(error.to_string()))? {
-                let entry = entry.map_err(|error| Error::Infrastructure(error.to_string()))?;
-                let kind = entry
-                    .file_type()
-                    .map_err(|error| Error::Infrastructure(error.to_string()))?;
-                if kind.is_symlink() || (!kind.is_file() && !kind.is_dir()) {
-                    return Err(Error::corrupt_index(
-                        "invalid persisted index metadata entry",
-                    ));
+                for entry in std::fs::read_dir(directory)
+                    .map_err(|error| Error::Infrastructure(error.to_string()))?
+                {
+                    let entry = entry.map_err(|error| Error::Infrastructure(error.to_string()))?;
+                    let kind = entry
+                        .file_type()
+                        .map_err(|error| Error::Infrastructure(error.to_string()))?;
+                    if kind.is_symlink() || (!kind.is_file() && !kind.is_dir()) {
+                        return Err(Error::corrupt_index(
+                            "invalid persisted index metadata entry",
+                        ));
+                    }
+                    if kind.is_dir() {
+                        pending.push(entry.path());
+                    }
                 }
-                if kind.is_dir() {
-                    pending.push(entry.path());
-                }
-              }
             }
             Ok(())
         }

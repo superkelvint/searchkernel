@@ -1763,8 +1763,14 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
     let endpoint = server.tcp_addr().expect("gRPC listener").to_string();
     let client = RemoteClient::connect(&endpoint).expect("reconnect Rust remote client");
     // SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=grpc
-    assert_eq!(client.list_indexes().expect("discover durable targets"), vec!["rust-a", "rust-b"]);
-    assert!(registry.loaded_targets().expect("loaded targets").is_empty());
+    assert_eq!(
+        client.list_indexes().expect("discover durable targets"),
+        vec!["rust-a", "rust-b"]
+    );
+    assert!(registry
+        .loaded_targets()
+        .expect("loaded targets")
+        .is_empty());
 
     let a = client.open_index("rust-a").expect("open A after restart");
     let b = client.open_index("rust-b").expect("open B after restart");
