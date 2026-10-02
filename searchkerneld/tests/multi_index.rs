@@ -184,10 +184,7 @@ fn delete_index_request(target_name: &str) -> Vec<u8> {
     delete_index_request_with_generation(target_name, None)
 }
 
-fn delete_index_request_with_generation(
-    target_name: &str,
-    generation: Option<&str>,
-) -> Vec<u8> {
+fn delete_index_request_with_generation(target_name: &str, generation: Option<&str>) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let payload =
         api::DeleteIndexRequest::create(&mut builder, &api::DeleteIndexRequestArgs::default());
@@ -658,13 +655,8 @@ async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
         .expect("canonical recreate result generation");
     assert_ne!(old_generation, new_generation);
 
-    let stale_bytes = upsert_request_with_generation(
-        "reused",
-        "doc",
-        "title",
-        "stale",
-        Some(&old_generation),
-    );
+    let stale_bytes =
+        upsert_request_with_generation("reused", "doc", "title", "stale", Some(&old_generation));
     let stale_json =
         request_flatbuffer_to_json(&stale_bytes).expect("canonical stale request JSON");
     let stale_bytes = request_json_to_flatbuffer(&stale_json)
@@ -691,12 +683,10 @@ async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
         portable_error_semantics(&http_stale)
     );
 
-    let stale_delete =
-        delete_index_request_with_generation("reused", Some(&old_generation));
+    let stale_delete = delete_index_request_with_generation("reused", Some(&old_generation));
     let stale_delete_json =
         request_flatbuffer_to_json(&stale_delete).expect("canonical stale delete JSON");
-    let (status, body) =
-        execute_http_json_raw(http_address, Bytes::from(stale_delete_json)).await;
+    let (status, body) = execute_http_json_raw(http_address, Bytes::from(stale_delete_json)).await;
     assert_eq!(status, http::StatusCode::OK);
     assert_portable_error(
         &response_json_to_flatbuffer(&body).expect("stale delete response"),
