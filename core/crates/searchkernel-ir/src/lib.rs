@@ -58,6 +58,7 @@ pub use filter_expression::{
     bind_filter_expression, bind_filter_expression_with_references, BoundFilter, FilterBindings,
     FilterParameters,
 };
+pub use ir_to_api::{encode_delete_index_request, encode_open_index_request};
 pub use model::*;
 pub use session::{BackendSession, SessionError};
 

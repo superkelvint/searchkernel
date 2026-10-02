@@ -37,22 +37,11 @@ fn new_generation() -> String {
 
 pub(crate) struct RegistryDispatchResult {
     pub(crate) payload: Vec<u8>,
-    pub(crate) generation: Option<String>,
 }
 
 impl RegistryDispatchResult {
     fn payload(payload: Vec<u8>) -> Self {
-        Self {
-            payload,
-            generation: None,
-        }
-    }
-
-    fn with_generation(payload: Vec<u8>, generation: String) -> Self {
-        Self {
-            payload,
-            generation: Some(generation),
-        }
+        Self { payload }
     }
 }
 
@@ -163,21 +152,19 @@ impl IndexRegistry {
     }
 
     pub fn dispatch(&self, request: &[u8]) -> Result<Vec<u8>, RegistryDispatchError> {
-        Ok(self.dispatch_with_generation(request, None)?.payload)
+        Ok(self.dispatch_routed(request)?.payload)
     }
 
     pub(crate) fn dispatch_grpc(
         &self,
         request: &[u8],
-        expected_generation: Option<&str>,
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
-        self.dispatch_with_generation(request, expected_generation)
+        self.dispatch_routed(request)
     }
 
-    fn dispatch_with_generation(
+    fn dispatch_routed(
         &self,
         request: &[u8],
-        expected_generation: Option<&str>,
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         // Keep shutdown linearizable with every request, including lifecycle
         // transitions that temporarily operate outside the registry map.
@@ -209,9 +196,10 @@ impl IndexRegistry {
             ControlPlaneRequest::Create { target, definition } => self.create(target, definition),
             ControlPlaneRequest::Open { target } => self.open(target),
             ControlPlaneRequest::Delete { target } => self.delete_index(target),
-            ControlPlaneRequest::Route { target } => {
-                self.dispatch_loaded(target, request, expected_generation)
-            }
+            ControlPlaneRequest::Route {
+                target,
+                expected_generation,
+            } => self.dispatch_loaded(target, request, expected_generation),
         }
     }
 
@@ -330,13 +318,11 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .insert(target.to_owned(), entry);
-        Ok(RegistryDispatchResult::with_generation(
-            encode_lifecycle_result(
-                context.definition(),
-                wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
-            ),
-            generation,
-        ))
+        Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
+            context.definition(),
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+            &generation,
+        )))
     }
 
     fn open(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
@@ -351,13 +337,11 @@ impl IndexRegistry {
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if let Some(entry) = entries.get(target) {
                 let (context, _) = entry.index.clone().into_session_parts();
-                return Ok(RegistryDispatchResult::with_generation(
-                    encode_lifecycle_result(
-                        context.definition(),
-                        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
-                    ),
-                    entry.generation.clone(),
-                ));
+                return Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
+                    context.definition(),
+                    wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
+                    &entry.generation,
+                )));
             }
         }
 
@@ -388,13 +372,11 @@ impl IndexRegistry {
             .lock()
             .map_err(|_| RegistryDispatchError::Poisoned)?
             .insert(target.to_owned(), entry);
-        Ok(RegistryDispatchResult::with_generation(
-            encode_lifecycle_result(
-                context.definition(),
-                wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
-            ),
-            generation,
-        ))
+        Ok(RegistryDispatchResult::payload(encode_lifecycle_result(
+            context.definition(),
+            wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
+            &generation,
+        )))
     }
 
     fn delete_index(&self, target: &str) -> Result<RegistryDispatchResult, RegistryDispatchError> {
@@ -538,20 +520,28 @@ fn lifecycle_index_error_to_portable(
 fn encode_lifecycle_result(
     definition: &searchkernel_ir::IndexDefinitionIr,
     payload_type: wire::ResponsePayload,
+    index_generation: &str,
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let index = wire_ir::index_definition_offset(&mut builder, definition);
+    let generation = builder.create_string(index_generation);
     let payload = match payload_type {
         wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult => {
             api::CreateIndexResult::create(
                 &mut builder,
-                &api::CreateIndexResultArgs { index: Some(index) },
+                &api::CreateIndexResultArgs {
+                    index: Some(index),
+                    generation: Some(generation),
+                },
             )
             .as_union_value()
         }
         wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult => api::OpenIndexResult::create(
             &mut builder,
-            &api::OpenIndexResultArgs { index: Some(index) },
+            &api::OpenIndexResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
         )
         .as_union_value(),
         _ => unreachable!("lifecycle result kind is fixed by caller"),

@@ -81,6 +81,7 @@ pub enum ControlPlaneRequest<'a> {
     },
     Route {
         target: &'a str,
+        expected_generation: Option<&'a str>,
     },
 }
 
@@ -96,8 +97,9 @@ pub enum ControlPlaneResolutionError {
 pub fn resolve_control_plane_request<'a>(
     envelope: wire::RequestEnvelope<'a>,
 ) -> Result<ControlPlaneRequest<'a>, ControlPlaneResolutionError> {
+    let target_view = envelope.target();
     let target =
-        resolve_index_target(envelope.target()).map_err(ControlPlaneResolutionError::Semantic)?;
+        resolve_index_target(target_view).map_err(ControlPlaneResolutionError::Semantic)?;
     match envelope.payload_type() {
         wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
             let payload = envelope
@@ -121,7 +123,10 @@ pub fn resolve_control_plane_request<'a>(
             Ok(ControlPlaneRequest::Delete { target })
         }
         wire::RequestPayload::NONE => Err(ControlPlaneResolutionError::InvalidEnvelope),
-        _ => Ok(ControlPlaneRequest::Route { target }),
+        _ => Ok(ControlPlaneRequest::Route {
+            target,
+            expected_generation: target_view.and_then(|target| target.generation()),
+        }),
     }
 }
 
@@ -449,8 +454,13 @@ mod tests {
     fn direct_target_resolution_returns_the_canonical_error() {
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let name = builder.create_string("Products");
-        let target =
-            api::IndexTarget::create(&mut builder, &api::IndexTargetArgs { name: Some(name) });
+        let target = api::IndexTarget::create(
+            &mut builder,
+            &api::IndexTargetArgs {
+                name: Some(name),
+                generation: None,
+            },
+        );
         builder.finish(target, None);
         let target = flatbuffers::root::<api::IndexTarget<'_>>(builder.finished_data())
             .expect("valid target view");
@@ -495,8 +505,13 @@ mod tests {
 
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let name = builder.create_string("products");
-        let target =
-            api::IndexTarget::create(&mut builder, &api::IndexTargetArgs { name: Some(name) });
+        let target = api::IndexTarget::create(
+            &mut builder,
+            &api::IndexTargetArgs {
+                name: Some(name),
+                generation: None,
+            },
+        );
         let create = api::CreateIndexRequest::create(
             &mut builder,
             &api::CreateIndexRequestArgs { definition: None },

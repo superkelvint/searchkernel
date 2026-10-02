@@ -14,7 +14,7 @@ use searchkernel_ir::{
 use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use searchkernel_rpc::{
     rpc::{search_kernel_client::SearchKernelClient, FlatBufferFrame},
-    INDEX_GENERATION_METADATA_KEY, MAX_GRPC_MESSAGE_SIZE,
+    MAX_GRPC_MESSAGE_SIZE,
 };
 #[cfg(unix)]
 use std::path::PathBuf;
@@ -160,14 +160,12 @@ impl RemoteAddress {
 
 struct RemoteReply {
     payload: Vec<u8>,
-    generation: Option<String>,
 }
 
 enum Command {
     Execute {
         payload: Vec<u8>,
         retry_safe: bool,
-        generation: Option<String>,
         reply: std_mpsc::SyncSender<ir::Result<RemoteReply>>,
     },
     Shutdown,
@@ -231,18 +229,12 @@ impl RemoteTransport {
         }
     }
 
-    fn call(
-        &self,
-        payload: Vec<u8>,
-        retry_safe: bool,
-        generation: Option<&str>,
-    ) -> ir::Result<RemoteReply> {
+    fn call(&self, payload: Vec<u8>, retry_safe: bool) -> ir::Result<RemoteReply> {
         let (reply_tx, reply_rx) = std_mpsc::sync_channel(1);
         self.commands
             .send(Command::Execute {
                 payload,
                 retry_safe,
-                generation: generation.map(str::to_owned),
                 reply: reply_tx,
             })
             .map_err(|_| {
@@ -357,63 +349,28 @@ async fn run_worker(
             Command::Execute {
                 payload,
                 retry_safe,
-                generation,
                 reply,
             } => {
                 let mut client = client.clone();
                 let request_timeout = options.request_timeout;
                 tokio::spawn(async move {
-                    let mut request = tonic::Request::new(FlatBufferFrame { payload });
-                    let result = if let Some(generation) = generation {
-                        match generation.parse() {
-                            Ok(value) => {
-                                request
-                                    .metadata_mut()
-                                    .insert(INDEX_GENERATION_METADATA_KEY, value);
-                                None
-                            }
-                            Err(_) => Some(Err(invalid_remote_response(
-                                "remote index generation is not valid gRPC metadata",
-                            ))),
-                        }
-                    } else {
-                        None
-                    };
-                    let result = match result {
-                        Some(result) => result,
-                        None => {
-                            match tokio::time::timeout(request_timeout, client.execute(request))
-                                .await
-                            {
-                                Ok(Ok(response)) => {
-                                    let generation = response
-                                    .metadata()
-                                    .get(INDEX_GENERATION_METADATA_KEY)
-                                    .map(|value| {
-                                        value.to_str().map(str::to_owned).map_err(|_| {
-                                            invalid_remote_response(
-                                                "remote index generation response metadata is invalid",
-                                            )
-                                        })
-                                    })
-                                    .transpose();
-                                    match generation {
-                                        Ok(generation) => Ok(RemoteReply {
-                                            payload: response.into_inner().payload,
-                                            generation,
-                                        }),
-                                        Err(error) => Err(error),
-                                    }
-                                }
-                                Ok(Err(status)) => Err(status_error(status, retry_safe)),
-                                Err(_) => Err(request_transport_error(
-                                    ErrorCode::DeadlineExceeded,
-                                    retry_safe,
-                                    !retry_safe,
-                                    "remote Search Kernel request timed out",
-                                )),
-                            }
-                        }
+                    let request = tonic::Request::new(FlatBufferFrame { payload });
+                    let result = match tokio::time::timeout(
+                        request_timeout,
+                        client.execute(request),
+                    )
+                    .await
+                    {
+                        Ok(Ok(response)) => Ok(RemoteReply {
+                            payload: response.into_inner().payload,
+                        }),
+                        Ok(Err(status)) => Err(status_error(status, retry_safe)),
+                        Err(_) => Err(request_transport_error(
+                            ErrorCode::DeadlineExceeded,
+                            retry_safe,
+                            !retry_safe,
+                            "remote Search Kernel request timed out",
+                        )),
                     };
                     let _ = reply.send(result);
                 });
@@ -554,7 +511,7 @@ impl RemoteBackend {
 
     fn call(&self, payload: Vec<u8>, retry_safe: bool) -> ir::Result<Vec<u8>> {
         self.transport
-            .call(payload, retry_safe, self.generation.as_deref())
+            .call(payload, retry_safe)
             .map(|response| response.payload)
     }
 }
@@ -637,7 +594,11 @@ fn response_error(envelope: wire::ResponseEnvelope<'_>) -> ir::Result<Option<Por
 impl Backend for RemoteBackend {
     fn insert(&self, request: ir::InsertRequestIr) -> ir::Result<ir::InsertResult> {
         let payload = self.call(
-            wire_ir::encode_insert_request_for_target(&request, self.target())?,
+            wire_ir::encode_insert_request_for_target_generation(
+                &request,
+                self.target(),
+                self.generation.as_deref(),
+            )?,
             false,
         )?;
         let envelope = expected_response(
@@ -655,7 +616,11 @@ impl Backend for RemoteBackend {
 
     fn upsert(&self, request: ir::UpsertRequestIr) -> ir::Result<ir::UpsertResult> {
         let payload = self.call(
-            wire_ir::encode_upsert_request_for_target(&request, self.target())?,
+            wire_ir::encode_upsert_request_for_target_generation(
+                &request,
+                self.target(),
+                self.generation.as_deref(),
+            )?,
             false,
         )?;
         let envelope = expected_response(
@@ -673,7 +638,11 @@ impl Backend for RemoteBackend {
 
     fn patch(&self, request: ir::PatchRequestIr) -> ir::Result<ir::PatchResult> {
         let payload = self.call(
-            wire_ir::encode_patch_request_for_target(&request, self.target())?,
+            wire_ir::encode_patch_request_for_target_generation(
+                &request,
+                self.target(),
+                self.generation.as_deref(),
+            )?,
             false,
         )?;
         let envelope = expected_response(
@@ -691,7 +660,11 @@ impl Backend for RemoteBackend {
 
     fn update(&self, request: ir::UpdateRequestIr) -> ir::Result<ir::UpdateResult> {
         let payload = self.call(
-            wire_ir::encode_update_request_for_target(&request, self.target())?,
+            wire_ir::encode_update_request_for_target_generation(
+                &request,
+                self.target(),
+                self.generation.as_deref(),
+            )?,
             false,
         )?;
         let envelope = expected_response(
@@ -709,7 +682,11 @@ impl Backend for RemoteBackend {
 
     fn delete(&self, request: ir::DeleteRequestIr) -> ir::Result<ir::DeleteResult> {
         let payload = self.call(
-            wire_ir::encode_delete_request_for_target(&request, self.target())?,
+            wire_ir::encode_delete_request_for_target_generation(
+                &request,
+                self.target(),
+                self.generation.as_deref(),
+            )?,
             false,
         )?;
         let envelope = expected_response(
@@ -727,7 +704,11 @@ impl Backend for RemoteBackend {
 
     fn get(&self, request: ir::GetRequestIr) -> ir::Result<ir::GetResult> {
         let payload = self.call(
-            wire_ir::encode_get_request_for_target(&request, self.target())?,
+            wire_ir::encode_get_request_for_target_generation(
+                &request,
+                self.target(),
+                self.generation.as_deref(),
+            )?,
             true,
         )?;
         let envelope =
@@ -745,7 +726,11 @@ impl Backend for RemoteBackend {
 
     fn search(&self, request: ir::SearchRequestIr) -> ir::Result<ir::SearchResult> {
         let payload = self.call(
-            wire_ir::encode_search_request_for_target(&request, self.target())?,
+            wire_ir::encode_search_request_for_target_generation(
+                &request,
+                self.target(),
+                self.generation.as_deref(),
+            )?,
             true,
         )?;
         let envelope = expected_response(
@@ -761,7 +746,11 @@ impl Backend for RemoteBackend {
 
     fn analyze(&self, request: ir::AnalyzeRequestIr) -> ir::Result<ir::AnalyzeResult> {
         let payload = self.call(
-            wire_ir::encode_analyze_request_for_target(&request, self.target())?,
+            wire_ir::encode_analyze_request_for_target_generation(
+                &request,
+                self.target(),
+                self.generation.as_deref(),
+            )?,
             true,
         )?;
         let envelope = expected_response(
@@ -832,17 +821,12 @@ impl RemoteClient {
         let request = wire_ir::encode_create_index_request(target, &input);
         let response = self
             .transport
-            .call(request, false, None)
+            .call(request, false)
             .map_err(crate::Error::from_ir)?;
         let envelope = self.response(
             &response.payload,
             wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
         )?;
-        let generation = response.generation.clone().ok_or_else(|| {
-            crate::Error::from_ir(invalid_remote_response(
-                "create-index response is missing target generation metadata",
-            ))
-        })?;
         let result = envelope
             .payload_as_search_kernel_wire_create_index_result()
             .ok_or_else(|| {
@@ -853,7 +837,17 @@ impl RemoteClient {
                 "create result index definition is missing",
             ))
         })?;
-        self.index_from_api_definition(target, definition, generation)
+        let generation = result.generation().ok_or_else(|| {
+            crate::Error::from_ir(invalid_remote_response(
+                "create-index response is missing canonical index generation",
+            ))
+        })?;
+        if generation.is_empty() {
+            return Err(crate::Error::from_ir(invalid_remote_response(
+                "create-index response has an empty canonical index generation",
+            )));
+        }
+        self.index_from_api_definition(target, definition, generation.to_owned())
     }
 
     /// Open an existing logical target and return an index handle bound to it.
@@ -866,17 +860,12 @@ impl RemoteClient {
         let request = wire_ir::encode_open_index_request(target);
         let response = self
             .transport
-            .call(request, true, None)
+            .call(request, true)
             .map_err(crate::Error::from_ir)?;
         let envelope = self.response(
             &response.payload,
             wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
         )?;
-        let generation = response.generation.clone().ok_or_else(|| {
-            crate::Error::from_ir(invalid_remote_response(
-                "open-index response is missing target generation metadata",
-            ))
-        })?;
         let result = envelope
             .payload_as_search_kernel_wire_open_index_result()
             .ok_or_else(|| {
@@ -887,7 +876,17 @@ impl RemoteClient {
                 "open result index definition is missing",
             ))
         })?;
-        self.index_from_api_definition(target, definition, generation)
+        let generation = result.generation().ok_or_else(|| {
+            crate::Error::from_ir(invalid_remote_response(
+                "open-index response is missing canonical index generation",
+            ))
+        })?;
+        if generation.is_empty() {
+            return Err(crate::Error::from_ir(invalid_remote_response(
+                "open-index response has an empty canonical index generation",
+            )));
+        }
+        self.index_from_api_definition(target, definition, generation.to_owned())
     }
 
     /// Delete one logical target from the daemon registry.
@@ -900,7 +899,7 @@ impl RemoteClient {
         let request = wire_ir::encode_delete_index_request(target);
         let response = self
             .transport
-            .call(request, false, None)
+            .call(request, false)
             .map_err(crate::Error::from_ir)?;
         let envelope = self.response(
             &response.payload,
@@ -1058,7 +1057,7 @@ mod tests {
             worker: Mutex::new(None),
         };
 
-        let caller = thread::spawn(move || transport.call(vec![0], false, None));
+        let caller = thread::spawn(move || transport.call(vec![0], false));
         match receiver
             .blocking_recv()
             .expect("transport call must enqueue an execute command")

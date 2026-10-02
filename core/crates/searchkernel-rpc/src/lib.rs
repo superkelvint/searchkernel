@@ -9,10 +9,6 @@
 /// legitimate documents and tensor payloads.
 pub const MAX_GRPC_MESSAGE_SIZE: usize = 256 * 1024 * 1024;
 
-/// Optional gRPC metadata binding a remote Rust index handle to one daemon
-/// target incarnation. Other clients may omit it and retain name-only routing.
-pub const INDEX_GENERATION_METADATA_KEY: &str = "x-searchkernel-index-generation";
-
 /// Rust bindings generated from the public Search Kernel gRPC protocol.
 #[allow(clippy::result_large_err)]
 pub mod rpc {

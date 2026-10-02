@@ -21,6 +21,7 @@ impl<'a> ::flatbuffers::Follow<'a> for OpenIndexResult<'a> {
 
 impl<'a> OpenIndexResult<'a> {
     pub const VT_INDEX: ::flatbuffers::VOffsetT = 4;
+    pub const VT_GENERATION: ::flatbuffers::VOffsetT = 6;
 
     #[inline]
     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -37,6 +38,9 @@ impl<'a> OpenIndexResult<'a> {
         args: &'args OpenIndexResultArgs<'args>,
     ) -> ::flatbuffers::WIPOffset<OpenIndexResult<'bldr>> {
         let mut builder = OpenIndexResultBuilder::new(_fbb);
+        if let Some(x) = args.generation {
+            builder.add_generation(x);
+        }
         if let Some(x) = args.index {
             builder.add_index(x);
         }
@@ -56,6 +60,16 @@ impl<'a> OpenIndexResult<'a> {
                 )
         }
     }
+    #[inline]
+    pub fn generation(&self) -> Option<&'a str> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<::flatbuffers::ForwardsUOffset<&str>>(OpenIndexResult::VT_GENERATION, None)
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for OpenIndexResult<'_> {
@@ -70,17 +84,26 @@ impl ::flatbuffers::Verifiable for OpenIndexResult<'_> {
                 Self::VT_INDEX,
                 false,
             )?
+            .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                "generation",
+                Self::VT_GENERATION,
+                false,
+            )?
             .finish();
         Ok(())
     }
 }
 pub struct OpenIndexResultArgs<'a> {
     pub index: Option<::flatbuffers::WIPOffset<IndexDefinition<'a>>>,
+    pub generation: Option<::flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for OpenIndexResultArgs<'a> {
     #[inline]
     fn default() -> Self {
-        OpenIndexResultArgs { index: None }
+        OpenIndexResultArgs {
+            index: None,
+            generation: None,
+        }
     }
 }
 
@@ -96,6 +119,13 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> OpenIndexResultBuilder<'a, 'b
                 OpenIndexResult::VT_INDEX,
                 index,
             );
+    }
+    #[inline]
+    pub fn add_generation(&mut self, generation: ::flatbuffers::WIPOffset<&'b str>) {
+        self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+            OpenIndexResult::VT_GENERATION,
+            generation,
+        );
     }
     #[inline]
     pub fn new(
@@ -118,6 +148,7 @@ impl ::core::fmt::Debug for OpenIndexResult<'_> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         let mut ds = f.debug_struct("OpenIndexResult");
         ds.field("index", &self.index());
+        ds.field("generation", &self.generation());
         ds.finish()
     }
 }

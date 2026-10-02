@@ -92,15 +92,6 @@ export class ConstantDefinitionT extends SemanticTable {
 export class CountAggregationT extends SemanticTable {
   constructor() { super('CountAggregation', [], [], []); }
 }
-export class CoverageDegradedT extends SemanticTable {
-  declare matchPhase: OptionalBoolT|null;
-  declare timeout: OptionalBoolT|null;
-  declare adaptiveTimeout: OptionalBoolT|null;
-  declare annTimeout: OptionalBoolT|null;
-  declare nonIdealState: OptionalBoolT|null;
-  declare metadata: (ValueEntryT)[];
-  constructor(matchPhase: OptionalBoolT|null = null, timeout: OptionalBoolT|null = null, adaptiveTimeout: OptionalBoolT|null = null, annTimeout: OptionalBoolT|null = null, nonIdealState: OptionalBoolT|null = null, metadata: (ValueEntryT)[] = []) { super('CoverageDegraded', ['matchPhase', 'timeout', 'adaptiveTimeout', 'annTimeout', 'nonIdealState', 'metadata'], [matchPhase, timeout, adaptiveTimeout, annTimeout, nonIdealState, metadata], [null, null, null, null, null, []]); }
-}
 export class CoverageT extends SemanticTable {
   declare coveragePercent: OptionalDoubleT|null;
   declare documents: OptionalUInt64T|null;
@@ -112,13 +103,23 @@ export class CoverageT extends SemanticTable {
   declare metadata: (ValueEntryT)[];
   constructor(coveragePercent: OptionalDoubleT|null = null, documents: OptionalUInt64T|null = null, full: OptionalBoolT|null = null, nodes: OptionalUInt32T|null = null, results: OptionalUInt64T|null = null, resultsFull: OptionalUInt64T|null = null, degraded: CoverageDegradedT|null = null, metadata: (ValueEntryT)[] = []) { super('Coverage', ['coveragePercent', 'documents', 'full', 'nodes', 'results', 'resultsFull', 'degraded', 'metadata'], [coveragePercent, documents, full, nodes, results, resultsFull, degraded, metadata], [null, null, null, null, null, null, null, []]); }
 }
+export class CoverageDegradedT extends SemanticTable {
+  declare matchPhase: OptionalBoolT|null;
+  declare timeout: OptionalBoolT|null;
+  declare adaptiveTimeout: OptionalBoolT|null;
+  declare annTimeout: OptionalBoolT|null;
+  declare nonIdealState: OptionalBoolT|null;
+  declare metadata: (ValueEntryT)[];
+  constructor(matchPhase: OptionalBoolT|null = null, timeout: OptionalBoolT|null = null, adaptiveTimeout: OptionalBoolT|null = null, annTimeout: OptionalBoolT|null = null, nonIdealState: OptionalBoolT|null = null, metadata: (ValueEntryT)[] = []) { super('CoverageDegraded', ['matchPhase', 'timeout', 'adaptiveTimeout', 'annTimeout', 'nonIdealState', 'metadata'], [matchPhase, timeout, adaptiveTimeout, annTimeout, nonIdealState, metadata], [null, null, null, null, null, []]); }
+}
 export class CreateIndexRequestT extends SemanticTable {
   declare definition: IndexDefinitionT|null;
   constructor(definition: IndexDefinitionT|null = null) { super('CreateIndexRequest', ['definition'], [definition], [null]); }
 }
 export class CreateIndexResultT extends SemanticTable {
   declare index: IndexDefinitionT|null;
-  constructor(index: IndexDefinitionT|null = null) { super('CreateIndexResult', ['index'], [index], [null]); }
+  declare generation: string|Uint8Array|null;
+  constructor(index: IndexDefinitionT|null = null, generation: string|Uint8Array|null = null) { super('CreateIndexResult', ['index', 'generation'], [index, generation], [null, null]); }
 }
 export class DataTypeT extends SemanticTable {
   declare kindType: DataTypeKind;
@@ -152,6 +153,11 @@ export class DescribeResultT extends SemanticTable {
   declare index: IndexDefinitionT|null;
   constructor(index: IndexDefinitionT|null = null) { super('DescribeResult', ['index'], [index], [null]); }
 }
+export class DocumentT extends SemanticTable {
+  declare id: string|Uint8Array|null;
+  declare fields: (ValueEntryT)[];
+  constructor(id: string|Uint8Array|null = null, fields: (ValueEntryT)[] = []) { super('Document', ['id', 'fields'], [id, fields], [null, []]); }
+}
 export class DocumentSummaryDefinitionT extends SemanticTable {
   declare name: string|Uint8Array|null;
   declare inherits: (string)[];
@@ -169,10 +175,12 @@ export class DocumentSummaryFieldDefinitionT extends SemanticTable {
   declare properties: (ValueEntryT)[];
   constructor(name: string|Uint8Array|null = null, source: string|Uint8Array|null = null, dataType: DataTypeT|null = null, structFields: (string)[] = [], properties: (ValueEntryT)[] = []) { super('DocumentSummaryFieldDefinition', ['name', 'source', 'dataType', 'structFields', 'properties'], [name, source, dataType, structFields, properties], [null, null, null, [], []]); }
 }
-export class DocumentT extends SemanticTable {
-  declare id: string|Uint8Array|null;
-  declare fields: (ValueEntryT)[];
-  constructor(id: string|Uint8Array|null = null, fields: (ValueEntryT)[] = []) { super('Document', ['id', 'fields'], [id, fields], [null, []]); }
+export class ErrorT extends SemanticTable {
+  declare code: ErrorCode;
+  declare message: string|Uint8Array|null;
+  declare details: (ErrorDetailT)[];
+  declare retryable: boolean;
+  constructor(code: ErrorCode = ErrorCode.Unspecified, message: string|Uint8Array|null = null, details: (ErrorDetailT)[] = [], retryable: boolean = false) { super('Error', ['code', 'message', 'details', 'retryable'], [code, message, details, retryable], [ErrorCode.Unspecified, null, [], false]); }
 }
 export class ErrorDetailT extends SemanticTable {
   declare code: string|Uint8Array|null;
@@ -180,13 +188,6 @@ export class ErrorDetailT extends SemanticTable {
   declare message: string|Uint8Array|null;
   declare metadata: (StringEntryT)[];
   constructor(code: string|Uint8Array|null = null, path: string|Uint8Array|null = null, message: string|Uint8Array|null = null, metadata: (StringEntryT)[] = []) { super('ErrorDetail', ['code', 'path', 'message', 'metadata'], [code, path, message, metadata], [null, null, null, []]); }
-}
-export class ErrorT extends SemanticTable {
-  declare code: ErrorCode;
-  declare message: string|Uint8Array|null;
-  declare details: (ErrorDetailT)[];
-  declare retryable: boolean;
-  constructor(code: ErrorCode = ErrorCode.Unspecified, message: string|Uint8Array|null = null, details: (ErrorDetailT)[] = [], retryable: boolean = false) { super('Error', ['code', 'message', 'details', 'retryable'], [code, message, details, retryable], [ErrorCode.Unspecified, null, [], false]); }
 }
 export class ExpressionQueryInputT extends SemanticTable {
   declare expression: string|Uint8Array|null;
@@ -397,8 +398,8 @@ export class GroupingFilterRegexT extends SemanticTable {
 }
 export class GroupingFunctionExpressionT extends SemanticTable {
   declare name: string|Uint8Array|null;
-  declare arguments_: (GroupingExpressionT)[];
-  constructor(name: string|Uint8Array|null = null, arguments_: (GroupingExpressionT)[] = []) { super('GroupingFunctionExpression', ['name', 'arguments_'], [name, arguments_], [null, []]); }
+  declare arguments: (GroupingExpressionT)[];
+  constructor(name: string|Uint8Array|null = null, arguments_: (GroupingExpressionT)[] = []) { super('GroupingFunctionExpression', ['name', 'arguments'], [name, arguments_], [null, []]); }
 }
 export class GroupingGroupOperationT extends SemanticTable {
   declare expression: GroupingExpressionT|null;
@@ -440,14 +441,14 @@ export class GroupingOrderOperationT extends SemanticTable {
   declare expressions: (GroupingOrderExprT)[];
   constructor(expressions: (GroupingOrderExprT)[] = []) { super('GroupingOrderOperation', ['expressions'], [expressions], [[]]); }
 }
-export class GroupingOutputOperationT extends SemanticTable {
-  declare outputs: (GroupingOutputT)[];
-  constructor(outputs: (GroupingOutputT)[] = []) { super('GroupingOutputOperation', ['outputs'], [outputs], [[]]); }
-}
 export class GroupingOutputT extends SemanticTable {
   declare label: string|Uint8Array|null;
   declare expression: GroupingExpressionT|null;
   constructor(label: string|Uint8Array|null = null, expression: GroupingExpressionT|null = null) { super('GroupingOutput', ['label', 'expression'], [label, expression], [null, null]); }
+}
+export class GroupingOutputOperationT extends SemanticTable {
+  declare outputs: (GroupingOutputT)[];
+  constructor(outputs: (GroupingOutputT)[] = []) { super('GroupingOutputOperation', ['outputs'], [outputs], [[]]); }
 }
 export class GroupingPrecisionOperationT extends SemanticTable {
   declare value: number;
@@ -539,7 +540,8 @@ export class IndexDefinitionT extends SemanticTable {
 }
 export class IndexTargetT extends SemanticTable {
   declare name: string|Uint8Array|null;
-  constructor(name: string|Uint8Array|null = null) { super('IndexTarget', ['name'], [name], [null]); }
+  declare generation: string|Uint8Array|null;
+  constructor(name: string|Uint8Array|null = null, generation: string|Uint8Array|null = null) { super('IndexTarget', ['name', 'generation'], [name, generation], [null, null]); }
 }
 export class InfiniteGroupingMaxT extends SemanticTable {
   constructor() { super('InfiniteGroupingMax', [], [], []); }
@@ -658,7 +660,8 @@ export class OpenIndexRequestT extends SemanticTable {
 }
 export class OpenIndexResultT extends SemanticTable {
   declare index: IndexDefinitionT|null;
-  constructor(index: IndexDefinitionT|null = null) { super('OpenIndexResult', ['index'], [index], [null]); }
+  declare generation: string|Uint8Array|null;
+  constructor(index: IndexDefinitionT|null = null, generation: string|Uint8Array|null = null) { super('OpenIndexResult', ['index', 'generation'], [index, generation], [null, null]); }
 }
 export class OptionalBoolT extends SemanticTable {
   declare value: boolean;
@@ -808,14 +811,6 @@ export class QueryMatchesT extends SemanticTable {
   declare pattern: string|Uint8Array|null;
   constructor(field: QueryFieldRefT|null = null, pattern: string|Uint8Array|null = null) { super('QueryMatches', ['field', 'pattern'], [field, pattern], [null, null]); }
 }
-export class QueryModelTypeT extends SemanticTable {
-  declare composite: string|Uint8Array|null;
-  declare tokenization: string|Uint8Array|null;
-  declare syntax: string|Uint8Array|null;
-  declare profile: string|Uint8Array|null;
-  declare isYqlDefault: OptionalBoolT|null;
-  constructor(composite: string|Uint8Array|null = null, tokenization: string|Uint8Array|null = null, syntax: string|Uint8Array|null = null, profile: string|Uint8Array|null = null, isYqlDefault: OptionalBoolT|null = null) { super('QueryModelType', ['composite', 'tokenization', 'syntax', 'profile', 'isYqlDefault'], [composite, tokenization, syntax, profile, isYqlDefault], [null, null, null, null, null]); }
-}
 export class QueryModelT extends SemanticTable {
   declare queryString: string|Uint8Array|null;
   declare defaultIndex: string|Uint8Array|null;
@@ -829,6 +824,14 @@ export class QueryModelT extends SemanticTable {
   declare searchPath: string|Uint8Array|null;
   declare searchGroup: OptionalUInt32T|null;
   constructor(queryString: string|Uint8Array|null = null, defaultIndex: string|Uint8Array|null = null, encoding: string|Uint8Array|null = null, filter: string|Uint8Array|null = null, language: string|Uint8Array|null = null, locale: string|Uint8Array|null = null, type: QueryModelTypeT|null = null, sources: (string)[] = [], restrict: (string)[] = [], searchPath: string|Uint8Array|null = null, searchGroup: OptionalUInt32T|null = null) { super('QueryModel', ['queryString', 'defaultIndex', 'encoding', 'filter', 'language', 'locale', 'type', 'sources', 'restrict', 'searchPath', 'searchGroup'], [queryString, defaultIndex, encoding, filter, language, locale, type, sources, restrict, searchPath, searchGroup], [null, null, null, null, null, null, null, [], [], null, null]); }
+}
+export class QueryModelTypeT extends SemanticTable {
+  declare composite: string|Uint8Array|null;
+  declare tokenization: string|Uint8Array|null;
+  declare syntax: string|Uint8Array|null;
+  declare profile: string|Uint8Array|null;
+  declare isYqlDefault: OptionalBoolT|null;
+  constructor(composite: string|Uint8Array|null = null, tokenization: string|Uint8Array|null = null, syntax: string|Uint8Array|null = null, profile: string|Uint8Array|null = null, isYqlDefault: OptionalBoolT|null = null) { super('QueryModelType', ['composite', 'tokenization', 'syntax', 'profile', 'isYqlDefault'], [composite, tokenization, syntax, profile, isYqlDefault], [null, null, null, null, null]); }
 }
 export class QueryNearT extends SemanticTable {
   declare terms: (QueryExprT)[];
@@ -926,10 +929,10 @@ export class RankFeatureSortTargetT extends SemanticTable {
 }
 export class RankFunctionDefinitionT extends SemanticTable {
   declare name: string|Uint8Array|null;
-  declare arguments_: (string)[];
+  declare arguments: (string)[];
   declare expression: string|Uint8Array|null;
   declare inline: OptionalBoolT|null;
-  constructor(name: string|Uint8Array|null = null, arguments_: (string)[] = [], expression: string|Uint8Array|null = null, inline: OptionalBoolT|null = null) { super('RankFunctionDefinition', ['name', 'arguments_', 'expression', 'inline'], [name, arguments_, expression, inline], [null, [], null, null]); }
+  constructor(name: string|Uint8Array|null = null, arguments_: (string)[] = [], expression: string|Uint8Array|null = null, inline: OptionalBoolT|null = null) { super('RankFunctionDefinition', ['name', 'arguments', 'expression', 'inline'], [name, arguments_, expression, inline], [null, [], null, null]); }
 }
 export class RankPhaseDefinitionT extends SemanticTable {
   declare expression: string|Uint8Array|null;
@@ -983,13 +986,13 @@ export class ReferenceDataTypeT extends SemanticTable {
   declare documentType: string|Uint8Array|null;
   constructor(documentType: string|Uint8Array|null = null) { super('ReferenceDataType', ['documentType'], [documentType], [null]); }
 }
-export class RelevanceSortTargetT extends SemanticTable {
-  constructor() { super('RelevanceSortTarget', [], [], []); }
-}
 export class RelevanceT extends SemanticTable {
   declare valueType: RelevanceKind;
   declare value: FiniteRelevanceT|NegativeInfinityRelevanceT|PositiveInfinityRelevanceT|null;
   constructor(valueType: RelevanceKind = RelevanceKind.NONE, value: FiniteRelevanceT|NegativeInfinityRelevanceT|PositiveInfinityRelevanceT|null = null) { super('Relevance', ['valueType', 'value'], [valueType, value], [RelevanceKind.NONE, null]); }
+}
+export class RelevanceSortTargetT extends SemanticTable {
+  constructor() { super('RelevanceSortTarget', [], [], []); }
 }
 export class RemoveUpdateT extends SemanticTable {
   declare value: ValueT|null;
@@ -1054,14 +1057,14 @@ export class ResultNodeT extends SemanticTable {
   declare node: HitT|ResultGroupT|null;
   constructor(nodeType: ResultNodeKind = ResultNodeKind.NONE, node: HitT|ResultGroupT|null = null) { super('ResultNode', ['nodeType', 'node'], [nodeType, node], [ResultNodeKind.NONE, null]); }
 }
-export class SearchFieldSelectionT extends SemanticTable {
-  declare fields: (SearchFieldT)[];
-  constructor(fields: (SearchFieldT)[] = []) { super('SearchFieldSelection', ['fields'], [fields], [[]]); }
-}
 export class SearchFieldT extends SemanticTable {
   declare field: string|Uint8Array|null;
   declare weight: OptionalDoubleT|null;
   constructor(field: string|Uint8Array|null = null, weight: OptionalDoubleT|null = null) { super('SearchField', ['field', 'weight'], [field, weight], [null, null]); }
+}
+export class SearchFieldSelectionT extends SemanticTable {
+  declare fields: (SearchFieldT)[];
+  constructor(fields: (SearchFieldT)[] = []) { super('SearchFieldSelection', ['fields'], [fields], [[]]); }
 }
 export class SearchKernelTextQueryT extends SemanticTable {
   declare text: string|Uint8Array|null;
@@ -1089,16 +1092,6 @@ export class SearchRequestT extends SemanticTable {
   declare searchChain: string|Uint8Array|null;
   constructor(query: QuerySourceT|null = null, searchFields: SearchFieldSelectionT|null = null, filters: FilterRequestT|null = null, sort: (SortExprT)[] = [], grouping: (GroupingRequestT)[] = [], ranking: RankingRequestT|null = null, inputs: (QueryInputT)[] = [], limit: OptionalUInt32T|null = null, offset: OptionalUInt32T|null = null, timeoutMs: OptionalUInt64T|null = null, queryModel: QueryModelT|null = null, presentation: PresentationRequestT|null = null, properties: (ValueEntryT)[] = [], queryProfile: string|Uint8Array|null = null, searchChain: string|Uint8Array|null = null) { super('SearchRequest', ['query', 'searchFields', 'filters', 'sort', 'grouping', 'ranking', 'inputs', 'limit', 'offset', 'timeoutMs', 'queryModel', 'presentation', 'properties', 'queryProfile', 'searchChain'], [query, searchFields, filters, sort, grouping, ranking, inputs, limit, offset, timeoutMs, queryModel, presentation, properties, queryProfile, searchChain], [null, null, null, [], [], null, [], null, null, null, null, null, [], null, null]); }
 }
-export class SearchResultErrorT extends SemanticTable {
-  declare code: bigint;
-  declare summary: string|Uint8Array|null;
-  declare message: string|Uint8Array|null;
-  declare source: string|Uint8Array|null;
-  declare stackTrace: string|Uint8Array|null;
-  declare transient: OptionalBoolT|null;
-  declare metadata: (ValueEntryT)[];
-  constructor(code: bigint = BigInt('0'), summary: string|Uint8Array|null = null, message: string|Uint8Array|null = null, source: string|Uint8Array|null = null, stackTrace: string|Uint8Array|null = null, transient: OptionalBoolT|null = null, metadata: (ValueEntryT)[] = []) { super('SearchResultError', ['code', 'summary', 'message', 'source', 'stackTrace', 'transient', 'metadata'], [code, summary, message, source, stackTrace, transient, metadata], [BigInt('0'), null, null, null, null, null, []]); }
-}
 export class SearchResultT extends SemanticTable {
   declare root: ResultNodeT|null;
   declare totalHits: TotalHitsT|null;
@@ -1108,6 +1101,16 @@ export class SearchResultT extends SemanticTable {
   declare trace: ValueT|null;
   declare metadata: (ValueEntryT)[];
   constructor(root: ResultNodeT|null = null, totalHits: TotalHitsT|null = null, coverage: CoverageT|null = null, timing: SearchTimingT|null = null, errors: (SearchResultErrorT)[] = [], trace: ValueT|null = null, metadata: (ValueEntryT)[] = []) { super('SearchResult', ['root', 'totalHits', 'coverage', 'timing', 'errors', 'trace', 'metadata'], [root, totalHits, coverage, timing, errors, trace, metadata], [null, null, null, null, [], null, []]); }
+}
+export class SearchResultErrorT extends SemanticTable {
+  declare code: bigint;
+  declare summary: string|Uint8Array|null;
+  declare message: string|Uint8Array|null;
+  declare source: string|Uint8Array|null;
+  declare stackTrace: string|Uint8Array|null;
+  declare transient: OptionalBoolT|null;
+  declare metadata: (ValueEntryT)[];
+  constructor(code: bigint = BigInt('0'), summary: string|Uint8Array|null = null, message: string|Uint8Array|null = null, source: string|Uint8Array|null = null, stackTrace: string|Uint8Array|null = null, transient: OptionalBoolT|null = null, metadata: (ValueEntryT)[] = []) { super('SearchResultError', ['code', 'summary', 'message', 'source', 'stackTrace', 'transient', 'metadata'], [code, summary, message, source, stackTrace, transient, metadata], [BigInt('0'), null, null, null, null, null, []]); }
 }
 export class SearchTimingT extends SemanticTable {
   declare queryTimeSeconds: OptionalDoubleT|null;
@@ -1274,6 +1277,11 @@ export class UpsertResultT extends SemanticTable {
   declare id: string|Uint8Array|null;
   constructor(id: string|Uint8Array|null = null) { super('UpsertResult', ['id'], [id], [null]); }
 }
+export class ValueT extends SemanticTable {
+  declare kindType: ValueKind;
+  declare kind: BoolValueT|BytesValueT|Float64ValueT|Int64ValueT|NonFiniteFloatValueT|NullValueValueT|StringValueT|TensorValueT|UInt64ValueT|ValueListT|ValueObjectT|null;
+  constructor(kindType: ValueKind = ValueKind.NONE, kind: BoolValueT|BytesValueT|Float64ValueT|Int64ValueT|NonFiniteFloatValueT|NullValueValueT|StringValueT|TensorValueT|UInt64ValueT|ValueListT|ValueObjectT|null = null) { super('Value', ['kindType', 'kind'], [kindType, kind], [ValueKind.NONE, null]); }
+}
 export class ValueEntryT extends SemanticTable {
   declare key: string|Uint8Array|null;
   declare value: ValueT|null;
@@ -1286,11 +1294,6 @@ export class ValueListT extends SemanticTable {
 export class ValueObjectT extends SemanticTable {
   declare fields: (ValueEntryT)[];
   constructor(fields: (ValueEntryT)[] = []) { super('ValueObject', ['fields'], [fields], [[]]); }
-}
-export class ValueT extends SemanticTable {
-  declare kindType: ValueKind;
-  declare kind: BoolValueT|BytesValueT|Float64ValueT|Int64ValueT|NonFiniteFloatValueT|NullValueValueT|StringValueT|TensorValueT|UInt64ValueT|ValueListT|ValueObjectT|null;
-  constructor(kindType: ValueKind = ValueKind.NONE, kind: BoolValueT|BytesValueT|Float64ValueT|Int64ValueT|NonFiniteFloatValueT|NullValueValueT|StringValueT|TensorValueT|UInt64ValueT|ValueListT|ValueObjectT|null = null) { super('Value', ['kindType', 'kind'], [kindType, kind], [ValueKind.NONE, null]); }
 }
 export class WeightedQueryItemT extends SemanticTable {
   declare key: ValueT|null;

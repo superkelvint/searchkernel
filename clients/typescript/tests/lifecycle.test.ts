@@ -38,7 +38,7 @@ describe("logical index lifecycle", () => {
         requests.push(request);
         const decoded = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(request));
         return decoded.payloadType() === RequestPayload.SearchKernel_Wire_CreateIndexRequest
-          ? envelope(ResponsePayload.SearchKernel_Wire_CreateIndexResult, new CreateIndexResultT(new WireIndexDefinitionT()))
+          ? envelope(ResponsePayload.SearchKernel_Wire_CreateIndexResult, new CreateIndexResultT(new WireIndexDefinitionT(), "fixture-generation"))
           : envelope(ResponsePayload.SearchKernel_Wire_DescribeResult, new DescribeResultT(new WireIndexDefinitionT()));
       },
       close() {},
@@ -52,6 +52,7 @@ describe("logical index lifecycle", () => {
     expect(lifecycle.payload(new CreateIndexRequest())?.unpack()).toBeDefined();
     const ordinary = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[1]!));
     expect(ordinary.target(new IndexTarget())?.name()).toBe("products");
+    expect(ordinary.target(new IndexTarget())?.generation()).toBe("fixture-generation");
   });
 
   it("opens through the canonical request and preserves portable lifecycle errors", async () => {
@@ -61,7 +62,7 @@ describe("logical index lifecycle", () => {
         openRequest = request;
         return envelope(
           ResponsePayload.SearchKernel_Wire_OpenIndexResult,
-          new OpenIndexResultT(new WireIndexDefinitionT()),
+          new OpenIndexResultT(new WireIndexDefinitionT(), "fixture-generation"),
         );
       },
       close() {},

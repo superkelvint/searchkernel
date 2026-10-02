@@ -33,17 +33,21 @@ def render(bfbs: Path) -> str:
         name = schema.short_name(obj)
         fields = schema.fields(obj)
         field_names = [schema.field_name(field) for field in fields]
+        parameter_names = [
+            f"{field_name}_" if field_name in {"arguments", "eval"} else field_name
+            for field_name in field_names
+        ]
         defaults = [schema.ts_default(field) for field in fields]
         lines.append(f"export class {name}T extends SemanticTable {{")
         for field, field_name in zip(fields, field_names):
             lines.append(f"  declare {field_name}: {schema.ts_type(field)};")
         if fields:
             params = ", ".join(
-                f"{field_name}: {schema.ts_type(field)} = {default}"
-                for field, field_name, default in zip(fields, field_names, defaults)
+                f"{parameter_name}: {schema.ts_type(field)} = {default}"
+                for field, parameter_name, default in zip(fields, parameter_names, defaults)
             )
             field_list = ", ".join(repr(field_name) for field_name in field_names)
-            arg_list = ", ".join(field_names)
+            arg_list = ", ".join(parameter_names)
             default_list = ", ".join(defaults)
             lines.append(
                 f"  constructor({params}) {{ super({name!r}, [{field_list}], [{arg_list}], [{default_list}]); }}"

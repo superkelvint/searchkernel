@@ -41,8 +41,15 @@ class CreateIndexResult(object):
             return obj
         return None
 
+    # CreateIndexResult
+    def Generation(self) -> Optional[str]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
+        if o != 0:
+            return self._tab.String(o + self._tab.Pos)
+        return None
+
 def CreateIndexResultStart(builder: flatbuffers.Builder):
-    builder.StartObject(1)
+    builder.StartObject(2)
 
 def Start(builder: flatbuffers.Builder):
     CreateIndexResultStart(builder)
@@ -52,6 +59,12 @@ def CreateIndexResultAddIndex(builder: flatbuffers.Builder, index: int):
 
 def AddIndex(builder: flatbuffers.Builder, index: int):
     CreateIndexResultAddIndex(builder, index)
+
+def CreateIndexResultAddGeneration(builder: flatbuffers.Builder, generation: int):
+    builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(generation), 0)
+
+def AddGeneration(builder: flatbuffers.Builder, generation: int):
+    CreateIndexResultAddGeneration(builder, generation)
 
 def CreateIndexResultEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
@@ -71,8 +84,10 @@ class CreateIndexResultT(object):
     def __init__(
         self,
         index = None,
+        generation = None,
     ):
         self.index = index  # type: Optional[SearchKernel.Wire.IndexDefinition.IndexDefinitionT]
+        self.generation = generation  # type: Optional[str]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -97,13 +112,20 @@ class CreateIndexResultT(object):
             return
         if createIndexResult.Index() is not None:
             self.index = SearchKernel.Wire.IndexDefinition.IndexDefinitionT.InitFromObj(createIndexResult.Index())
+        self.generation = createIndexResult.Generation()
+        if self.generation is not None:
+            self.generation = self.generation.decode('utf-8')
 
     # CreateIndexResultT
     def Pack(self, builder):
         if self.index is not None:
             index = self.index.Pack(builder)
+        if self.generation is not None:
+            generation = builder.CreateString(self.generation)
         CreateIndexResultStart(builder)
         if self.index is not None:
             CreateIndexResultAddIndex(builder, index)
+        if self.generation is not None:
+            CreateIndexResultAddGeneration(builder, generation)
         createIndexResult = CreateIndexResultEnd(builder)
         return createIndexResult

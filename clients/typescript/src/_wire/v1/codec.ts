@@ -213,10 +213,14 @@ export function packRequest<K extends Operation>(
   operation: K,
   payload: OperationRequestMap[K],
   target?: string,
+  expectedIndexGeneration?: string,
 ): Uint8Array {
   let indexTarget: IndexTargetT | null = null;
   if (target !== undefined) {
-    indexTarget = new IndexTargetT(target);
+    if (expectedIndexGeneration !== undefined && expectedIndexGeneration.length === 0) {
+      throw new ProtocolError("expected index generation must be a non-empty string");
+    }
+    indexTarget = new IndexTargetT(target, expectedIndexGeneration ?? null);
   }
   const envelope = new RequestEnvelopeT(
     PROTOCOL_VERSION,

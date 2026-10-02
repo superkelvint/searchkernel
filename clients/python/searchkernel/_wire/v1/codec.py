@@ -202,7 +202,13 @@ def pack_object(obj: Any, *, file_identifier: bytes | None = None) -> bytes:
     return bytes(builder.Output())
 
 
-def pack_request(operation: str, payload: Any, *, target: str | None = None) -> bytes:
+def pack_request(
+    operation: str,
+    payload: Any,
+    *,
+    target: str | None = None,
+    expected_index_generation: str | None = None,
+) -> bytes:
     try:
         payload_type = _REQUEST_TYPES[operation]
     except KeyError as exc:
@@ -211,7 +217,11 @@ def pack_request(operation: str, payload: Any, *, target: str | None = None) -> 
     if target is not None:
         if not isinstance(target, str):
             raise TypeError("Search Kernel target must be a string")
-        index_target = IndexTargetT(target)
+        if expected_index_generation is not None and (
+            not isinstance(expected_index_generation, str) or not expected_index_generation
+        ):
+            raise ValueError("expected index generation must be a non-empty string")
+        index_target = IndexTargetT(target, expected_index_generation)
     envelope = RequestEnvelope.RequestEnvelopeT(
         PROTOCOL_VERSION,
         payload_type,

@@ -560,6 +560,7 @@ table RankProfileDefinition {
 // operations. The protocol validator accepts only lowercase ASCII slugs.
 table IndexTarget {
   name:string;
+  generation:string;
 }
 
 // Strict lifecycle semantics: create fails with AlreadyExists when the target
@@ -574,6 +575,7 @@ table CreateIndexRequest {
 
 table CreateIndexResult {
   index:IndexDefinition;
+  generation:string;
 }
 
 table OpenIndexRequest {
@@ -581,6 +583,7 @@ table OpenIndexRequest {
 
 table OpenIndexResult {
   index:IndexDefinition;
+  generation:string;
 }
 
 // Delete removes the logical target from the daemon registry and deletes its

@@ -108,6 +108,8 @@ export interface ClientTransport {
 }
 
 export class Client {
+  private indexGeneration?: string;
+
   constructor(readonly transport: ClientTransport, readonly target?: string) {}
 
   async execute<K extends Operation>(
@@ -116,8 +118,18 @@ export class Client {
     options?: ExecuteOptions,
   ): Promise<OperationResponseMap[K]> {
     try {
+      const lifecycleOperation =
+        operation === "createIndex" || operation === "openIndex" || operation === "deleteIndex";
       const decoded = unpackResponse(
-        await this.transport.execute(packRequest(operation, request, this.target), options),
+        await this.transport.execute(
+          packRequest(
+            operation,
+            request,
+            this.target,
+            lifecycleOperation ? undefined : this.indexGeneration,
+          ),
+          options,
+        ),
         operation,
       );
       if (decoded.isError) {
@@ -126,6 +138,15 @@ export class Client {
           typeof error.message === "string" ? error.message : "Search Kernel request failed",
           error,
         );
+      }
+      if (operation === "createIndex" || operation === "openIndex") {
+        const lifecycle = decoded.payload as CreateIndexResultT | OpenIndexResultT;
+        if (typeof lifecycle.generation !== "string" || lifecycle.generation.length === 0) {
+          throw new ProtocolError(
+            `${operation} response is missing canonical index generation`,
+          );
+        }
+        this.indexGeneration = lifecycle.generation;
       }
       return decoded.payload as OperationResponseMap[K];
     } catch (error) {
