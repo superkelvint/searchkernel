@@ -595,6 +595,15 @@ table DeleteIndexRequest {
 table DeleteIndexResult {
 }
 
+// Server-scoped discovery of durable logical targets. This does not open an
+// index or expose incarnation tokens; obtain those through OpenIndex.
+table ListIndexesRequest {
+}
+
+table ListIndexesResult {
+  targets:[string];
+}
+
 table IndexDefinition {
   name:string;
   fields:[FieldDefinition];
