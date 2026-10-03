@@ -149,6 +149,14 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertIn('QUALIFICATION_ROOT / "native-base"', gate)
         self.assertIn("native_base_archive.as_uri()", gate)
 
+    def test_local_native_base_sidecar_does_not_require_release_metadata(self):
+        helper = (ROOT / "tools/stage-native-base-qualification-artifact.sh").read_text()
+        self.assertIn("GENERATION=1", helper)
+        self.assertNotIn(".searchkernel-native-base-artifact.json", helper)
+        self.assertNotIn('marker.get("artifact_generation"', helper)
+        self.assertIn('package-native-base-artifact.sh', helper)
+
+
     def test_qualifier_selects_versioned_runtime_artifact(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
         self.assertIn('artifact("searchkernel-runtime-", ".tar.gz")', gate)
