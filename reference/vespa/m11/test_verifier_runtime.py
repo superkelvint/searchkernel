@@ -134,6 +134,24 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_tensor_publication_config_stays_outside_canonical_config(self):
+        driver = (
+            Path(__file__).parents[2]
+            / "core/crates/searchkernel/examples/searchkernel-m11-driver.rs"
+        ).read_text()
+        self.assertNotIn(
+            'config.join("publication-tensor-config")',
+            driver,
+        )
+        self.assertIn(
+            '.join("publication-tensor-config")',
+            driver,
+        )
+        tensor_setup = driver.split(
+            "fn run_tensor_publication_regression", 1
+        )[1].split("let tensor_type", 1)[0]
+        self.assertIn("data\n        .parent()", tensor_setup)
+
     def test_sanitizer_verifier_repoints_driver_before_resolver_check(self):
         sanitizer = Path(__file__).with_name("verify-m11-sanitizers.sh").read_text()
         stage = sanitizer.index('stage_m11_driver_adapter "$binary" "$sdk"')
