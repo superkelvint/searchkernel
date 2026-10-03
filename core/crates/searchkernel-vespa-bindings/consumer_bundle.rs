@@ -746,6 +746,9 @@ printf '%s\n' "$OBJECT"
     ("tools/install-native-base-artifact.sh", br########"#!/usr/bin/env bash
 set -euo pipefail
 
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
+
 if [[ $# -ne 5 ]]; then
     echo "usage: $0 <artifact-url> <cache-root> <build-env> <native-target> <vespa-commit>" >&2
     exit 2
@@ -763,7 +766,7 @@ QUARANTINE_ROOT=$CACHE_ROOT/quarantine
 
 command -v curl >/dev/null 2>&1 || { echo "published Vespa base acquisition requires curl" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "published Vespa base acquisition requires sha256sum" >&2; exit 1; }
-command -v python3 >/dev/null 2>&1 || { echo "published Vespa base acquisition requires python3" >&2; exit 1; }
+[[ -x "$PYTHON_BIN" ]] || { echo "published Vespa base acquisition requires the repository Python" >&2; exit 1; }
 
 mkdir -p "$DOWNLOAD_ROOT" "$QUARANTINE_ROOT"
 TMP=$(mktemp -d "$DOWNLOAD_ROOT/.artifact.XXXXXX")
@@ -779,7 +782,7 @@ download_artifact() {
     local token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
     local repo=${SEARCHKERNEL_GITHUB_REPO:-superkelvint/searchkernel}
     local prefix="https://github.com/${repo}/releases/download/"
-    local remainder tag asset release_json asset_url gh_download
+    local remainder tag asset release_json asset_url
 
     if [[ "$url" == "$prefix"* ]]; then
         remainder=${url#"$prefix"}
@@ -796,7 +799,7 @@ download_artifact() {
                 "https://api.github.com/repos/${repo}/releases/tags/$tag" \
                 -o "$release_json" || return 1
 
-            asset_url=$(python3 - "$release_json" "$asset" <<'PY'
+            asset_url=$("$PYTHON_BIN" - "$release_json" "$asset" <<'PY'
 import json
 import sys
 
@@ -820,18 +823,6 @@ PY
             return
         fi
 
-        if command -v gh >/dev/null 2>&1; then
-            gh_download="$TMP/gh-download"
-            rm -rf "$gh_download"
-            mkdir -p "$gh_download"
-            gh release download "$tag" \
-                -R "$repo" \
-                -D "$gh_download" \
-                -p "$asset" >/dev/null || return 1
-            [[ -f "$gh_download/$asset" ]] || return 1
-            mv "$gh_download/$asset" "$destination"
-            return
-        fi
     fi
 
     curl -fsSL "$url" -o "$destination"
@@ -861,7 +852,7 @@ ACTUAL_SHA=$(sha256sum "$ARCHIVE" | awk '{print $1}')
 
 EXTRACT=$TMP/extract
 mkdir -p "$EXTRACT"
-python3 - "$ARCHIVE" "$EXTRACT" <<'PY'
+"$PYTHON_BIN" - "$ARCHIVE" "$EXTRACT" <<'PY'
 import pathlib
 import posixpath
 import sys
@@ -917,9 +908,11 @@ VESPA_ROOT=$BUNDLE/toolchain/upstream/vespa
 DEPS=$BUNDLE/toolchain/vespa-deps
 MARKER=$VESPA_ROOT/.searchkernel-vespa-artifact.json
 
-python3 - "$BUNDLE_MANIFEST" "$BASE/manifest.json" "$MARKER" "$BUILD_ENV" "$TARGET" "$VESPA_COMMIT" <<'PY'
+"$PYTHON_BIN" - "$BUNDLE_MANIFEST" "$BASE/manifest.json" "$MARKER" "$BUILD_ENV" "$TARGET" "$VESPA_COMMIT" <<'PY'
 import json
 import sys
+import pathlib
+import hashlib
 
 bundle_path, base_path, marker_path, build_env, target, commit = sys.argv[1:]
 
@@ -972,17 +965,34 @@ legacy_link_complete = (
     and bundle.get("adapter_static_link_closure") is True
     and marker.get("adapter_static_link_closure") is True
 )
-if bundle_format != 2 and not legacy_link_complete:
+if bundle_format not in (2, 3) and not legacy_link_complete:
     raise SystemExit(
         "unsupported published Vespa base format: "
         f"format_version={bundle_format!r}, artifact_generation={generation!r}"
     )
+
+if bundle_format == 3:
+    provenance = pathlib.Path(base_path).parent / "lib" / ".searchkernel-runtime-provenance.json"
+    expected_hash = bundle.get("runtime_provenance_sha256")
+    marker_hash = marker.get("runtime_provenance_sha256")
+    if not isinstance(expected_hash, str) or expected_hash != marker_hash:
+        raise SystemExit("published runtime provenance digest is missing or inconsistent")
+    try:
+        actual_hash = hashlib.sha256(provenance.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise SystemExit(f"published runtime provenance is missing: {exc}") from exc
+    if actual_hash != expected_hash:
+        raise SystemExit("published runtime provenance digest does not match the packaged file")
 
 if base.get("kind") != "vespa-base" or base.get("vespa_commit") != commit:
     raise SystemExit("published Vespa base manifest does not match the pinned Vespa checkout")
 PY
 
 [[ -d "$BASE/lib" ]] || { echo "published Vespa base has no lib directory" >&2; exit 1; }
+if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*3' "$BUNDLE_MANIFEST"; then
+    "$PYTHON_BIN" "$ROOT/tools/check-native-runtime-closure.py" \
+        "$BASE/lib" --require-provenance >&2
+fi
 find "$BASE/lib" -maxdepth 1 -type f -name 'libvespa*.so*' -print -quit | grep -q . || {
     echo "published Vespa base contains no Vespa shared libraries" >&2
     exit 1
@@ -1003,7 +1013,7 @@ mkdir -p "$DEPS/lib64"
 # archive referenced by the harvested Vespa link command is present. This
 # deliberately rejects the old v1 shape that could appear valid until the
 # consumer reached the final adapter link.
-python3 - "$CONFIGURED_DIR/link.txt" "$VESPA_ROOT" <<'PY'
+"$PYTHON_BIN" - "$CONFIGURED_DIR/link.txt" "$VESPA_ROOT" <<'PY'
 import pathlib
 import shlex
 import sys
@@ -1085,8 +1095,6 @@ import argparse
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -1147,55 +1155,8 @@ def select_generation(releases, build_env, target, commit):
     return max(generations)
 
 
-def fetch_releases_with_gh(repo):
-    gh = shutil.which("gh")
-    if gh is None:
-        return None
-
-    releases = []
-    page = 1
-    while True:
-        result = subprocess.run(
-            [
-                gh,
-                "api",
-                "repos/{}/releases?per_page=100&page={}".format(repo, page),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            detail = result.stderr.strip()
-            message = "could not discover published native-base generations with authenticated gh"
-            if detail:
-                message += ": " + detail
-            raise SystemExit(message)
-
-        try:
-            batch = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise SystemExit(
-                "authenticated gh returned invalid JSON while discovering native-base generations"
-            ) from exc
-
-        if not isinstance(batch, list) or not all(isinstance(item, dict) for item in batch):
-            raise SystemExit("authenticated gh releases response was not a release list")
-        releases.extend(batch)
-        if len(batch) < 100:
-            break
-        page += 1
-    return releases
-
-
 def fetch_releases(repo):
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not token:
-        releases = fetch_releases_with_gh(repo)
-        if releases is not None:
-            return releases
-
     releases = []
     page = 1
     while True:
