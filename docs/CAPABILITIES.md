@@ -78,6 +78,7 @@ canonical semantics, and executable through the backend.
 | Coverage and degradation metadata (`result.degradation_metadata`) | result | yes | yes | yes | [api/searchkernel.fbs](../api/searchkernel.fbs), [core/crates/searchkernel-ir-adapter/src/backend.rs](../core/crates/searchkernel-ir-adapter/src/backend.rs), [core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs](../core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs), [clients/python/examples/try_searchkernel_client_api_e2e.py](../clients/python/examples/try_searchkernel_client_api_e2e.py), [clients/typescript/tests/results.test.ts](../clients/typescript/tests/results.test.ts), [clients/typescript/examples/try_searchkernel_client_api_e2e.ts](../clients/typescript/examples/try_searchkernel_client_api_e2e.ts) |
 | Embedded single-node Vespa scope (`platform.embedded_vespa_scope`) | platform | no | no | no | [docs/architecture.md](../docs/architecture.md), [docs/status.md](../docs/status.md) |
 | Targeted multi-index daemon lifecycle protocol (`daemon.multi_index_lifecycle`) | daemon | yes | yes | yes | [api/searchkernel_request.fbs](../api/searchkernel_request.fbs), [core/crates/searchkernel-ir/src/api_to_ir/control_plane.rs](../core/crates/searchkernel-ir/src/api_to_ir/control_plane.rs), [core/crates/searchkernel-protocol/tests/standard_json.rs](../core/crates/searchkernel-protocol/tests/standard_json.rs), [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs) |
+| Server-scoped durable logical index discovery (`daemon.durable_index_discovery`) | daemon | yes | yes | yes | [api/wire/v1/searchkernel.fbs](../api/wire/v1/searchkernel.fbs), [core/crates/searchkernel-ir/src/wire.rs](../core/crates/searchkernel-ir/src/wire.rs), [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs), [searchkernel-web/tests/real-daemon.test.ts](../searchkernel-web/tests/real-daemon.test.ts) |
 
 ## Limitations at a glance
 
@@ -137,7 +138,8 @@ Capabilities with known constraints are collected in the generated
 - `result.grouping_tree` — The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Rust now publicly exports SearchResult.root plus ResultNode, ResultGroup, ResultHit, and ResultLimits with mixed child ordering preserved; convenience hit/group projections intentionally separate node kinds and should not be used when canonical interleaving matters.
 - `result.degradation_metadata` — The real backend populates coverage counters and match-phase/timeout/ANN degradation flags. Portable timing, trace, arbitrary metadata, and native Vespa UniqueIssues are not currently populated by this backend; UniqueIssues are deliberately not fabricated into SearchResult.errors.
 - `platform.embedded_vespa_scope` — Distributed routing, configuration services, schema deployment, federation, and other container-level Vespa facilities are outside this wrapper.
-- `daemon.multi_index_lifecycle` — Target-less envelopes remain valid only for embedded/per-index callers; multi-index daemon ingress reports a canonical missing-target error.
+- `daemon.multi_index_lifecycle` — Target-bound operations require an explicit logical target; server-scoped ListIndexes requires none.
+- `daemon.durable_index_discovery` — Listing is an ordered candidate snapshot with per-target inspection, not a transaction across all targets; OpenIndex remains authoritative for definition and generation.
 
 ## Structured facade support
 

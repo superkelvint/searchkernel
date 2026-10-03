@@ -1,6 +1,6 @@
 # Install and run Search Kernel
 
-This guide covers the currently qualified 0.1.x beta consumer surfaces. Use the [generated release quickstarts](release-quickstart.md) for executable Rust, Python, TypeScript/Node, and Ruby examples; their source under `examples/release-quickstart/` is used by clean-consumer qualification.
+This guide covers the currently qualified 0.1.x beta consumer surfaces. Use the [generated release quickstarts](release-quickstart.md) for executable Rust, Python, TypeScript/Node, and Ruby examples; clean-consumer qualification runs those same canonical sources. All four quickstarts define the same schema, insert the same three documents, search, filter, sort, close, reopen the persistent index or target, and verify the results.
 
 ## Supported platform and surfaces
 
@@ -27,6 +27,7 @@ The complete Python wheel filename is release-specific. Select it from the relea
 The Rust artifact is a source bundle containing the workspace and Rust crates. Use the [canonical Rust embedded quickstart manifest and program](release-quickstart.md#rust-embedded-manifest). Its current build provisions the pinned native runtime from the release service; when the runtime release is in a private repository, authenticate with the GitHub CLI or set `GH_TOKEN`. The workspace uses edition 2021 and does not declare an explicit `rust-version`.
 
 Rust embedded runs in the application process. The application owns its engine handles and persistent index paths; closing and reopening the same path demonstrates persistence in the quickstart.
+
 ### Python
 
 Set `PYTHON_WHEEL` to the wheel filename selected from the release manifest, then install it with `python -m pip install "$PYTHON_WHEEL"`. Use Python 3.10 or newer. The wheel carries the packaged daemon and native runtime used by managed-local mode. In that mode the Python client starts and manages a local daemon host; index data persists at the configured local path. In connect mode, the Python client connects to a separately managed `searchkerneld` gRPC listener and does not own the daemon process.
@@ -37,7 +38,7 @@ See the [Python managed-local quickstart](release-quickstart.md#python-managed-l
 
 Set `NODE_PACKAGE` to the package archive selected from the release manifest, then install it with `npm install "$NODE_PACKAGE"`. The package is `@searchkernel/client` 0.1.0. Its package metadata does not declare a minimum Node.js version. The supported release mode is Node.js connect over gRPC to a separately managed `searchkerneld` listener configured with `--listen`. The client does not own the daemon or its persistent data root.
 
-See the [TypeScript / Node connect quickstart](release-quickstart.md#typescript--node-connect). Its current default endpoint is `http://127.0.0.1:8080`, while the Node client uses gRPC and the daemon's gRPC listener is configured with `--listen`. For a manual run, set `SEARCHKERNEL_ENDPOINT` to the gRPC endpoint you configured. Clean-consumer qualification injects an endpoint, so it does not exercise the sample's default. This generated-example gap is tracked in [issue #1019](https://github.com/superkelvint/searchkernel/issues/1019).
+See the [TypeScript / Node connect quickstart](release-quickstart.md#typescript--node-connect). It connects over gRPC to the daemon's `--listen` address and defaults `SEARCHKERNEL_ENDPOINT` to `127.0.0.1:50051`; set the variable when using a different address.
 
 ### Ruby
 
@@ -63,13 +64,13 @@ The `--listen` address serves gRPC for Python and TypeScript/Node connect client
 
 Rust embedded and Python managed-local store data at the local index path and can reopen that same path after close. The standalone daemon owns data beneath `--data-root`; a client selects a logical index target, and the daemon manages its physical location. Connect clients closing their connection does not transfer ownership of the daemon or its indexes. Use the same local path, or the same daemon data root and logical target, when reopening an index.
 
-The generated Rust and Python quickstarts demonstrate local close/reopen. The TypeScript/Node and Ruby connect quickstarts demonstrate client close, but do not currently demonstrate target creation or daemon restart/reopen; see [quickstart follow-up #1019](https://github.com/superkelvint/searchkernel/issues/1019).
+The Rust and Python quickstarts reopen the same local index path. The TypeScript/Node and Ruby quickstarts create a daemon target, close the client index, and reopen that same target. Each quickstart verifies its search results after reopening.
 
 ## Troubleshooting
 
 - **Wheel rejected by pip:** use the Linux x86-64 glibc wheel tagged `manylinux_2_28_x86_64` and Python 3.10 or newer. The manifest provides the complete wheel filename.
 - **Daemon connection fails:** confirm the daemon is running and the client endpoint matches its listener. Python and Node use `--listen` for gRPC; Ruby uses `--web-listen` for HTTP/1.
-- **Node quickstart cannot connect with its default:** set `SEARCHKERNEL_ENDPOINT` to the gRPC endpoint configured by `--listen`. The generated sample's HTTP default is a known gap tracked in [issue #1019](https://github.com/superkelvint/searchkernel/issues/1019).
+- **Node quickstart cannot connect:** confirm the daemon exposes gRPC at `127.0.0.1:50051`, or set `SEARCHKERNEL_ENDPOINT` to the address configured by `--listen`.
 - **Index does not reopen:** use the same local path for embedded or managed-local mode, or the same daemon data root and logical target in connect mode. Do not remove the stored index data between close and reopen.
 - **Rust runtime download fails:** authenticate with the GitHub CLI or set `GH_TOKEN` when the release service requires access to a private repository.
 - **A package or platform is missing:** check the [release support matrix](release-support.md). The deferred surfaces are not qualified for this beta.

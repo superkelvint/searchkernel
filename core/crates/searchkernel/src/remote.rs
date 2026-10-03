@@ -806,6 +806,27 @@ impl RemoteClient {
         })
     }
 
+    /// Discover durable logical targets without opening or binding an index.
+    pub fn list_indexes(&self) -> Result<Vec<String>> {
+        let response = self
+            .transport
+            .call(wire_ir::encode_list_indexes_request(), true)
+            .map_err(crate::Error::from_ir)?;
+        let envelope = self.response(
+            &response.payload,
+            wire::ResponsePayload::SearchKernel_Wire_ListIndexesResult,
+        )?;
+        let result = envelope
+            .payload_as_search_kernel_wire_list_indexes_result()
+            .ok_or_else(|| {
+                crate::Error::from_ir(invalid_remote_response("list result payload is missing"))
+            })?;
+        let targets = result.targets().ok_or_else(|| {
+            crate::Error::from_ir(invalid_remote_response("list result targets are missing"))
+        })?;
+        Ok(targets.iter().map(ToOwned::to_owned).collect())
+    }
+
     /// Create a logical target and return an index handle bound to it.
     pub fn create_index(
         &self,

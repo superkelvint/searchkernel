@@ -12,6 +12,7 @@ from SearchKernel.Wire.DescribeRequest import DescribeRequest
 from SearchKernel.Wire.GetRequest import GetRequest
 from SearchKernel.Wire.InsertRequest import InsertRequest
 from SearchKernel.Wire.InspectQueryRequest import InspectQueryRequest
+from SearchKernel.Wire.ListIndexesRequest import ListIndexesRequest
 from SearchKernel.Wire.OpenIndexRequest import OpenIndexRequest
 from SearchKernel.Wire.PatchRequest import PatchRequest
 from SearchKernel.Wire.SearchRequest import SearchRequest
@@ -37,4 +38,5 @@ class RequestPayload(object):
   SearchKernel_Wire_CreateIndexRequest = cast(int, ...)
   SearchKernel_Wire_OpenIndexRequest = cast(int, ...)
   SearchKernel_Wire_DeleteIndexRequest = cast(int, ...)
-def RequestPayloadCreator(union_type: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_Wire_InsertRequest, RequestPayload.SearchKernel_Wire_UpsertRequest, RequestPayload.SearchKernel_Wire_PatchRequest, RequestPayload.SearchKernel_Wire_DeleteRequest, RequestPayload.SearchKernel_Wire_GetRequest, RequestPayload.SearchKernel_Wire_SearchRequest, RequestPayload.SearchKernel_Wire_AnalyzeRequest, RequestPayload.SearchKernel_Wire_DescribeRequest, RequestPayload.SearchKernel_Wire_InspectQueryRequest, RequestPayload.SearchKernel_Wire_UpdateRequest, RequestPayload.SearchKernel_Wire_CreateIndexRequest, RequestPayload.SearchKernel_Wire_OpenIndexRequest, RequestPayload.SearchKernel_Wire_DeleteIndexRequest], table: table.Table) -> typing.Union[None, InsertRequest, UpsertRequest, PatchRequest, DeleteRequest, GetRequest, SearchRequest, AnalyzeRequest, DescribeRequest, InspectQueryRequest, UpdateRequest, CreateIndexRequest, OpenIndexRequest, DeleteIndexRequest]: ...
+  SearchKernel_Wire_ListIndexesRequest = cast(int, ...)
+def RequestPayloadCreator(union_type: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_Wire_InsertRequest, RequestPayload.SearchKernel_Wire_UpsertRequest, RequestPayload.SearchKernel_Wire_PatchRequest, RequestPayload.SearchKernel_Wire_DeleteRequest, RequestPayload.SearchKernel_Wire_GetRequest, RequestPayload.SearchKernel_Wire_SearchRequest, RequestPayload.SearchKernel_Wire_AnalyzeRequest, RequestPayload.SearchKernel_Wire_DescribeRequest, RequestPayload.SearchKernel_Wire_InspectQueryRequest, RequestPayload.SearchKernel_Wire_UpdateRequest, RequestPayload.SearchKernel_Wire_CreateIndexRequest, RequestPayload.SearchKernel_Wire_OpenIndexRequest, RequestPayload.SearchKernel_Wire_DeleteIndexRequest, RequestPayload.SearchKernel_Wire_ListIndexesRequest], table: table.Table) -> typing.Union[None, InsertRequest, UpsertRequest, PatchRequest, DeleteRequest, GetRequest, SearchRequest, AnalyzeRequest, DescribeRequest, InspectQueryRequest, UpdateRequest, CreateIndexRequest, OpenIndexRequest, DeleteIndexRequest, ListIndexesRequest]: ...

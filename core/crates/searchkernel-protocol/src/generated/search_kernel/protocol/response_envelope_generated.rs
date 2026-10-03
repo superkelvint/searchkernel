@@ -318,6 +318,23 @@ impl<'a> ResponseEnvelope<'a> {
             None
         }
     }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub fn payload_as_search_kernel_wire_list_indexes_result(
+        &self,
+    ) -> Option<super::wire::ListIndexesResult<'a>> {
+        if self.payload_type() == ResponsePayload::SearchKernel_Wire_ListIndexesResult {
+            self.payload().map(|t| {
+                // Safety:
+                // Created from a valid Table for this object
+                // Which contains a valid union in this slot
+                unsafe { super::wire::ListIndexesResult::init_from_table(t) }
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
@@ -344,6 +361,7 @@ impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
           ResponsePayload::SearchKernel_Wire_CreateIndexResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::wire::CreateIndexResult>>("ResponsePayload::SearchKernel_Wire_CreateIndexResult", pos),
           ResponsePayload::SearchKernel_Wire_OpenIndexResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::wire::OpenIndexResult>>("ResponsePayload::SearchKernel_Wire_OpenIndexResult", pos),
           ResponsePayload::SearchKernel_Wire_DeleteIndexResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::wire::DeleteIndexResult>>("ResponsePayload::SearchKernel_Wire_DeleteIndexResult", pos),
+          ResponsePayload::SearchKernel_Wire_ListIndexesResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::wire::ListIndexesResult>>("ResponsePayload::SearchKernel_Wire_ListIndexesResult", pos),
           _ => Ok(()),
         }
      })?
@@ -548,6 +566,16 @@ impl ::core::fmt::Debug for ResponseEnvelope<'_> {
             }
             ResponsePayload::SearchKernel_Wire_DeleteIndexResult => {
                 if let Some(x) = self.payload_as_search_kernel_wire_delete_index_result() {
+                    ds.field("payload", &x)
+                } else {
+                    ds.field(
+                        "payload",
+                        &"InvalidFlatbuffer: Union discriminant does not match value.",
+                    )
+                }
+            }
+            ResponsePayload::SearchKernel_Wire_ListIndexesResult => {
+                if let Some(x) = self.payload_as_search_kernel_wire_list_indexes_result() {
                     ds.field("payload", &x)
                 } else {
                     ds.field(

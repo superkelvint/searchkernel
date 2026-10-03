@@ -42,7 +42,7 @@ use bytes::Bytes;
 use flatbuffers::root;
 use http::{
     header::{ALLOW, CONTENT_TYPE},
-    Method, Request as HttpRequest, Response as HttpResponse, StatusCode,
+    HeaderValue, Method, Request as HttpRequest, Response as HttpResponse, StatusCode,
 };
 use http_body_util::{BodyExt, Full};
 use searchkernel_dispatch::{DispatchError, Dispatcher};
@@ -64,6 +64,7 @@ use tokio_stream::{wrappers::TcpListenerStream, Stream};
 use tonic::{body::BoxBody, Request, Response, Status};
 use tonic_web::GrpcWebLayer;
 use tower::{Layer, Service};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 /// Shared Rust bindings generated from the public Search Kernel gRPC protocol.
 pub use searchkernel_rpc::rpc;
@@ -113,6 +114,13 @@ pub struct ServerConfig {
     /// transports. Both listeners share the same dispatcher and execution
     /// limit when enabled. The admission limit is shared as well.
     pub web_listen_addr: Option<SocketAddr>,
+    /// Browser origins explicitly allowed to call the gRPC-Web listener.
+    ///
+    /// An empty list keeps the listener same-origin only: cross-origin browser
+    /// requests receive no CORS authorization headers. This is intentionally
+    /// deny-by-default because the browser listener exposes the full canonical
+    /// mutation-capable Search Kernel API.
+    pub web_allowed_origins: Vec<HeaderValue>,
     /// Maximum number of blocking dispatcher calls that may execute at once.
     ///
     /// Requests above this limit wait asynchronously for admission instead of
@@ -129,6 +137,7 @@ impl ServerConfig {
         Self {
             listen_addr: ListenAddress::Tcp(listen_addr),
             web_listen_addr: None,
+            web_allowed_origins: Vec::new(),
             execution_limit: DEFAULT_EXECUTION_LIMIT,
             admission_limit: DEFAULT_ADMISSION_LIMIT,
         }
@@ -140,6 +149,7 @@ impl ServerConfig {
         Self {
             listen_addr: ListenAddress::Unix(path.into()),
             web_listen_addr: None,
+            web_allowed_origins: Vec::new(),
             execution_limit: DEFAULT_EXECUTION_LIMIT,
             admission_limit: DEFAULT_ADMISSION_LIMIT,
         }
@@ -168,6 +178,16 @@ impl ServerConfig {
     /// Enables the HTTP/1 gRPC-Web listener at the supplied TCP address.
     pub const fn with_web_listen_addr(mut self, web_listen_addr: SocketAddr) -> Self {
         self.web_listen_addr = Some(web_listen_addr);
+        self
+    }
+
+    /// Allows one exact browser Origin value on the gRPC-Web listener.
+    ///
+    /// Callers should add only trusted dashboard origins. Wildcards are not
+    /// accepted here so enabling browser access cannot silently expose
+    /// mutation APIs to arbitrary websites.
+    pub fn with_web_allowed_origin(mut self, origin: HeaderValue) -> Self {
+        self.web_allowed_origins.push(origin);
         self
     }
 }
@@ -955,6 +975,7 @@ async fn start_with_service(
     admission_limit: Arc<Semaphore>,
 ) -> Result<RunningServer, ServerError> {
     let (shutdown, _) = watch::channel(false);
+    let web_allowed_origins = config.web_allowed_origins.clone();
 
     // Bind every requested listener before starting any serving task. If a
     // browser port is unavailable, this prevents the already-bound local
@@ -982,6 +1003,7 @@ async fn start_with_service(
                 admission_limit.clone(),
                 shutdown.subscribe(),
                 false,
+                Vec::new(),
             );
             (ListenAddress::Tcp(local_addr), task, None)
         }
@@ -995,6 +1017,7 @@ async fn start_with_service(
                 admission_limit.clone(),
                 shutdown.subscribe(),
                 false,
+                Vec::new(),
             );
             (ListenAddress::Unix(path), task, Some(ownership))
         }
@@ -1009,6 +1032,7 @@ async fn start_with_service(
                 admission_limit,
                 shutdown.subscribe(),
                 true,
+                web_allowed_origins,
             );
             (Some(web_local_addr), Some(web_task))
         }
@@ -1032,6 +1056,7 @@ fn serve<I, IO>(
     admission_limit: Arc<Semaphore>,
     mut shutdown_requested: watch::Receiver<bool>,
     grpc_web: bool,
+    web_allowed_origins: Vec<HeaderValue>,
 ) -> JoinHandle<Result<(), tonic::transport::Error>>
 where
     I: Stream<Item = Result<IO, std::io::Error>> + Send + 'static,
@@ -1045,6 +1070,24 @@ where
         if grpc_web {
             tonic::transport::Server::builder()
                 .accept_http1(true)
+                // Keep CORS outside admission so browsers can also read
+                // overload responses. GrpcWebLayer alone does not provide CORS.
+                .layer(
+                    CorsLayer::new()
+                        .allow_origin(AllowOrigin::list(web_allowed_origins))
+                        .allow_methods([Method::POST])
+                        .allow_headers([
+                            CONTENT_TYPE,
+                            http::HeaderName::from_static("x-grpc-web"),
+                            http::HeaderName::from_static("x-user-agent"),
+                            http::HeaderName::from_static("grpc-timeout"),
+                        ])
+                        .expose_headers([
+                            http::HeaderName::from_static("grpc-status"),
+                            http::HeaderName::from_static("grpc-message"),
+                            http::HeaderName::from_static("grpc-status-details-bin"),
+                        ]),
+                )
                 .layer(AdmissionLayer::new(
                     admission_limit.clone(),
                     Some(service.clone()),

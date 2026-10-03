@@ -141,6 +141,18 @@ pub(super) struct LifecycleLock {
 }
 
 #[cfg(feature = "native")]
+impl Drop for LifecycleLock {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+
+        // Closing our descriptor alone does not release flock while a sibling
+        // subprocess retains its fork-time copy (even with close-on-exec).
+        // The owner releases the lock explicitly after backend shutdown.
+        unsafe { libc::flock(self._file.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
+#[cfg(feature = "native")]
 impl LifecycleLock {
     fn acquire(root: &std::path::Path) -> Result<Self> {
         use std::os::fd::AsRawFd;
@@ -213,6 +225,54 @@ pub(super) fn create_directory_transaction<T>(
 
 #[cfg(feature = "native")]
 impl Index {
+    /// Validate persisted identity/configuration without opening Vespa or
+    /// taking its lifetime lock. Daemon callers coordinate this inspection
+    /// with create/delete using their existing per-target transition lock.
+    #[doc(hidden)]
+    #[cfg(feature = "internal-api")]
+    pub fn inspect_storage(path: impl AsRef<std::path::Path>) -> Result<()> {
+        let root = path.as_ref();
+        fn directory(path: &std::path::Path) -> Result<()> {
+            let metadata = std::fs::symlink_metadata(path)
+                .map_err(|error| Error::Infrastructure(error.to_string()))?;
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err(Error::corrupt_index("invalid persisted index directory"));
+            }
+            Ok(())
+        }
+        fn no_links(path: &std::path::Path) -> Result<()> {
+            let mut pending = vec![path.to_path_buf()];
+            while let Some(directory) = pending.pop() {
+                for entry in std::fs::read_dir(directory)
+                    .map_err(|error| Error::Infrastructure(error.to_string()))?
+                {
+                    let entry = entry.map_err(|error| Error::Infrastructure(error.to_string()))?;
+                    let kind = entry
+                        .file_type()
+                        .map_err(|error| Error::Infrastructure(error.to_string()))?;
+                    if kind.is_symlink() || (!kind.is_file() && !kind.is_dir()) {
+                        return Err(Error::corrupt_index(
+                            "invalid persisted index metadata entry",
+                        ));
+                    }
+                    if kind.is_dir() {
+                        pending.push(entry.path());
+                    }
+                }
+            }
+            Ok(())
+        }
+        directory(root)?;
+        directory(&root.join("data"))?;
+        for name in ["manifest", "config"] {
+            directory(&root.join(name))?;
+            no_links(&root.join(name))?;
+        }
+        let manifest = super::manifest::IndexManifest::read(root)?;
+        manifest.resolved_context_with_config(&root.join("config"))?;
+        Ok(())
+    }
+
     /// Construct an index from the canonical FlatBuffers index-definition
     /// payload used by the native bootstrap. This is intentionally hidden from
     /// the ergonomic Rust API; the portable wire definition is validated by

@@ -75,6 +75,12 @@ pub fn encode_delete_index_result(version: WireVersion) -> Vec<u8> {
     }
 }
 
+pub fn encode_list_indexes_result(version: WireVersion, targets: &[String]) -> Vec<u8> {
+    match version {
+        WireVersion::V1 => v1::encode_list_indexes_result(targets),
+    }
+}
+
 pub fn encode_error(version: WireVersion, error: &crate::PortableError) -> Vec<u8> {
     match version {
         WireVersion::V1 => v1::encode_error(error),
@@ -85,6 +91,7 @@ pub mod v1 {
     use super::{ControlPlaneDecodeError, ControlPlaneRequest, WireVersion};
     use crate::api_to_ir::control_plane::{
         invalid_target_error, missing_definition_error, missing_target_error,
+        unexpected_target_error,
     };
     use flatbuffers::root;
     use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
@@ -122,6 +129,22 @@ pub mod v1 {
             return Err(ControlPlaneDecodeError::UnsupportedProtocol(
                 envelope.protocol_version(),
             ));
+        }
+
+        // Discovery is server-scoped. A target on this operation is not merely
+        // unused: accepting one would hide malformed envelopes and weaken the
+        // protocol invariant that server operations are explicitly targetless.
+        if envelope.payload_type() == wire::RequestPayload::SearchKernel_Wire_ListIndexesRequest {
+            envelope
+                .payload_as_search_kernel_wire_list_indexes_request()
+                .ok_or(ControlPlaneDecodeError::InvalidRequest)?;
+            if envelope.target().is_some() {
+                return Err(ControlPlaneDecodeError::Semantic {
+                    version: WireVersion::V1,
+                    error: unexpected_target_error(),
+                });
+            }
+            return Ok(ControlPlaneRequest::ListIndexes);
         }
 
         let target_view = envelope
@@ -176,7 +199,10 @@ pub mod v1 {
                 envelope
                     .payload_as_search_kernel_wire_delete_index_request()
                     .ok_or(ControlPlaneDecodeError::InvalidRequest)?;
-                Ok(ControlPlaneRequest::Delete { target })
+                Ok(ControlPlaneRequest::Delete {
+                    target,
+                    expected_generation: target_view.generation().map(ToOwned::to_owned),
+                })
             }
             wire::RequestPayload::NONE => Err(ControlPlaneDecodeError::InvalidRequest),
             _ => Ok(ControlPlaneRequest::Route {
@@ -252,6 +278,27 @@ pub mod v1 {
         encode_response(
             &mut builder,
             wire::ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
+            payload,
+        )
+    }
+
+    pub(super) fn encode_list_indexes_result(targets: &[String]) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let names: Vec<_> = targets
+            .iter()
+            .map(|name| builder.create_string(name))
+            .collect();
+        let targets = builder.create_vector(&names);
+        let payload = schema::ListIndexesResult::create(
+            &mut builder,
+            &schema::ListIndexesResultArgs {
+                targets: Some(targets),
+            },
+        )
+        .as_union_value();
+        encode_response(
+            &mut builder,
+            wire::ResponsePayload::SearchKernel_Wire_ListIndexesResult,
             payload,
         )
     }
@@ -493,6 +540,78 @@ mod tests {
             ),
             other => panic!("expected semantic missing-target error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn discovery_is_server_scoped_and_preserves_wire_discriminators() {
+        assert_eq!(
+            protocol::RequestPayload::SearchKernel_Wire_DeleteIndexRequest.0,
+            13
+        );
+        assert_eq!(
+            protocol::RequestPayload::SearchKernel_Wire_ListIndexesRequest.0,
+            14
+        );
+        assert_eq!(
+            protocol::ResponsePayload::SearchKernel_Wire_DeleteIndexResult.0,
+            14
+        );
+        assert_eq!(
+            protocol::ResponsePayload::SearchKernel_Wire_ListIndexesResult.0,
+            15
+        );
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let payload = v1::schema::ListIndexesRequest::create(&mut builder, &Default::default());
+        let envelope = protocol::RequestEnvelope::create(
+            &mut builder,
+            &protocol::RequestEnvelopeArgs {
+                protocol_version: protocol::PROTOCOL_VERSION,
+                payload_type: protocol::RequestPayload::SearchKernel_Wire_ListIndexesRequest,
+                payload: Some(payload.as_union_value()),
+                target: None,
+            },
+        );
+        protocol::finish_request_envelope_buffer(&mut builder, envelope);
+        assert!(matches!(
+            decode_control_plane_request(builder.finished_data())
+                .unwrap()
+                .request,
+            ControlPlaneRequest::ListIndexes
+        ));
+
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let target = target(&mut builder, "products");
+        let payload = v1::schema::ListIndexesRequest::create(&mut builder, &Default::default());
+        let envelope = protocol::RequestEnvelope::create(
+            &mut builder,
+            &protocol::RequestEnvelopeArgs {
+                protocol_version: protocol::PROTOCOL_VERSION,
+                payload_type: protocol::RequestPayload::SearchKernel_Wire_ListIndexesRequest,
+                payload: Some(payload.as_union_value()),
+                target: Some(target),
+            },
+        );
+        protocol::finish_request_envelope_buffer(&mut builder, envelope);
+        match decode_control_plane_request(builder.finished_data()) {
+            Err(ControlPlaneDecodeError::Semantic { error, .. }) => {
+                assert_eq!(
+                    error.details[0].code,
+                    crate::UNEXPECTED_INDEX_TARGET_DETAIL_CODE
+                );
+                assert_eq!(error.details[0].path.as_deref(), Some(crate::TARGET_PATH));
+            }
+            other => panic!("target-bearing ListIndexes must be rejected, got {other:?}"),
+        }
+        let targets = vec!["alpha".to_owned(), "zeta".to_owned()];
+        let bytes = encode_list_indexes_result(WireVersion::V1, &targets);
+        let envelope = flatbuffers::root::<protocol::ResponseEnvelope>(&bytes).unwrap();
+        let result = envelope
+            .payload_as_search_kernel_wire_list_indexes_result()
+            .unwrap();
+        assert_eq!(
+            result.targets().unwrap().iter().collect::<Vec<_>>(),
+            ["alpha", "zeta"]
+        );
     }
 
     #[test]

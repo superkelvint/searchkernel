@@ -57,12 +57,21 @@ fn target<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     name: &str,
 ) -> flatbuffers::WIPOffset<api::IndexTarget<'a>> {
+    target_with_generation(builder, name, None)
+}
+
+fn target_with_generation<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    name: &str,
+    generation: Option<&str>,
+) -> flatbuffers::WIPOffset<api::IndexTarget<'a>> {
     let name = builder.create_string(name);
+    let generation = generation.map(|generation| builder.create_string(generation));
     api::IndexTarget::create(
         builder,
         &api::IndexTargetArgs {
             name: Some(name),
-            generation: None,
+            generation,
         },
     )
 }
@@ -172,10 +181,14 @@ fn open_request(target_name: Option<&str>) -> Vec<u8> {
 }
 
 fn delete_index_request(target_name: &str) -> Vec<u8> {
+    delete_index_request_with_generation(target_name, None)
+}
+
+fn delete_index_request_with_generation(target_name: &str, generation: Option<&str>) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let payload =
         api::DeleteIndexRequest::create(&mut builder, &api::DeleteIndexRequestArgs::default());
-    let target = target(&mut builder, target_name);
+    let target = target_with_generation(&mut builder, target_name, generation);
     let envelope = wire::RequestEnvelope::create(
         &mut builder,
         &wire::RequestEnvelopeArgs {
@@ -190,6 +203,16 @@ fn delete_index_request(target_name: &str) -> Vec<u8> {
 }
 
 fn upsert_request(target_name: &str, id: &str, field_name: &str, text: &str) -> Vec<u8> {
+    upsert_request_with_generation(target_name, id, field_name, text, None)
+}
+
+fn upsert_request_with_generation(
+    target_name: &str,
+    id: &str,
+    field_name: &str,
+    text: &str,
+    generation: Option<&str>,
+) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let text = builder.create_string(text);
     let string_value =
@@ -225,7 +248,7 @@ fn upsert_request(target_name: &str, id: &str, field_name: &str, text: &str) -> 
             ..Default::default()
         },
     );
-    let target = target(&mut builder, target_name);
+    let target = target_with_generation(&mut builder, target_name, generation);
     let envelope = wire::RequestEnvelope::create(
         &mut builder,
         &wire::RequestEnvelopeArgs {
@@ -309,15 +332,110 @@ async fn execute_http_json(address: std::net::SocketAddr, payload: &[u8]) -> Vec
     response_json_to_flatbuffer(&body).expect("decode response JSON")
 }
 
-fn request_json_with_generation(payload: &[u8], generation: &str) -> Vec<u8> {
-    let json = request_flatbuffer_to_json(payload).expect("request JSON");
-    let mut value: serde_json::Value = serde_json::from_slice(&json).expect("request JSON value");
-    value["target"]["generation"] = serde_json::Value::String(generation.to_owned());
-    serde_json::to_vec(&value).expect("request JSON with target generation")
-}
-
 fn response(bytes: &[u8]) -> wire::ResponseEnvelope<'_> {
     root::<wire::ResponseEnvelope<'_>>(bytes).expect("response envelope")
+}
+
+fn list_request() -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload = api::ListIndexesRequest::create(&mut builder, &Default::default());
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target: None,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_ListIndexesRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+fn listed_targets(bytes: &[u8]) -> Vec<String> {
+    response(bytes)
+        .payload_as_search_kernel_wire_list_indexes_result()
+        .expect("list result")
+        .targets()
+        .expect("targets")
+        .iter()
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn durable_discovery_without_opening_on_both_transports() {
+    let temp = TempDir::new("discovery");
+    let registry = IndexRegistry::new(&temp.0).unwrap();
+    assert!(listed_targets(&registry.dispatch(&list_request()).unwrap()).is_empty());
+    for name in ["zeta", "alpha"] {
+        assert_lifecycle(
+            &registry.dispatch(&create_request(name, "title")).unwrap(),
+            wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+        );
+    }
+    assert_eq!(
+        listed_targets(&registry.dispatch(&list_request()).unwrap()),
+        ["alpha", "zeta"]
+    );
+    registry.close_all().unwrap();
+    drop(registry);
+    fs::create_dir(temp.0.join("empty")).unwrap();
+    fs::write(temp.0.join("file"), b"not an index").unwrap();
+    fs::create_dir(temp.0.join("bad target")).unwrap();
+    fs::create_dir(temp.0.join(".alpha.searchkernel-delete-123")).unwrap();
+    std::os::unix::fs::symlink(temp.0.join("alpha"), temp.0.join("linked")).unwrap();
+    // A plausible directory with a symlinked manifest must not be probed.
+    fs::create_dir(temp.0.join("malformed")).unwrap();
+    fs::create_dir(temp.0.join("malformed/data")).unwrap();
+    fs::create_dir(temp.0.join("malformed/config")).unwrap();
+    std::os::unix::fs::symlink(
+        temp.0.join("alpha/manifest"),
+        temp.0.join("malformed/manifest"),
+    )
+    .unwrap();
+
+    let registry = Arc::new(IndexRegistry::new(&temp.0).unwrap());
+    assert!(registry.loaded_targets().unwrap().is_empty());
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().unwrap())
+            .with_web_listen_addr("127.0.0.1:0".parse().unwrap()),
+        registry.clone(),
+    )
+    .await
+    .unwrap();
+    let mut grpc = rpc::search_kernel_client::SearchKernelClient::connect(format!(
+        "http://{}",
+        server.tcp_addr().unwrap()
+    ))
+    .await
+    .unwrap();
+    let binary = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: list_request(),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .payload;
+    assert_eq!(listed_targets(&binary), ["alpha", "zeta"]);
+    let json = execute_http_json(server.web_tcp_addr().unwrap(), &list_request()).await;
+    assert_eq!(listed_targets(&json), ["alpha", "zeta"]);
+    assert!(
+        registry.loaded_targets().unwrap().is_empty(),
+        "discovery must never open targets"
+    );
+    registry.dispatch(&delete_index_request("alpha")).unwrap();
+    assert_eq!(
+        listed_targets(&registry.dispatch(&list_request()).unwrap()),
+        ["zeta"]
+    );
+    assert_lifecycle(
+        &registry.dispatch(&open_request(Some("zeta"))).unwrap(),
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
+    );
+    server.shutdown().await.unwrap();
+    registry.close_all().unwrap();
 }
 
 fn assert_lifecycle(bytes: &[u8], kind: wire::ResponsePayload) {
@@ -639,10 +757,10 @@ async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
         .expect("canonical recreate result generation");
     assert_ne!(old_generation, new_generation);
 
-    let stale_json = request_json_with_generation(
-        &upsert_request("reused", "doc", "title", "stale"),
-        &old_generation,
-    );
+    let stale_bytes =
+        upsert_request_with_generation("reused", "doc", "title", "stale", Some(&old_generation));
+    let stale_json =
+        request_flatbuffer_to_json(&stale_bytes).expect("canonical stale request JSON");
     let stale_bytes = request_json_to_flatbuffer(&stale_json)
         .expect("canonical expected generation in request envelope");
     let grpc_stale = grpc
@@ -667,9 +785,10 @@ async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
         portable_error_semantics(&http_stale)
     );
 
-    let stale_delete =
-        request_json_with_generation(&delete_index_request("reused"), &old_generation);
-    let (status, body) = execute_http_json_raw(http_address, Bytes::from(stale_delete)).await;
+    let stale_delete = delete_index_request_with_generation("reused", Some(&old_generation));
+    let stale_delete_json =
+        request_flatbuffer_to_json(&stale_delete).expect("canonical stale delete JSON");
+    let (status, body) = execute_http_json_raw(http_address, Bytes::from(stale_delete_json)).await;
     assert_eq!(status, http::StatusCode::OK);
     assert_portable_error(
         &response_json_to_flatbuffer(&body).expect("stale delete response"),
@@ -678,11 +797,11 @@ async fn canonical_generation_rejects_stale_handles_on_grpc_and_http() {
         Some("target"),
     );
 
-    let current = request_json_with_generation(
-        &upsert_request("reused", "doc", "title", "current"),
-        new_generation,
-    );
-    let (status, body) = execute_http_json_raw(http_address, Bytes::from(current)).await;
+    let current =
+        upsert_request_with_generation("reused", "doc", "title", "current", Some(new_generation));
+    let current_json =
+        request_flatbuffer_to_json(&current).expect("canonical current request JSON");
+    let (status, body) = execute_http_json_raw(http_address, Bytes::from(current_json)).await;
     assert_eq!(status, http::StatusCode::OK);
     assert_upsert(&response_json_to_flatbuffer(&body).expect("current handle response"));
 
@@ -931,6 +1050,71 @@ fn open_rejects_storage_owned_by_another_runtime_as_conflict() {
     registry.close_all().expect("close registry");
 }
 
+#[cfg(unix)]
+#[test]
+fn closed_lifecycle_lock_is_released_while_a_forked_child_retains_descriptors() {
+    struct Child {
+        pid: libc::pid_t,
+        release: i32,
+    }
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let byte = 1u8;
+            // Release and reap our child even if a parent assertion panics.
+            unsafe {
+                libc::write(self.release, (&byte as *const u8).cast(), 1);
+                libc::close(self.release);
+                while libc::waitpid(self.pid, std::ptr::null_mut(), 0) < 0 {
+                    if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let temp = TempDir::new("forked-lifecycle-lock");
+    let owner = searchkernel::Index::create(
+        temp.0.join("products"),
+        searchkernel::IndexDefinition::new().field(
+            searchkernel::Field::text("title")
+                .stored(true)
+                .searchable(true),
+        ),
+    )
+    .expect("create parent-owned index");
+    let mut pipe = [0; 2];
+    assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+    let pid = unsafe { libc::fork() };
+    assert!(pid >= 0, "fork child");
+    if pid == 0 {
+        // A multithreaded fork child must only use async-signal-safe syscalls.
+        // It deliberately retains inherited descriptors until the parent has
+        // attempted reopen, modeling the fork-to-exec window of sibling work.
+        unsafe {
+            libc::close(pipe[1]);
+            let mut byte = 0u8;
+            while libc::read(pipe[0], (&mut byte as *mut u8).cast(), 1) < 0 {}
+            libc::_exit(0);
+        }
+    }
+    unsafe { libc::close(pipe[0]) };
+    let child = Child {
+        pid,
+        release: pipe[1],
+    };
+    let closed = owner.close();
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    let reopened = registry.dispatch(&open_request(Some("products")));
+    drop(child);
+    closed.expect("close parent-owned index");
+    assert_lifecycle(
+        &reopened.expect("reopen while child retains descriptors"),
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
+    );
+    registry.close_all().expect("close reopened index");
+}
+
 #[test]
 fn concurrent_same_name_create_has_one_winner() {
     let temp = TempDir::new("create-race");
@@ -974,6 +1158,18 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
     use std::os::fd::AsRawFd;
 
     let temp = TempDir::new("per-target-transition");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+
+    // Put the unrelated target in memory before blocking products. The
+    // concurrency assertion below must measure lock isolation, not the
+    // variable wall-clock cost of starting another native Vespa index.
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request("articles", "body"))
+            .expect("create articles"),
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+    );
+
     let lock_path = temp.0.join(".products.searchkernel.lock");
     let lock_file = fs::OpenOptions::new()
         .create(true)
@@ -988,7 +1184,6 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
         "acquire external lifecycle lock"
     );
 
-    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
     let blocked_registry = registry.clone();
     let blocked = thread::spawn(move || {
         blocked_registry
@@ -1003,17 +1198,22 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let independent_registry = registry.clone();
     let independent = thread::spawn(move || {
+        // Opening an already-loaded sibling is deliberately cheap. This makes
+        // the timeout a lock-isolation assertion instead of a native-startup
+        // performance assertion. If the blocked products transition retained a
+        // daemon-wide registry lock, this cannot complete until products is
+        // released below.
         let response = independent_registry
-            .dispatch(&create_request("articles", "body"))
-            .expect("independent articles create");
+            .dispatch(&open_request(Some("articles")))
+            .expect("independent articles open");
         sender.send(response).expect("send independent response");
     });
     let articles = receiver
-        .recv_timeout(std::time::Duration::from_secs(2))
+        .recv_timeout(std::time::Duration::from_secs(5))
         .expect("unrelated target lifecycle must not wait for products");
     assert_lifecycle(
         &articles,
-        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
     );
 
     assert_eq!(
@@ -1025,7 +1225,7 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
         &blocked.join().expect("join blocked creator"),
         wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
-    independent.join().expect("join independent creator");
+    independent.join().expect("join independent opener");
     registry.close_all().expect("close registry");
 }
 
@@ -1639,6 +1839,15 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
     .expect("restart multi-index daemon");
     let endpoint = server.tcp_addr().expect("gRPC listener").to_string();
     let client = RemoteClient::connect(&endpoint).expect("reconnect Rust remote client");
+    // SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=grpc
+    assert_eq!(
+        client.list_indexes().expect("discover durable targets"),
+        vec!["rust-a", "rust-b"]
+    );
+    assert!(registry
+        .loaded_targets()
+        .expect("loaded targets")
+        .is_empty());
 
     let a = client.open_index("rust-a").expect("open A after restart");
     let b = client.open_index("rust-b").expect("open B after restart");

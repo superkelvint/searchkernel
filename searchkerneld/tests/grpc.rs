@@ -492,19 +492,31 @@ async fn execute_grpc_web_raw(
     address: SocketAddr,
     payload: Vec<u8>,
 ) -> (u16, Option<String>, Vec<u8>) {
+    execute_grpc_web_with_origin(address, payload, None).await
+}
+
+async fn execute_grpc_web_with_origin(
+    address: SocketAddr,
+    payload: Vec<u8>,
+    origin: Option<&str>,
+) -> (u16, Option<String>, Vec<u8>) {
     let frame = rpc::FlatBufferFrame { payload }.encode_to_vec();
     let mut grpc_frame = Vec::with_capacity(5 + frame.len());
     grpc_frame.push(0);
     grpc_frame.extend_from_slice(&(frame.len() as u32).to_be_bytes());
     grpc_frame.extend_from_slice(&frame);
 
-    let request = HttpRequest::builder()
+    let mut request = HttpRequest::builder()
         .method("POST")
         .uri(format!(
             "http://{address}/searchkernel.rpc.v1.SearchKernel/Execute"
         ))
         .header("content-type", "application/grpc-web+proto")
-        .header("x-grpc-web", "1")
+        .header("x-grpc-web", "1");
+    if let Some(origin) = origin {
+        request = request.header("origin", origin);
+    }
+    let request = request
         .body(Full::new(Bytes::from(grpc_frame)))
         .expect("build grpc-web request");
     let client = Client::builder(TokioExecutor::new()).build_http();
@@ -968,6 +980,7 @@ async fn admission_limit_is_shared_by_grpc_web() {
     let server = start(
         ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0)))
             .with_web_listen_addr(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_web_allowed_origin(http::HeaderValue::from_static("http://localhost:5173"))
             .with_execution_limit(1)
             .with_admission_limit(1),
         dispatcher,
@@ -986,8 +999,12 @@ async fn admission_limit_is_shared_by_grpc_web() {
     });
     started.await;
 
-    let (status, _content_type, body) =
-        execute_grpc_web_raw(web_address, large_search_request()).await;
+    let (status, _content_type, body) = execute_grpc_web_with_origin(
+        web_address,
+        large_search_request(),
+        Some("http://localhost:5173"),
+    )
+    .await;
     assert_eq!(status, 200);
     backend.release();
     let body = String::from_utf8_lossy(&body);
@@ -1102,6 +1119,82 @@ async fn cancelled_execution_waiter_releases_admission_capacity() {
 
     server.shutdown().await.expect("shutdown server");
     index.close().expect("close test index");
+}
+
+#[tokio::test]
+async fn grpc_web_listener_accepts_browser_preflight_and_exposes_responses() {
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let server = start(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_web_listen_addr(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_web_allowed_origin(http::HeaderValue::from_static("http://localhost:5173")),
+        dispatcher,
+    )
+    .await
+    .expect("start browser listener");
+    let address = server.web_tcp_addr().expect("browser address");
+    let request = HttpRequest::builder()
+        .method("OPTIONS")
+        .uri(format!(
+            "http://{address}/searchkernel.rpc.v1.SearchKernel/Execute"
+        ))
+        .header("origin", "http://localhost:5173")
+        .header("access-control-request-method", "POST")
+        .header(
+            "access-control-request-headers",
+            "content-type,x-grpc-web,x-user-agent",
+        )
+        .body(Full::new(Bytes::new()))
+        .expect("browser preflight");
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let response = client.request(request).await.expect("preflight response");
+    assert!(response.status().is_success());
+    assert_eq!(
+        response.headers()["access-control-allow-origin"],
+        "http://localhost:5173"
+    );
+    assert_eq!(response.headers()["access-control-allow-methods"], "POST");
+    let allowed = response.headers()["access-control-allow-headers"]
+        .to_str()
+        .unwrap();
+    for name in ["content-type", "x-grpc-web", "x-user-agent"] {
+        assert!(allowed.contains(name), "preflight must allow {name}");
+    }
+    let unauthorized = HttpRequest::builder()
+        .method("OPTIONS")
+        .uri(format!(
+            "http://{address}/searchkernel.rpc.v1.SearchKernel/Execute"
+        ))
+        .header("origin", "https://untrusted.example")
+        .header("access-control-request-method", "POST")
+        .header(
+            "access-control-request-headers",
+            "content-type,x-grpc-web,x-user-agent",
+        )
+        .body(Full::new(Bytes::new()))
+        .expect("unauthorized browser preflight");
+    let unauthorized = client
+        .request(unauthorized)
+        .await
+        .expect("unauthorized preflight response");
+    assert!(
+        unauthorized
+            .headers()
+            .get("access-control-allow-origin")
+            .is_none(),
+        "unconfigured origins must not receive browser authorization"
+    );
+
+    let (status, _, _) = execute_grpc_web_with_origin(
+        address,
+        describe_request(PROTOCOL_VERSION),
+        Some("http://localhost:5173"),
+    )
+    .await;
+    assert_eq!(status, 200);
+    server.shutdown().await.expect("shutdown browser listener");
+    index.close().expect("close index");
 }
 
 #[tokio::test]

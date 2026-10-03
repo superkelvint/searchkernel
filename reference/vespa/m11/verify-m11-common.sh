@@ -81,6 +81,9 @@ build_m11_driver() {
   unset SK_NATIVE_SDK SK_NATIVE_BASE_SDK
   export CARGO_TARGET_DIR="$M11_CARGO_TARGET"
   export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$M11_SDK/lib"
+  # Exact-head verification must never execute a driver binary left behind by
+  # an earlier revision in the persistent shared Cargo target directory.
+  rm -f "$M11_DRIVER"
   cargo build --quiet -p searchkernel --features native,internal-api,m11-verifier-hardening --example searchkernel-m11-driver
   [[ -x "$M11_DRIVER" ]] || fail_verification "M11 driver was not built: $M11_DRIVER"
   # Native consumer binaries intentionally carry a slash-bearing

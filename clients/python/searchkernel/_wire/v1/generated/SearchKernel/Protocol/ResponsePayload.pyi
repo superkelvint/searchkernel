@@ -13,6 +13,7 @@ from SearchKernel.Wire.Error import Error
 from SearchKernel.Wire.GetResult import GetResult
 from SearchKernel.Wire.InsertResult import InsertResult
 from SearchKernel.Wire.InspectQueryResult import InspectQueryResult
+from SearchKernel.Wire.ListIndexesResult import ListIndexesResult
 from SearchKernel.Wire.OpenIndexResult import OpenIndexResult
 from SearchKernel.Wire.PatchResult import PatchResult
 from SearchKernel.Wire.SearchResult import SearchResult
@@ -39,4 +40,5 @@ class ResponsePayload(object):
   SearchKernel_Wire_CreateIndexResult = cast(int, ...)
   SearchKernel_Wire_OpenIndexResult = cast(int, ...)
   SearchKernel_Wire_DeleteIndexResult = cast(int, ...)
-def ResponsePayloadCreator(union_type: typing.Literal[ResponsePayload.NONE, ResponsePayload.SearchKernel_Wire_InsertResult, ResponsePayload.SearchKernel_Wire_UpsertResult, ResponsePayload.SearchKernel_Wire_PatchResult, ResponsePayload.SearchKernel_Wire_DeleteResult, ResponsePayload.SearchKernel_Wire_GetResult, ResponsePayload.SearchKernel_Wire_SearchResult, ResponsePayload.SearchKernel_Wire_AnalyzeResult, ResponsePayload.SearchKernel_Wire_Error, ResponsePayload.SearchKernel_Wire_DescribeResult, ResponsePayload.SearchKernel_Wire_InspectQueryResult, ResponsePayload.SearchKernel_Wire_UpdateResult, ResponsePayload.SearchKernel_Wire_CreateIndexResult, ResponsePayload.SearchKernel_Wire_OpenIndexResult, ResponsePayload.SearchKernel_Wire_DeleteIndexResult], table: table.Table) -> typing.Union[None, InsertResult, UpsertResult, PatchResult, DeleteResult, GetResult, SearchResult, AnalyzeResult, Error, DescribeResult, InspectQueryResult, UpdateResult, CreateIndexResult, OpenIndexResult, DeleteIndexResult]: ...
+  SearchKernel_Wire_ListIndexesResult = cast(int, ...)
+def ResponsePayloadCreator(union_type: typing.Literal[ResponsePayload.NONE, ResponsePayload.SearchKernel_Wire_InsertResult, ResponsePayload.SearchKernel_Wire_UpsertResult, ResponsePayload.SearchKernel_Wire_PatchResult, ResponsePayload.SearchKernel_Wire_DeleteResult, ResponsePayload.SearchKernel_Wire_GetResult, ResponsePayload.SearchKernel_Wire_SearchResult, ResponsePayload.SearchKernel_Wire_AnalyzeResult, ResponsePayload.SearchKernel_Wire_Error, ResponsePayload.SearchKernel_Wire_DescribeResult, ResponsePayload.SearchKernel_Wire_InspectQueryResult, ResponsePayload.SearchKernel_Wire_UpdateResult, ResponsePayload.SearchKernel_Wire_CreateIndexResult, ResponsePayload.SearchKernel_Wire_OpenIndexResult, ResponsePayload.SearchKernel_Wire_DeleteIndexResult, ResponsePayload.SearchKernel_Wire_ListIndexesResult], table: table.Table) -> typing.Union[None, InsertResult, UpsertResult, PatchResult, DeleteResult, GetResult, SearchResult, AnalyzeResult, Error, DescribeResult, InspectQueryResult, UpdateResult, CreateIndexResult, OpenIndexResult, DeleteIndexResult, ListIndexesResult]: ...
