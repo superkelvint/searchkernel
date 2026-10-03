@@ -25,7 +25,6 @@ export function SearchLab() {
   const [termField, setTermField] = useState(index.fields[0]?.name ?? '')
   const controller = useRef<AbortController | null>(null)
   const sequence = useRef(0)
-  const initial = useRef(true)
   async function execute(request: PreparedSearchRequest) {
     controller.current?.abort()
     const current = ++sequence.current, abort = new AbortController()
@@ -40,12 +39,12 @@ export function SearchLab() {
   // URL is the editor state. A valid saved URL executes once on entry. Navigation
   // reconstructs the editor; it never launches lifecycle/mutation operations.
   useEffect(() => {
-    if (initial.current) {
-      initial.current = false
-      if (!restored.error && prepared.value && (params.has('s') || params.has('q'))) void execute(prepared.value)
-    }
-  }, [prepared, restored.error, params])
-  useEffect(() => () => { ++sequence.current; controller.current?.abort() }, [index.id, index.generation])
+    if (!restored.error && prepared.value && (params.has('s') || params.has('q'))) void execute(prepared.value)
+    return () => { ++sequence.current; controller.current?.abort() }
+    // Entry/index lifetime only: editing or navigating the URL reconstructs
+    // configuration without executing. StrictMode cleanup cancels its observer;
+    // the next setup executes with a fresh signal.
+  }, [client, index.id, index.generation])
   const update = (patch: Partial<ClientSearchRequest>) => setParams(encodeSearchParams(updateSearchState(state, patch)))
   const run = () => { if (!loading && !restored.error && prepared.value) void execute(prepared.value) }
   useEffect(() => {
