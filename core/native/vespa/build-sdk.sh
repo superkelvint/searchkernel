@@ -68,7 +68,6 @@ SANITIZER=${SK_NATIVE_SANITIZER:-none}
 REGENERATE_BINDINGS=${SK_NATIVE_REGENERATE_BINDINGS:-1}
 ADAPTER_ONLY=${SK_NATIVE_ADAPTER_ONLY:-0}
 ADAPTER_SONAME=${SK_NATIVE_ADAPTER_SONAME:-libsearchkernel_vespa.so.2}
-ADAPTER_RPATH_OVERRIDE=${SK_NATIVE_ADAPTER_RPATH:-}
 BASE_ONLY=${SK_NATIVE_BASE_ONLY:-0}
 BASE_SDK=${SK_NATIVE_BASE_SDK:-}
 if [ "$ADAPTER_ONLY" = 1 ] && [ "$BASE_ONLY" = 1 ]; then
@@ -282,9 +281,7 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed 's#-rdynamic##g')
 # Use an old-style RPATH so the SDK's bundled libraries remain discoverable
 # for transitive dependencies when the standalone native library is inspected
 # or loaded without LD_LIBRARY_PATH.  Keep the SDK relocatable.
-if [ -n "$ADAPTER_RPATH_OVERRIDE" ]; then
-    ADAPTER_RPATH=$ADAPTER_RPATH_OVERRIDE
-elif [ "$ADAPTER_ONLY" = 1 ]; then
+if [ "$ADAPTER_ONLY" = 1 ]; then
     ADAPTER_RPATH=$BASE_SDK/lib
 else
     ADAPTER_RPATH='$ORIGIN'
@@ -367,11 +364,7 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
         $PYTHON_BIN "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
     fi
     if command -v patchelf >/dev/null 2>&1; then
-        if [ -n "$ADAPTER_RPATH_OVERRIDE" ]; then
-            patchelf --force-rpath --set-rpath "$ADAPTER_RPATH_OVERRIDE" "$SDK/lib/libsearchkernel_vespa.so.2"
-        else
-            patchelf --force-rpath --set-rpath "$BASE_SDK/lib" "$SDK/lib/libsearchkernel_vespa.so.2"
-        fi
+        patchelf --force-rpath --set-rpath "$BASE_SDK/lib" "$SDK/lib/libsearchkernel_vespa.so.2"
         rm -f "$SDK/lib/libsearchkernel_vespa.so"
         ln "$SDK/lib/libsearchkernel_vespa.so.2" "$SDK/lib/libsearchkernel_vespa.so"
     fi
