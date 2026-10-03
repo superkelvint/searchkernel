@@ -156,7 +156,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W1 real Sear
   const ui = `http://127.0.0.1:${uiPort}`
   let daemon: ChildProcess | undefined, vite: ChildProcess | undefined, browser: Browser | undefined, index: Index | undefined
   try {
-    daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'), ['--data-root', root, '--listen', `127.0.0.1:${grpcPort}`, '--web-listen', `127.0.0.1:${webPort}`], { stdio: 'inherit' })
+    daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'), ['--data-root', root, '--listen', `127.0.0.1:${grpcPort}`, '--web-listen', `127.0.0.1:${webPort}`, '--web-origin', ui], { stdio: 'inherit' })
     await reachable(webEndpoint, daemon)
     const definition = new IndexDefinitionT('workbench_schema', [
       new Text({ stored: true, searchable: true }).definition('title'),
@@ -175,6 +175,8 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W1 real Sear
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(`${ui}/indexes`)
+    try { await page.getByRole('button', { name: 'workbench', exact: true }).waitFor() }
+    catch (error) { console.error('W1 index picker:', await page.locator('body').innerText()); throw error }
     await page.getByRole('button', { name: 'workbench', exact: true }).click()
     await page.getByRole('button', { name: 'Search documents', exact: true }).click()
     await page.getByText('No query executed.', { exact: false }).waitFor()

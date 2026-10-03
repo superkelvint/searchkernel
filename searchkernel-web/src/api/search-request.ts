@@ -30,7 +30,7 @@ export function prepareSearch(request: ClientSearchRequest): PreparedSearchReque
 }
 export function preparedRequest(request: PreparedSearchRequest) {
   const canonical = prepared.get(request)
-  if (!canonical) throw new TypeError('Search request must be prepared by this client')
+  if (!canonical) throw new TypeError('Search request must be prepared by the Search Kernel adapter')
   return canonical
 }
 export function typedTerm(field: string, term: string): string { return JSON.stringify(toCanonicalJson(q.term(field, term)), null, 2) }

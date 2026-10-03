@@ -1,4 +1,4 @@
-import type { Index, ClientSearchRequest, SearchFilter, SearchSort } from '../../api/searchkernel-client'
+import type { Index, ClientSearchRequest, ClientSearchResponse, SearchFilter, SearchSort } from '../../api/searchkernel-client'
 
 export function readSearchParams(params: URLSearchParams, index?: Index): ClientSearchRequest {
   return { query: params.get('q') ?? '', ranking: params.has('ranking') ? params.get('ranking')! : index?.searchDefaults.ranking,
@@ -39,4 +39,11 @@ export function updateSearchState(state: ClientSearchRequest, patch: Partial<Cli
   const next = { ...state, ...patch }
   if (Object.keys(patch).some(key => key !== 'offset')) delete next.offset
   return next
+}
+
+/** Page availability uses returned count metadata, never slices local hits. */
+export function canAdvancePage(state: ClientSearchRequest, response: ClientSearchResponse | null): boolean {
+  if (!response || state.limit === undefined || !Number.isSafeInteger(state.limit) || state.limit <= 0 || !Number.isSafeInteger(state.offset ?? 0) || (state.offset ?? 0) < 0 || !response.hits.length) return false
+  if (response.totalRelation === 'exact' && /^\d+$/.test(String(response.matches))) return BigInt(state.offset ?? 0) + BigInt(state.limit) < BigInt(response.matches)
+  return response.hits.length === state.limit
 }

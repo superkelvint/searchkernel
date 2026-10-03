@@ -1,7 +1,7 @@
 import { prepareSearch, preparedRequest } from './search-request'
 import {
   Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
-  SearchResults, toCanonicalJson, DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
+  SearchResults, ResultDecodeError, ValueDecodeError, toCanonicalJson, DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
   type IndexDefinitionT, type ClientTransport,
 } from '@searchkernel/client'
 import {
@@ -74,7 +74,7 @@ export function daemonError(error: unknown): SearchKernelClientError {
       status: typeof cause.status === 'number' ? cause.status : undefined,
       details: typeof cause.code === 'number' ? { transportCode: cause.code } : undefined })
   }
-  if (error instanceof ProtocolError) return new SearchKernelClientError(error.message, { code: 'protocol_error', origin: 'protocol' })
+  if (error instanceof ProtocolError || error instanceof ResultDecodeError || error instanceof ValueDecodeError) return new SearchKernelClientError(error.message, { code: 'protocol_error', origin: 'protocol' })
   if (error instanceof Error && error.name === 'AbortError') return new SearchKernelClientError(error.message, { code: 'aborted', origin: 'transport' })
   return new SearchKernelClientError(error instanceof Error ? error.message : 'Client request failed', { code: 'client_error', origin: 'client' })
 }

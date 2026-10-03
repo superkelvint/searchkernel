@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { prepareSearch, typedTerm, preparedRequest } from '../../api/search-request'
 import { toCanonicalJson } from '@searchkernel/client'
-import { decodeSearchParams, encodeSearchParams, updateSearchState } from './search-params'
+import { decodeSearchParams, encodeSearchParams, updateSearchState, canAdvancePage } from './search-params'
 import type { ClientSearchRequest } from '../../api/searchkernel-client'
 
 const combination: ClientSearchRequest = { query: 'orchid', mode: 'typed', typedQuery: typedTerm('title', 'orchid'), filters: [{ field: 'quantity', operator: 'gte', value: '7' }, { field: 'quantity', operator: 'in', value: '[7,11]' }], sorts: [{ field: 'quantity', direction: 'desc' }, { field: 'title', direction: 'asc' }], offset: 2, limit: 2, ranking: 'boosted', inputs: '{"boost":2,"large":{"kind_type":"Int64Value","kind":{"value":"9007199254740993"}}}', summary: 'compact' }
@@ -35,6 +35,14 @@ describe('Search Lab reproducible workflow', () => {
   it('resets pagination for every semantic edit and preserves explicit page movement', () => {
     for (const patch of [{ query: 'tulip' }, { typedQuery: typedTerm('title', 'tulip') }, { filters: [] }, { sorts: [] }, { ranking: 'other' }, { inputs: '{}' }, { limit: 10 }, { summary: 'other' }, { mode: 'text' as const }]) expect(updateSearchState(combination, patch).offset).toBeUndefined()
     expect(updateSearchState(combination, { offset: 4 }).offset).toBe(4)
+  })
+  it('uses exact and lower-bound count metadata to expose backend page movement', () => {
+    const response = { request: { query: 'orchid' }, matches: '2', totalRelation: 'exact', hits: [{ document: { id: 'a', fields: {} }, score: '1', rank: 1 }], diagnostics: [] }
+    expect(canAdvancePage({ query: 'orchid', limit: 1 }, response)).toBe(true)
+    expect(canAdvancePage({ query: 'orchid', limit: 1, offset: 1 }, response)).toBe(false)
+    expect(canAdvancePage({ query: 'orchid' }, response)).toBe(false)
+    expect(canAdvancePage({ query: 'orchid', limit: 1, offset: 2 }, { ...response, totalRelation: 'lower_bound' })).toBe(true)
+    expect(canAdvancePage({ query: 'orchid', limit: 1 }, { ...response, hits: [] })).toBe(false)
   })
   it('handles malformed URLs without executing their contents, and retains invalid editor text for correction', () => {
     for (const s of ['bad', '{}', '{"v":2,"state":{}}', '{"v":1,"state":{"query":9}}', '{"v":1,"state":{"query":"","filters":[null]}}', '{"v":1,"state":{"query":"","sorts":[{"field":"x","direction":"sideways"}]}}']) {

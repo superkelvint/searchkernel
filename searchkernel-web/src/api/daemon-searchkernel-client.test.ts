@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { Daemon, Index as RemoteIndex, IndexDefinitionT, Text, SearchKernelError, TransportError, fromCanonicalJson, toCanonicalJson } from '@searchkernel/client'
+import { Daemon, Index as RemoteIndex, IndexDefinitionT, Text, SearchKernelError, TransportError, ResultDecodeError, fromCanonicalJson, toCanonicalJson } from '@searchkernel/client'
 import { createDaemonSearchKernelClient, dashboardValue, daemonError } from './daemon-searchkernel-client'
 
 afterEach(() => vi.restoreAllMocks())
@@ -80,6 +80,8 @@ describe('daemon dashboard boundary', () => {
     await expect(client.getDocument('alpha', 'one')).rejects.toMatchObject({ origin: 'canonical', retryable: false, details: [{ code: 'stale_index_handle' }] })
     await expect(client.getDocument('alpha', 'one')).rejects.toMatchObject({ origin: 'canonical' })
     expect(open).toHaveBeenCalledOnce()
+    expect(daemonError(new ResultDecodeError('missing result metadata'))).toMatchObject({ origin: 'protocol' })
+    expect(daemonError(new TransportError('admission', { status: 503, code: 14 }))).toMatchObject({ origin: 'transport', status: 503, details: { transportCode: 14 } })
     expect(daemonError(new TransportError('offline'))).toMatchObject({ origin: 'transport', retryable: true })
     expect(daemonError(new TransportError('cancelled', undefined, 'aborted'))).toMatchObject({ code: 'aborted', retryable: false })
   })
