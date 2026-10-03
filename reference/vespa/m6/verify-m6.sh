@@ -74,8 +74,20 @@ for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   fi
 
   # This is a separate cargo-run process from compilation. Engine::open must
-  # bootstrap from the generated directory alone.
-  cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m6-driver -- smoke "$scenario" "$cfg" "$data"
+  # bootstrap from the generated directory alone. Keep stderr observable while
+  # also proving that Vespa's optional config lookups do not leak warning spam.
+  smoke_stderr="$TMP/$id-smoke.stderr"
+  if ! cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m6-driver -- \
+      smoke "$scenario" "$cfg" "$data" 2>"$smoke_stderr"; then
+    cat "$smoke_stderr" >&2
+    exit 1
+  fi
+  if grep -Eq "Filename '(imported-fields|onnx-models|ranking-constants|ranking-expressions)\\.cfg' was expected in the spec, but does not exist\\." "$smoke_stderr"; then
+    cat "$smoke_stderr" >&2
+    echo "M6 leaked Vespa missing optional-config warnings for $id" >&2
+    exit 1
+  fi
+  cat "$smoke_stderr" >&2
 done
 
 # The two fixtures intentionally have identical fields but different document

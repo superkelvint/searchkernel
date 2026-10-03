@@ -29,20 +29,6 @@ for path in "$HEADER" "$LIB" "$CONFIG" "$MANIFEST"; do
     fi
 done
 
-# Proton requests these configs even when the corresponding feature is unused.
-# Keep explicit empty placeholders in the packaged config bundle so Vespa does
-# not flood verifier logs with benign filesourcefactory warnings.
-for config_name in \
-    imported-fields.cfg \
-    onnx-models.cfg \
-    ranking-constants.cfg \
-    ranking-expressions.cfg; do
-    if [ ! -f "$CONFIG/$config_name" ]; then
-        echo "M0 missing required config placeholder: $CONFIG/$config_name" >&2
-        exit 1
-    fi
-done
-
 require_sdk_manifest "$MANIFEST"
 
 if ldd "$LIB" | grep -q 'not found'; then
@@ -58,8 +44,18 @@ cc -std=c11 -Wall -Wextra -Werror \
     -Wl,-rpath,"$SDK/lib" \
     -o "$TARGET/probe"
 
-LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    "$TARGET/probe" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json"
+PROBE_STDERR="$TARGET/probe.stderr"
+if ! LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$TARGET/probe" "$TARGET/data" "$CONFIG" > "$TARGET/actual.json" 2>"$PROBE_STDERR"; then
+    cat "$PROBE_STDERR" >&2
+    exit 1
+fi
+if grep -Eq "Filename '(imported-fields|onnx-models|ranking-constants|ranking-expressions)\\.cfg' was expected in the spec, but does not exist\\." "$PROBE_STDERR"; then
+    cat "$PROBE_STDERR" >&2
+    echo "M0 leaked Vespa missing optional-config warnings" >&2
+    exit 1
+fi
+cat "$PROBE_STDERR" >&2
 
 python3 "$ROOT/common/compare_json.py" \
     "$ROOT/m0/expected/01-native-open-close.json" \
