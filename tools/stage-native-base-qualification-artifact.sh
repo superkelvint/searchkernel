@@ -81,22 +81,22 @@ ARCHIVE="$OUTPUT/$ASSET"
 )
 sha256sum "$ARCHIVE" >"$ARCHIVE.sha256"
 
-"$PYTHON_BIN" - "$OUTPUT/manifest.json" "$ASSET" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" "$GENERATION" "$ARCHIVE" <<'PY'
-import hashlib
+ARCHIVE_SHA=$(sha256sum "$ARCHIVE" | awk '{print $1}')
+ARCHIVE_BYTES=$(stat -c '%s' "$ARCHIVE")
+"$PYTHON_BIN" - "$OUTPUT/manifest.json" "$ASSET" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" "$GENERATION" "$ARCHIVE_SHA" "$ARCHIVE_BYTES" <<'PY'
 import json
 import pathlib
 import sys
 
-out, asset, build_env, target, commit, generation, archive = sys.argv[1:]
-path = pathlib.Path(archive)
+out, asset, build_env, target, commit, generation, archive_sha, archive_bytes = sys.argv[1:]
 payload = {
     "artifact": asset,
     "build_environment": build_env,
     "native_target": target,
     "vespa_commit": commit,
     "artifact_generation": int(generation),
-    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-    "bytes": path.stat().st_size,
+    "sha256": archive_sha,
+    "bytes": int(archive_bytes),
 }
 pathlib.Path(out).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
