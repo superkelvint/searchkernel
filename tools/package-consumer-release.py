@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import mmap
 import os
 import shutil
 import subprocess
@@ -263,22 +264,23 @@ def make_runtime_adapter_relocatable(adapter: Path) -> None:
             f"{rpaths[0]!r} is shorter than $ORIGIN"
         )
 
-    payload = adapter.read_bytes()
     needle = original + b"\0"
-    offsets: list[int] = []
-    offset = payload.find(needle)
-    while offset >= 0:
-        offsets.append(offset)
-        offset = payload.find(needle, offset + 1)
-    if len(offsets) != 1:
-        raise RuntimeError(
-            "expected the adapter RPATH string to appear exactly once in the ELF; "
-            f"found {len(offsets)} occurrences of {rpaths[0]!r}"
-        )
-
     padded = replacement + b"\0" * (len(needle) - len(replacement))
-    offset = offsets[0]
-    adapter.write_bytes(payload[:offset] + padded + payload[offset + len(needle) :])
+    with adapter.open("r+b") as stream:
+        with mmap.mmap(stream.fileno(), 0) as image:
+            offsets: list[int] = []
+            offset = image.find(needle)
+            while offset >= 0:
+                offsets.append(offset)
+                offset = image.find(needle, offset + 1)
+            if len(offsets) != 1:
+                raise RuntimeError(
+                    "expected the adapter RPATH string to appear exactly once in the ELF; "
+                    f"found {len(offsets)} occurrences of {rpaths[0]!r}"
+                )
+            offset = offsets[0]
+            image[offset : offset + len(needle)] = padded
+            image.flush()
 
 
 def verify_runtime_adapter_relocatable(adapter: Path) -> None:
