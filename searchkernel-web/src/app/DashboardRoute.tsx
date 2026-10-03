@@ -21,7 +21,7 @@ export function DashboardRoute({page}:{page: PageName}) {
   const capabilities = useCapabilities()
   const workspace = tabFor(page)
   const navigation = navigationFor(capabilities.capabilities)
-  const { data: index, isLoading, isFetching, error, refetch } = useQuery({ queryKey: ['index', indexId], queryFn: clientQuery(signal => client.getIndex(indexId!, { signal })), ...clientQueryDefaults, staleTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: false, enabled: Boolean(workspace && indexId) })
+  const { data: index, isLoading, error, refetch } = useQuery({ queryKey: ['index', indexId], queryFn: clientQuery(signal => client.getIndex(indexId!, { signal })), ...clientQueryDefaults, refetchOnWindowFocus: false, enabled: Boolean(workspace && indexId) })
   const { data: summary, error: summaryError, refetch: refetchSummary } = useQuery({ queryKey: ['index-summary', indexId], queryFn: clientQuery(async () => (await adminClient.getIndexSummary(indexId!)) ?? null), ...clientQueryDefaults, enabled: Boolean(workspace && indexId && capabilities.capabilities?.admin.overview) })
   const navigate: Nav = (next, targetIndexId = indexId) => { routerNavigate(pagePath(next, targetIndexId)); setMobileNav(false) }
   useEffect(() => {
@@ -29,7 +29,7 @@ export function DashboardRoute({page}:{page: PageName}) {
     addEventListener('keydown', shortcut)
     return () => removeEventListener('keydown', shortcut)
   }, [])
-  if (workspace && (isLoading || isFetching)) return <Loading />
+  if (workspace && isLoading) return <Loading />
   if (workspace && error) return <div className="mx-auto max-w-xl p-6"><QueryErrorPanel error={error} retry={() => { void refetch() }} /></div>
   if (workspace && !index) return <NotFound/>
   const currentNavigation = workspace && (navigation.tabs.find(item => item.page === page) ?? navigation.sections[workspace].find(item => item.page === page))
