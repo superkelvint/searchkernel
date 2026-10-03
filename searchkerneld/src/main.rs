@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod native_main {
     use std::{env, error::Error, path::PathBuf, sync::Arc};
 
+    use http::HeaderValue;
     use searchkernel::Index;
     use searchkernel_dispatch::Dispatcher;
     use searchkernel_ir::validate_index_target;
@@ -52,6 +53,7 @@ mod native_main {
         let mut definition_json_path = None;
         let mut listen = None;
         let mut web_listen = None;
+        let mut web_origins = Vec::new();
         let mut execution_limit = None;
         let mut admission_limit = None;
 
@@ -121,6 +123,14 @@ mod native_main {
                 }
                 "--web-listen" => {
                     web_listen = Some(args.next().ok_or("--web-listen requires an address")?);
+                }
+                "--web-origin" => {
+                    web_origins.push(
+                        args.next()
+                            .ok_or("--web-origin requires an exact browser origin")?
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
                 }
                 value => return Err(format!("unknown argument {value}").into()),
             }
@@ -203,6 +213,13 @@ mod native_main {
                 Err(error) => return Err(ServerError::Environment(error).into()),
             },
         };
+        if web_origins.is_empty() {
+            match env::var("SEARCHKERNEL_GRPC_WEB_ORIGIN") {
+                Ok(value) => web_origins.push(value),
+                Err(env::VarError::NotPresent) => {}
+                Err(error) => return Err(ServerError::Environment(error).into()),
+            }
+        }
         let execution_limit = match execution_limit {
             Some(value) => value,
             None => match env::var("SEARCHKERNEL_EXECUTION_LIMIT") {
@@ -220,11 +237,19 @@ mod native_main {
             },
         };
 
-        let server = if let Some(web_listen_addr) = web_listen_addr {
+        let mut server = if let Some(web_listen_addr) = web_listen_addr {
             server.with_web_listen_addr(web_listen_addr)
         } else {
             server
         };
+        for origin in web_origins {
+            let origin = HeaderValue::from_str(&origin)
+                .map_err(|_| format!("invalid --web-origin value {origin:?}"))?;
+            if origin.as_bytes() == b"*" {
+                return Err("--web-origin does not accept wildcard origins".into());
+            }
+            server = server.with_web_allowed_origin(origin);
+        }
 
         Ok(Config {
             mode,
