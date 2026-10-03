@@ -358,6 +358,9 @@ class ConsumerReleaseTests(unittest.TestCase):
                 self.assertIn(
                     "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs", names
                 )
+                self.assertIn(
+                    "reference/client-real-e2e-parity/corpus.json", names
+                )
                 self.assertNotIn("tools/resolve-native-sdk.sh", names)
 
     def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
