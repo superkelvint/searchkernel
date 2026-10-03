@@ -55,7 +55,10 @@ export function fromCanonicalJson(table: string, input: unknown, path = table): 
     const tables = alternatives.filter(t => t.endsWith('T'));
     if (tables.length) {
       const discriminatorField = S.SEMANTIC_UNION_FIELDS[table]?.[field];
-      if (!discriminatorField) throw new TypeError(`${at}: missing generated union discriminator metadata`);
+      if (!discriminatorField) {
+        if (tables.length !== 1) throw new TypeError(`${at}: missing generated union discriminator metadata`);
+        return fromCanonicalJson(tables[0]!.slice(0, -1), item, at);
+      }
       const discriminatorSpec = specs[discriminatorField];
       if (!discriminatorSpec) throw new TypeError(`${at}: invalid generated union discriminator metadata`);
       const discriminator = object[discriminatorSpec.name];
