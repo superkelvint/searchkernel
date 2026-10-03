@@ -648,7 +648,7 @@ universe() {
                     UNIVERSE_FAILED_REPRO+=("./dev verify $target --skip-workspace-quality")
                 fi
                 ;;
-            vespa.hardening|vespa.hardening.core|vespa.hardening.stress|vespa.hardening.sanitizers)
+            vespa.hardening|vespa.hardening.core|vespa.hardening.stress|vespa.hardening.sanitizers|vespa.hardening.tsan)
                 if ((m14_baseline_proved)); then
                     # M14's cumulative chain ran M11 and all three hardening
                     # components. Do not execute those same scripts again.
