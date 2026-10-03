@@ -1158,6 +1158,18 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
     use std::os::fd::AsRawFd;
 
     let temp = TempDir::new("per-target-transition");
+    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
+
+    // Put the unrelated target in memory before blocking products. The
+    // concurrency assertion below must measure lock isolation, not the
+    // variable wall-clock cost of starting another native Vespa index.
+    assert_lifecycle(
+        &registry
+            .dispatch(&create_request("articles", "body"))
+            .expect("create articles"),
+        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+    );
+
     let lock_path = temp.0.join(".products.searchkernel.lock");
     let lock_file = fs::OpenOptions::new()
         .create(true)
@@ -1172,7 +1184,6 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
         "acquire external lifecycle lock"
     );
 
-    let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
     let blocked_registry = registry.clone();
     let blocked = thread::spawn(move || {
         blocked_registry
@@ -1187,21 +1198,22 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let independent_registry = registry.clone();
     let independent = thread::spawn(move || {
+        // Opening an already-loaded sibling is deliberately cheap. This makes
+        // the timeout a lock-isolation assertion instead of a native-startup
+        // performance assertion. If the blocked products transition retained a
+        // daemon-wide registry lock, this cannot complete until products is
+        // released below.
         let response = independent_registry
-            .dispatch(&create_request("articles", "body"))
-            .expect("independent articles create");
+            .dispatch(&open_request(Some("articles")))
+            .expect("independent articles open");
         sender.send(response).expect("send independent response");
     });
-    // Native index creation can contend with the rest of this real-engine suite.
-    // Keep enough headroom for a slow but independent target. A daemon-wide
-    // registry lock still fails deterministically because the products lifecycle
-    // lock remains held until this unrelated request completes.
     let articles = receiver
-        .recv_timeout(std::time::Duration::from_secs(10))
+        .recv_timeout(std::time::Duration::from_secs(5))
         .expect("unrelated target lifecycle must not wait for products");
     assert_lifecycle(
         &articles,
-        wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
     );
 
     assert_eq!(
@@ -1213,7 +1225,7 @@ fn blocked_lifecycle_transition_does_not_stall_other_targets() {
         &blocked.join().expect("join blocked creator"),
         wire::ResponsePayload::SearchKernel_Wire_CreateIndexResult,
     );
-    independent.join().expect("join independent creator");
+    independent.join().expect("join independent opener");
     registry.close_all().expect("close registry");
 }
 
