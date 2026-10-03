@@ -808,7 +808,7 @@ test_target() {
             run_ruby_tests
             ;;
         searchkerneld-multi-index)
-            "$CARGO" test -p searchkerneld --features native --test multi_index --test process_shutdown --test grpc
+            "$CARGO" test -p searchkerneld --features native --lib --test multi_index --test process_shutdown --test grpc
             ;;
         *)
             echo "registry error: test target '$target' has no dispatcher" >&2
