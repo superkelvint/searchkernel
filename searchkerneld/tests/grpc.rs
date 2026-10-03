@@ -521,13 +521,6 @@ async fn execute_grpc_web_with_origin(
         .expect("build grpc-web request");
     let client = Client::builder(TokioExecutor::new()).build_http();
     let response = client.request(request).await.expect("grpc-web request");
-    if origin.is_some() {
-        assert_eq!(response.headers()["access-control-allow-origin"], "*");
-        assert!(response.headers()["access-control-expose-headers"]
-            .to_str()
-            .unwrap()
-            .contains("grpc-status"));
-    }
     let status = response.status().as_u16();
     let content_type = response
         .headers()
@@ -1133,7 +1126,8 @@ async fn grpc_web_listener_accepts_browser_preflight_and_exposes_responses() {
     let (index, dispatcher) = dispatcher(backend);
     let server = start(
         ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0)))
-            .with_web_listen_addr(SocketAddr::from(([127, 0, 0, 1], 0))),
+            .with_web_listen_addr(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_web_allowed_origin(http::HeaderValue::from_static("http://localhost:5173")),
         dispatcher,
     )
     .await
@@ -1155,7 +1149,10 @@ async fn grpc_web_listener_accepts_browser_preflight_and_exposes_responses() {
     let client = Client::builder(TokioExecutor::new()).build_http();
     let response = client.request(request).await.expect("preflight response");
     assert!(response.status().is_success());
-    assert_eq!(response.headers()["access-control-allow-origin"], "*");
+    assert_eq!(
+        response.headers()["access-control-allow-origin"],
+        "http://localhost:5173"
+    );
     assert_eq!(response.headers()["access-control-allow-methods"], "POST");
     let allowed = response.headers()["access-control-allow-headers"]
         .to_str()
@@ -1163,6 +1160,28 @@ async fn grpc_web_listener_accepts_browser_preflight_and_exposes_responses() {
     for name in ["content-type", "x-grpc-web", "x-user-agent"] {
         assert!(allowed.contains(name), "preflight must allow {name}");
     }
+    let unauthorized = HttpRequest::builder()
+        .method("OPTIONS")
+        .uri(format!(
+            "http://{address}/searchkernel.rpc.v1.SearchKernel/Execute"
+        ))
+        .header("origin", "https://untrusted.example")
+        .header("access-control-request-method", "POST")
+        .header(
+            "access-control-request-headers",
+            "content-type,x-grpc-web,x-user-agent",
+        )
+        .body(Full::new(Bytes::new()))
+        .expect("unauthorized browser preflight");
+    let unauthorized = client
+        .request(unauthorized)
+        .await
+        .expect("unauthorized preflight response");
+    assert!(
+        unauthorized.headers().get("access-control-allow-origin").is_none(),
+        "unconfigured origins must not receive browser authorization"
+    );
+
     let (status, _, _) = execute_grpc_web_with_origin(
         address,
         describe_request(PROTOCOL_VERSION),
