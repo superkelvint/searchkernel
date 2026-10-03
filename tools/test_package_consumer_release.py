@@ -164,20 +164,40 @@ class ConsumerReleaseTests(unittest.TestCase):
         relocate = packager.index("make_runtime_adapter_relocatable(staged_adapter)")
         self.assertLess(build, relocate)
 
-    def test_release_adapter_relocation_uses_origin_only(self) -> None:
-        adapter = Path("/tmp/libsearchkernel_vespa.so.2")
-        with mock.patch.object(MODULE.subprocess, "run") as run:
-            MODULE.make_runtime_adapter_relocatable(adapter)
-        run.assert_called_once_with(
-            [
-                "patchelf",
-                "--force-rpath",
-                "--set-rpath",
-                "$ORIGIN",
-                str(adapter),
-            ],
-            check=True,
-        )
+    def test_release_adapter_relocation_rewrites_dynamic_string_in_place(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            adapter = Path(raw) / "libsearchkernel_vespa.so.2"
+            original = "/opt/searchkernel/native-sdk-cache/ci/base/lib"
+            adapter.write_bytes(b"prefix\0" + original.encode() + b"\0suffix")
+            readelf = (
+                " 0x000000000000000f (RPATH)              "
+                f"Library rpath: [{original}]\n"
+            )
+            with mock.patch.object(
+                MODULE.subprocess, "check_output", return_value=readelf
+            ):
+                MODULE.make_runtime_adapter_relocatable(adapter)
+            payload = adapter.read_bytes()
+            self.assertIn(b"$ORIGIN\0", payload)
+            self.assertNotIn(original.encode(), payload)
+            self.assertEqual(len(payload), len(b"prefix\0" + original.encode() + b"\0suffix"))
+
+    def test_release_adapter_relocation_rejects_ambiguous_dynamic_string(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            adapter = Path(raw) / "libsearchkernel_vespa.so.2"
+            original = "/opt/searchkernel/native-sdk-cache/ci/base/lib"
+            adapter.write_bytes(
+                original.encode() + b"\0middle\0" + original.encode() + b"\0"
+            )
+            readelf = (
+                " 0x000000000000000f (RPATH)              "
+                f"Library rpath: [{original}]\n"
+            )
+            with mock.patch.object(
+                MODULE.subprocess, "check_output", return_value=readelf
+            ):
+                with self.assertRaisesRegex(RuntimeError, "appear exactly once"):
+                    MODULE.make_runtime_adapter_relocatable(adapter)
 
     def test_runtime_probe_requires_application_level_argument_error(self) -> None:
         launcher = Path("/tmp/packaged-searchkerneld")
