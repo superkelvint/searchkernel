@@ -6,8 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { createServer, createConnection } from 'node:net'
-import { Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client'
-import { NodeGrpcTransport } from '../../clients/typescript/src/transport/grpc-node'
+import { Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client/node'
 
 async function port() {
   const server = createServer()
@@ -42,14 +41,18 @@ async function reachable(endpoint: string, process: ChildProcess) {
 test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser discovery/open/search/documents survive restart and reject reincarnation', async () => {
   const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-web-e2e-'))
   const grpcPort = await port(), webPort = await port(), uiPort = await port()
-  const endpoint = `http://127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`
+  const endpoint = `127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`
   let daemon: ChildProcess | undefined, vite: ChildProcess | undefined, browser: Browser | undefined
-  const transports: NodeGrpcTransport[] = []
-  const transport = () => { const value = new NodeGrpcTransport(endpoint); transports.push(value); return value }
+  const handles: Index[] = []
   const definition = () => new IndexDefinitionT('document_schema', [
     new Text({ stored: true, searchable: true }).definition('title'),
     new Integer({ stored: true }).definition('quantity'),
   ])
+  async function create(target: string) {
+    const index = await Index.create(endpoint, target, definition())
+    handles.push(index)
+    return index
+  }
   async function start() {
     daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'),
       ['--data-root', root, '--listen', `127.0.0.1:${grpcPort}`, '--web-listen', `127.0.0.1:${webPort}`], { stdio: 'inherit' })
@@ -57,11 +60,12 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
   }
   try {
     await start()
-    const alpha = await Index.create(endpoint, 'alpha', definition(), transport())
-    const beta = await Index.create(endpoint, 'beta', definition(), transport())
+    const alpha = await create('alpha')
+    const beta = await create('beta')
     await alpha.upsert('one', { title: 'orchid blue', quantity: 7 })
     await alpha.upsert('two', { title: 'tulip red', quantity: 11 })
     await beta.upsert('sibling', { title: 'orchid sibling', quantity: 42 })
+    await Promise.all(handles.map(index => index.close()))
     await stop(daemon)
     await start() // Neither durable target has been opened in this incarnation.
     vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(uiPort)], {
@@ -108,8 +112,8 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
     expect(observed.search.hits[0].document.id).toBe('one')
     expect(observed.search.resolved).toBeUndefined()
 
-    await Index.delete(endpoint, 'alpha', transport())
-    const replacement = await Index.create(endpoint, 'alpha', definition(), transport())
+    await Index.delete(endpoint, 'alpha')
+    const replacement = await create('alpha')
     await replacement.upsert('one', { title: 'replacement incarnation', quantity: 99 })
     const stale = await page.evaluate(async () => {
       try { await (window as any).testAdapter.getDocument('alpha', 'one'); return null }
@@ -117,12 +121,13 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
     })
     expect(stale).toMatchObject({ code: 'failed_precondition', retryable: false, origin: 'canonical' })
     expect(JSON.stringify(stale?.details)).toContain('stale_index_handle')
-    const sibling = await Index.open(endpoint, 'beta', transport())
+    const sibling = await Index.open(endpoint, 'beta')
+    handles.push(sibling)
     expect((await sibling.get('sibling'))?.title).toBe('orchid sibling')
   } finally {
     await browser?.close()
     await stop(vite)
-    transports.forEach(value => value.close())
+    await Promise.all(handles.map(index => index.close()))
     await stop(daemon)
     await rm(root, { recursive: true, force: true })
   }
