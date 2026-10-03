@@ -1,3 +1,4 @@
+import { FilterExprT, FilterExprKind, FilterComparisonT, FilterExistsT, FilterInT, QueryFieldRefT, ComparisonOp } from "../semantic.js";
 import { ArithmeticUpdateT } from "../semantic.js";
 import { ArithmeticUpdateOperator } from "../semantic.js";
 import { AssignUpdateT } from "../semantic.js";
@@ -60,8 +61,8 @@ interface FacetSpec {
 // one, so textual-only requests need a packer that omits those fields on the
 // wire.
 class TextualFilterRequest extends FilterRequestT {
-  constructor(textual: FilterClauseT[]) {
-    super([], [], [], textual);
+  constructor(textual: FilterClauseT[], structured: FilterExprT[] = []) {
+    super(structured, [], [], textual);
     (this as any)._textualOnly = true;
   }
 }
@@ -72,8 +73,9 @@ export interface FacetOptions {
   sort?: FacetSort;
 }
 
-export class SearchBuilder {
+export class SearchRequestBuilder {
   protected readonly filters: Array<[string, Record<string, ValueInput>]> = [];
+  protected readonly structuredFilters: FilterExprT[] = [];
   protected selectedFields?: string[];
   protected limitValue?: number;
   protected offsetValue?: number;
@@ -88,10 +90,25 @@ export class SearchBuilder {
   protected readonly rankProperties = new Map<string, string>();
   protected readonly properties = new Map<string, ValueInput>();
 
-  constructor(protected readonly index: Index, protected readonly queryValue: unknown) {}
+  constructor(protected readonly queryValue: unknown) {}
 
   filter(source: string, bindings: Record<string, ValueInput> = {}): this {
     this.filters.push([source, { ...bindings }]);
+    return this;
+  }
+
+  /** Structured canonical predicates; field/type validation belongs to IR. */
+  filterField(field: string, operator: "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "in" | "exists", item?: ValueInput): this {
+    const ref = new QueryFieldRefT(field);
+    if (operator === "exists") this.structuredFilters.push(new FilterExprT(FilterExprKind.FilterExists, new FilterExistsT(ref)));
+    else if (operator === "in") {
+      if (!Array.isArray(item)) throw new TypeError("in filter requires an array");
+      this.structuredFilters.push(new FilterExprT(FilterExprKind.FilterIn, new FilterInT(ref, item.map(value))));
+    } else {
+      const operations = { eq: ComparisonOp.Eq, ne: ComparisonOp.Ne, lt: ComparisonOp.Lt, lte: ComparisonOp.Lte, gt: ComparisonOp.Gt, gte: ComparisonOp.Gte };
+      if (!(operator in operations) || item === undefined) throw new TypeError("comparison filter requires an operator and value");
+      this.structuredFilters.push(new FilterExprT(FilterExprKind.FilterComparison, new FilterComparisonT(ref, operations[operator], value(item))));
+    }
     return this;
   }
 
@@ -196,7 +213,7 @@ export class SearchBuilder {
         ? new QuerySourceT(QuerySourceKind.SearchKernelTextQuery, new SearchKernelTextQueryT(this.queryValue))
         : this.queryValue as QuerySourceT;
 
-    const filters = this.filters.length
+    const filters = this.filters.length || this.structuredFilters.length
       ? new TextualFilterRequest(
           this.filters.map(
             ([source, bindings]) => new FilterClauseT(
@@ -206,6 +223,7 @@ export class SearchBuilder {
                 .map((name) => new ValueEntryT(name, value(bindings[name]!))),
             ),
           ),
+          this.structuredFilters,
         )
       : null;
 
@@ -253,6 +271,12 @@ export class SearchBuilder {
         .map(([key, item]) => new ValueEntryT(key, value(item))),
     );
   }
+
+}
+
+/** Executes the same request returned by build(), using a generation-bound index. */
+export class SearchBuilder extends SearchRequestBuilder {
+  constructor(protected readonly index: Index, queryValue: unknown) { super(queryValue); }
 
   async execute(options?: ExecuteOptions): Promise<SearchResults> {
     const result = new SearchResults(await this.index.client.search(this.build(), options));

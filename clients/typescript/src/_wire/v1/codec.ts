@@ -140,7 +140,7 @@ function toGenerated(value: any): any {
   if (value instanceof Uint8Array) return value;
   if (isSemanticTable(value)) {
     if (value._schemaName === "FilterRequest" && (value as any)._textualOnly === true) {
-      return new TextualFilterRequest((value as any).textual.map(toGenerated) as WireFilterClauseT[]);
+      return new TextualFilterRequest((value as any).textual.map(toGenerated) as WireFilterClauseT[], (value as any).structured.map(toGenerated));
     }
     const constructor = (Wire as any)[`${value._schemaName}T`];
     if (typeof constructor !== "function") throw new ProtocolError(`unsupported semantic table ${value._schemaName}`);
@@ -162,8 +162,8 @@ function toGenerated(value: any): any {
 }
 
 class TextualFilterRequest extends FilterRequestT {
-  constructor(textual: WireFilterClauseT[]) {
-    super([], [], [], textual);
+  constructor(textual: WireFilterClauseT[], structured: Wire.FilterExprT[] = []) {
+    super(structured, [], [], textual);
   }
 
   override pack(builder: Builder): Offset {
@@ -171,7 +171,9 @@ class TextualFilterRequest extends FilterRequestT {
       builder,
       builder.createObjectOffsetList(this.textual),
     );
+    const structured = this.structured.length ? FilterRequest.createStructuredVector(builder, builder.createObjectOffsetList(this.structured)) : 0;
     FilterRequest.startFilterRequest(builder);
+    if (structured) FilterRequest.addStructured(builder, structured);
     FilterRequest.addTextual(builder, textual);
     return FilterRequest.endFilterRequest(builder);
   }

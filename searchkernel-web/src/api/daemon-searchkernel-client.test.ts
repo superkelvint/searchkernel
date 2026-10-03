@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { Daemon, Index as RemoteIndex, IndexDefinitionT, Text, SearchKernelError, TransportError } from '@searchkernel/client'
+import { Daemon, Index as RemoteIndex, IndexDefinitionT, Text, SearchKernelError, TransportError, ResultDecodeError, fromCanonicalJson, toCanonicalJson } from '@searchkernel/client'
 import { createDaemonSearchKernelClient, dashboardValue, daemonError } from './daemon-searchkernel-client'
 
 afterEach(() => vi.restoreAllMocks())
@@ -52,30 +52,27 @@ describe('daemon dashboard boundary', () => {
     expect(index?.fields[1]).toMatchObject({ stored: undefined, searchable: undefined, attribute: undefined })
   })
   it('passes explicit controls and cancellation and leaves omitted defaults absent', async () => {
-    const execute = vi.fn().mockResolvedValue({ totalHits: 1n, hits: [{ id: 'one', fields: { title: 'orchid' }, score: 0.75 }], issues: [], coverage: null, timing: null })
-    const builder = { limit: vi.fn(), ranking: vi.fn(), summary: vi.fn(), execute }
-    const search = vi.fn(() => builder), browse = vi.fn(() => builder)
-    vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT(), search, browse } as unknown as RemoteIndex)
+    const raw = fromCanonicalJson('SearchResult', { root: { node_type: 'ResultGroup', node: { children: [{ node_type: 'Hit', node: { id: 'one', relevance: { value_type: 'FiniteRelevance', value: { value: 0.75 } } } }] } }, total_hits: { value: '1', relation: 'Exact' } })
+    const search = vi.fn().mockResolvedValue(raw)
+    vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT(), client: { search } } as unknown as RemoteIndex)
     const client = createDaemonSearchKernelClient('http://daemon')
     const signal = new AbortController().signal
-    const result = await client.search('alpha', { query: 'orchid', ranking: 'custom', summary: 'compact', limit: 3 }, { signal })
-    expect(builder.ranking).toHaveBeenCalledWith('custom')
-    expect(builder.summary).toHaveBeenCalledWith('compact')
-    expect(builder.limit).toHaveBeenCalledWith(3)
-    expect(execute).toHaveBeenCalledWith({ signal })
-    expect(result).toMatchObject({ matches: '1', hits: [{ document: { id: 'one' }, score: '0.75' }] })
+    const prepared = client.prepareSearch({ query: 'orchid', ranking: 'custom', summary: 'compact', limit: 3, offset: 2, filters: [{ field: 'quantity', operator: 'gte', value: '7' }], sorts: [{ field: 'quantity', direction: 'desc' }], inputs: '{"boost":2.5}' })
+    const result = await client.executeSearch('alpha', prepared, { signal })
+    const sent = search.mock.calls[0][0]
+    expect(JSON.stringify(toCanonicalJson(sent), null, 2)).toBe(prepared.canonical)
+    expect(search.mock.calls[0][1]).toEqual({ signal })
+    expect(toCanonicalJson(sent)).toMatchObject({ ranking: { profile: 'custom' }, limit: { value: 3 }, offset: { value: 2 }, presentation: { summary: 'compact' }, filters: { structured: expect.any(Array) } })
+    expect(result).toMatchObject({ matches: '1', hits: [{ document: { id: 'one' }, score: '0.75' }], canonicalResponse: JSON.stringify(toCanonicalJson(raw), null, 2) })
     expect(result.resolved).toBeUndefined()
     expect(result.analysis).toBeUndefined()
     expect(result.timingMs).toBeUndefined()
-    vi.clearAllMocks()
     await client.search('alpha', { query: '' })
-    expect(browse).toHaveBeenCalledOnce()
-    expect(builder.ranking).not.toHaveBeenCalled()
-    expect(builder.summary).not.toHaveBeenCalled()
-    expect(builder.limit).not.toHaveBeenCalled()
+    expect(toCanonicalJson(search.mock.calls[1][0])).toMatchObject({ query: { source_type: 'MatchAllQuery' } })
+    expect((toCanonicalJson(search.mock.calls[1][0]) as any).ranking).toBeUndefined()
   })
   it('keeps stale errors structured and never silently reopens', async () => {
-    const error = Object.assign(new SearchKernelError('stale'), { error: { code: 5, message: 'stale', retryable: false, details: [{ code: 'stale_index_handle', metadata: [] }] } })
+    const error = new SearchKernelError('stale', fromCanonicalJson('Error', { code: 'FailedPrecondition', message: 'stale', retryable: false, details: [{ code: 'stale_index_handle', path: 'target.generation', metadata: [{ key: 'target', value: 'alpha' }] }] }) as NonNullable<ConstructorParameters<typeof SearchKernelError>[1]>)
     const get = vi.fn().mockRejectedValue(error)
     const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT(), get } as unknown as RemoteIndex)
     const client = createDaemonSearchKernelClient('http://daemon')
@@ -83,6 +80,9 @@ describe('daemon dashboard boundary', () => {
     await expect(client.getDocument('alpha', 'one')).rejects.toMatchObject({ origin: 'canonical', retryable: false, details: [{ code: 'stale_index_handle' }] })
     await expect(client.getDocument('alpha', 'one')).rejects.toMatchObject({ origin: 'canonical' })
     expect(open).toHaveBeenCalledOnce()
+    expect(daemonError(error).details).toEqual([{ code: 'stale_index_handle', path: 'target.generation', metadata: [{ key: 'target', value: 'alpha' }] }])
+    expect(daemonError(new ResultDecodeError('missing result metadata'))).toMatchObject({ origin: 'protocol' })
+    expect(daemonError(new TransportError('admission', { status: 503, code: 14 }))).toMatchObject({ origin: 'transport', status: 503, details: { transportCode: 14 } })
     expect(daemonError(new TransportError('offline'))).toMatchObject({ origin: 'transport', retryable: true })
     expect(daemonError(new TransportError('cancelled', undefined, 'aborted'))).toMatchObject({ code: 'aborted', retryable: false })
   })
