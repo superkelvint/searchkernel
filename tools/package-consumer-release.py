@@ -180,8 +180,6 @@ def build_release_daemon(target: Path) -> tuple[Path, Path]:
         messages_path = Path(messages.name)
     try:
         with messages_path.open("w", encoding="utf-8") as output:
-            release_env = os.environ.copy()
-            release_env["SK_NATIVE_ADAPTER_RPATH"] = "$ORIGIN"
             subprocess.run(
                 [
                     "cargo",
@@ -194,7 +192,6 @@ def build_release_daemon(target: Path) -> tuple[Path, Path]:
                     "--message-format=json-render-diagnostics",
                 ],
                 cwd=ROOT,
-                env=release_env,
                 check=True,
                 stdout=output,
             )
@@ -241,6 +238,12 @@ def clean_runtime_env() -> dict[str, str]:
 
 RUNTIME_PROBE_ARGUMENT = "--searchkernel-runtime-probe"
 
+
+def make_runtime_adapter_relocatable(adapter: Path) -> None:
+    subprocess.run(
+        ["patchelf", "--force-rpath", "--set-rpath", "$ORIGIN", str(adapter)],
+        check=True,
+    )
 
 def verify_runtime_adapter_relocatable(adapter: Path) -> None:
     dynamic = subprocess.check_output(["readelf", "-d", str(adapter)], text=True)
@@ -290,10 +293,13 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[s
         adapter_lib / "libsearchkernel_vespa.so.2",
         libdir / "libsearchkernel_vespa.so.2",
     )
-    # Release builds request a package-relative adapter RPATH at build time.
-    # Prove that no producer/native-cache path leaked into the staged ELF before
-    # deriving or validating its runtime closure.
-    verify_runtime_adapter_relocatable(libdir / "libsearchkernel_vespa.so.2")
+    # Cargo must link against the canonical native base before the runtime
+    # closure has been staged. Rewrite only the copied release adapter after the
+    # daemon link succeeds, then prove no producer/native-cache path leaked into
+    # the packaged ELF before deriving its runtime closure.
+    staged_adapter = libdir / "libsearchkernel_vespa.so.2"
+    make_runtime_adapter_relocatable(staged_adapter)
+    verify_runtime_adapter_relocatable(staged_adapter)
     cargo_adapter = bindir / ".searchkernel-native"
     cargo_adapter.mkdir()
     (cargo_adapter / "libsearchkernel_vespa.so.2").symlink_to(
