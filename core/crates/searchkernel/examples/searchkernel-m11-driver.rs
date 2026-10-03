@@ -294,8 +294,8 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     wait_for_scalar_field(
         engine,
         "publication-gated-put",
-        "qty",
-        Some(ScalarValue::Integer(61)),
+        "title",
+        Some(ScalarValue::String("gatedputmarker".to_owned())),
     )?;
     if put_thread.is_finished() {
         put_thread
@@ -307,15 +307,17 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     put_thread
         .join()
         .map_err(|_| "gated indexed PUT panicked")??;
-    if !term_search_ids(engine, "title", "gatedputmarker")?
-        .iter()
-        .any(|id| id == "publication-gated-put")
+    if scalar_field(engine, "publication-gated-put", "qty")?
+        != Some(ScalarValue::Integer(61))
+        || !term_search_ids(engine, "title", "gatedputmarker")?
+            .iter()
+            .any(|id| id == "publication-gated-put")
     {
-        return Err("indexed PUT returned before matcher publication completed".into());
+        return Err("indexed PUT returned before immediate GET/search publication completed".into());
     }
 
-    // UPSERT A -> B: GET must expose B while the held matcher still exposes A,
-    // and the public mutation may not return until B is committed to matching.
+    // UPSERT A -> B: the source-backed replacement must be visible before the
+    // held callback, and the public mutation may not return until B is committed.
     engine.put(
         Document::new("publication-gated-upsert")
             .field("title", "gatedupsertold")
@@ -335,8 +337,8 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     wait_for_scalar_field(
         engine,
         "publication-gated-upsert",
-        "qty",
-        Some(ScalarValue::Integer(72)),
+        "title",
+        Some(ScalarValue::String("gatedupsertnew".to_owned())),
     )?;
     if upsert_thread.is_finished() {
         upsert_thread
@@ -348,14 +350,16 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     upsert_thread
         .join()
         .map_err(|_| "gated UPSERT panicked")??;
-    if term_search_ids(engine, "title", "gatedupsertold")?
-        .iter()
-        .any(|id| id == "publication-gated-upsert")
+    if scalar_field(engine, "publication-gated-upsert", "qty")?
+        != Some(ScalarValue::Integer(72))
+        || term_search_ids(engine, "title", "gatedupsertold")?
+            .iter()
+            .any(|id| id == "publication-gated-upsert")
         || !term_search_ids(engine, "title", "gatedupsertnew")?
             .iter()
             .any(|id| id == "publication-gated-upsert")
     {
-        return Err("UPSERT returned before matcher replacement B was published".into());
+        return Err("UPSERT returned before immediate GET/search replacement B was published".into());
     }
 
     // Indexed UPDATE A -> B uses the update path rather than replacement PUT.
@@ -500,11 +504,10 @@ fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()
     let id_b = "id:ns:publicationtensor::b";
     let query = tensor_value(&[1.0, 0.0]);
 
-    // Seed only B, then hold the next FeedView forceCommit after A is visible
-    // to GET. FeedHandler may already have advanced the matcher generation via
-    // an automatic commit, so the stable assertions are that the mutation stays
-    // fenced while the callback is held and immediate NN search is correct after
-    // it completes.
+    // Seed only B, then hold the next FeedView forceCommit after A has crossed
+    // its native source-state barrier. Attribute/tensor GET visibility may itself
+    // require the commit being held, so only assert the mutation fence while the
+    // callback is blocked and require immediate GET + NN visibility after return.
     engine.put(Document::new(id_b).field("embedding", tensor_value(&[0.0, 1.0])))?;
     arm_source_visible_publication_gate(&engine)?;
     let put_engine = Arc::clone(&engine);
@@ -514,15 +517,6 @@ fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()
     let source_gate = wait_for_blocking_guard(&engine, SOURCE_VISIBLE_GATE)?;
     let mut gate = advance_to_feed_view_publication_gate(&engine, source_gate)?;
     let inserted = tensor_value(&[1.0, 0.0]);
-    for _ in 0..10_000 {
-        if tensor_field(&engine, id_a, "embedding")? == Some(inserted.clone()) {
-            break;
-        }
-        thread::sleep(Duration::from_millis(1));
-    }
-    if tensor_field(&engine, id_a, "embedding")? != Some(inserted) {
-        return Err("tensor PUT did not become GET-visible while HNSW publication was held".into());
-    }
     if put_thread.is_finished() {
         put_thread
             .join()
@@ -534,9 +528,11 @@ fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()
         .join()
         .map_err(|_| "gated tensor PUT panicked")??;
     let after_put = nearest_neighbor_ids(&engine, query.clone())?;
-    if after_put.first().map(String::as_str) != Some(id_a) {
+    if tensor_field(&engine, id_a, "embedding")? != Some(inserted)
+        || after_put.first().map(String::as_str) != Some(id_a)
+    {
         return Err(
-            "tensor PUT returned before immediate HNSW search observed the new document".into(),
+            "tensor PUT returned before immediate GET/HNSW search observed the new document".into(),
         );
     }
 
