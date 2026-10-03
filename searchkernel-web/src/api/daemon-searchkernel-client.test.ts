@@ -72,7 +72,7 @@ describe('daemon dashboard boundary', () => {
     expect((toCanonicalJson(search.mock.calls[1][0]) as any).ranking).toBeUndefined()
   })
   it('keeps stale errors structured and never silently reopens', async () => {
-    const error = new SearchKernelError('stale', fromCanonicalJson('Error', { code: 'FailedPrecondition', message: 'stale', retryable: false, details: [{ code: 'stale_index_handle', path: 'target.generation', metadata: [{ key: 'target', value: 'alpha' }] }] }) as import('@searchkernel/client').ErrorT)
+    const error = new SearchKernelError('stale', fromCanonicalJson('Error', { code: 'FailedPrecondition', message: 'stale', retryable: false, details: [{ code: 'stale_index_handle', path: 'target.generation', metadata: [{ key: 'target', value: 'alpha' }] }] }) as NonNullable<ConstructorParameters<typeof SearchKernelError>[1]>)
     const get = vi.fn().mockRejectedValue(error)
     const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT(), get } as unknown as RemoteIndex)
     const client = createDaemonSearchKernelClient('http://daemon')
