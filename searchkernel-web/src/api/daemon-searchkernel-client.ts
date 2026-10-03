@@ -79,13 +79,13 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
   async function call<T>(read: () => Promise<T>): Promise<T> {
     try { return await read() } catch (error) { throw daemonError(error) }
   }
-  async function opened(target: string, options?: RequestOptions, refresh = false): Promise<RemoteIndex> {
+  async function opened(target: string, options?: RequestOptions): Promise<RemoteIndex> {
     if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const existing = handles.get(target)
-    if (existing && !refresh) return waitForOpen(existing, options?.signal)
+    if (existing) return waitForOpen(existing, options?.signal)
     const pending = RemoteIndex.open(endpoint, target, transport?.(), options)
-    // Never rebind or retry on stale-generation errors. Only an explicit
-    // workspace metadata read (getIndex) can open a fresh incarnation.
+    // One selected target keeps one generation-bound handle. Stale-generation
+    // errors are surfaced rather than silently replacing this incarnation.
     handles.set(target, pending)
     try { return await pending } catch (error) {
       if (handles.get(target) === pending) handles.delete(target)
@@ -96,7 +96,7 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
     async capabilities() { return capabilities },
     listIndexes(options) { return call(async () => (await daemon.listIndexes(options)).map(id => ({ id }))) },
     getIndex(target, options) { return call(async () => {
-      const index = await opened(target, options, true)
+      const index = await opened(target, options)
       return { ...metadata(target, index.definition), generation: index.generation }
     }) },
     getDocument(target, id, options) { return call(async () => {
