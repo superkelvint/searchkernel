@@ -20,7 +20,7 @@ fn policy() -> SearchEndpointPolicy {
 }
 
 fn docs_router() -> SearchEndpointRouter {
-    SearchEndpointRouter::new([SearchEndpointConfig::new("docs", policy())])
+    SearchEndpointRouter::new([SearchEndpointConfig::new("docs", "docs", policy())])
         .expect("valid docs endpoint")
 }
 
@@ -128,6 +128,7 @@ fn instantsearch_profile_is_canonical_equivalent_to_general_endpoint_aliases() {
 fn instantsearch_policy_bounds_apply_after_page_lowering_without_clamping() {
     let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
         "docs",
+        "docs",
         SearchEndpointPolicy::new(512, 3, 128, 10, 20).with_default_limit(10),
     )])
     .expect("router");
@@ -196,6 +197,7 @@ fn instantsearch_page_is_zero_based_and_maps_to_checked_offset() {
 fn instantsearch_page_can_use_an_explicit_endpoint_default_hits_per_page() {
     let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
         "docs",
+        "docs",
         SearchEndpointPolicy::new(512, 2, 128, 100, 10_000).with_default_limit(25),
     )])
     .expect("router");
@@ -228,6 +230,7 @@ fn instantsearch_nonzero_page_without_hits_per_page_fails_closed() {
 #[test]
 fn instantsearch_pagination_overflow_fails_before_canonical_request_construction() {
     let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
+        "docs",
         "docs",
         SearchEndpointPolicy::new(512, 3, 128, u32::MAX, u32::MAX),
     )])
@@ -269,6 +272,7 @@ fn instantsearch_and_general_aliases_cannot_be_mixed_ambiguously() {
     );
 
     let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
+        "docs",
         "docs",
         SearchEndpointPolicy::new(512, 4, 128, 100, 10_000),
     )])
@@ -359,6 +363,7 @@ fn instantsearch_generated_pagination_matrix_is_deterministic_and_overflow_check
     }
 
     let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
+        "docs",
         "docs",
         SearchEndpointPolicy::new(512, 3, 128, u32::MAX, u32::MAX),
     )])

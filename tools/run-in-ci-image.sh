@@ -85,6 +85,10 @@ command -v docker >/dev/null 2>&1 ||
 git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
     die "Search Kernel CI-image runner requires a Git worktree"
 
+head_sha=$(git -C "$ROOT" rev-parse HEAD)
+[[ "$head_sha" =~ ^[0-9a-fA-F]{40}$ || "$head_sha" =~ ^[0-9a-fA-F]{64}$ ]] ||
+    die "Search Kernel CI-image runner could not resolve an immutable source HEAD"
+
 case "$PULL_MODE" in
     always)
         echo "==> dev: pulling $IMAGE"
@@ -177,7 +181,10 @@ if [[ "$ephemeral_target" == "1" ]]; then
     # so one subject revision cannot poison a later verification job.
     cargo_registry_volume="searchkernel-ci-cargo-registry-$invocation_id"
 else
-    target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")
+    # Cargo target metadata is revision-sensitive. Keep persistent target state
+    # reusable for repeated executions of this exact source revision, but never
+    # share it across different Git HEADs.
+    target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id" "$head_sha")
     cargo_registry_volume=$shared_cargo_registry_volume
 fi
 
@@ -262,7 +269,8 @@ else
         "io.searchkernel.environment-id=$environment_id" >/dev/null
     ci_runtime_create_volume "$target_volume" worktree-target cache \
         "io.searchkernel.environment-id=$environment_id" \
-        "io.searchkernel.worktree=$ROOT" >/dev/null
+        "io.searchkernel.worktree=$ROOT" \
+        "io.searchkernel.source-head=$head_sha" >/dev/null
 fi
 if [[ -n "$artifact_volume" ]]; then
     ci_runtime_create_volume "$artifact_volume" artifact "$ephemeral_lifecycle" \
@@ -329,7 +337,6 @@ if [[ -n "$NATIVE_BASE_OUTPUT" ]]; then
     container_args[3]="/native-base-output"
 fi
 
-head_sha=$(git -C "$ROOT" rev-parse HEAD)
 bundle="$tmp/repository.bundle"
 overlay="$tmp/overlay.paths"
 deleted="$tmp/deleted.paths"

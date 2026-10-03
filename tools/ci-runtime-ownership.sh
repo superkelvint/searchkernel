@@ -229,16 +229,22 @@ ci_runtime_prune_legacy_ephemeral_state() {
 }
 
 ci_runtime_target_volume() {
-    local root=$1 environment_id=$2 canonical
+    local root=$1 environment_id=$2 source_head=$3 canonical
     [[ -n "$environment_id" && "$environment_id" != "<no value>" ]] || {
         echo "error: canonical leaf is missing environment identity" >&2
         return 1
     }
+    [[ "$source_head" =~ ^[0-9a-fA-F]{40}$ || "$source_head" =~ ^[0-9a-fA-F]{64}$ ]] || {
+        echo "error: target cache requires an immutable source HEAD" >&2
+        return 1
+    }
     canonical=$(cd -- "$root" && pwd -P)
-    python3 - "$canonical" "$environment_id" <<'PY'
+    python3 - "$canonical" "$environment_id" "${source_head,,}" <<'PY'
 import hashlib, os, sys
-root, environment_id = sys.argv[1:]
-identity = hashlib.sha256((root + "\0" + environment_id).encode()).hexdigest()[:32]
+root, environment_id, source_head = sys.argv[1:]
+identity = hashlib.sha256(
+    (root + "\0" + environment_id + "\0" + source_head).encode()
+).hexdigest()[:32]
 print(f"searchkernel-dev-target-{os.getuid()}-{identity}")
 PY
 }
