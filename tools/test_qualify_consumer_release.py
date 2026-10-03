@@ -94,6 +94,19 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertNotIn("GH_TOKEN", rust_probe)
         self.assertNotIn("GITHUB_TOKEN", rust_probe)
 
+    def test_lifecycle_qualification_uses_explicit_cold_start_timeout(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        self.assertIn("LIFECYCLE_TIMEOUT_SECONDS = 120.0", gate)
+        for call in (
+            'SearchKernel::Index.create(endpoint, fields: fields, rank_profiles: [profile], target: target, timeout: 120.0)',
+            'SearchKernel::Index.create(endpoint, fields: fields, target: "release-a", timeout: 120.0)',
+            'SearchKernel::Index.create(endpoint, fields: fields, target: "release-b", timeout: 120.0)',
+            'SearchKernel::Index.open(endpoint, target: "release-a", timeout: 120.0)',
+            'SearchKernel::Index.open(endpoint, target: "release-b", timeout: 120.0)',
+            'SearchKernel::Index.open(endpoint, target: target, timeout: 120.0)',
+        ):
+            self.assertIn(call, gate)
+
     def test_packaged_supported_rows_own_clean_consumer_gate(self):
         authority = json.loads((ROOT / "docs/release-support.json").read_text())
         source = ast.parse((ROOT / "tools/qualify-consumer-release.py").read_text())
