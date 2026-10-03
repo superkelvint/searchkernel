@@ -221,9 +221,10 @@ class ConsumerReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "directly from ../lib"):
                 MODULE.verify_runtime_daemon_relocatable(daemon)
 
-    def test_python_package_does_not_ship_cargo_only_native_alias(self) -> None:
+    def test_python_package_runtime_metadata_is_explicit(self) -> None:
         pyproject = (ROOT / "clients/python/pyproject.toml").read_text(encoding="utf-8")
         self.assertNotIn(".searchkernel-native", pyproject)
+        self.assertIn('"lib/.searchkernel-runtime-provenance.json"', pyproject)
 
     def test_runtime_probe_requires_application_level_argument_error(self) -> None:
         launcher = Path("/tmp/packaged-searchkerneld")
