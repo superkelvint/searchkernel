@@ -229,8 +229,12 @@ class ConsumerReleaseTests(unittest.TestCase):
             ROOT / "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs"
         ).read_text(encoding="utf-8")
         helper = "tools/check-native-runtime-closure.py"
+        dependency = "tools/native_runtime_closure.py"
+        checker = (ROOT / helper).read_text(encoding="utf-8")
         self.assertIn(helper, installer)
+        self.assertIn("from native_runtime_closure import", checker)
         self.assertIn(f'("{helper}",', generated)
+        self.assertIn(f'("{dependency}",', generated)
 
     def test_python_package_runtime_metadata_is_explicit(self) -> None:
         pyproject = (ROOT / "clients/python/pyproject.toml").read_text(encoding="utf-8")
