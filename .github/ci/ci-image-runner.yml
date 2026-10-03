@@ -646,7 +646,8 @@ jobs:
               "$PYTHON" tools/check-python-dependencies.py
               run_phase client-release-build "$PYTHON" tools/package-consumer-release.py --output /artifacts/consumer-release
               run_phase client-release-verify "$PYTHON" tools/check-consumer-release.py /artifacts/consumer-release
-              mkdir -p /artifacts/consumer-release-tools
+              mkdir -p /artifacts/consumer-release-tools/native-base
+              bash tools/stage-native-base-qualification-artifact.sh /artifacts/consumer-release-tools/native-base
               cp tools/qualify-consumer-release.py /artifacts/consumer-release-tools/
               cp -R examples/release-quickstart /artifacts/consumer-release-tools/quickstarts
               build_native_searchkerneld client-e2e-build
@@ -743,7 +744,6 @@ jobs:
             docker run --rm \
               -v "$ARTIFACT_DIR/consumer-release:/release:ro" \
               -v "$ARTIFACT_DIR/consumer-release-tools:/qualification:ro" \
-              -e GH_TOKEN="${GH_TOKEN:-}" \
               "$CI_IMAGE_ID" \
               /bin/bash -lc 'python3 /qualification/qualify-consumer-release.py /release'
           fi
