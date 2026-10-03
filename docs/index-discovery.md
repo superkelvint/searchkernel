@@ -23,7 +23,8 @@ target. Filesystem inspection never holds the registry map lock or a global
 transition lock, and does not bind/open all candidates. A daemon restart does
 not affect durable discovery.
 
-Public APIs are TypeScript `Daemon.listIndexes()` (browser gRPC-Web by default),
+Public APIs are TypeScript `Daemon.listIndexes()` (browser gRPC-Web by default;
+native gRPC from `@searchkernel/client/node`),
 Python `Client.list_indexes()`, Ruby `Client#list_indexes`, PHP
 `Client::listIndexes()` and Rust `RemoteClient::list_indexes()`. All use the same
 portable operation; none apply target grammar in the client. Discovery is

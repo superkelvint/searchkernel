@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { createServer, createConnection } from 'node:net'
-import { Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client/node'
+import { Daemon, Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client/node'
 
 async function port() {
   const server = createServer()
@@ -68,6 +68,9 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
     await Promise.all(handles.map(index => index.close()))
     await stop(daemon)
     await start() // Neither durable target has been opened in this incarnation.
+    const nodeDaemon = new Daemon(endpoint)
+    try { expect(await nodeDaemon.listIndexes()).toEqual(['alpha', 'beta']) }
+    finally { await nodeDaemon.close() }
     vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(uiPort)], {
       env: { ...process.env, VITE_SEARCHKERNEL_ENDPOINT: webEndpoint }, stdio: 'inherit',
     })

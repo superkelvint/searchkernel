@@ -1,4 +1,4 @@
-import { Index as RemoteIndex, Client, SearchKernelError } from "../client/index.js";
+import { Index as RemoteIndex, Daemon as RemoteDaemon, Client, SearchKernelError } from "../client/index.js";
 import type { ClientTransport } from "../client/index.js";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
@@ -9,6 +9,13 @@ import { FieldDefinitionT } from "../semantic.js";
 import { RankProfileDefinitionT } from "../semantic.js";
 import { NodeGrpcTransport } from "../transport/grpc-node.js";
 import { ManagedLocalHost } from "./managed-local-host.js";
+
+/** Server-scoped native gRPC API for the Node entry point. */
+export class Daemon extends RemoteDaemon {
+  constructor(endpoint: string, transport?: ClientTransport) {
+    super(endpoint, transport ?? new NodeGrpcTransport(endpoint));
+  }
+}
 
 export interface FieldDefinitionBuilder {
   definition(name: string): FieldDefinitionT;
