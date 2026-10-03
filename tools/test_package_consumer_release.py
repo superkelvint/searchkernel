@@ -263,6 +263,21 @@ class ConsumerReleaseTests(unittest.TestCase):
             self.assertEqual(manifest["payload_sha256"], MODULE.runtime_payload_digest(stage))
             MODULE.validate_runtime_manifest(stage, identity)
 
+    def test_runtime_payload_digest_ignores_non_runtime_package_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            (root / "bin").mkdir()
+            (root / "lib").mkdir()
+            (root / "bin" / "searchkerneld").write_bytes(b"launcher")
+            (root / "lib" / "libsearchkernel_vespa.so.2").write_bytes(b"adapter")
+            baseline = MODULE.runtime_payload_digest(root)
+            (root / "__init__.py").write_text("client package file\n", encoding="utf-8")
+            (root / "dist").mkdir()
+            (root / "dist" / "node.js").write_text("client bundle\n", encoding="utf-8")
+            self.assertEqual(MODULE.runtime_payload_digest(root), baseline)
+            (root / "lib" / "libsearchkernel_vespa.so.2").write_bytes(b"changed")
+            self.assertNotEqual(MODULE.runtime_payload_digest(root), baseline)
+
     def test_runtime_manifest_rejects_identity_mismatch_and_payload_corruption(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             stage = Path(tempdir) / "runtime"
