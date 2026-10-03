@@ -1,4 +1,4 @@
-import { SearchRequestBuilder, parseTypedQuery, jsonInput, toCanonicalJson, q, type CanonicalJson } from '@searchkernel/client'
+import { SearchRequestBuilder, parseTypedQuery, jsonInput, toCanonicalJson, queryEditorReference, q, type CanonicalJson } from '@searchkernel/client'
 import { SearchKernelClientError, type ClientSearchRequest, type PreparedSearchRequest } from './searchkernel-client'
 
 // The SDK owns query/filter construction and BFBS JSON conversion. This boundary
@@ -35,3 +35,5 @@ export function preparedRequest(request: PreparedSearchRequest) {
 }
 export function typedTerm(field: string, term: string): string { return JSON.stringify(toCanonicalJson(q.term(field, term)), null, 2) }
 export type { CanonicalJson }
+
+export const typedQueryReference = () => JSON.stringify(queryEditorReference(), null, 2)

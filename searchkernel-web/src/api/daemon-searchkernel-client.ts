@@ -1,7 +1,7 @@
 import { prepareSearch, preparedRequest } from './search-request'
 import {
   Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
-  SearchResults, toCanonicalJson, DataTypeKind, PrimitiveSearchResults, toCanonicalJson, DataTypeKind, PrimitiveDataTypeT,
+  SearchResults, toCanonicalJson, DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
   type IndexDefinitionT, type ClientTransport,
 } from '@searchkernel/client'
 import {

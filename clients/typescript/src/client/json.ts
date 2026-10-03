@@ -110,3 +110,25 @@ export function jsonInput(input: unknown): ValueInput {
   }
   throw new TypeError('Expected a JSON Search Kernel value');
 }
+
+/** Read-only editor reference derived from the same BFBS metadata as decoding. */
+export function queryEditorReference(): CanonicalJson {
+  const tables: Record<string, CanonicalJson> = {}, pending = ['QuerySource'];
+  while (pending.length) {
+    const name = pending.pop()!;
+    if (Object.hasOwn(tables, name)) continue;
+    const fields: Record<string, CanonicalJson> = {};
+    tables[name] = fields;
+    for (const [field, spec] of Object.entries(S.SEMANTIC_JSON_FIELDS[name]!)) {
+      const enumName = S.SEMANTIC_ENUM_FIELDS[name]?.[field]?.replace(/\[\]$/, '');
+      fields[spec.name] = enumName
+        ? { type: spec.type, members: Object.keys(models[enumName]).filter(key => !/^\d+$/.test(key)) }
+        : { type: spec.type };
+      for (const type of spec.type.match(/[A-Z]\w*T\b/g) ?? []) {
+        const table = type.slice(0, -1);
+        if (S.SEMANTIC_JSON_FIELDS[table]) pending.push(table);
+      }
+    }
+  }
+  return tables;
+}
