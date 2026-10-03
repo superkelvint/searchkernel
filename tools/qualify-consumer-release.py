@@ -19,7 +19,6 @@ DIST = Path(sys.argv[1]).resolve()
 MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
 QUALIFICATION_ROOT = Path(__file__).resolve().parent
 QUICKSTARTS = QUALIFICATION_ROOT / "quickstarts"
-LIFECYCLE_TIMEOUT_SECONDS = 120.0
 
 # The regression test compares this executable registry to release-support.json.
 # Every supported surface/runtime pair must map to one packaged consumer probe.
