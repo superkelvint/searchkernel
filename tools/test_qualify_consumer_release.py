@@ -18,7 +18,8 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertIn('-v "$ARTIFACT_DIR/consumer-release:/release:ro"', section)
         self.assertIn('-v "$ARTIFACT_DIR/consumer-release-tools:/qualification:ro"', section)
         self.assertIn("python3 /qualification/qualify-consumer-release.py /release", section)
-        self.assertIn('-e GH_TOKEN="${GH_TOKEN:-}"', section)
+        self.assertNotIn("GH_TOKEN", section)
+        self.assertNotIn("GITHUB_TOKEN", section)
         for forbidden in (
             "$SOURCE_VOLUME",
             "$TARGET_VOLUME",
@@ -37,6 +38,10 @@ class QualificationPolicyTests(unittest.TestCase):
         )
         self.assertIn(
             "tools/check-consumer-release.py /artifacts/consumer-release",
+            runner,
+        )
+        self.assertIn(
+            "bash tools/stage-native-base-qualification-artifact.sh /artifacts/consumer-release-tools/native-base",
             runner,
         )
         self.assertIn(
@@ -70,9 +75,36 @@ class QualificationPolicyTests(unittest.TestCase):
             self.assertIn(variable, gate)
         self.assertNotIn('"--no-index"', gate)
         rust_runner = gate.split("def run_rust_quickstart", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn('os.environ.get("GH_TOKEN")', rust_runner)
-        self.assertIn('os.environ.get("GITHUB_TOKEN")', rust_runner)
-        self.assertNotIn("SEARCHKERNEL_BUILD_ENV", gate)
+        self.assertIn("native_base_fixture()", rust_runner)
+        self.assertIn('"SK_NATIVE_BASE_ARTIFACT_URL"', rust_runner)
+        self.assertIn("native_base_archive.as_uri()", rust_runner)
+        self.assertIn('"SK_NATIVE_CACHE_DIR"', rust_runner)
+        self.assertNotIn("GH_TOKEN", rust_runner)
+        self.assertNotIn("GITHUB_TOKEN", rust_runner)
+        self.assertIn('"SEARCHKERNEL_BUILD_ENV"', rust_runner)
+
+    def test_all_rust_consumer_probes_reuse_local_native_base_sidecar(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        rust_probe = gate.split("def rust_embedded_probe", 1)[1].split("\n        def ", 1)[0]
+        self.assertIn(
+            "native_environment = run_rust_quickstart(rust_root, root)",
+            rust_probe,
+        )
+        self.assertIn("env=native_environment", rust_probe)
+        self.assertNotIn("GH_TOKEN", rust_probe)
+        self.assertNotIn("GITHUB_TOKEN", rust_probe)
+
+    def test_lifecycle_qualification_uses_explicit_cold_start_timeout(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        for call in (
+            'SearchKernel::Index.create(endpoint, fields: fields, rank_profiles: [profile], target: target, timeout: 120.0)',
+            'SearchKernel::Index.create(endpoint, fields: fields, target: "release-a", timeout: 120.0)',
+            'SearchKernel::Index.create(endpoint, fields: fields, target: "release-b", timeout: 120.0)',
+            'SearchKernel::Index.open(endpoint, target: "release-a", timeout: 120.0)',
+            'SearchKernel::Index.open(endpoint, target: "release-b", timeout: 120.0)',
+            'SearchKernel::Index.open(endpoint, target: target, timeout: 120.0)',
+        ):
+            self.assertIn(call, gate)
 
     def test_packaged_supported_rows_own_clean_consumer_gate(self):
         authority = json.loads((ROOT / "docs/release-support.json").read_text())
@@ -130,6 +162,29 @@ class QualificationPolicyTests(unittest.TestCase):
             for node in ast.walk(main)
         ), "registry entries must resolve through the runtime probe dispatch map")
 
+    def test_consumer_release_stages_native_base_sidecar_locally(self):
+        dev = (ROOT / "dev").read_text()
+        self.assertIn(
+            'stage-native-base-qualification-artifact.sh" "$release_root/qualification/native-base"',
+            dev,
+        )
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        self.assertIn('QUALIFICATION_ROOT / "native-base"', gate)
+        self.assertIn("native_base_archive.as_uri()", gate)
+
+    def test_local_native_base_sidecar_does_not_require_release_metadata(self):
+        helper = (ROOT / "tools/stage-native-base-qualification-artifact.sh").read_text()
+        self.assertIn("GENERATION=1", helper)
+        self.assertNotIn(".searchkernel-native-base-artifact.json", helper)
+        self.assertNotIn('marker.get("artifact_generation"', helper)
+        self.assertIn('package-native-base-artifact.sh', helper)
+
+
+    def test_qualifier_selects_versioned_runtime_artifact(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        self.assertIn('artifact("searchkernel-runtime-", ".tar.gz")', gate)
+        self.assertNotIn('artifact("searchkerneld-", ".tar.gz")', gate)
+
     def test_packaged_daemon_primary_probe_uses_multi_index_registry(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
         self.assertIn('"--data-root"', gate)
@@ -138,8 +193,8 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertIn("multi_index_registry_probe", gate)
         self.assertIn('target: "release-a"', gate)
         self.assertIn('target: "release-b"', gate)
-        self.assertIn('SearchKernel::Index.create(endpoint, fields: fields, target: "release-a")', gate)
-        self.assertIn('SearchKernel::Index.open(endpoint, target: "release-a")', gate)
+        self.assertIn('SearchKernel::Index.create(endpoint, fields: fields, target: "release-a", timeout: 120.0)', gate)
+        self.assertIn('SearchKernel::Index.open(endpoint, target: "release-a", timeout: 120.0)', gate)
         self.assertIn('x=Index.connect({endpoint!r}, target={target!r})', gate)
         self.assertIn("closing A disrupted B", gate)
         self.assertIn("did not persist across daemon restart", gate)
@@ -177,7 +232,7 @@ class QualificationPolicyTests(unittest.TestCase):
             self.assertTrue(path.is_file(), f"missing canonical release quickstart: {path}")
 
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
-        self.assertIn('QUICKSTARTS = Path(__file__).resolve().parent / "quickstarts"', gate)
+        self.assertIn('QUICKSTARTS = QUALIFICATION_ROOT / "quickstarts"', gate)
         self.assertIn("run_python_quickstart", gate)
         self.assertIn("run_node_quickstart", gate)
         self.assertIn("run_ruby_quickstart", gate)

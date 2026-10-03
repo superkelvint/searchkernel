@@ -746,6 +746,9 @@ printf '%s\n' "$OBJECT"
     ("tools/install-native-base-artifact.sh", br########"#!/usr/bin/env bash
 set -euo pipefail
 
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
+
 if [[ $# -ne 5 ]]; then
     echo "usage: $0 <artifact-url> <cache-root> <build-env> <native-target> <vespa-commit>" >&2
     exit 2
@@ -763,7 +766,7 @@ QUARANTINE_ROOT=$CACHE_ROOT/quarantine
 
 command -v curl >/dev/null 2>&1 || { echo "published Vespa base acquisition requires curl" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "published Vespa base acquisition requires sha256sum" >&2; exit 1; }
-command -v python3 >/dev/null 2>&1 || { echo "published Vespa base acquisition requires python3" >&2; exit 1; }
+[[ -x "$PYTHON_BIN" ]] || { echo "published Vespa base acquisition requires the repository Python" >&2; exit 1; }
 
 mkdir -p "$DOWNLOAD_ROOT" "$QUARANTINE_ROOT"
 TMP=$(mktemp -d "$DOWNLOAD_ROOT/.artifact.XXXXXX")
@@ -779,7 +782,7 @@ download_artifact() {
     local token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
     local repo=${SEARCHKERNEL_GITHUB_REPO:-superkelvint/searchkernel}
     local prefix="https://github.com/${repo}/releases/download/"
-    local remainder tag asset release_json asset_url gh_download
+    local remainder tag asset release_json asset_url
 
     if [[ "$url" == "$prefix"* ]]; then
         remainder=${url#"$prefix"}
@@ -796,7 +799,7 @@ download_artifact() {
                 "https://api.github.com/repos/${repo}/releases/tags/$tag" \
                 -o "$release_json" || return 1
 
-            asset_url=$(python3 - "$release_json" "$asset" <<'PY'
+            asset_url=$("$PYTHON_BIN" - "$release_json" "$asset" <<'PY'
 import json
 import sys
 
@@ -820,18 +823,6 @@ PY
             return
         fi
 
-        if command -v gh >/dev/null 2>&1; then
-            gh_download="$TMP/gh-download"
-            rm -rf "$gh_download"
-            mkdir -p "$gh_download"
-            gh release download "$tag" \
-                -R "$repo" \
-                -D "$gh_download" \
-                -p "$asset" >/dev/null || return 1
-            [[ -f "$gh_download/$asset" ]] || return 1
-            mv "$gh_download/$asset" "$destination"
-            return
-        fi
     fi
 
     curl -fsSL "$url" -o "$destination"
@@ -861,7 +852,7 @@ ACTUAL_SHA=$(sha256sum "$ARCHIVE" | awk '{print $1}')
 
 EXTRACT=$TMP/extract
 mkdir -p "$EXTRACT"
-python3 - "$ARCHIVE" "$EXTRACT" <<'PY'
+"$PYTHON_BIN" - "$ARCHIVE" "$EXTRACT" <<'PY'
 import pathlib
 import posixpath
 import sys
@@ -917,9 +908,11 @@ VESPA_ROOT=$BUNDLE/toolchain/upstream/vespa
 DEPS=$BUNDLE/toolchain/vespa-deps
 MARKER=$VESPA_ROOT/.searchkernel-vespa-artifact.json
 
-python3 - "$BUNDLE_MANIFEST" "$BASE/manifest.json" "$MARKER" "$BUILD_ENV" "$TARGET" "$VESPA_COMMIT" <<'PY'
+"$PYTHON_BIN" - "$BUNDLE_MANIFEST" "$BASE/manifest.json" "$MARKER" "$BUILD_ENV" "$TARGET" "$VESPA_COMMIT" <<'PY'
 import json
 import sys
+import pathlib
+import hashlib
 
 bundle_path, base_path, marker_path, build_env, target, commit = sys.argv[1:]
 
@@ -972,17 +965,34 @@ legacy_link_complete = (
     and bundle.get("adapter_static_link_closure") is True
     and marker.get("adapter_static_link_closure") is True
 )
-if bundle_format != 2 and not legacy_link_complete:
+if bundle_format not in (2, 3) and not legacy_link_complete:
     raise SystemExit(
         "unsupported published Vespa base format: "
         f"format_version={bundle_format!r}, artifact_generation={generation!r}"
     )
+
+if bundle_format == 3:
+    provenance = pathlib.Path(base_path).parent / "lib" / ".searchkernel-runtime-provenance.json"
+    expected_hash = bundle.get("runtime_provenance_sha256")
+    marker_hash = marker.get("runtime_provenance_sha256")
+    if not isinstance(expected_hash, str) or expected_hash != marker_hash:
+        raise SystemExit("published runtime provenance digest is missing or inconsistent")
+    try:
+        actual_hash = hashlib.sha256(provenance.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise SystemExit(f"published runtime provenance is missing: {exc}") from exc
+    if actual_hash != expected_hash:
+        raise SystemExit("published runtime provenance digest does not match the packaged file")
 
 if base.get("kind") != "vespa-base" or base.get("vespa_commit") != commit:
     raise SystemExit("published Vespa base manifest does not match the pinned Vespa checkout")
 PY
 
 [[ -d "$BASE/lib" ]] || { echo "published Vespa base has no lib directory" >&2; exit 1; }
+if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*3' "$BUNDLE_MANIFEST"; then
+    "$PYTHON_BIN" "$ROOT/tools/check-native-runtime-closure.py" \
+        "$BASE/lib" --require-provenance >&2
+fi
 find "$BASE/lib" -maxdepth 1 -type f -name 'libvespa*.so*' -print -quit | grep -q . || {
     echo "published Vespa base contains no Vespa shared libraries" >&2
     exit 1
@@ -1003,7 +1013,7 @@ mkdir -p "$DEPS/lib64"
 # archive referenced by the harvested Vespa link command is present. This
 # deliberately rejects the old v1 shape that could appear valid until the
 # consumer reached the final adapter link.
-python3 - "$CONFIGURED_DIR/link.txt" "$VESPA_ROOT" <<'PY'
+"$PYTHON_BIN" - "$CONFIGURED_DIR/link.txt" "$VESPA_ROOT" <<'PY'
 import pathlib
 import shlex
 import sys
@@ -1085,8 +1095,6 @@ import argparse
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -1147,55 +1155,8 @@ def select_generation(releases, build_env, target, commit):
     return max(generations)
 
 
-def fetch_releases_with_gh(repo):
-    gh = shutil.which("gh")
-    if gh is None:
-        return None
-
-    releases = []
-    page = 1
-    while True:
-        result = subprocess.run(
-            [
-                gh,
-                "api",
-                "repos/{}/releases?per_page=100&page={}".format(repo, page),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            detail = result.stderr.strip()
-            message = "could not discover published native-base generations with authenticated gh"
-            if detail:
-                message += ": " + detail
-            raise SystemExit(message)
-
-        try:
-            batch = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise SystemExit(
-                "authenticated gh returned invalid JSON while discovering native-base generations"
-            ) from exc
-
-        if not isinstance(batch, list) or not all(isinstance(item, dict) for item in batch):
-            raise SystemExit("authenticated gh releases response was not a release list")
-        releases.extend(batch)
-        if len(batch) < 100:
-            break
-        page += 1
-    return releases
-
-
 def fetch_releases(repo):
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not token:
-        releases = fetch_releases_with_gh(repo)
-        if releases is not None:
-            return releases
-
     releases = []
     page = 1
     while True:
@@ -1790,6 +1751,432 @@ def main() -> int:
         args.output.write_text(text, encoding="utf-8")
     else:
         print(text, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"########),
+    ("tools/native_runtime_closure.py", br########"#!/usr/bin/env python3
+"""Shared ELF runtime-closure policy for Search Kernel native-base tooling."""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import subprocess
+import hashlib
+import os
+import tempfile
+
+
+# GNU/Linux C/C++ runtime baseline for the supported x86_64-unknown-linux-gnu
+# native target. Product/dependency DSOs are deliberately absent: if Vespa
+# needs one of those, the native-base artifact must carry it.
+SYSTEM_BASELINE = {
+    "ld-linux-x86-64.so.2",
+    "libc.so.6",
+    "libdl.so.2",
+    "libgcc_s.so.1",
+    "libm.so.6",
+    "libpthread.so.0",
+    "libresolv.so.2",
+    "librt.so.1",
+    "libstdc++.so.6",
+    "libutil.so.1",
+}
+
+NEEDED_RE = re.compile(r"\(NEEDED\).*Shared library: \[(?P<name>[^\]]+)\]")
+SONAME_RE = re.compile(r"\(SONAME\).*Library soname: \[(?P<name>[^\]]+)\]")
+LDD_RESOLUTION_RE = re.compile(
+    r"^\s*(?P<name>\S+)\s+=>\s+(?P<path>/\S+)\s+\(0x[0-9a-fA-F]+\)\s*$"
+)
+LDD_DIRECT_RE = re.compile(r"^\s*(?P<path>/\S+)\s+\(0x[0-9a-fA-F]+\)\s*$")
+
+
+def is_elf(path: pathlib.Path) -> bool:
+    try:
+        with path.open("rb") as stream:
+            return stream.read(4) == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def resolve_origin_dependency(payload: pathlib.Path, needed: str) -> pathlib.Path | None:
+    """Resolve an ELF DT_NEEDED entry expressed relative to its executable origin."""
+    for prefix in ("$ORIGIN/", "${ORIGIN}/"):
+        if needed.startswith(prefix):
+            relative = needed[len(prefix):]
+            candidate = payload.parent / relative
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError:
+                return None
+            if resolved.is_file() and is_elf(resolved):
+                return resolved
+            return None
+    return None
+
+
+def needed_libraries(path: pathlib.Path, readelf: str) -> set[str]:
+    completed = subprocess.run(
+        [readelf, "-d", str(path)],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "could not inspect native runtime dependencies for {}:\n{}".format(
+                path, completed.stderr.strip()
+            )
+        )
+    return {
+        match.group("name")
+        for line in completed.stdout.splitlines()
+        if (match := NEEDED_RE.search(line)) is not None
+    }
+
+
+def elf_soname(path: pathlib.Path, readelf: str) -> str | None:
+    completed = subprocess.run(
+        [readelf, "-d", str(path)],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"could not inspect ELF SONAME for {path}: {completed.stderr.strip()}")
+    return next(
+        (match.group("name") for line in completed.stdout.splitlines() if (match := SONAME_RE.search(line))),
+        None,
+    )
+
+
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def runtime_candidates(
+    name: str,
+    directories: list[pathlib.Path],
+    allowed_roots: list[pathlib.Path],
+) -> list[pathlib.Path]:
+    """Find concrete same-name ELF candidates without following out-of-root aliases."""
+    candidates: set[pathlib.Path] = set()
+    for directory in directories:
+        entry = directory / name
+        try:
+            resolved = entry.resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if _inside(resolved, allowed_roots) and resolved.is_file() and is_elf(resolved):
+            candidates.add(resolved)
+    return sorted(candidates, key=str)
+
+
+def _inside(path: pathlib.Path, roots: list[pathlib.Path]) -> bool:
+    return any(path.is_relative_to(root) for root in roots)
+
+
+def _hermetic_search_dirs(
+    library_path: list[pathlib.Path],
+    allowed_roots: list[pathlib.Path],
+    temporary_root: pathlib.Path,
+) -> list[pathlib.Path]:
+    """Mirror only ELF candidates whose resolved bytes live under allowed producer roots."""
+    safe_dirs: list[pathlib.Path] = []
+    for index, directory in enumerate(library_path):
+        safe_dir = temporary_root / str(index)
+        safe_dir.mkdir()
+        for entry in sorted(directory.iterdir(), key=lambda item: item.name):
+            try:
+                resolved = entry.resolve(strict=True)
+            except (OSError, RuntimeError):
+                continue
+            if not _inside(resolved, allowed_roots):
+                continue
+            if not resolved.is_file() or not is_elf(resolved):
+                continue
+            (safe_dir / entry.name).symlink_to(resolved)
+        if any(safe_dir.iterdir()):
+            safe_dirs.append(safe_dir)
+    return safe_dirs
+
+
+def ldd_resolutions(
+    payload: pathlib.Path,
+    ldd: str,
+    library_path: list[pathlib.Path],
+    allowed_roots: list[pathlib.Path] | None = None,
+) -> dict[str, pathlib.Path]:
+    """Return concrete loader choices without honoring stale external search aliases."""
+    roots = [root.resolve(strict=True) for root in (allowed_roots or library_path)]
+    env = os.environ.copy()
+    for variable in tuple(env):
+        if variable.startswith("LD_"):
+            env.pop(variable, None)
+
+    with tempfile.TemporaryDirectory(prefix="searchkernel-ldd-path.") as raw:
+        sanitized = _hermetic_search_dirs(library_path, roots, pathlib.Path(raw))
+        if sanitized:
+            env["LD_LIBRARY_PATH"] = ":".join(str(path) for path in sanitized)
+        completed = subprocess.run(
+            [ldd, "-r", str(payload)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        output = completed.stdout + "\n" + completed.stderr
+        failures = [
+            line.strip()
+            for line in output.splitlines()
+            if "not found" in line or "undefined symbol" in line
+        ]
+        if failures:
+            raise RuntimeError("loader rejected {}:\n  {}".format(payload, "\n  ".join(failures)))
+
+        resolved: dict[str, pathlib.Path] = {}
+        for line in completed.stdout.splitlines():
+            match = LDD_RESOLUTION_RE.match(line)
+            if match:
+                resolved[match.group("name")] = pathlib.Path(match.group("path")).resolve(strict=True)
+                continue
+            match = LDD_DIRECT_RE.match(line)
+            if match:
+                path = pathlib.Path(match.group("path")).resolve(strict=True)
+                resolved[path.name] = path
+        return resolved
+"########),
+    ("tools/check-native-runtime-closure.py", br########"#!/usr/bin/env python3
+"""Validate that a native-base lib directory is self-contained for non-baseline DSOs."""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import shutil
+import sys
+
+from native_runtime_closure import (
+    SYSTEM_BASELINE,
+    is_elf,
+    ldd_resolutions,
+    elf_soname,
+    needed_libraries,
+    resolve_origin_dependency,
+    sha256_file,
+)
+
+def die(message: str) -> "NoReturn":
+    raise SystemExit(message)
+
+
+def validate(
+    libdir: pathlib.Path,
+    extra_elfs: list[pathlib.Path],
+    require_provenance: bool = False,
+) -> None:
+    if not libdir.is_dir():
+        die("native runtime lib directory does not exist: {}".format(libdir))
+
+    readelf = shutil.which("readelf")
+    ldd = shutil.which("ldd")
+    if readelf is None or ldd is None:
+        die("native runtime closure validation requires readelf and ldd")
+
+    root = libdir.resolve()
+    payloads: dict[pathlib.Path, set[str]] = {}
+
+    for entry in libdir.iterdir():
+        try:
+            resolved = entry.resolve(strict=True)
+        except OSError as exc:
+            die("broken native runtime entry {}: {}".format(entry, exc))
+
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            die(
+                "native runtime entry escapes bundled lib directory: {} -> {}".format(
+                    entry, resolved
+                )
+            )
+
+        if not resolved.is_file() or not is_elf(resolved):
+            continue
+        payloads.setdefault(resolved, set()).add(entry.name)
+
+    if not payloads:
+        die("native runtime lib directory contains no ELF shared libraries: {}".format(libdir))
+
+    sonames: dict[str, tuple[str, pathlib.Path]] = {}
+    for payload in payloads:
+        soname = elf_soname(payload, readelf)
+        if soname is None:
+            continue
+        digest = sha256_file(payload)
+        previous = sonames.get(soname)
+        if previous is not None and previous[0] != digest:
+            die(
+                f"conflicting packaged ELF candidates provide SONAME {soname}: "
+                f"{previous[1]} vs {payload}"
+            )
+        sonames[soname] = (digest, payload)
+
+    provenance_path = libdir / ".searchkernel-runtime-provenance.json"
+    if provenance_path.exists() or require_provenance:
+        try:
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            die(f"invalid runtime provenance {provenance_path}: {exc}")
+        if provenance.get("format_version") != 1 or not isinstance(provenance.get("libraries"), list):
+            die(f"unsupported runtime provenance format in {provenance_path}")
+        recorded: set[pathlib.Path] = set()
+        for item in provenance["libraries"]:
+            if not isinstance(item, dict):
+                die(f"invalid runtime provenance entry in {provenance_path}")
+            name = item.get("packaged_name")
+            source = item.get("source_identity")
+            expected_hash = item.get("sha256")
+            required_by = item.get("required_by")
+            if (
+                not isinstance(name, str)
+                or pathlib.Path(name).name != name
+                or not isinstance(source, str)
+                or not source
+                or pathlib.Path(source).is_absolute()
+                or not isinstance(expected_hash, str)
+                or len(expected_hash) != 64
+                or not isinstance(required_by, list)
+                or required_by != sorted(set(required_by))
+            ):
+                die(f"invalid runtime provenance fields for {name!r} in {provenance_path}")
+            entry = libdir / name
+            try:
+                payload = entry.resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                die(f"runtime provenance names missing or broken packaged ELF {entry}: {exc}")
+            if not payload.is_file() or not is_elf(payload):
+                die(f"runtime provenance names a non-ELF packaged file: {entry}")
+            try:
+                payload.relative_to(root)
+            except ValueError:
+                die(f"runtime provenance packaged file escapes bundle: {entry} -> {payload}")
+            if sha256_file(payload) != expected_hash:
+                die(f"runtime provenance SHA-256 mismatch for {entry}")
+            if elf_soname(payload, readelf) != item.get("soname"):
+                die(f"runtime provenance SONAME mismatch for {entry}")
+            recorded.add(payload)
+        if recorded != set(payloads):
+            missing_records = sorted(path.name for path in set(payloads) - recorded)
+            extra_records = sorted(path.name for path in recorded - set(payloads))
+            die(
+                "runtime provenance does not describe the packaged ELF inventory "
+                f"(missing={missing_records}, extra={extra_records})"
+            )
+
+    inspected = set(payloads)
+    extra_roots: list[pathlib.Path] = []
+    for extra in extra_elfs:
+        try:
+            resolved = extra.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            die("invalid extra native ELF {}: {}".format(extra, exc))
+        if not resolved.is_file() or not is_elf(resolved):
+            die("extra native runtime input is not an ELF file: {}".format(extra))
+        inspected.add(resolved)
+        extra_roots.append(resolved.parent)
+
+    invalid: list[str] = []
+    for payload in sorted(inspected, key=lambda item: str(item)):
+        try:
+            needed_names = needed_libraries(payload, readelf)
+        except RuntimeError as exc:
+            die(str(exc))
+        try:
+            resolved_libraries = ldd_resolutions(payload, ldd, [root])
+        except RuntimeError as exc:
+            invalid.append(str(exc))
+            continue
+        for needed in sorted(needed_names):
+            if needed.startswith(("$ORIGIN/", "${ORIGIN}/")):
+                origin_dependency = resolve_origin_dependency(payload, needed)
+                if origin_dependency is None:
+                    invalid.append(f"{payload.name}: unresolved origin-relative dependency {needed}")
+                    continue
+                try:
+                    origin_dependency.relative_to(root)
+                except ValueError:
+                    if not any(origin_dependency.is_relative_to(extra_root) for extra_root in extra_roots):
+                        invalid.append(
+                            f"{payload.name}: origin-relative dependency escapes allowed package roots: "
+                            f"{needed} -> {origin_dependency}"
+                        )
+                continue
+            if "/" in needed:
+                invalid.append(f"{payload.name}: unsupported absolute/path DT_NEEDED entry {needed}")
+                continue
+            resolved = resolved_libraries.get(needed)
+            if resolved is None:
+                # ldd does not consistently print a name=>path mapping for the
+                # platform ELF interpreter. It is part of the declared system
+                # baseline, so absence from the parsed map is not evidence of
+                # an incomplete private runtime closure.
+                if needed in SYSTEM_BASELINE:
+                    continue
+                invalid.append(f"{payload.name}: loader did not resolve DT_NEEDED {needed}")
+                continue
+            try:
+                resolved_real = resolved.resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                invalid.append(f"{payload.name}: broken loader resolution for {needed}: {exc}")
+                continue
+            try:
+                resolved_real.relative_to(root)
+                inside_bundle = True
+            except ValueError:
+                inside_bundle = False
+            if not inside_bundle and needed not in SYSTEM_BASELINE:
+                invalid.append(
+                    f"{payload.name}: non-baseline dependency {needed} resolved outside bundle: {resolved_real}"
+                )
+            if inside_bundle and needed not in SYSTEM_BASELINE:
+                actual_soname = elf_soname(resolved_real, readelf)
+                if actual_soname != needed:
+                    invalid.append(
+                        f"{payload.name}: DT_NEEDED {needed} resolved to ELF with "
+                        f"SONAME {actual_soname!r}: {resolved_real}"
+                    )
+
+    if invalid:
+        die(
+            "native runtime dependency closure is incompatible or incomplete:\n  "
+            + "\n  ".join(invalid)
+        )
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print(
+            "usage: tools/check-native-runtime-closure.py <lib-directory> [extra-elf ...] [--require-provenance]",
+            file=sys.stderr,
+        )
+        return 2
+
+    args = sys.argv[2:]
+    require_provenance = "--require-provenance" in args
+    args = [value for value in args if value != "--require-provenance"]
+    validate(pathlib.Path(sys.argv[1]), [pathlib.Path(value) for value in args], require_provenance)
+    print("native runtime dependency closure: PASS")
     return 0
 
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import mmap
 import os
 import shutil
 import subprocess
@@ -81,17 +82,20 @@ def runtime_identity(revision: str, platform: str) -> dict[str, object]:
     return material
 
 
-def runtime_payload_digest(stage: Path) -> str:
+def runtime_payload_digest(root: Path) -> str:
     digest = hashlib.sha256()
-    for path in sorted(p for p in stage.rglob("*") if p.is_file() and p.name != "manifest.json"):
-        relative = path.relative_to(stage).as_posix().encode()
-        digest.update(len(relative).to_bytes(8, "big"))
-        digest.update(relative)
-        data = path.read_bytes()
-        digest.update(len(data).to_bytes(8, "big"))
-        digest.update(data)
+    for runtime_dir in ("bin", "lib"):
+        base = root / runtime_dir
+        if not base.is_dir():
+            continue
+        for path in sorted(p for p in base.rglob("*") if p.is_file()):
+            relative = path.relative_to(root).as_posix().encode()
+            digest.update(len(relative).to_bytes(8, "big"))
+            digest.update(relative)
+            data = path.read_bytes()
+            digest.update(len(data).to_bytes(8, "big"))
+            digest.update(data)
     return digest.hexdigest()
-
 
 def assert_consumer_runtime_surface(stage: Path) -> None:
     extras = sorted(entry.name for entry in stage.iterdir() if entry.name not in CONSUMER_RUNTIME_DIRS | {"manifest.json"})
@@ -158,6 +162,7 @@ RUST_BUNDLE_PATHS = [
     "core/crates",
     "searchkerneld",
     "api",
+    "reference/client-real-e2e-parity/corpus.json",
 ]
 
 
@@ -239,6 +244,110 @@ def clean_runtime_env() -> dict[str, str]:
 RUNTIME_PROBE_ARGUMENT = "--searchkernel-runtime-probe"
 
 
+def make_runtime_adapter_relocatable(adapter: Path) -> None:
+    dynamic = subprocess.check_output(["readelf", "-d", str(adapter)], text=True)
+    rpaths: list[str] = []
+    for line in dynamic.splitlines():
+        if "(RPATH)" not in line and "(RUNPATH)" not in line:
+            continue
+        start = line.find("[")
+        end = line.rfind("]")
+        if start < 0 or end <= start:
+            raise RuntimeError(f"could not parse adapter RPATH line: {line}")
+        rpaths.append(line[start + 1 : end])
+    if rpaths == ["$ORIGIN"]:
+        return
+    if len(rpaths) != 1 or not rpaths[0]:
+        raise RuntimeError(f"expected exactly one adapter RPATH/RUNPATH, found {rpaths!r}")
+
+    original = rpaths[0].encode()
+    replacement = b"$ORIGIN"
+    if len(original) < len(replacement):
+        raise RuntimeError(
+            "adapter RPATH cannot be rewritten in place: "
+            f"{rpaths[0]!r} is shorter than $ORIGIN"
+        )
+
+    needle = original + b"\0"
+    padded = replacement + b"\0" * (len(needle) - len(replacement))
+    with adapter.open("r+b") as stream:
+        with mmap.mmap(stream.fileno(), 0) as image:
+            offsets: list[int] = []
+            offset = image.find(needle)
+            while offset >= 0:
+                offsets.append(offset)
+                offset = image.find(needle, offset + 1)
+            if len(offsets) != 1:
+                raise RuntimeError(
+                    "expected the adapter RPATH string to appear exactly once in the ELF; "
+                    f"found {len(offsets)} occurrences of {rpaths[0]!r}"
+                )
+            offset = offsets[0]
+            image[offset : offset + len(needle)] = padded
+            image.flush()
+
+
+def verify_runtime_adapter_relocatable(adapter: Path) -> None:
+    dynamic = subprocess.check_output(["readelf", "-d", str(adapter)], text=True)
+    paths: list[str] = []
+    for line in dynamic.splitlines():
+        if "(RPATH)" not in line and "(RUNPATH)" not in line:
+            continue
+        start = line.find("[")
+        end = line.rfind("]")
+        if start < 0 or end <= start:
+            raise RuntimeError(f"could not parse packaged adapter RPATH line: {line}")
+        paths.extend(part for part in line[start + 1 : end].split(":") if part)
+    if paths != ["$ORIGIN"]:
+        raise RuntimeError(
+            "packaged native adapter must use only $ORIGIN for RPATH/RUNPATH; "
+            f"found {paths!r}"
+        )
+
+
+def make_runtime_daemon_relocatable(daemon: Path) -> None:
+    original = b"$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2"
+    replacement = b"$ORIGIN/../lib/libsearchkernel_vespa.so.2"
+    if len(replacement) > len(original):
+        raise RuntimeError("release daemon dependency rewrite grew unexpectedly")
+    needle = original + b"\0"
+    padded = replacement + b"\0" * (len(needle) - len(replacement))
+    with daemon.open("r+b") as stream:
+        with mmap.mmap(stream.fileno(), 0) as image:
+            offsets: list[int] = []
+            offset = image.find(needle)
+            while offset >= 0:
+                offsets.append(offset)
+                offset = image.find(needle, offset + 1)
+            if len(offsets) != 1:
+                raise RuntimeError(
+                    "expected packaged daemon native adapter dependency exactly once; "
+                    f"found {len(offsets)} occurrences"
+                )
+            offset = offsets[0]
+            image[offset : offset + len(needle)] = padded
+            image.flush()
+
+
+def verify_runtime_daemon_relocatable(daemon: Path) -> None:
+    dynamic = subprocess.check_output(["readelf", "-d", str(daemon)], text=True)
+    needed = []
+    for line in dynamic.splitlines():
+        if "(NEEDED)" not in line:
+            continue
+        start = line.find("[")
+        end = line.rfind("]")
+        if start >= 0 and end > start:
+            needed.append(line[start + 1 : end])
+    expected = "$ORIGIN/../lib/libsearchkernel_vespa.so.2"
+    if expected not in needed:
+        raise RuntimeError(
+            "packaged daemon must resolve the native adapter directly from ../lib; "
+            f"needed={needed!r}"
+        )
+    if any(".searchkernel-native" in item for item in needed):
+        raise RuntimeError(f"packaged daemon retained Cargo-only native dependency: {needed!r}")
+
 def probe_runtime_launcher(launcher: Path) -> None:
     result = subprocess.run(
         [str(launcher), RUNTIME_PROBE_ARGUMENT],
@@ -269,11 +378,15 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[s
         adapter_lib / "libsearchkernel_vespa.so.2",
         libdir / "libsearchkernel_vespa.so.2",
     )
-    cargo_adapter = bindir / ".searchkernel-native"
-    cargo_adapter.mkdir()
-    (cargo_adapter / "libsearchkernel_vespa.so.2").symlink_to(
-        "../../lib/libsearchkernel_vespa.so.2"
-    )
+    # Cargo must link against the canonical native base before the runtime
+    # closure has been staged. Rewrite only the copied release adapter after the
+    # daemon link succeeds, then prove no producer/native-cache path leaked into
+    # the packaged ELF before deriving its runtime closure.
+    staged_adapter = libdir / "libsearchkernel_vespa.so.2"
+    make_runtime_adapter_relocatable(staged_adapter)
+    verify_runtime_adapter_relocatable(staged_adapter)
+    make_runtime_daemon_relocatable(staged_daemon)
+    verify_runtime_daemon_relocatable(staged_daemon)
 
     native_base = Path(
         subprocess.check_output(

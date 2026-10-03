@@ -15,10 +15,10 @@ import tempfile
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
 DIST = Path(sys.argv[1]).resolve()
 MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
-QUICKSTARTS = ROOT / "examples" / "release-quickstart"
+QUALIFICATION_ROOT = Path(__file__).resolve().parent
+QUICKSTARTS = QUALIFICATION_ROOT / "quickstarts"
 
 # The regression test compares this executable registry to release-support.json.
 # Every supported surface/runtime pair must map to one packaged consumer probe.
@@ -92,6 +92,46 @@ def artifact(prefix: str, suffix: str) -> Path:
     return matches[0]
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def native_base_fixture() -> tuple[dict[str, object], Path]:
+    fixture_root = QUALIFICATION_ROOT / "native-base"
+    manifest_path = fixture_root / "manifest.json"
+    try:
+        metadata = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"qualification native-base metadata is unavailable: {exc}") from exc
+
+    artifact_name = metadata.get("artifact")
+    if not isinstance(artifact_name, str) or not artifact_name:
+        raise RuntimeError("qualification native-base metadata has no artifact")
+    archive = fixture_root / artifact_name
+    if not archive.is_file():
+        raise RuntimeError(f"qualification native-base artifact is missing: {archive}")
+
+    expected = metadata.get("sha256")
+    actual = sha256_file(archive)
+    if not isinstance(expected, str) or actual != expected:
+        raise RuntimeError("qualification native-base artifact checksum mismatch")
+
+    generation = metadata.get("artifact_generation")
+    build_env = metadata.get("build_environment")
+    target = metadata.get("native_target")
+    if not isinstance(generation, int) or generation < 1:
+        raise RuntimeError("qualification native-base generation is invalid")
+    if build_env not in {"host", "ci"}:
+        raise RuntimeError("qualification native-base build environment is invalid")
+    if not isinstance(target, str) or not target:
+        raise RuntimeError("qualification native-base target is invalid")
+    return metadata, archive
+
+
 def verify_manifest() -> None:
     for item in MANIFEST["artifacts"]:
         path = DIST / item["file"]
@@ -159,18 +199,21 @@ def run_ruby_quickstart(
     run("ruby", str(QUICKSTARTS / "ruby.rb"), cwd=root, env=env)
 
 
-def run_rust_quickstart(rust_root: Path, root: Path) -> None:
+def run_rust_quickstart(rust_root: Path, root: Path) -> dict[str, str]:
     quickstart = rust_root / "release-quickstart"
     shutil.copytree(QUICKSTARTS / "rust", quickstart)
+    native_base, native_base_archive = native_base_fixture()
     environment = {
         "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
+        "SEARCHKERNEL_BUILD_ENV": str(native_base["build_environment"]),
+        "SK_NATIVE_TARGET": str(native_base["native_target"]),
+        "SK_NATIVE_BASE_ARTIFACT_URL": native_base_archive.as_uri(),
+        "SK_NATIVE_BASE_ARTIFACT_GENERATION": str(native_base["artifact_generation"]),
+        "SK_NATIVE_CACHE_DIR": str(root / "rust-native-cache"),
     }
-    # Rust embedded builds resolve the published native base from GitHub.
-    # Pass consumer authentication only to this build; runtime probes still
-    # receive the ordinary scrubbed clean environment.
-    github_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if github_token:
-        environment["GH_TOKEN"] = github_token
+    # Qualification consumes the exact native-base sidecar staged by this
+    # release run. It never publishes to, discovers from, or downloads from
+    # GitHub; the tag workflow owns publication separately.
     run(
         "cargo",
         "run",
@@ -180,6 +223,7 @@ def run_rust_quickstart(rust_root: Path, root: Path) -> None:
         cwd=quickstart,
         env=environment,
     )
+    return environment
 
 
 def python_managed_local(venv: Path, index: Path) -> None:
@@ -368,7 +412,7 @@ fields = {
 profile = SearchKernel::RankProfile.new("semantic")
   .first_phase("closeness(embedding)")
   .query_input("query_embedding", "tensor<float>(x[2])")
-index = SearchKernel::Index.create(endpoint, fields: fields, rank_profiles: [profile], target: target)
+index = SearchKernel::Index.create(endpoint, fields: fields, rank_profiles: [profile], target: target, timeout: 120.0)
 index.close
 '''
 
@@ -418,7 +462,7 @@ def with_restarted_daemon(
     try:
         open_target = r'''require "searchkernel"
 target, endpoint = ARGV
-index = SearchKernel::Index.open(endpoint, target: target)
+index = SearchKernel::Index.open(endpoint, target: target, timeout: 120.0)
 index.close
 '''
         run("ruby", "-e", open_target, target, f"http://127.0.0.1:{port}",
@@ -493,7 +537,7 @@ raise "installed gem entry point was not loaded" unless entry
 raise "Ruby client did not load from installed gem" unless File.expand_path(entry) == File.join(File.expand_path(spec.full_gem_path), "lib", "searchkernel.rb")
 
 phase, endpoint, target = ARGV
-index = phase == "reopened" ? SearchKernel::Index.open(endpoint, target: target) : SearchKernel::Index.connect(endpoint, target: target)
+index = phase == "reopened" ? SearchKernel::Index.open(endpoint, target: target, timeout: 120.0) : SearchKernel::Index.connect(endpoint, target: target)
 begin
   names = index.describe.fetch("fields").map { |field| field.fetch("name") }
   raise "schema missing release fields: #{names.inspect}" unless %w[title kind score embedding].all? { |name| names.include?(name) }
@@ -540,8 +584,8 @@ fields = {
 }
 
 if phase == "initial"
-  a = SearchKernel::Index.create(endpoint, fields: fields, target: "release-a")
-  b = SearchKernel::Index.create(endpoint, fields: fields, target: "release-b")
+  a = SearchKernel::Index.create(endpoint, fields: fields, target: "release-a", timeout: 120.0)
+  b = SearchKernel::Index.create(endpoint, fields: fields, target: "release-b", timeout: 120.0)
   begin
     a.insert("_id" => "a-only", "title" => "alpha registry", "kind" => "a", "score" => 1)
     b.insert("_id" => "b-only", "title" => "beta registry", "kind" => "b", "score" => 2)
@@ -557,8 +601,8 @@ if phase == "initial"
     b.close rescue nil
   end
 else
-  a = SearchKernel::Index.open(endpoint, target: "release-a")
-  b = SearchKernel::Index.open(endpoint, target: "release-b")
+  a = SearchKernel::Index.open(endpoint, target: "release-a", timeout: 120.0)
+  b = SearchKernel::Index.open(endpoint, target: "release-b", timeout: 120.0)
   begin
     raise "index A did not persist across daemon restart" unless a.get("a-only")
     raise "index B did not persist across daemon restart" unless b.get("b-only")
@@ -621,13 +665,14 @@ def main() -> None:
             rust_root.mkdir()
             with tarfile.open(rust) as archive:
                 archive.extractall(rust_root, filter="data")
-            # Resolve the public host native-base generation exactly as an
-            # ordinary unauthenticated consumer would. The clean container has
-            # no GitHub token, build-environment override, or producer SDK cache.
-            run_rust_quickstart(rust_root, root)
+            # Build exactly like a clean Rust consumer, but provision the
+            # native prerequisite from the qualification-only local sidecar.
+            # GitHub publication/discovery is intentionally outside this test.
+            native_environment = run_rust_quickstart(rust_root, root)
             run(
                 "cargo", "run", "--quiet", "-p", "searchkernel", "--features", "native",
                 "--example", "try_searchkernel_client_api_e2e", cwd=rust_root,
+                env=native_environment,
             )
 
         def searchkerneld_runtime_probe() -> None:

@@ -37,7 +37,7 @@ download_artifact() {
     local token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
     local repo=${SEARCHKERNEL_GITHUB_REPO:-superkelvint/searchkernel}
     local prefix="https://github.com/${repo}/releases/download/"
-    local remainder tag asset release_json asset_url gh_download
+    local remainder tag asset release_json asset_url
 
     if [[ "$url" == "$prefix"* ]]; then
         remainder=${url#"$prefix"}
@@ -78,18 +78,6 @@ PY
             return
         fi
 
-        if command -v gh >/dev/null 2>&1; then
-            gh_download="$TMP/gh-download"
-            rm -rf "$gh_download"
-            mkdir -p "$gh_download"
-            gh release download "$tag" \
-                -R "$repo" \
-                -D "$gh_download" \
-                -p "$asset" >/dev/null || return 1
-            [[ -f "$gh_download/$asset" ]] || return 1
-            mv "$gh_download/$asset" "$destination"
-            return
-        fi
     fi
 
     curl -fsSL "$url" -o "$destination"

@@ -156,6 +156,7 @@ Search Kernel development commands
   ./dev test rust-native-e2e  Test the Rust API against the native Vespa engine
   ./dev test client-real-e2e-parity Compare first-party real-engine showcases
   ./dev test native-crud      Test native Vespa engine CRUD
+  ./dev test consumer-release Build and qualify the consumer release candidate
   ./dev test python           Test the Python client, including real E2E
   ./dev test typescript       Test the TypeScript client, package, and real E2E
   ./dev test php              Test the PHP client, package, and real E2E
@@ -378,6 +379,7 @@ check_fast() {
     "$PYTHON" "$ROOT/tools/test_check_agent_map.py"
     "$PYTHON" "$ROOT/tools/test_bookkeeping_autofix_workflow.py"
     "$PYTHON" "$ROOT/tools/test_consumer_runtime.py"
+    "$PYTHON" "$ROOT/tools/test_consumer_release_publish_workflow.py"
     "$PYTHON" "$ROOT/tools/check-agent-map.py" --check
     "$PYTHON" "$ROOT/tools/test_dev_universe_summary.py"
     "$PYTHON" "$ROOT/tools/test_check_verifier_build_ownership.py"
@@ -412,6 +414,9 @@ ci_gate() {
 
     echo "== consumer runtime resolver contract =="
     "$PYTHON" "$ROOT/tools/test_consumer_runtime.py"
+
+    echo "== consumer release publication contract =="
+    "$PYTHON" "$ROOT/tools/test_consumer_release_publish_workflow.py"
 
     echo "== verifier build ownership =="
     "$PYTHON" "$ROOT/tools/check-verifier-build-ownership.py"
@@ -771,18 +776,20 @@ test_target() {
             "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"
             ;;
         consumer-release)
-            local release_root
+            local release_root release_output
             release_root=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-consumer-release.XXXXXX")
             trap 'rm -rf -- "$release_root"' RETURN
+            release_output=${SEARCHKERNEL_CONSUMER_RELEASE_OUTPUT:-$release_root/release}
             "$PYTHON" "$ROOT/tools/check-release-support.py"
             "$PYTHON" "$ROOT/tools/test_qualify_consumer_release.py"
             "$PYTHON" "$ROOT/tools/render-release-quickstarts.py" --check
-            "$PYTHON" "$ROOT/tools/package-consumer-release.py" --output "$release_root/release"
-            "$PYTHON" "$ROOT/tools/check-consumer-release.py" "$release_root/release"
-            mkdir -p "$release_root/qualification"
+            "$PYTHON" "$ROOT/tools/package-consumer-release.py" --output "$release_output"
+            "$PYTHON" "$ROOT/tools/check-consumer-release.py" "$release_output"
+            mkdir -p "$release_root/qualification/native-base"
+            bash "$ROOT/tools/stage-native-base-qualification-artifact.sh" "$release_root/qualification/native-base"
             cp "$ROOT/tools/qualify-consumer-release.py" "$release_root/qualification/"
             cp -R "$ROOT/examples/release-quickstart" "$release_root/qualification/quickstarts"
-            "$PYTHON" "$release_root/qualification/qualify-consumer-release.py" "$release_root/release"
+            "$PYTHON" "$release_root/qualification/qualify-consumer-release.py" "$release_output"
             ;;
         native-crud)
             "$CARGO" test -p searchkernel-vespa-engine --test native_crud

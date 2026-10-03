@@ -5,8 +5,6 @@ import argparse
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -67,55 +65,8 @@ def select_generation(releases, build_env, target, commit):
     return max(generations)
 
 
-def fetch_releases_with_gh(repo):
-    gh = shutil.which("gh")
-    if gh is None:
-        return None
-
-    releases = []
-    page = 1
-    while True:
-        result = subprocess.run(
-            [
-                gh,
-                "api",
-                "repos/{}/releases?per_page=100&page={}".format(repo, page),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            detail = result.stderr.strip()
-            message = "could not discover published native-base generations with authenticated gh"
-            if detail:
-                message += ": " + detail
-            raise SystemExit(message)
-
-        try:
-            batch = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise SystemExit(
-                "authenticated gh returned invalid JSON while discovering native-base generations"
-            ) from exc
-
-        if not isinstance(batch, list) or not all(isinstance(item, dict) for item in batch):
-            raise SystemExit("authenticated gh releases response was not a release list")
-        releases.extend(batch)
-        if len(batch) < 100:
-            break
-        page += 1
-    return releases
-
-
 def fetch_releases(repo):
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not token:
-        releases = fetch_releases_with_gh(repo)
-        if releases is not None:
-            return releases
-
     releases = []
     page = 1
     while True:

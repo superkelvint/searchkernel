@@ -122,6 +122,125 @@ class ConsumerReleaseTests(unittest.TestCase):
         ):
             self.assertNotIn(key, environment)
 
+    def test_runtime_adapter_requires_origin_only_rpath(self) -> None:
+        adapter = Path("/tmp/libsearchkernel_vespa.so.2")
+        readelf = (
+            " 0x000000000000000f (RPATH)              "
+            "Library rpath: [$ORIGIN]\n"
+        )
+        with mock.patch.object(
+            MODULE.subprocess,
+            "check_output",
+            return_value=readelf,
+        ) as check_output:
+            MODULE.verify_runtime_adapter_relocatable(adapter)
+        check_output.assert_called_once_with(
+            ["readelf", "-d", str(adapter)],
+            text=True,
+        )
+
+        leaked = (
+            " 0x000000000000000f (RPATH)              "
+            "Library rpath: [/opt/searchkernel/native-sdk-cache/base/lib]\n"
+        )
+        with mock.patch.object(MODULE.subprocess, "check_output", return_value=leaked):
+            with self.assertRaisesRegex(RuntimeError, "must use only \\$ORIGIN"):
+                MODULE.verify_runtime_adapter_relocatable(adapter)
+
+    def test_release_relocates_adapter_only_after_daemon_link(self) -> None:
+        packager = (ROOT / "tools/package-consumer-release.py").read_text(
+            encoding="utf-8"
+        )
+        build_sdk = (ROOT / "core/native/vespa/build-sdk.sh").read_text(
+            encoding="utf-8"
+        )
+        build_rs = (
+            ROOT / "core/crates/searchkernel-vespa-bindings/build.rs"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", packager)
+        self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", build_sdk)
+        self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", build_rs)
+        build = packager.index('"cargo",\n                    "build"')
+        relocate = packager.index("make_runtime_adapter_relocatable(staged_adapter)")
+        self.assertLess(build, relocate)
+        self.assertNotIn("payload = adapter.read_bytes()", packager)
+        self.assertIn("mmap.mmap(stream.fileno(), 0)", packager)
+
+    def test_release_adapter_relocation_rewrites_dynamic_string_in_place(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            adapter = Path(raw) / "libsearchkernel_vespa.so.2"
+            original = "/opt/searchkernel/native-sdk-cache/ci/base/lib"
+            adapter.write_bytes(b"prefix\0" + original.encode() + b"\0suffix")
+            readelf = (
+                " 0x000000000000000f (RPATH)              "
+                f"Library rpath: [{original}]\n"
+            )
+            with mock.patch.object(
+                MODULE.subprocess, "check_output", return_value=readelf
+            ):
+                MODULE.make_runtime_adapter_relocatable(adapter)
+            payload = adapter.read_bytes()
+            self.assertIn(b"$ORIGIN\0", payload)
+            self.assertNotIn(original.encode(), payload)
+            self.assertEqual(len(payload), len(b"prefix\0" + original.encode() + b"\0suffix"))
+
+    def test_release_adapter_relocation_rejects_ambiguous_dynamic_string(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            adapter = Path(raw) / "libsearchkernel_vespa.so.2"
+            original = "/opt/searchkernel/native-sdk-cache/ci/base/lib"
+            adapter.write_bytes(
+                original.encode() + b"\0middle\0" + original.encode() + b"\0"
+            )
+            readelf = (
+                " 0x000000000000000f (RPATH)              "
+                f"Library rpath: [{original}]\n"
+            )
+            with mock.patch.object(
+                MODULE.subprocess, "check_output", return_value=readelf
+            ):
+                with self.assertRaisesRegex(RuntimeError, "appear exactly once"):
+                    MODULE.make_runtime_adapter_relocatable(adapter)
+
+    def test_release_daemon_relocation_points_directly_at_runtime_lib(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            daemon = Path(raw) / "searchkerneld.real"
+            original = b"$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2"
+            daemon.write_bytes(b"prefix\0" + original + b"\0suffix")
+            MODULE.make_runtime_daemon_relocatable(daemon)
+            payload = daemon.read_bytes()
+            self.assertIn(b"$ORIGIN/../lib/libsearchkernel_vespa.so.2\0", payload)
+            self.assertNotIn(original, payload)
+
+    def test_release_daemon_verifier_rejects_cargo_only_native_path(self) -> None:
+        daemon = Path("/tmp/searchkerneld.real")
+        dynamic = (
+            " 0x0000000000000001 (NEEDED)             "
+            "Shared library: [$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2]\n"
+        )
+        with mock.patch.object(MODULE.subprocess, "check_output", return_value=dynamic):
+            with self.assertRaisesRegex(RuntimeError, "directly from ../lib"):
+                MODULE.verify_runtime_daemon_relocatable(daemon)
+
+    def test_packaged_native_consumer_bundle_contains_runtime_closure_checker(self) -> None:
+        installer = (ROOT / "tools/install-native-base-artifact.sh").read_text(
+            encoding="utf-8"
+        )
+        generated = (
+            ROOT / "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs"
+        ).read_text(encoding="utf-8")
+        helper = "tools/check-native-runtime-closure.py"
+        dependency = "tools/native_runtime_closure.py"
+        checker = (ROOT / helper).read_text(encoding="utf-8")
+        self.assertIn(helper, installer)
+        self.assertIn("from native_runtime_closure import", checker)
+        self.assertIn(f'("{helper}",', generated)
+        self.assertIn(f'("{dependency}",', generated)
+
+    def test_python_package_runtime_metadata_is_explicit(self) -> None:
+        pyproject = (ROOT / "clients/python/pyproject.toml").read_text(encoding="utf-8")
+        self.assertNotIn(".searchkernel-native", pyproject)
+        self.assertIn('"lib/.searchkernel-runtime-provenance.json"', pyproject)
+
     def test_runtime_probe_requires_application_level_argument_error(self) -> None:
         launcher = Path("/tmp/packaged-searchkerneld")
         entered_program = subprocess.CompletedProcess(
@@ -184,6 +303,21 @@ class ConsumerReleaseTests(unittest.TestCase):
             self.assertEqual(manifest["payload_sha256"], MODULE.runtime_payload_digest(stage))
             MODULE.validate_runtime_manifest(stage, identity)
 
+    def test_runtime_payload_digest_ignores_non_runtime_package_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            (root / "bin").mkdir()
+            (root / "lib").mkdir()
+            (root / "bin" / "searchkerneld").write_bytes(b"launcher")
+            (root / "lib" / "libsearchkernel_vespa.so.2").write_bytes(b"adapter")
+            baseline = MODULE.runtime_payload_digest(root)
+            (root / "__init__.py").write_text("client package file\n", encoding="utf-8")
+            (root / "dist").mkdir()
+            (root / "dist" / "node.js").write_text("client bundle\n", encoding="utf-8")
+            self.assertEqual(MODULE.runtime_payload_digest(root), baseline)
+            (root / "lib" / "libsearchkernel_vespa.so.2").write_bytes(b"changed")
+            self.assertNotEqual(MODULE.runtime_payload_digest(root), baseline)
+
     def test_runtime_manifest_rejects_identity_mismatch_and_payload_corruption(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             stage = Path(tempdir) / "runtime"
@@ -223,6 +357,9 @@ class ConsumerReleaseTests(unittest.TestCase):
                 self.assertIn("searchkerneld/Cargo.toml", names)
                 self.assertIn(
                     "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs", names
+                )
+                self.assertIn(
+                    "reference/client-real-e2e-parity/corpus.json", names
                 )
                 self.assertNotIn("tools/resolve-native-sdk.sh", names)
 
