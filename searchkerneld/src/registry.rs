@@ -914,7 +914,6 @@ fn configuration_error_to_portable(error: IndexError) -> PortableError {
     result
 }
 
-
 #[cfg(all(test, feature = "native"))]
 mod configuration_lock_order_tests {
     use super::*;
@@ -1010,7 +1009,11 @@ mod configuration_lock_order_tests {
 
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if registry.loaded_targets().expect("loaded targets").is_empty() {
+            if registry
+                .loaded_targets()
+                .expect("loaded targets")
+                .is_empty()
+            {
                 break;
             }
             assert!(
@@ -1024,12 +1027,7 @@ mod configuration_lock_order_tests {
         // transition waits for the admitted reader. It observes the retired
         // incarnation instead of holding entries while blocking on its guard.
         registry
-            .dispatch_loaded(
-                "catalog",
-                &[],
-                Some(&generation),
-                WireVersion::V1,
-            )
+            .dispatch_loaded("catalog", &[], Some(&generation), WireVersion::V1)
             .expect("retired target returns a canonical response");
 
         drop(admitted_reader);
