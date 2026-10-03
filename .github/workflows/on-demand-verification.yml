@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   status-comment:
-    name: update slash command with running status
+    name: announce exact-SHA verification
     if: >-
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
@@ -33,7 +33,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Add running status to slash command
+      - name: Post running verification status
         id: announce
         uses: actions/github-script@v9
         with:
@@ -41,36 +41,32 @@ jobs:
           script: |
             const runId = process.env.GITHUB_RUN_ID;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
-            const request = String(context.payload.comment?.body || "").trim();
+            const request = String(context.payload.comment?.body || "").replaceAll("`", "\\`");
             const requestCommentId = Number(context.payload.comment?.id || 0);
-            const fields = request.split(/\s+/);
+            const fields = String(context.payload.comment?.body || "").trim().split(/\s+/);
             const operation = fields[1] || "";
             const target = operation === "ci" ? "" : (fields[2] || "");
             const command = operation === "ci"
               ? "./dev ci"
               : (operation && target ? `./dev ${operation} ${target}` : "verification request");
-            const runMarker = `<!-- searchkernel-verification-run:${runId} -->`;
+            const laneMarker = `<!-- searchkernel-verification:${operation}:${target} -->`;
+            const requestMarker = `<!-- searchkernel-verification-request:${requestCommentId} -->`;
             const body = [
-              request,
-              "",
-              runMarker,
+              laneMarker,
+              requestMarker,
               `### ⏳ \`${command}\` — RUNNING`,
               "",
+              `- Exact-head request: \`${request}\``,
               `- Run: [View Actions run](${runUrl}) (run ${runId})`,
             ].join("\n");
 
-            if (!requestCommentId) {
-              core.setFailed("slash-command comment id is unavailable");
-              return;
-            }
-
-            await github.rest.issues.updateComment({
+            const { data: comment } = await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              comment_id: requestCommentId,
+              issue_number: context.issue.number,
               body,
             });
-            core.setOutput("comment_id", String(requestCommentId));
+            core.setOutput("comment_id", String(comment.id));
 
   verify:
     name: exact-SHA verification
@@ -370,7 +366,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Replace running status with verification result
+      - name: Update verification status
         uses: actions/github-script@v9
         env:
           REQUESTED_REVISION: ${{ needs.verify.outputs.requested_revision }}
@@ -391,47 +387,42 @@ jobs:
             const requested = process.env.REQUESTED_REVISION || "unavailable";
             const observed = process.env.OBSERVED_REVISION || "unavailable";
             const command = process.env.CANONICAL_COMMAND;
+            const requestId = process.env.REQUEST_ID || "unavailable";
             const runId = process.env.RUN_ID;
             const runUrl = process.env.RUN_URL;
-            const request = String(context.payload.comment?.body || "").trim();
-            const requestCommentId = Number(context.payload.comment?.id || 0);
-            const statusCommentId = Number(process.env.STATUS_COMMENT_ID || 0);
-            const runMarker = `<!-- searchkernel-verification-run:${runId} -->`;
             const code = (value) => "`" + value + "`";
+            const fields = String(context.payload.comment?.body || "").trim().split(/\s+/);
+            const operation = fields[1] || "";
+            const target = operation === "ci" ? "" : (fields[2] || "");
+            const requestCommentId = Number(context.payload.comment?.id || 0);
+            const laneMarker = `<!-- searchkernel-verification:${operation}:${target} -->`;
+            const requestMarker = `<!-- searchkernel-verification-request:${requestCommentId} -->`;
+
             const headline = command ? code(command) : "verification";
-
-            if (!statusCommentId || statusCommentId !== requestCommentId) {
-              core.setFailed("verification status is not anchored to the slash-command comment");
-              return;
-            }
-
-            const { data: current } = await github.rest.issues.getComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: statusCommentId,
-            });
-
-            // If someone manually edited the slash command while the run was in
-            // flight, do not overwrite their newer content.
-            if (!String(current.body || "").includes(runMarker)) {
-              core.notice(`not updating verification result because slash-command comment ${statusCommentId} changed while the run was active`);
-              return;
-            }
-
             const body = [
-              request,
-              "",
-              runMarker,
+              laneMarker,
+              requestMarker,
               `### ${icon} ${headline} — ${status}`,
               "",
               `- Requested SHA: ${code(requested)}`,
               `- Observed SHA: ${code(observed)}`,
+              `- Exact-head request: ${code(requestId)}`,
               `- Run: [View Actions run](${runUrl}) (run ${runId})`,
             ].join("\n");
 
-            await github.rest.issues.updateComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: statusCommentId,
-              body,
-            });
+            const statusCommentId = process.env.STATUS_COMMENT_ID;
+            if (statusCommentId) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: Number(statusCommentId),
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
