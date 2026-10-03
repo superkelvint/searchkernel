@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 pub const MAX_INDEX_TARGET_LEN: usize = 128;
 
 pub const MISSING_INDEX_TARGET_DETAIL_CODE: &str = "missing_index_target";
+pub const UNEXPECTED_INDEX_TARGET_DETAIL_CODE: &str = "unexpected_index_target";
 pub const INVALID_INDEX_TARGET_DETAIL_CODE: &str = "invalid_index_target";
 pub const MISSING_INDEX_DEFINITION_DETAIL_CODE: &str = "missing_index_definition";
 pub const INDEX_ALREADY_EXISTS_DETAIL_CODE: &str = "index_already_exists";
@@ -248,6 +249,15 @@ pub(crate) fn missing_target_error() -> PortableError {
     )
 }
 
+pub(crate) fn unexpected_target_error() -> PortableError {
+    control_error(
+        ErrorCode::InvalidArgument,
+        UNEXPECTED_INDEX_TARGET_DETAIL_CODE,
+        Some(TARGET_PATH),
+        "Search Kernel server-scoped request must not include an index target".to_owned(),
+    )
+}
+
 pub(crate) fn missing_definition_error() -> PortableError {
     control_error(
         ErrorCode::InvalidArgument,
@@ -384,6 +394,14 @@ mod tests {
         );
         assert_eq!(missing_target.details[0].path.as_deref(), Some(TARGET_PATH));
         assert_eq!(missing_target.details[0].message, missing_target.message);
+
+        let unexpected_target = unexpected_target_error();
+        assert_eq!(unexpected_target.code, ErrorCode::InvalidArgument);
+        assert_eq!(
+            unexpected_target.details[0].code,
+            UNEXPECTED_INDEX_TARGET_DETAIL_CODE
+        );
+        assert_eq!(unexpected_target.details[0].path.as_deref(), Some(TARGET_PATH));
 
         let missing_definition = missing_definition_error();
         assert_eq!(missing_definition.code, ErrorCode::InvalidArgument);
