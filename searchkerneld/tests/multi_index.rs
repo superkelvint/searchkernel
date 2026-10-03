@@ -1050,6 +1050,68 @@ fn open_rejects_storage_owned_by_another_runtime_as_conflict() {
     registry.close_all().expect("close registry");
 }
 
+#[cfg(unix)]
+#[test]
+fn closed_lifecycle_lock_is_released_while_a_forked_child_retains_descriptors() {
+    struct Child {
+        pid: libc::pid_t,
+        release: i32,
+    }
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let byte = 1u8;
+            // Release and reap our child even if a parent assertion panics.
+            unsafe {
+                libc::write(self.release, (&byte as *const u8).cast(), 1);
+                libc::close(self.release);
+                while libc::waitpid(self.pid, std::ptr::null_mut(), 0) < 0 {
+                    if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let temp = TempDir::new("forked-lifecycle-lock");
+    let owner = searchkernel::Index::create(
+        temp.0.join("products"),
+        searchkernel::IndexDefinition::new().field(
+            searchkernel::Field::text("title")
+                .stored(true)
+                .searchable(true),
+        ),
+    )
+    .expect("create parent-owned index");
+    let mut pipe = [0; 2];
+    assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+    let pid = unsafe { libc::fork() };
+    assert!(pid >= 0, "fork child");
+    if pid == 0 {
+        // A multithreaded fork child must only use async-signal-safe syscalls.
+        // It deliberately retains inherited descriptors until the parent has
+        // attempted reopen, modeling the fork-to-exec window of sibling work.
+        unsafe {
+            libc::close(pipe[1]);
+            let mut byte = 0u8;
+            while libc::read(pipe[0], (&mut byte as *mut u8).cast(), 1) < 0 {}
+            libc::_exit(0);
+        }
+    }
+    unsafe { libc::close(pipe[0]) };
+    let child = Child { pid, release: pipe[1] };
+    let closed = owner.close();
+    let registry = IndexRegistry::new(&temp.0).expect("registry");
+    let reopened = registry.dispatch(&open_request(Some("products")));
+    drop(child);
+    closed.expect("close parent-owned index");
+    assert_lifecycle(
+        &reopened.expect("reopen while child retains descriptors"),
+        wire::ResponsePayload::SearchKernel_Wire_OpenIndexResult,
+    );
+    registry.close_all().expect("close reopened index");
+}
+
 #[test]
 fn concurrent_same_name_create_has_one_winner() {
     let temp = TempDir::new("create-race");
