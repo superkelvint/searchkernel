@@ -240,10 +240,46 @@ RUNTIME_PROBE_ARGUMENT = "--searchkernel-runtime-probe"
 
 
 def make_runtime_adapter_relocatable(adapter: Path) -> None:
-    subprocess.run(
-        ["patchelf", "--force-rpath", "--set-rpath", "$ORIGIN", str(adapter)],
-        check=True,
-    )
+    dynamic = subprocess.check_output(["readelf", "-d", str(adapter)], text=True)
+    rpaths: list[str] = []
+    for line in dynamic.splitlines():
+        if "(RPATH)" not in line and "(RUNPATH)" not in line:
+            continue
+        start = line.find("[")
+        end = line.rfind("]")
+        if start < 0 or end <= start:
+            raise RuntimeError(f"could not parse adapter RPATH line: {line}")
+        rpaths.append(line[start + 1 : end])
+    if rpaths == ["$ORIGIN"]:
+        return
+    if len(rpaths) != 1 or not rpaths[0]:
+        raise RuntimeError(f"expected exactly one adapter RPATH/RUNPATH, found {rpaths!r}")
+
+    original = rpaths[0].encode()
+    replacement = b"$ORIGIN"
+    if len(original) < len(replacement):
+        raise RuntimeError(
+            "adapter RPATH cannot be rewritten in place: "
+            f"{rpaths[0]!r} is shorter than $ORIGIN"
+        )
+
+    payload = adapter.read_bytes()
+    needle = original + b"\0"
+    offsets: list[int] = []
+    offset = payload.find(needle)
+    while offset >= 0:
+        offsets.append(offset)
+        offset = payload.find(needle, offset + 1)
+    if len(offsets) != 1:
+        raise RuntimeError(
+            "expected the adapter RPATH string to appear exactly once in the ELF; "
+            f"found {len(offsets)} occurrences of {rpaths[0]!r}"
+        )
+
+    padded = replacement + b"\0" * (len(needle) - len(replacement))
+    offset = offsets[0]
+    adapter.write_bytes(payload[:offset] + padded + payload[offset + len(needle) :])
+
 
 def verify_runtime_adapter_relocatable(adapter: Path) -> None:
     dynamic = subprocess.check_output(["readelf", "-d", str(adapter)], text=True)
