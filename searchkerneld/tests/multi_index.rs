@@ -1099,7 +1099,10 @@ fn closed_lifecycle_lock_is_released_while_a_forked_child_retains_descriptors() 
         }
     }
     unsafe { libc::close(pipe[0]) };
-    let child = Child { pid, release: pipe[1] };
+    let child = Child {
+        pid,
+        release: pipe[1],
+    };
     let closed = owner.close();
     let registry = IndexRegistry::new(&temp.0).expect("registry");
     let reopened = registry.dispatch(&open_request(Some("products")));
