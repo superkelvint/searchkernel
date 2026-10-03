@@ -99,20 +99,43 @@ impl Index {
     /// owner. Existing clones become closed. The lifecycle lock covers shutdown,
     /// publication and reopen, including rollback; document storage is retained.
     pub fn apply_rank_definition_bytes(&self, bytes: &[u8]) -> Result<Self> {
+        self.apply_rank_definition_bytes_inner(bytes)
+            .map_err(|(error, _recovered)| error)
+    }
+
+    /// Internal daemon variant that returns the reopened rollback owner when
+    /// publication fails after the active engine has been closed.
+    #[doc(hidden)]
+    #[cfg(feature = "internal-api")]
+    pub fn apply_rank_definition_bytes_recovering(
+        &self,
+        bytes: &[u8],
+    ) -> std::result::Result<Self, (Error, Option<Self>)> {
+        self.apply_rank_definition_bytes_inner(bytes)
+    }
+
+    fn apply_rank_definition_bytes_inner(
+        &self,
+        bytes: &[u8],
+    ) -> std::result::Result<Self, (Error, Option<Self>)> {
         let view = searchkernel_ir::__flatbuffers::root::<
             searchkernel_ir::wire::v1::schema::IndexDefinition,
         >(bytes)
-        .map_err(|error| Error::Serialization(error.to_string()))?;
-        let mut definition =
-            searchkernel_ir::wire::v1::index_definition_to_ir(view).map_err(Error::from_ir)?;
-        searchkernel_ir_adapter::validate_index_definition(&definition).map_err(Error::from_ir)?;
+        .map_err(|error| (Error::Serialization(error.to_string()), None))?;
+        let mut definition = searchkernel_ir::wire::v1::index_definition_to_ir(view)
+            .map_err(|error| (Error::from_ir(error), None))?;
+        searchkernel_ir_adapter::validate_index_definition(&definition)
+            .map_err(|error| (Error::from_ir(error), None))?;
         if !searchkernel_ir_adapter::rank_profile_change_supported(
             self.inner.context.definition(),
             &definition,
         ) {
-            return Err(Error::search(
-                crate::ErrorCode::Unsupported,
-                "schema changes require reindexing",
+            return Err((
+                Error::search(
+                    crate::ErrorCode::Unsupported,
+                    "schema changes require reindexing",
+                ),
+                None,
             ));
         }
         definition
@@ -121,11 +144,15 @@ impl Index {
             .inner
             .lifecycle_lock
             .lock()
-            .map_err(|_| Error::index_closed())?;
-        let root = lock.as_ref().ok_or_else(Error::index_closed)?.root.clone();
-        recover(&root)?;
+            .map_err(|_| (Error::index_closed(), None))?;
+        let root = lock
+            .as_ref()
+            .ok_or_else(|| (Error::index_closed(), None))?
+            .root
+            .clone();
+        recover(&root).map_err(|error| (error, None))?;
         let next = root.join(NEXT);
-        fs::create_dir(&next).map_err(io)?;
+        fs::create_dir(&next).map_err(|error| (io(error), None))?;
         let prepare = (|| {
             let context = IndexContext::from_definition_ir(definition);
             searchkernel_ir_adapter::compile_index_definition(
@@ -150,11 +177,16 @@ impl Index {
         let context = match prepare {
             Ok(context) => context,
             Err(error) => {
-                recover(&root)?;
-                return Err(error);
+                if let Err(recovery_error) = recover(&root) {
+                    return Err((recovery_error, None));
+                }
+                return Err((error, None));
             }
         };
-        self.inner.session.close().map_err(Error::from_ir)?;
+        self.inner
+            .session
+            .close()
+            .map_err(|error| (Error::from_ir(error), None))?;
         let publish = (|| {
             install_config(&next, &root)?;
             #[cfg(test)]
@@ -180,16 +212,46 @@ impl Index {
                     context,
                     BackendSession::new(Box::new(backend)),
                     lock.take(),
-                )?;
+                )
+                .map_err(|error| (error, None))?;
                 let _ = recover(&root);
                 Ok(owner)
             }
             Err(error) => {
-                let recovered = recover(&root);
-                // Allow the registry to reopen the restored definition.
-                let _ = lock.take();
-                recovered?;
-                Err(error)
+                if let Err(recovery_error) = recover(&root) {
+                    // Keep the lifecycle lock attached to the now-closed original
+                    // owner until its registry entry is retired.
+                    return Err((recovery_error, None));
+                }
+
+                // Reopen the restored configuration while still owning the same
+                // filesystem lifecycle lock. This closes the cross-process gap
+                // between rollback and registry publication.
+                let restored = (|| {
+                    let manifest = IndexManifest::read(&root)?;
+                    let config = root.join("config");
+                    let restored_context = manifest.resolved_context_with_config(&config)?;
+                    let backend = open_native_backend(&root.join("data"), &config)
+                        .map_err(|open_error| Error::Infrastructure(open_error.to_string()))?;
+                    Self::from_owned_backend(
+                        restored_context,
+                        BackendSession::new(Box::new(backend)),
+                        lock.take(),
+                    )
+                })();
+
+                match restored {
+                    Ok(owner) => Err((error, Some(owner))),
+                    Err(reopen_error) => Err((
+                        Error::search(
+                            crate::ErrorCode::Unavailable,
+                            format!(
+                                "{error}; rollback restored persisted configuration but reopen failed: {reopen_error}"
+                            ),
+                        ),
+                        None,
+                    )),
+                }
             }
         }
     }
