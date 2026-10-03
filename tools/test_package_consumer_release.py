@@ -147,7 +147,7 @@ class ConsumerReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "must use only \\$ORIGIN"):
                 MODULE.verify_runtime_adapter_relocatable(adapter)
 
-    def test_release_build_contract_requests_origin_adapter_rpath(self) -> None:
+    def test_release_relocates_adapter_only_after_daemon_link(self) -> None:
         packager = (ROOT / "tools/package-consumer-release.py").read_text(
             encoding="utf-8"
         )
@@ -157,9 +157,27 @@ class ConsumerReleaseTests(unittest.TestCase):
         build_rs = (
             ROOT / "core/crates/searchkernel-vespa-bindings/build.rs"
         ).read_text(encoding="utf-8")
-        self.assertIn('release_env["SK_NATIVE_ADAPTER_RPATH"] = "$ORIGIN"', packager)
-        self.assertIn('ADAPTER_RPATH_OVERRIDE=${SK_NATIVE_ADAPTER_RPATH:-}', build_sdk)
-        self.assertIn('cargo:rerun-if-env-changed=SK_NATIVE_ADAPTER_RPATH', build_rs)
+        self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", packager)
+        self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", build_sdk)
+        self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", build_rs)
+        build = packager.index('"cargo",\n                    "build"')
+        relocate = packager.index("make_runtime_adapter_relocatable(staged_adapter)")
+        self.assertLess(build, relocate)
+
+    def test_release_adapter_relocation_uses_origin_only(self) -> None:
+        adapter = Path("/tmp/libsearchkernel_vespa.so.2")
+        with mock.patch.object(MODULE.subprocess, "run") as run:
+            MODULE.make_runtime_adapter_relocatable(adapter)
+        run.assert_called_once_with(
+            [
+                "patchelf",
+                "--force-rpath",
+                "--set-rpath",
+                "$ORIGIN",
+                str(adapter),
+            ],
+            check=True,
+        )
 
     def test_runtime_probe_requires_application_level_argument_error(self) -> None:
         launcher = Path("/tmp/packaged-searchkerneld")
