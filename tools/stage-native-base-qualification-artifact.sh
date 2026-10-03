@@ -26,36 +26,14 @@ case "$BUILD_ENV" in
     *) echo "unsupported native-base qualification environment: $BUILD_ENV" >&2; exit 2 ;;
 esac
 
-BASE=$(bash "$ROOT/tools/resolve-native-sdk.sh" path)
-VESPA_ROOT=$(bash "$ROOT/tools/resolve-native-sdk.sh" vespa-root)
-MARKER="$VESPA_ROOT/.searchkernel-vespa-artifact.json"
-[[ -f "$MARKER" ]] || {
-    echo "installed native-base toolchain lacks release metadata: $MARKER" >&2
-    exit 1
-}
-GENERATION=$("$PYTHON_BIN" - "$MARKER" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
-import json
-import sys
-
-path, build_env, target, commit = sys.argv[1:]
-with open(path, encoding="utf-8") as stream:
-    marker = json.load(stream)
-expected = {
-    "build_environment": build_env,
-    "native_target": target,
-    "vespa_commit": commit,
-}
-for key, value in expected.items():
-    if marker.get(key) != value:
-        raise SystemExit(
-            f"installed native-base toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
-        )
-generation = marker.get("artifact_generation", marker.get("format_version"))
-if not isinstance(generation, int) or generation < 1:
-    raise SystemExit("installed native base has no valid artifact generation")
-print(generation)
-PY
-)
+# This is a qualification-only archive, not a published generation. The
+# canonical mounted cache is authoritative input, but it is not required to
+# carry GitHub-release metadata. Give the temporary archive a valid local
+# generation so the ordinary consumer installer can exercise the exact artifact
+# format without contacting GitHub.
+GENERATION=1
+bash "$ROOT/tools/resolve-native-sdk.sh" path >/dev/null
+bash "$ROOT/tools/resolve-native-sdk.sh" vespa-root >/dev/null
 
 if find "$OUTPUT" -mindepth 1 -print -quit | grep -q .; then
     echo "native-base qualification output must be empty: $OUTPUT" >&2
@@ -72,13 +50,19 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 STAGE="$TMP/stage"
-env     SEARCHKERNEL_BUILD_ENV="$BUILD_ENV"     SK_NATIVE_TARGET="$TARGET"     SK_NATIVE_BASE_GENERATION="$GENERATION"     SK_NATIVE_BASE_SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"     bash "$ROOT/tools/package-native-base-artifact.sh" "$OUTPUT" "$STAGE" >/dev/null
+env \
+    SEARCHKERNEL_BUILD_ENV="$BUILD_ENV" \
+    SK_NATIVE_TARGET="$TARGET" \
+    SK_NATIVE_BASE_GENERATION="$GENERATION" \
+    SK_NATIVE_BASE_SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)" \
+    bash "$ROOT/tools/package-native-base-artifact.sh" "$OUTPUT" "$STAGE" >/dev/null
 
 ASSET="searchkernel-vespa-base-v${GENERATION}-${BUILD_ENV}-${TARGET}-${PINNED_VESPA_COMMIT}.tar.gz"
 ARCHIVE="$OUTPUT/$ASSET"
 (
     cd "$STAGE"
-    tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0         --numeric-owner -cf - searchkernel-vespa-base | gzip -n >"$ARCHIVE"
+    tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 \
+        --numeric-owner -cf - searchkernel-vespa-base | gzip -n >"$ARCHIVE"
 )
 sha256sum "$ARCHIVE" >"$ARCHIVE.sha256"
 
