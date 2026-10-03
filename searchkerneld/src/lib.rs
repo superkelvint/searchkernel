@@ -64,6 +64,7 @@ use tokio_stream::{wrappers::TcpListenerStream, Stream};
 use tonic::{body::BoxBody, Request, Response, Status};
 use tonic_web::GrpcWebLayer;
 use tower::{Layer, Service};
+use tower_http::cors::{Any, CorsLayer};
 
 /// Shared Rust bindings generated from the public Search Kernel gRPC protocol.
 pub use searchkernel_rpc::rpc;
@@ -1045,6 +1046,24 @@ where
         if grpc_web {
             tonic::transport::Server::builder()
                 .accept_http1(true)
+                // Keep CORS outside admission so browsers can also read
+                // overload responses. GrpcWebLayer alone does not provide CORS.
+                .layer(
+                    CorsLayer::new()
+                        .allow_origin(Any)
+                        .allow_methods([Method::POST])
+                        .allow_headers([
+                            CONTENT_TYPE,
+                            http::HeaderName::from_static("x-grpc-web"),
+                            http::HeaderName::from_static("x-user-agent"),
+                            http::HeaderName::from_static("grpc-timeout"),
+                        ])
+                        .expose_headers([
+                            http::HeaderName::from_static("grpc-status"),
+                            http::HeaderName::from_static("grpc-message"),
+                            http::HeaderName::from_static("grpc-status-details-bin"),
+                        ]),
+                )
                 .layer(AdmissionLayer::new(
                     admission_limit.clone(),
                     Some(service.clone()),
