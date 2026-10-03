@@ -17,7 +17,8 @@ from pathlib import Path
 
 DIST = Path(sys.argv[1]).resolve()
 MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
-QUICKSTARTS = Path(__file__).resolve().parent / "quickstarts"
+QUALIFICATION_ROOT = Path(__file__).resolve().parent
+QUICKSTARTS = QUALIFICATION_ROOT / "quickstarts"
 
 # The regression test compares this executable registry to release-support.json.
 # Every supported surface/runtime pair must map to one packaged consumer probe.
@@ -91,6 +92,38 @@ def artifact(prefix: str, suffix: str) -> Path:
     return matches[0]
 
 
+def native_base_fixture() -> tuple[dict[str, object], Path]:
+    fixture_root = QUALIFICATION_ROOT / "native-base"
+    manifest_path = fixture_root / "manifest.json"
+    try:
+        metadata = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"qualification native-base metadata is unavailable: {exc}") from exc
+
+    artifact_name = metadata.get("artifact")
+    if not isinstance(artifact_name, str) or not artifact_name:
+        raise RuntimeError("qualification native-base metadata has no artifact")
+    archive = fixture_root / artifact_name
+    if not archive.is_file():
+        raise RuntimeError(f"qualification native-base artifact is missing: {archive}")
+
+    expected = metadata.get("sha256")
+    actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if not isinstance(expected, str) or actual != expected:
+        raise RuntimeError("qualification native-base artifact checksum mismatch")
+
+    generation = metadata.get("artifact_generation")
+    build_env = metadata.get("build_environment")
+    target = metadata.get("native_target")
+    if not isinstance(generation, int) or generation < 1:
+        raise RuntimeError("qualification native-base generation is invalid")
+    if build_env not in {"host", "ci"}:
+        raise RuntimeError("qualification native-base build environment is invalid")
+    if not isinstance(target, str) or not target:
+        raise RuntimeError("qualification native-base target is invalid")
+    return metadata, archive
+
+
 def verify_manifest() -> None:
     for item in MANIFEST["artifacts"]:
         path = DIST / item["file"]
@@ -161,15 +194,18 @@ def run_ruby_quickstart(
 def run_rust_quickstart(rust_root: Path, root: Path) -> None:
     quickstart = rust_root / "release-quickstart"
     shutil.copytree(QUICKSTARTS / "rust", quickstart)
+    native_base, native_base_archive = native_base_fixture()
     environment = {
         "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
+        "SEARCHKERNEL_BUILD_ENV": str(native_base["build_environment"]),
+        "SK_NATIVE_TARGET": str(native_base["native_target"]),
+        "SK_NATIVE_BASE_ARTIFACT_URL": native_base_archive.as_uri(),
+        "SK_NATIVE_BASE_ARTIFACT_GENERATION": str(native_base["artifact_generation"]),
+        "SK_NATIVE_CACHE_DIR": str(root / "rust-native-cache"),
     }
-    # Rust embedded builds resolve the published native base from GitHub.
-    # Pass consumer authentication only to this build; runtime probes still
-    # receive the ordinary scrubbed clean environment.
-    github_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if github_token:
-        environment["GH_TOKEN"] = github_token
+    # Qualification consumes the exact native-base sidecar staged by this
+    # release run. It never publishes to, discovers from, or downloads from
+    # GitHub; the tag workflow owns publication separately.
     run(
         "cargo",
         "run",
