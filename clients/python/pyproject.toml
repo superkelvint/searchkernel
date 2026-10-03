@@ -33,5 +33,6 @@ searchkernel = [
     "_wire/v1/generated/**/*.pyi",
     "bin/*",
     "lib/*",
+    "lib/.searchkernel-runtime-provenance.json",
     "manifest.json",
 ]
