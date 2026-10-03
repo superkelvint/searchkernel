@@ -1005,8 +1005,12 @@ async fn admission_limit_is_shared_by_grpc_web() {
     });
     started.await;
 
-    let (status, _content_type, body) =
-        execute_grpc_web_with_origin(web_address, large_search_request(), Some("http://localhost:5173")).await;
+    let (status, _content_type, body) = execute_grpc_web_with_origin(
+        web_address,
+        large_search_request(),
+        Some("http://localhost:5173"),
+    )
+    .await;
     assert_eq!(status, 200);
     backend.release();
     let body = String::from_utf8_lossy(&body);
@@ -1137,10 +1141,15 @@ async fn grpc_web_listener_accepts_browser_preflight_and_exposes_responses() {
     let address = server.web_tcp_addr().expect("browser address");
     let request = HttpRequest::builder()
         .method("OPTIONS")
-        .uri(format!("http://{address}/searchkernel.rpc.v1.SearchKernel/Execute"))
+        .uri(format!(
+            "http://{address}/searchkernel.rpc.v1.SearchKernel/Execute"
+        ))
         .header("origin", "http://localhost:5173")
         .header("access-control-request-method", "POST")
-        .header("access-control-request-headers", "content-type,x-grpc-web,x-user-agent")
+        .header(
+            "access-control-request-headers",
+            "content-type,x-grpc-web,x-user-agent",
+        )
         .body(Full::new(Bytes::new()))
         .expect("browser preflight");
     let client = Client::builder(TokioExecutor::new()).build_http();
@@ -1148,13 +1157,18 @@ async fn grpc_web_listener_accepts_browser_preflight_and_exposes_responses() {
     assert!(response.status().is_success());
     assert_eq!(response.headers()["access-control-allow-origin"], "*");
     assert_eq!(response.headers()["access-control-allow-methods"], "POST");
-    let allowed = response.headers()["access-control-allow-headers"].to_str().unwrap();
+    let allowed = response.headers()["access-control-allow-headers"]
+        .to_str()
+        .unwrap();
     for name in ["content-type", "x-grpc-web", "x-user-agent"] {
         assert!(allowed.contains(name), "preflight must allow {name}");
     }
     let (status, _, _) = execute_grpc_web_with_origin(
-        address, describe_request(PROTOCOL_VERSION), Some("http://localhost:5173"),
-    ).await;
+        address,
+        describe_request(PROTOCOL_VERSION),
+        Some("http://localhost:5173"),
+    )
+    .await;
     assert_eq!(status, 200);
     server.shutdown().await.expect("shutdown browser listener");
     index.close().expect("close index");
