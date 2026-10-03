@@ -35,6 +35,7 @@ export {
 } from "./transport/grpc-web.js";
 export {
   SearchBuilder,
+  SearchRequestBuilder,
   YqlBuilder,
   PatchBuilder,
   UpdateBuilder,
@@ -61,3 +62,5 @@ export { FieldDefinitionT } from "./semantic.js";
 export { DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT } from "./semantic.js";
 export { ProtocolError } from "./protocol/envelope.js";
 export type { ClientTransport } from "./client/index.js";
+
+export { toCanonicalJson, fromCanonicalJson, parseTypedQuery, jsonInput, type CanonicalJson } from "./client/json.js";

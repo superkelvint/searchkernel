@@ -1,3 +1,4 @@
+import { prepareSearch } from './search-request'
 import {
   normalizeClientError,
   type AnalysisToken,
@@ -68,6 +69,11 @@ function delay(signal?: AbortSignal) {
 
 export function createFixtureSearchKernelClient(): SearchKernelClient {
   return {
+    prepareSearch,
+    executeSearch(indexId, prepared, options) {
+      if (prepared.request.mode === 'typed' || prepared.request.filters?.length || prepared.request.sorts?.length || prepared.request.inputs !== undefined || prepared.request.offset) throw new Error('Advanced search requires real daemon mode')
+      return this.search(indexId, prepared.request, options)
+    },
     capabilities: async () => capabilities,
     listIndexes: async () => indexes,
     getIndex: async indexId => indexes.find(index => index.id === indexId),

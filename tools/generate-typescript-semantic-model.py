@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import json
 from pathlib import Path
 
 from searchkernel_bfbs import ReflectedSchema
@@ -78,6 +79,19 @@ def render(bfbs: Path) -> str:
         entries = ", ".join(f"{field}: {enum_name!r}" for field, enum_name in specs)
         lines.append(f"  {table_name}: {{ {entries} }},")
     lines.append("};")
+    # BFBS remains the authority for standard JSON field spelling and types.
+    json_fields = {
+        schema.short_name(obj): {
+            schema.field_name(field): {
+                "name": field.Name().decode("utf-8"),
+                "type": schema.ts_type(field),
+                "unsigned": field.Type().BaseType() == schema.base.ULong or field.Type().Element() == schema.base.ULong,
+            }
+            for field in schema.fields(obj)
+        }
+        for obj in schema.wire_objects()
+    }
+    lines.append("export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<string, { readonly name: string; readonly type: string; readonly unsigned: boolean }>>>> = " + json.dumps(json_fields, indent=2) + ";")
     return "\n".join(lines) + "\n"
 
 

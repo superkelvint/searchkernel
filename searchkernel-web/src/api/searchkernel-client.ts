@@ -36,13 +36,17 @@ export type Field = {
 export type Index = {
   id: string
   generation?: string
+  profileInputs?: Record<string, string>
   profiles: string[]
   summaries: string[]
   searchDefaults: SearchRequestDefaults
   fields: Field[]
 }
 
-export type ClientSearchRequest = { query: string; ranking?: string; limit?: number; summary?: string }
+export type SearchFilter = { field: string; operator: 'eq' | 'ne' | 'lt' | 'lte' | 'gt' | 'gte' | 'in' | 'exists'; value: string }
+export type SearchSort = { field: string; direction: 'asc' | 'desc' }
+export type ClientSearchRequest = { query: string; mode?: 'text' | 'typed'; typedQuery?: string; filters?: SearchFilter[]; sorts?: SearchSort[]; offset?: number; ranking?: string; limit?: number; summary?: string; inputs?: string }
+export type PreparedSearchRequest = { readonly request: ClientSearchRequest; readonly canonical: string }
 export type SearchRequestDefaults = Pick<ClientSearchRequest, 'ranking' | 'limit' | 'summary'>
 export type BrowseDocumentsRequest = { query?: string; cursor?: string; limit?: number; sort?: string }
 export type BrowseDocumentsResponse = { documents: Document[]; nextCursor?: string; total?: number | string }
@@ -55,6 +59,8 @@ export type ClientSearchResponse = {
   resolved?: string
   analysis?: string
   diagnostics: string[]
+  canonicalResponse?: string
+  totalRelation?: string
   coverage?: FieldValue
 }
 export type AnalysisToken = { position: number; original: string; normalized: string; term: string }
@@ -101,6 +107,8 @@ export interface SearchKernelClient {
   getIndex(indexId: string, options?: RequestOptions): Promise<Index | undefined>
   getDocument(indexId: string, documentId: string, options?: RequestOptions): Promise<Document | undefined>
   browseDocuments(indexId: string, request: BrowseDocumentsRequest, options?: RequestOptions): Promise<BrowseDocumentsResponse>
+  prepareSearch(request: ClientSearchRequest): PreparedSearchRequest
+  executeSearch(indexId: string, request: PreparedSearchRequest, options?: RequestOptions): Promise<ClientSearchResponse>
   search(indexId: string, request: ClientSearchRequest, options?: RequestOptions): Promise<ClientSearchResponse>
   analyze(indexId: string, text: string, options?: AnalysisOptions): Promise<AnalysisToken[]>
 }
