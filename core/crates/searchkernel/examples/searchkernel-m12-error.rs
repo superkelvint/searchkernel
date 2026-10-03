@@ -5,7 +5,8 @@ mod m12;
 
 use crate::m12::{load, low_level_request, portable_request_json};
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{index_definition_to_ir, IndexContext};
+use searchkernel_ir::wire::v1::index_definition_to_ir;
+use searchkernel_ir::IndexContext;
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use searchkernel_vespa_engine::{Engine, Error as EngineError};
 use serde_json::{json, Value as Json};

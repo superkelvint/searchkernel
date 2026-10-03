@@ -3,7 +3,8 @@ mod m14;
 
 use crate::m14::{load, TraceReader};
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexContext};
+use searchkernel_ir::wire::v1::index_definition_to_ir;
+use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use serde_json::{json, Value as Json};

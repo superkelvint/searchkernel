@@ -3,7 +3,8 @@ mod m13;
 
 use crate::m13::{compile_and_open, load};
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexContext};
+use searchkernel_ir::wire::v1::index_definition_to_ir;
+use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::{request_json_to_flatbuffer, response_flatbuffer_to_json};
 use searchkernel_vespa_engine::{
