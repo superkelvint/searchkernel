@@ -163,6 +163,8 @@ class ConsumerReleaseTests(unittest.TestCase):
         build = packager.index('"cargo",\n                    "build"')
         relocate = packager.index("make_runtime_adapter_relocatable(staged_adapter)")
         self.assertLess(build, relocate)
+        self.assertNotIn("payload = adapter.read_bytes()", packager)
+        self.assertIn("mmap.mmap(stream.fileno(), 0)", packager)
 
     def test_release_adapter_relocation_rewrites_dynamic_string_in_place(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
