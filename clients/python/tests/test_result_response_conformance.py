@@ -6,12 +6,10 @@ from pathlib import Path
 
 from searchkernel.ergonomic import Hit, ResultGroup, SearchResults
 from searchkernel.protocol import unpack_response
-from searchkernel._semantic import is_semantic_table
+from searchkernel._semantic import is_semantic_table, TotalHitsRelation
 
-# The version-neutral protocol helper delegates to its private wire codec.
-# root on sys.path. Keep generated-wire imports after that production bootstrap.
-from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchResult import SearchResultT
-from searchkernel._wire.v1.generated.SearchKernel.Wire.TotalHitsRelation import TotalHitsRelation
+# unpack_response returns version-neutral semantic objects, including enums.
+# Comparing their relations to private numeric wire enums loses metadata.
 
 
 def _value(value):
@@ -105,7 +103,7 @@ def _relation(value):
         TotalHitsRelation.Approximate: "approximate",
         TotalHitsRelation.Unknown: "unknown",
     }
-    return names.get(value, "unspecified")
+    return names[value]
 
 
 def _coverage(value):

@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -172,6 +174,34 @@ exit 0
             '"$PYTHON_BIN" clients/python/examples/try_searchkernel_client_api_e2e.py',
             wrapper,
         )
+
+    def test_clean_semantic_parity_prepares_ignored_grpc_client_modules(self) -> None:
+        marker = self.fixture / "grpc-generated"
+        self._write(self.repo / "clients/typescript/node_modules/.bin/tsc", "#!/bin/sh\nexit 0\n", executable=True)
+        self._write(self.repo / "tools/check-flatbuffers-bfbs.sh", "#!/bin/sh\nexit 0\n", executable=True)
+        self._write(
+            self.fakebin / "npm",
+            '#!/bin/sh\ncase "$*" in *generate:grpc-web*) touch "$PARITY_MARKER" ;; esac\n',
+            executable=True,
+        )
+        self._write(
+            self.fakebin / "python",
+            '''#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == */tools/dev-targets.py ]]; then
+  exec PYTHON_EXECUTABLE "$@"
+fi
+if [[ "${1:-}" == */tools/check-client-semantic-parity.py ]]; then
+  [[ -f "$PARITY_MARKER" ]] || { echo 'browser/Node generated modules missing' >&2; exit 11; }
+fi
+'''.replace("PYTHON_EXECUTABLE", shlex.quote(sys.executable)),
+            executable=True,
+        )
+        env = os.environ.copy()
+        env.update({"PATH": f"{self.fakebin}:{env['PATH']}", "FAKE_BIN": str(self.fakebin), "PARITY_MARKER": str(marker), "SEARCHKERNEL_DEV_USE_CI_IMAGE": "0"})
+        completed = subprocess.run([str(self.repo / "dev"), "verify", "client-semantic-parity"], cwd=self.repo, env=env, text=True, capture_output=True, check=False)
+        self.assertEqual(completed.returncode, 0, msg=completed.stdout + completed.stderr)
+        self.assertTrue(marker.is_file(), "clean parity must generate the ignored browser/Node RPC modules before importing SDK source")
 
     def test_ruby_real_e2e_uses_the_installed_gem(self) -> None:
         e2e_log = self.fixture / "ruby-installed.e2e.log"

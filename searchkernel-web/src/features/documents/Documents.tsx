@@ -1,23 +1,58 @@
-import { useEffect, useState } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline'
-import type { Document } from '../../api/searchkernel-client'
-import { useSearchKernelClient } from '../../app/client-context'
+import { useCapabilities, useSearchKernelClient } from '../../app/client-context'
 import { useIndex } from '../../app/index-context'
-import { clientQuery, clientQueryDefaults, queryError } from '../../app/query'
-import { Heading, QueryErrorBanner, QueryErrorPanel } from '../../components/Shared'
-import { displayFields, displayHitValue, displayValue, type DisplayField } from '../../components/result-display'
+import { clientQuery, clientQueryDefaults } from '../../app/query'
+import { Heading } from '../../components/Shared'
+import { CanonicalInspector, CopyButton, ErrorNotice } from '../../components/Workbench'
+import { decodeSearchParams, encodeSearchParams, updateSearchState, canAdvancePage } from '../search-lab/search-params'
+import { DocumentEditor } from './DocumentEditor'
+import { decodeDocumentId, documentPath } from './workflow'
 
 export function Documents() {
-  const index = useIndex(); const client = useSearchKernelClient(); const { documentId } = useParams(); const navigate = useNavigate(); const [params, setParams] = useSearchParams(); const query = params.get('query') ?? ''
-  const search = useQuery({ queryKey: ['document-browse', index.id, index.generation, query], queryFn: clientQuery(signal => client.browseDocuments(index.id, { query, limit: 20 }, { signal })), ...clientQueryDefaults, placeholderData: keepPreviousData })
-  const document = useQuery({ queryKey: ['document', index.id, index.generation, documentId], queryFn: clientQuery(async signal => (await client.getDocument(index.id, documentId!, { signal })) ?? null), ...clientQueryDefaults, enabled: Boolean(documentId) })
-  const fields = displayFields(index.id, index.fields); const rows = search.data?.documents ?? []
-  const updateQuery = (value: string) => { const next = new URLSearchParams(params); value ? next.set('query', value) : next.delete('query'); setParams(next, { replace: true }) }; const open = (id: string) => navigate(`/indexes/${index.id}/data/documents/${encodeURIComponent(id)}?${params}`); const close = () => navigate(`/indexes/${index.id}/data/documents?${params}`)
-  if (search.error && !search.data) return <QueryErrorPanel error={queryError(search.error)} retry={() => { void search.refetch() }} />
-  return <><Heading title="Documents" description={`Browse schema-defined documents in ${index.id}.`}><div className="text-right text-xs text-slate-500">Document mutations, filters, and column preferences are unavailable in this read-only client.</div></Heading><QueryErrorBanner error={search.error} retry={() => { void search.refetch() }} /><div className="surface overflow-hidden"><div className="flex flex-wrap items-center gap-3 border-b border-slate-200 p-4"><div className="relative min-w-55 flex-1"><MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 size-4 text-slate-400" /><input aria-label="Search documents" value={query} onChange={e => updateQuery(e.target.value)} className="input pl-9" placeholder="Search documents…" /></div></div><div className="overflow-x-auto"><table className="w-full min-w-175 text-left text-sm"><thead className="bg-slate-50 text-xs font-medium text-slate-500"><tr><th className="px-4 py-3">_id</th>{fields.map(field => <th key={field.name} className="px-4 py-3">{field.display.label}</th>)}<th className="px-4 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{rows.map(document => <tr key={document.id} className="hover:bg-indigo-50/40"><td className="px-4 py-3.5 font-mono text-xs text-indigo-700">{document.id}</td>{fields.map(field => <td key={field.name} className="px-4 py-3.5 text-slate-600">{displayValue(document.fields[field.name] ?? null, field.display.format)}</td>)}<td className="px-4 py-3.5 text-right"><button onClick={() => open(document.id)} aria-label={`Open ${document.id}`} className="rounded p-1 text-slate-400 hover:bg-slate-100"><ChevronRightIcon className="size-4" /></button></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-500"><span>{search.isFetching ? 'Refreshing…' : `${rows.length} documents`}</span><span className="text-xs">Columns and formatting come from the index schema.</span></div></div>{documentId && <DocumentDrawer document={document.data ?? undefined} fields={fields} loading={document.isLoading} error={document.error} retry={() => { void document.refetch() }} close={close} />}</>
+  const index = useIndex(), client = useSearchKernelClient(), capabilities = useCapabilities()
+  const { documentId: legacyId, documentToken } = useParams()
+  const [params, setParams] = useSearchParams(), navigate = useNavigate()
+  const [creating, setCreating] = useState(false)
+  const restored = useMemo<ReturnType<typeof decodeSearchParams>>(() => params.has('s') ? decodeSearchParams(params) : { state: { query: params.get('query') ?? '', limit: 20 } }, [params])
+  const state = restored.state
+  const prepared = useMemo(() => { try { return { value: client.prepareSearch(state) } } catch (error) { return { error } } }, [client, state])
+  const selected = useMemo(() => { try { return { id: documentToken ? decodeDocumentId(documentToken) : legacyId } } catch (error) { return { error } } }, [documentToken, legacyId])
+  const search = useQuery({ queryKey: ['document-browse', index.id, index.generation, prepared.value?.canonical], queryFn: clientQuery(signal => client.executeSearch(index.id, prepared.value!, { signal })), ...clientQueryDefaults, enabled: !!prepared.value && !restored.error })
+  const document = useQuery({ queryKey: ['document', index.id, index.generation, selected.id], queryFn: clientQuery(async signal => (await client.getDocument(index.id, selected.id!, { signal })) ?? null), ...clientQueryDefaults, enabled: selected.id !== undefined })
+  const rows = search.data?.hits ?? []
+  const update = (patch: Parameters<typeof updateSearchState>[1]) => setParams(encodeSearchParams(updateSearchState(state, patch)))
+  const open = (id: string) => { setCreating(false); navigate(`${documentPath(index.id, id)}?${params}`) }
+  const close = () => navigate(`/indexes/${encodeURIComponent(index.id)}/data/documents?${params}`)
+  const writable = capabilities.capabilities?.documents.write === true
+  const editorKey = JSON.stringify([index.id, index.generation, selected.id])
+  return <div className="min-w-0">
+    <Heading title="Documents" description={`Backend document reads and mutations in ${index.id}.`}><CopyButton label="Copy document URL" text={location.href}/>{writable && <button className="primary-button ml-2" onClick={() => setCreating(value => !value)}>Create document</button>}</Heading>
+    <ErrorNotice error={restored.error ? new Error(restored.error) : prepared.error ?? selected.error ?? search.error}/>
+    <section className="surface space-y-3 p-4">
+      <label className="block">Search documents<input aria-label="Search documents" className="input" value={state.query} onChange={e => update({ query: e.target.value, mode: 'text' })} placeholder="Empty query browses the index"/></label>
+      <div className="flex flex-wrap items-end gap-3"><label>Rows per page<input aria-label="Document page size" className="input w-24" type="number" value={state.limit ?? ''} onChange={e => update({ limit: e.target.value === '' ? undefined : Number(e.target.value) })}/></label><button className="soft-button" onClick={() => navigate(`/indexes/${encodeURIComponent(index.id)}/search/lab?${encodeSearchParams(state)}`)}>Open in Search Lab</button><button className="soft-button" onClick={() => { void search.refetch() }}>Refresh documents</button></div>
+      {search.isFetching && <p role="status">Fetching documents…</p>}
+      {search.data && <p>{search.data.matches} matching documents · {search.data.totalRelation} · offset {state.offset ?? 0}</p>}
+      {!search.isFetching && search.data && !rows.length && <p>{String(search.data.matches) === '0' ? 'No matching documents. Create a document or change the search.' : 'No documents on this page.'}</p>}
+      <div className="space-y-3">{rows.map(hit => <article key={hit.document.id} className="rounded border border-slate-200 p-3"><div className="flex flex-wrap justify-between gap-2"><code>{hit.document.id}</code><button className="soft-button" aria-label={`Open ${hit.document.id}`} onClick={() => open(hit.document.id)}>Open document</button></div><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(hit.document.fields, null, 2)}</pre></article>)}</div>
+      <div className="flex flex-wrap gap-2"><button className="soft-button" disabled={search.isFetching || search.isError || !state.limit || !state.offset} onClick={() => setParams(encodeSearchParams({ ...state, offset: Math.max(0, (state.offset ?? 0) - state.limit!) }))}>Previous documents</button><button className="soft-button" disabled={search.isFetching || search.isError || !canAdvancePage(state, search.data ?? null)} onClick={() => setParams(encodeSearchParams({ ...state, offset: (state.offset ?? 0) + state.limit! }))}>Next documents</button></div>
+      <CanonicalInspector label="Browse request" text={prepared.value?.canonical ?? 'Invalid request'}/>{search.data?.canonicalResponse && <CanonicalInspector label="Browse response" text={search.data.canonicalResponse}/>}
+    </section>
+    {creating && writable && prepared.value && <DocumentEditor key={JSON.stringify([index.id, index.generation])} browse={prepared.value} open={open}/>}
+    {(selected.id !== undefined || !!selected.error) && <Dialog open onClose={close} className="relative z-50">
+      <DialogBackdrop className="fixed inset-0 bg-slate-950/25"/>
+      <div className="fixed inset-0 overflow-y-auto"><DialogPanel className="ml-auto min-h-screen w-full max-w-3xl bg-white p-5 shadow-xl">
+        <div className="flex justify-between"><DialogTitle className="font-mono">{selected.id ?? 'Invalid document URL'}</DialogTitle><button aria-label="Close document" className="soft-button" onClick={close}>Close</button></div>
+        <div className="mt-2 flex flex-wrap gap-2"><CopyButton label="Copy detail URL" text={location.href}/><button className="soft-button" disabled={selected.id === undefined || document.isFetching} onClick={() => { void document.refetch() }}>Refresh document</button></div>
+        {document.isFetching && <p role="status">Reading document from Search Kernel…</p>}
+        <ErrorNotice error={selected.error ?? document.error}/>
+        {!document.isFetching && !document.error && !document.data && <p className="mt-4">The requested document was not found.</p>}
+        {document.data && <><dl className="mt-4 space-y-3">{Object.entries(document.data.fields).map(([name, value]) => <div key={name}><dt className="font-mono text-xs text-slate-500">{name}</dt><dd>{typeof value === 'string' ? value : <pre className="overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(value, null, 2)}</pre>}</dd></div>)}</dl>{document.data.canonical && <CanonicalInspector label="Canonical GET" text={document.data.canonical}/>}</>}
+        {writable && prepared.value && selected.id !== undefined && !document.isLoading && <DocumentEditor key={editorKey} document={document.data ?? undefined} id={selected.id} browse={prepared.value} open={open}/>}
+      </DialogPanel></div>
+    </Dialog>}
+  </div>
 }
-
-export function DocumentDrawer({ document, fields, loading, error, retry, close }: { document?: Document; fields: DisplayField[]; loading: boolean; error?: unknown; retry: () => void; close: () => void }) { const [json, setJson] = useState(false); useEffect(() => setJson(false), [document?.id]); return <Dialog open onClose={close} className="relative z-50"><DialogBackdrop className="fixed inset-0 bg-slate-950/25 transition-opacity data-closed:opacity-0" /><div className="fixed inset-0 overflow-hidden"><div className="absolute inset-0 overflow-hidden"><div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10 sm:pl-16"><DialogPanel className="pointer-events-auto w-screen max-w-2xl transform bg-white shadow-xl transition data-closed:translate-x-full"><div className="flex h-full flex-col"><div className="flex items-start justify-between border-b border-slate-200 px-5 py-4 sm:px-6"><div><p className="kicker">Document</p><DialogTitle className="mt-1 font-mono">{document?.id ?? 'Loading document'}</DialogTitle></div><button onClick={close} className="rounded-md p-1 text-slate-500 hover:bg-slate-100" aria-label="Close document"><XMarkIcon className="size-5" /></button></div>{loading ? <div className="flex-1 p-6"><div className="animate-pulse space-y-4"><div className="h-4 w-1/3 rounded bg-slate-100" /><div className="h-4 w-2/3 rounded bg-slate-100" /><div className="h-4 w-1/2 rounded bg-slate-100" /></div></div> : error ? <div className="flex-1 p-6"><QueryErrorPanel error={queryError(error)} retry={retry} /></div> : document ? <><div className="flex gap-4 border-b border-slate-200 px-5 sm:px-6"><button onClick={() => setJson(false)} className={`index-tab ${!json ? 'index-tab-active' : ''}`}>Fields</button><button onClick={() => setJson(true)} className={`index-tab ${json ? 'index-tab-active' : ''}`}>JSON</button></div><div className="min-h-0 flex-1 overflow-auto px-5 py-6 sm:px-6">{json ? <pre className="overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-6 text-slate-100">{JSON.stringify({ _id: document.id, ...document.fields }, null, 2)}</pre> : <dl className="space-y-5">{fields.map(field => <div key={field.name}><dt className="font-mono text-xs text-slate-500">{field.display.label}</dt><dd className="mt-1 text-sm text-slate-800">{displayValue(document.fields[field.name] ?? null, field.display.format)}</dd></div>)}</dl>}</div><div className="border-t border-slate-200 px-5 py-4 sm:px-6"><p className="text-xs text-slate-500">Editing and deletion are intentionally unavailable until the daemon acknowledges mutations.</p></div></> : <div className="flex-1 p-6 text-sm text-slate-600">The requested document was not found.</div>}</div></DialogPanel></div></div></div></Dialog> }

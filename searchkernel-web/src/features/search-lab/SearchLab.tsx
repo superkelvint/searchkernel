@@ -1,3 +1,4 @@
+import { CopyButton } from '../../components/Workbench'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { type ClientSearchRequest, type ClientSearchResponse, type PreparedSearchRequest, normalizeClientError } from '../../api/searchkernel-client'
@@ -89,8 +90,4 @@ export function SearchLab() {
       <section className="surface min-w-0 p-4"><div className="flex flex-wrap gap-2" role="tablist">{['Request', 'Response', 'Executed request', 'Error'].map(name => <button key={name} role="tab" aria-selected={name === tab} className="soft-button" onClick={() => setTab(name)}>{name}</button>)}</div><p className="my-2 text-xs">{tab === 'Response' ? 'SearchResult payload' : tab === 'Error' ? 'Search Kernel error' : 'SearchRequest payload'} · target {index.id} · generation {index.generation ?? 'unavailable'}</p><CopyButton text={inspector} label={`Copy ${tab}`} /><pre aria-label={`${tab} inspector`} className="mt-3 max-h-150 overflow-auto rounded bg-slate-950 p-4 font-mono text-xs text-slate-100">{inspector}</pre></section>
     </div>
   </div>
-}
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [status, setStatus] = useState('')
-  return <span><button className="soft-button" onClick={async () => { try { if (!navigator.clipboard) throw new Error(); await navigator.clipboard.writeText(text); setStatus('Copied') } catch { setStatus('Clipboard unavailable') } }}>{label}</button><span className="ml-2 text-xs" role="status">{status}</span></span>
 }

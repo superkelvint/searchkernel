@@ -20,6 +20,7 @@ export function AppRoutes() { return <Routes>
   <Route path="/indexes/:indexId/operations" element={<IndexDefault section="operations"/>}/>
   <Route path="/indexes/:indexId/overview" element={<DashboardRoute page="index-overview"/>}/>
   <Route path="/indexes/:indexId/data/documents" element={<DashboardRoute page="documents"/>}/>
+  <Route path="/indexes/:indexId/data/documents/by-id/:documentToken" element={<DashboardRoute page="documents"/>}/>
   <Route path="/indexes/:indexId/data/documents/:documentId" element={<DashboardRoute page="documents"/>}/>
   <Route path="/indexes/:indexId/search/lab" element={<DashboardRoute page="search"/>}/>
   <Route path="/indexes/:indexId/search/analyze" element={<DashboardRoute page="analyze"/>}/>
