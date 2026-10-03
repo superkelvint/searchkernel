@@ -20,6 +20,10 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             tools = root / "tools/bin"
             sdk = root / "target/vespa-verifier/m11/sdk/hardening"
             target = root / "cargo-target"
+            stale_driver = target / "debug/examples/searchkernel-m11-driver"
+            stale_driver.parent.mkdir(parents=True)
+            stale_driver.write_text("#!/usr/bin/env bash\necho stale-driver\n")
+            stale_driver.chmod(0o755)
             m11.mkdir(parents=True)
             common.parent.mkdir(parents=True)
             tools.mkdir(parents=True)
@@ -40,6 +44,7 @@ class M11VerifierRuntimeTests(unittest.TestCase):
                 "[[ -z \"${SK_NATIVE_SDK:-}\" ]] || { echo explicit-sdk-leaked >&2; exit 41; }\n"
                 "[[ -z \"${SK_NATIVE_BASE_SDK:-}\" ]] || { echo base-sdk-leaked >&2; exit 42; }\n"
                 "case \"${RUSTFLAGS:-}\" in *target/vespa-verifier/m11/sdk/hardening/lib*) ;; *) echo hardening-rpath-missing >&2; exit 46 ;; esac\n"
+                "[[ ! -e \"$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver\" ]] || { echo stale-driver-survived >&2; exit 47; }\n"
                 "mkdir -p \"$CARGO_TARGET_DIR/debug/examples/.searchkernel-native\"\n"
                 "printf normal-adapter > \"$CARGO_TARGET_DIR/debug/examples/.searchkernel-native/libsearchkernel_vespa.so.2\"\n"
                 "cat > \"$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver\" <<'DRIVER'\n"
