@@ -74,14 +74,21 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
     await reachable(`http://127.0.0.1:${uiPort}`, vite)
     browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
     const page = await browser.newPage()
+    page.on('pageerror', error => console.error('Browser page error:', error))
+    page.on('console', message => {
+      if (message.type() === 'error') console.error('Browser console:', message.text())
+    })
+    page.on('requestfailed', request => console.error('Browser request failed:', request.url(), request.failure()))
     await page.goto(`http://127.0.0.1:${uiPort}/indexes`)
-    await page.getByRole('button', { name: 'alpha', exact: true }).waitFor()
+    try { await page.getByRole('button', { name: 'alpha', exact: true }).waitFor() }
+    catch (error) { console.error('Index picker page:', await page.locator('body').innerText()); throw error }
     await page.getByRole('button', { name: 'beta', exact: true }).waitFor()
     await page.getByRole('button', { name: 'alpha', exact: true }).click()
     await page.getByRole('button', { name: 'Search documents', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Search documents', exact: true }).click()
     await page.getByRole('textbox', { name: 'Search this index' }).fill('orchid')
     await page.locator('form').getByRole('button').click()
+    await page.getByText(/^1 matches/).waitFor()
     await page.locator('article').filter({ hasText: 'orchid blue' }).waitFor()
     expect(await page.locator('article').count()).toBe(1)
     await page.goto(`http://127.0.0.1:${uiPort}/indexes/alpha/data/documents`)
