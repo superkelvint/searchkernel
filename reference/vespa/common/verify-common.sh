@@ -299,12 +299,14 @@ announce_frozen_oracle_replay() {
 require_sdk_manifest() {
   local manifest="$1"
   local source_header="$REPO_ROOT/core/native/vespa/searchkernel_vespa.h"
-  local sdk_header="$SDK/include/searchkernel_vespa.h"
+  local sdk_root sdk_header
 
   [[ -f "$manifest" ]] || fail_verification "SDK manifest is missing: $manifest"
+  sdk_root="$(cd -- "$(dirname -- "$manifest")" && pwd -P)"
+  sdk_header="$sdk_root/include/searchkernel_vespa.h"
   [[ -f "$source_header" ]] || fail_verification "source native ABI header is missing: $source_header"
   [[ -f "$sdk_header" ]] || fail_verification "SDK native ABI header is missing: $sdk_header"
-  if find "$SDK/lib" -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' \) -print -quit 2>/dev/null | grep -q .; then
+  if find "$sdk_root/lib" -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' \) -print -quit 2>/dev/null | grep -q .; then
     fail_verification "SDK lib directory contains native headers; rebuild the SDK from a clean staging directory"
   fi
   cmp -s "$source_header" "$sdk_header" ||

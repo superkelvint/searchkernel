@@ -20,6 +20,10 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             tools = root / "tools/bin"
             sdk = root / "target/vespa-verifier/m11/sdk/hardening"
             target = root / "cargo-target"
+            stale_driver = target / "debug/examples/searchkernel-m11-driver"
+            stale_driver.parent.mkdir(parents=True)
+            stale_driver.write_text("#!/usr/bin/env bash\necho stale-driver\n")
+            stale_driver.chmod(0o755)
             m11.mkdir(parents=True)
             common.parent.mkdir(parents=True)
             tools.mkdir(parents=True)
@@ -40,6 +44,7 @@ class M11VerifierRuntimeTests(unittest.TestCase):
                 "[[ -z \"${SK_NATIVE_SDK:-}\" ]] || { echo explicit-sdk-leaked >&2; exit 41; }\n"
                 "[[ -z \"${SK_NATIVE_BASE_SDK:-}\" ]] || { echo base-sdk-leaked >&2; exit 42; }\n"
                 "case \"${RUSTFLAGS:-}\" in *target/vespa-verifier/m11/sdk/hardening/lib*) ;; *) echo hardening-rpath-missing >&2; exit 46 ;; esac\n"
+                "[[ ! -e \"$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver\" ]] || { echo stale-driver-survived >&2; exit 47; }\n"
                 "mkdir -p \"$CARGO_TARGET_DIR/debug/examples/.searchkernel-native\"\n"
                 "printf normal-adapter > \"$CARGO_TARGET_DIR/debug/examples/.searchkernel-native/libsearchkernel_vespa.so.2\"\n"
                 "cat > \"$CARGO_TARGET_DIR/debug/examples/searchkernel-m11-driver\" <<'DRIVER'\n"
@@ -79,6 +84,78 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             self.assertTrue(staged.is_file())
             self.assertFalse(staged.is_symlink())
             self.assertEqual(staged.read_bytes(), (sdk / "lib/libsearchkernel_vespa.so.2").read_bytes())
+
+    def test_require_sdk_manifest_validates_manifest_owning_sdk(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            common_dir = root / "reference/vespa/common"
+            source_header = root / "core/native/vespa/searchkernel_vespa.h"
+            tools_dir = root / "tools"
+            global_sdk = root / "cargo-target/native-probe-sdk"
+            hardening_sdk = root / "target/vespa-verifier/m11/sdk/hardening"
+
+            common_dir.mkdir(parents=True)
+            source_header.parent.mkdir(parents=True)
+            tools_dir.mkdir(parents=True)
+            global_sdk.mkdir(parents=True)
+            (hardening_sdk / "include").mkdir(parents=True)
+            (hardening_sdk / "lib").mkdir(parents=True)
+
+            common_source = (
+                Path(__file__).parents[1] / "common" / "verify-common.sh"
+            ).read_text()
+            (common_dir / "verify-common.sh").write_text(common_source)
+
+            header = "#define SK_NATIVE_ABI_VERSION 16U\n"
+            source_header.write_text(header)
+            (hardening_sdk / "include/searchkernel_vespa.h").write_text(header)
+            (hardening_sdk / "manifest.json").write_text("{}\n")
+            (tools_dir / "check-native-abi-authorities.py").write_text(
+                "import sys\n"
+                "raise SystemExit(0)\n"
+            )
+
+            env = os.environ.copy()
+            env.update(
+                {
+                    "SK_NATIVE_SDK": str(global_sdk),
+                    "VESPA_ROOT": str(root / "vespa"),
+                }
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    (
+                        f"source {common_dir / 'verify-common.sh'}; "
+                        f"require_sdk_manifest {hardening_sdk / 'manifest.json'}"
+                    ),
+                ],
+                cwd=root,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_tensor_publication_config_stays_outside_canonical_config(self):
+        driver = (
+            Path(__file__).parents[3]
+            / "core/crates/searchkernel/examples/searchkernel-m11-driver.rs"
+        ).read_text()
+        self.assertNotIn(
+            'config.join("publication-tensor-config")',
+            driver,
+        )
+        self.assertIn(
+            '.join("publication-tensor-config")',
+            driver,
+        )
+        tensor_setup = driver.split(
+            "fn run_tensor_publication_regression", 1
+        )[1].split("let tensor_type", 1)[0]
+        self.assertIn("data\n        .parent()", tensor_setup)
 
     def test_sanitizer_verifier_repoints_driver_before_resolver_check(self):
         sanitizer = Path(__file__).with_name("verify-m11-sanitizers.sh").read_text()
