@@ -54,7 +54,11 @@ export function fromCanonicalJson(table: string, input: unknown, path = table): 
     const alternatives = type.split('|').filter(t => t !== 'null' && t !== 'Uint8Array');
     const tables = alternatives.filter(t => t.endsWith('T'));
     if (tables.length) {
-      const discriminator = object[`${specs[field]!.name}_type`];
+      const discriminatorField = S.SEMANTIC_UNION_FIELDS[table]?.[field];
+      if (!discriminatorField) throw new TypeError(`${at}: missing generated union discriminator metadata`);
+      const discriminatorSpec = specs[discriminatorField];
+      if (!discriminatorSpec) throw new TypeError(`${at}: invalid generated union discriminator metadata`);
+      const discriminator = object[discriminatorSpec.name];
       const selected = tables.length === 1 ? tables[0]! : `${discriminator}T`;
       if (!tables.includes(selected)) throw new TypeError(`${at}: missing or mismatched union discriminator`);
       return fromCanonicalJson(selected.slice(0, -1), item, at);
@@ -87,10 +91,10 @@ export function fromCanonicalJson(table: string, input: unknown, path = table): 
   }
   if (table === 'FilterRequest' && !Object.hasOwn(object, 'sources') && !Object.hasOwn(object, 'parameters')) result._textualOnly = true;
   // Union presence must match before a malformed object reaches the packer.
-  for (const [field, enumName] of Object.entries(S.SEMANTIC_ENUM_FIELDS[table] ?? {})) {
-    if (!field.endsWith('Type')) continue;
-    const payload = field.slice(0, -4);
-    const member = models[enumName]?.[result[field]];
+  for (const [payload, discriminator] of Object.entries(S.SEMANTIC_UNION_FIELDS[table] ?? {})) {
+    const enumName = S.SEMANTIC_ENUM_FIELDS[table]?.[discriminator];
+    if (!enumName) throw new TypeError(`${path}.${payload}: missing generated union enum metadata`);
+    const member = models[enumName]?.[result[discriminator]];
     if (member === 'NONE') {
       if (result[payload] !== null) throw new TypeError(`${path}.${payload}: NONE union has a payload`);
     } else if (!(result[payload] instanceof models[`${member}T`])) throw new TypeError(`${path}.${payload}: missing or mismatched ${member} payload`);

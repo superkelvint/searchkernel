@@ -1679,6 +1679,83 @@ export const SEMANTIC_ENUM_FIELDS: Readonly<Record<string, Readonly<Record<strin
   UpdateOperation: { operationType: 'UpdateOperationKind' },
   Value: { kindType: 'ValueKind' },
 };
+export const SEMANTIC_UNION_FIELDS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "AnalyzeRequest": {
+    "target": "targetType"
+  },
+  "ConstantDefinition": {
+    "source": "sourceType"
+  },
+  "DataType": {
+    "kind": "kindType"
+  },
+  "FilterExpr": {
+    "expr": "exprType"
+  },
+  "GroupingAggregationExpression": {
+    "aggregation": "aggregationType"
+  },
+  "GroupingExpression": {
+    "expr": "exprType"
+  },
+  "GroupingFilterExpr": {
+    "expr": "exprType"
+  },
+  "GroupingMaxOperation": {
+    "value": "valueType"
+  },
+  "GroupingOperation": {
+    "operation": "operationType"
+  },
+  "GroupingRequest": {
+    "source": "sourceType"
+  },
+  "MatchedElementUpdate": {
+    "operation": "operationType"
+  },
+  "MissingPolicy": {
+    "policy": "policyType"
+  },
+  "PatchOperation": {
+    "operation": "operationType"
+  },
+  "QueryExpr": {
+    "expr": "exprType"
+  },
+  "QueryInput": {
+    "input": "inputType"
+  },
+  "QuerySource": {
+    "source": "sourceType"
+  },
+  "RangeBound": {
+    "bound": "boundType"
+  },
+  "Relevance": {
+    "value": "valueType"
+  },
+  "ResolvedSortTarget": {
+    "target": "targetType"
+  },
+  "ResultNode": {
+    "node": "nodeType"
+  },
+  "SortTarget": {
+    "target": "targetType"
+  },
+  "TensorModifyUpdate": {
+    "payload": "payloadType"
+  },
+  "TensorValue": {
+    "payload": "payloadType"
+  },
+  "UpdateOperation": {
+    "operation": "operationType"
+  },
+  "Value": {
+    "kind": "kindType"
+  }
+};
 export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<string, { readonly name: string; readonly type: string; readonly unsigned: boolean; readonly scalar: string }>>>> = {
   "AddUpdate": {
     "value": {

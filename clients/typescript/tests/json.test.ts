@@ -1,9 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { SearchRequestBuilder, q, toCanonicalJson, fromCanonicalJson, parseTypedQuery, jsonInput, int64, Tensor } from '../src/index.js';
 import { packRequest } from '../src/_wire/v1/codec.js';
-import { QuerySourceT, ValueT } from '../src/semantic.js';
+import { QuerySourceT, ValueT, SEMANTIC_JSON_FIELDS, SEMANTIC_UNION_FIELDS } from '../src/semantic.js';
 
 describe('canonical BFBS JSON editor and independent request builder', () => {
+  it('uses BFBS-generated union payload/discriminator relationships', () => {
+    expect(SEMANTIC_UNION_FIELDS.QuerySource).toEqual({ source: 'sourceType' });
+    expect(SEMANTIC_UNION_FIELDS.Value).toEqual({ kind: 'kindType' });
+    expect(SEMANTIC_UNION_FIELDS.TensorValue).toEqual({ payload: 'payloadType' });
+    for (const [table, pairs] of Object.entries(SEMANTIC_UNION_FIELDS)) {
+      for (const [payload, discriminator] of Object.entries(pairs)) {
+        expect(SEMANTIC_JSON_FIELDS[table]?.[payload]?.scalar).toBe('Union');
+        expect(SEMANTIC_JSON_FIELDS[table]?.[discriminator]?.scalar).toBe('UType');
+      }
+    }
+  });
   it('round trips nested typed nodes, annotations, enums and lossless input Values', () => {
     const source = q.allOf(q.term('title', 'orchid'), q.anyOf(q.equals('quantity', 7), q.not(q.equals('quantity', 11))));
     expect(toCanonicalJson(parseTypedQuery(toCanonicalJson(source)))).toEqual(toCanonicalJson(source));

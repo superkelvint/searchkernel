@@ -80,6 +80,41 @@ def render(bfbs: Path) -> str:
         lines.append(f"  {table_name}: {{ {entries} }},")
     lines.append("};")
     # BFBS remains the authority for standard JSON field spelling and types.
+    # Union payload/discriminator pairs are structural: flatc places the UType
+    # discriminator immediately before its Union payload, and both reference the
+    # same reflected union enum index. Emit that relationship explicitly so
+    # consumers never infer it from field names.
+    union_fields: dict[str, dict[str, str]] = {}
+    for obj in schema.wire_objects():
+        fields = schema.fields(obj)
+        by_id = {field.Id(): field for field in fields}
+        pairs: dict[str, str] = {}
+        for field in fields:
+            reflected = field.Type()
+            if reflected.BaseType() != schema.base.Union:
+                continue
+            discriminator = by_id.get(field.Id() - 1)
+            if discriminator is None:
+                raise ValueError(
+                    f"{schema.short_name(obj)}.{schema.field_name(field)} union has no preceding discriminator"
+                )
+            discriminator_type = discriminator.Type()
+            if (
+                discriminator_type.BaseType() != schema.base.UType
+                or discriminator_type.Index() != reflected.Index()
+            ):
+                raise ValueError(
+                    f"{schema.short_name(obj)}.{schema.field_name(field)} union discriminator does not match BFBS"
+                )
+            pairs[schema.field_name(field)] = schema.field_name(discriminator)
+        if pairs:
+            union_fields[schema.short_name(obj)] = pairs
+    lines.append(
+        "export const SEMANTIC_UNION_FIELDS: Readonly<Record<string, Readonly<Record<string, string>>>> = "
+        + json.dumps(union_fields, indent=2)
+        + ";"
+    )
+
     base_names = {number: name for name, number in vars(type(schema.base)).items() if isinstance(number, int)}
     json_fields = {
         schema.short_name(obj): {
