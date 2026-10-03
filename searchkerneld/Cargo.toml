@@ -31,6 +31,7 @@ tokio-stream = { version = "0.1", features = ["net"] }
 tonic = { version = "0.12", features = ["transport"] }
 tonic-web = "0.12"
 tower = { version = "0.4", default-features = false, features = ["util"] }
+tower-http = { version = "0.5", features = ["cors"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -101,6 +101,7 @@ from searchkernel._wire.v1.generated import SearchKernel
 from searchkernel._wire.v1.generated import SearchKernel
 from searchkernel._wire.v1.generated import SearchKernel
 from searchkernel._wire.v1.generated import SearchKernel
+from searchkernel._wire.v1.generated import SearchKernel
 try:
     from typing import Union
 except:
@@ -117,7 +118,7 @@ class ResponseEnvelopeT(object):
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.Wire.InsertResult.InsertResultT', 'SearchKernel.Wire.UpsertResult.UpsertResultT', 'SearchKernel.Wire.PatchResult.PatchResultT', 'SearchKernel.Wire.DeleteResult.DeleteResultT', 'SearchKernel.Wire.GetResult.GetResultT', 'SearchKernel.Wire.SearchResult.SearchResultT', 'SearchKernel.Wire.AnalyzeResult.AnalyzeResultT', 'SearchKernel.Wire.Error.ErrorT', 'SearchKernel.Wire.DescribeResult.DescribeResultT', 'SearchKernel.Wire.InspectQueryResult.InspectQueryResultT', 'SearchKernel.Wire.UpdateResult.UpdateResultT', 'SearchKernel.Wire.CreateIndexResult.CreateIndexResultT', 'SearchKernel.Wire.OpenIndexResult.OpenIndexResultT', 'SearchKernel.Wire.DeleteIndexResult.DeleteIndexResultT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.Wire.InsertResult.InsertResultT', 'SearchKernel.Wire.UpsertResult.UpsertResultT', 'SearchKernel.Wire.PatchResult.PatchResultT', 'SearchKernel.Wire.DeleteResult.DeleteResultT', 'SearchKernel.Wire.GetResult.GetResultT', 'SearchKernel.Wire.SearchResult.SearchResultT', 'SearchKernel.Wire.AnalyzeResult.AnalyzeResultT', 'SearchKernel.Wire.Error.ErrorT', 'SearchKernel.Wire.DescribeResult.DescribeResultT', 'SearchKernel.Wire.InspectQueryResult.InspectQueryResultT', 'SearchKernel.Wire.UpdateResult.UpdateResultT', 'SearchKernel.Wire.CreateIndexResult.CreateIndexResultT', 'SearchKernel.Wire.OpenIndexResult.OpenIndexResultT', 'SearchKernel.Wire.DeleteIndexResult.DeleteIndexResultT', 'SearchKernel.Wire.ListIndexesResult.ListIndexesResultT']
 
     @classmethod
     def InitFromBuf(cls, buf, pos):

@@ -27,52 +27,56 @@ export type Document = {
 export type Field = {
   name: string
   type: string
-  searchable: boolean
-  attribute: boolean
-  stored: boolean
+  searchable?: boolean
+  attribute?: boolean
+  stored?: boolean
   analyzer: string
 }
 
 export type Index = {
   id: string
+  generation?: string
   profiles: string[]
   summaries: string[]
   searchDefaults: SearchRequestDefaults
   fields: Field[]
 }
 
-export type ClientSearchRequest = { query: string; ranking: string; limit: number; summary: string }
+export type ClientSearchRequest = { query: string; ranking?: string; limit?: number; summary?: string }
 export type SearchRequestDefaults = Pick<ClientSearchRequest, 'ranking' | 'limit' | 'summary'>
 export type BrowseDocumentsRequest = { query?: string; cursor?: string; limit?: number; sort?: string }
-export type BrowseDocumentsResponse = { documents: Document[]; nextCursor?: string; total?: number }
+export type BrowseDocumentsResponse = { documents: Document[]; nextCursor?: string; total?: number | string }
 export type SearchHit = { document: Document; score: string; rank: number }
 export type ClientSearchResponse = {
   request: ClientSearchRequest
-  matches: number
-  timingMs: string
+  matches: number | string
+  timingMs?: string
   hits: SearchHit[]
-  resolved: string
-  analysis: string
+  resolved?: string
+  analysis?: string
   diagnostics: string[]
+  coverage?: FieldValue
 }
 export type AnalysisToken = { position: number; original: string; normalized: string; term: string }
 export type RequestOptions = { signal?: AbortSignal }
 export type AnalysisOptions = RequestOptions & { field?: string }
 
-export type ClientErrorDetails = Record<string, FieldValue>
+export type ClientErrorDetails = FieldValue
 export class SearchKernelClientError extends Error {
   readonly code: string
   readonly status?: number
   readonly retryable: boolean
   readonly details?: ClientErrorDetails
+  readonly origin?: 'canonical' | 'transport' | 'protocol' | 'client'
 
-  constructor(message: string, options: { code?: string; status?: number; retryable?: boolean; details?: ClientErrorDetails } = {}) {
+  constructor(message: string, options: { code?: string; status?: number; retryable?: boolean; details?: ClientErrorDetails; origin?: SearchKernelClientError['origin'] } = {}) {
     super(message)
     this.name = 'SearchKernelClientError'
     this.code = options.code ?? 'client_error'
     this.status = options.status
     this.retryable = options.retryable ?? false
     this.details = options.details
+    this.origin = options.origin
   }
 }
 
@@ -93,8 +97,8 @@ export function normalizeClientError(error: unknown): SearchKernelClientError {
 
 export interface SearchKernelClient {
   capabilities(): Promise<Capabilities>
-  listIndexes(): Promise<Index[]>
-  getIndex(indexId: string): Promise<Index | undefined>
+  listIndexes(options?: RequestOptions): Promise<Array<{ id: string }>>
+  getIndex(indexId: string, options?: RequestOptions): Promise<Index | undefined>
   getDocument(indexId: string, documentId: string, options?: RequestOptions): Promise<Document | undefined>
   browseDocuments(indexId: string, request: BrowseDocumentsRequest, options?: RequestOptions): Promise<BrowseDocumentsResponse>
   search(indexId: string, request: ClientSearchRequest, options?: RequestOptions): Promise<ClientSearchResponse>

@@ -1,4 +1,4 @@
-export { Client, Index, SearchKernelError, type DocumentInput, type OperationResponseMap } from "./client/index.js";
+export { Client, Daemon, Index, SearchKernelError, type DocumentInput, type OperationResponseMap } from "./client/index.js";
 export {
   Tensor,
   value,
@@ -58,3 +58,6 @@ export { q, type TypedQuery } from "./ergonomic/query.js";
 export { Text, Keyword, Integer, Float, Boolean, TensorField, PositionField, ArrayOfStructField, RankProfile, type FieldOptions } from "./ergonomic/schema.js";
 export { IndexDefinitionT } from "./semantic.js";
 export { FieldDefinitionT } from "./semantic.js";
+export { DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT } from "./semantic.js";
+export { ProtocolError } from "./protocol/envelope.js";
+export type { ClientTransport } from "./client/index.js";

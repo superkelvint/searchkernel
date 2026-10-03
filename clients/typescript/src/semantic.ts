@@ -566,6 +566,13 @@ export class Int64ValueT extends SemanticTable {
   declare value: bigint;
   constructor(value: bigint = BigInt('0')) { super('Int64Value', ['value'], [value], [BigInt('0')]); }
 }
+export class ListIndexesRequestT extends SemanticTable {
+  constructor() { super('ListIndexesRequest', [], [], []); }
+}
+export class ListIndexesResultT extends SemanticTable {
+  declare targets: (string)[];
+  constructor(targets: (string)[] = []) { super('ListIndexesResult', ['targets'], [targets], [[]]); }
+}
 export class LiteralConstantSourceT extends SemanticTable {
   declare value: ValueT|null;
   constructor(value: ValueT|null = null) { super('LiteralConstantSource', ['value'], [value], [null]); }
