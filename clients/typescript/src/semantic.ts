@@ -1679,3 +1679,3286 @@ export const SEMANTIC_ENUM_FIELDS: Readonly<Record<string, Readonly<Record<strin
   UpdateOperation: { operationType: 'UpdateOperationKind' },
   Value: { kindType: 'ValueKind' },
 };
+export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<string, { readonly name: string; readonly type: string; readonly unsigned: boolean }>>>> = {
+  "AddUpdate": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "AnalyzeFieldTarget": {
+    "field": {
+      "name": "field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "AnalyzeRequest": {
+    "targetType": {
+      "name": "target_type",
+      "type": "AnalyzeTarget",
+      "unsigned": false
+    },
+    "target": {
+      "name": "target",
+      "type": "AnalyzeFieldTargetT|AnalyzerT|null",
+      "unsigned": false
+    },
+    "text": {
+      "name": "text",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "language": {
+      "name": "language",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "AnalyzeResult": {
+    "tokens": {
+      "name": "tokens",
+      "type": "(AnalyzedTokenT)[]",
+      "unsigned": false
+    }
+  },
+  "AnalyzedToken": {
+    "surface": {
+      "name": "surface",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "term": {
+      "name": "term",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "position": {
+      "name": "position",
+      "type": "number",
+      "unsigned": false
+    },
+    "startByte": {
+      "name": "start_byte",
+      "type": "number",
+      "unsigned": false
+    },
+    "endByte": {
+      "name": "end_byte",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "Analyzer": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "version": {
+      "name": "version",
+      "type": "number",
+      "unsigned": false
+    },
+    "options": {
+      "name": "options",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "ArithmeticUpdate": {
+    "operator": {
+      "name": "operator",
+      "type": "ArithmeticUpdateOperator",
+      "unsigned": false
+    },
+    "operand": {
+      "name": "operand",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "ArrayDataType": {
+    "elementType": {
+      "name": "element_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    }
+  },
+  "AssignUpdate": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "AttributeConfig": {
+    "enabled": {
+      "name": "enabled",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "fastSearch": {
+      "name": "fast_search",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "fastAccess": {
+      "name": "fast_access",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "distanceMetric": {
+      "name": "distance_metric",
+      "type": "DistanceMetric",
+      "unsigned": false
+    },
+    "options": {
+      "name": "options",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "AvgAggregation": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "BoolValue": {
+    "value": {
+      "name": "value",
+      "type": "boolean",
+      "unsigned": false
+    }
+  },
+  "BytesValue": {
+    "value": {
+      "name": "value",
+      "type": "(number)[]",
+      "unsigned": false
+    }
+  },
+  "ClearUpdate": {},
+  "ConstantDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "dataType": {
+      "name": "data_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    },
+    "sourceType": {
+      "name": "source_type",
+      "type": "ConstantSourceKind",
+      "unsigned": false
+    },
+    "source": {
+      "name": "source",
+      "type": "FileConstantSourceT|LiteralConstantSourceT|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "CountAggregation": {},
+  "Coverage": {
+    "coveragePercent": {
+      "name": "coverage_percent",
+      "type": "OptionalDoubleT|null",
+      "unsigned": false
+    },
+    "documents": {
+      "name": "documents",
+      "type": "OptionalUInt64T|null",
+      "unsigned": false
+    },
+    "full": {
+      "name": "full",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "nodes": {
+      "name": "nodes",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "results": {
+      "name": "results",
+      "type": "OptionalUInt64T|null",
+      "unsigned": false
+    },
+    "resultsFull": {
+      "name": "results_full",
+      "type": "OptionalUInt64T|null",
+      "unsigned": false
+    },
+    "degraded": {
+      "name": "degraded",
+      "type": "CoverageDegradedT|null",
+      "unsigned": false
+    },
+    "metadata": {
+      "name": "metadata",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "CoverageDegraded": {
+    "matchPhase": {
+      "name": "match_phase",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "timeout": {
+      "name": "timeout",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "adaptiveTimeout": {
+      "name": "adaptive_timeout",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "annTimeout": {
+      "name": "ann_timeout",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "nonIdealState": {
+      "name": "non_ideal_state",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "metadata": {
+      "name": "metadata",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "CreateIndexRequest": {
+    "definition": {
+      "name": "definition",
+      "type": "IndexDefinitionT|null",
+      "unsigned": false
+    }
+  },
+  "CreateIndexResult": {
+    "index": {
+      "name": "index",
+      "type": "IndexDefinitionT|null",
+      "unsigned": false
+    },
+    "generation": {
+      "name": "generation",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "DataType": {
+    "kindType": {
+      "name": "kind_type",
+      "type": "DataTypeKind",
+      "unsigned": false
+    },
+    "kind": {
+      "name": "kind",
+      "type": "ArrayDataTypeT|MapDataTypeT|PositionDataTypeT|PredicateDataTypeT|PrimitiveDataTypeT|ReferenceDataTypeT|StructDataTypeT|StructReferenceDataTypeT|TensorDataTypeT|WeightedSetDataTypeT|null",
+      "unsigned": false
+    }
+  },
+  "DeleteIndexRequest": {},
+  "DeleteIndexResult": {},
+  "DeleteRequest": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "condition": {
+      "name": "condition",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "DeleteResult": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "deleted": {
+      "name": "deleted",
+      "type": "boolean",
+      "unsigned": false
+    }
+  },
+  "DenseTensorValues": {
+    "values": {
+      "name": "values",
+      "type": "(number)[]",
+      "unsigned": false
+    }
+  },
+  "DescribeRequest": {},
+  "DescribeResult": {
+    "index": {
+      "name": "index",
+      "type": "IndexDefinitionT|null",
+      "unsigned": false
+    }
+  },
+  "Document": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "fields": {
+      "name": "fields",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "DocumentSummaryDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "inherits": {
+      "name": "inherits",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "fields": {
+      "name": "fields",
+      "type": "(DocumentSummaryFieldDefinitionT)[]",
+      "unsigned": false
+    },
+    "fromDisk": {
+      "name": "from_disk",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "omitSummaryFeatures": {
+      "name": "omit_summary_features",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "DocumentSummaryFieldDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "source": {
+      "name": "source",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "dataType": {
+      "name": "data_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    },
+    "structFields": {
+      "name": "struct_fields",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "Error": {
+    "code": {
+      "name": "code",
+      "type": "ErrorCode",
+      "unsigned": false
+    },
+    "message": {
+      "name": "message",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "details": {
+      "name": "details",
+      "type": "(ErrorDetailT)[]",
+      "unsigned": false
+    },
+    "retryable": {
+      "name": "retryable",
+      "type": "boolean",
+      "unsigned": false
+    }
+  },
+  "ErrorDetail": {
+    "code": {
+      "name": "code",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "path": {
+      "name": "path",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "message": {
+      "name": "message",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "metadata": {
+      "name": "metadata",
+      "type": "(StringEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "ExpressionQueryInput": {
+    "expression": {
+      "name": "expression",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "FieldDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "dataType": {
+      "name": "data_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    },
+    "stored": {
+      "name": "stored",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "searchable": {
+      "name": "searchable",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "filterable": {
+      "name": "filterable",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "sortable": {
+      "name": "sortable",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "facetable": {
+      "name": "facetable",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "analyzer": {
+      "name": "analyzer",
+      "type": "AnalyzerT|null",
+      "unsigned": false
+    },
+    "matching": {
+      "name": "matching",
+      "type": "MatchingConfigT|null",
+      "unsigned": false
+    },
+    "index": {
+      "name": "index",
+      "type": "IndexConfigT|null",
+      "unsigned": false
+    },
+    "attribute": {
+      "name": "attribute",
+      "type": "AttributeConfigT|null",
+      "unsigned": false
+    },
+    "summary": {
+      "name": "summary",
+      "type": "SummaryConfigT|null",
+      "unsigned": false
+    },
+    "indexingScript": {
+      "name": "indexing_script",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "structFields": {
+      "name": "struct_fields",
+      "type": "(StructFieldConfigT)[]",
+      "unsigned": false
+    }
+  },
+  "FieldPath": {
+    "path": {
+      "name": "path",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "FieldProjection": {
+    "fields": {
+      "name": "fields",
+      "type": "(string)[]",
+      "unsigned": false
+    }
+  },
+  "FieldSetDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "fields": {
+      "name": "fields",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "matching": {
+      "name": "matching",
+      "type": "MatchingConfigT|null",
+      "unsigned": false
+    },
+    "queryCommands": {
+      "name": "query_commands",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "FieldSortTarget": {
+    "field": {
+      "name": "field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "FileConstantSource": {
+    "path": {
+      "name": "path",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "FilterAnd": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(FilterExprT)[]",
+      "unsigned": false
+    }
+  },
+  "FilterClause": {
+    "source": {
+      "name": "source",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "bindings": {
+      "name": "bindings",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "FilterComparison": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "op": {
+      "name": "op",
+      "type": "ComparisonOp",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "FilterExists": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    }
+  },
+  "FilterExpr": {
+    "exprType": {
+      "name": "expr_type",
+      "type": "FilterExprKind",
+      "unsigned": false
+    },
+    "expr": {
+      "name": "expr",
+      "type": "FilterAndT|FilterComparisonT|FilterExistsT|FilterInT|FilterNotT|FilterOrT|FilterRangeT|null",
+      "unsigned": false
+    }
+  },
+  "FilterIn": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "values": {
+      "name": "values",
+      "type": "(ValueT)[]",
+      "unsigned": false
+    }
+  },
+  "FilterNot": {
+    "clause": {
+      "name": "clause",
+      "type": "FilterExprT|null",
+      "unsigned": false
+    }
+  },
+  "FilterOr": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(FilterExprT)[]",
+      "unsigned": false
+    }
+  },
+  "FilterRange": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "lower": {
+      "name": "lower",
+      "type": "RangeBoundT|null",
+      "unsigned": false
+    },
+    "upper": {
+      "name": "upper",
+      "type": "RangeBoundT|null",
+      "unsigned": false
+    },
+    "includeLower": {
+      "name": "include_lower",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "includeUpper": {
+      "name": "include_upper",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "FilterRequest": {
+    "structured": {
+      "name": "structured",
+      "type": "(FilterExprT)[]",
+      "unsigned": false
+    },
+    "sources": {
+      "name": "sources",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "parameters": {
+      "name": "parameters",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "textual": {
+      "name": "textual",
+      "type": "(FilterClauseT)[]",
+      "unsigned": false
+    }
+  },
+  "FiniteGroupingMax": {
+    "value": {
+      "name": "value",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "FiniteRangeBound": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "FiniteRelevance": {
+    "value": {
+      "name": "value",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "Float64Value": {
+    "value": {
+      "name": "value",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "GetRequest": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "projection": {
+      "name": "projection",
+      "type": "FieldProjectionT|null",
+      "unsigned": false
+    }
+  },
+  "GetResult": {
+    "document": {
+      "name": "document",
+      "type": "DocumentT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingAggregationExpression": {
+    "aggregationType": {
+      "name": "aggregation_type",
+      "type": "AggregationKind",
+      "unsigned": false
+    },
+    "aggregation": {
+      "name": "aggregation",
+      "type": "AvgAggregationT|CountAggregationT|MaxAggregationT|MinAggregationT|QuantilesAggregationT|StdDevAggregationT|SumAggregationT|SummaryAggregationT|XorAggregationT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingAliasOperation": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingAliasReference": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "GroupingAllOperation": {
+    "operations": {
+      "name": "operations",
+      "type": "(GroupingOperationT)[]",
+      "unsigned": false
+    },
+    "label": {
+      "name": "label",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "GroupingAttributeExpression": {
+    "field": {
+      "name": "field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "GroupingBinaryExpression": {
+    "op": {
+      "name": "op",
+      "type": "GroupingBinaryOperator",
+      "unsigned": false
+    },
+    "left": {
+      "name": "left",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    },
+    "right": {
+      "name": "right",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingBucketExpression": {
+    "lower": {
+      "name": "lower",
+      "type": "RangeBoundT|null",
+      "unsigned": false
+    },
+    "upper": {
+      "name": "upper",
+      "type": "RangeBoundT|null",
+      "unsigned": false
+    },
+    "includeLower": {
+      "name": "include_lower",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "includeUpper": {
+      "name": "include_upper",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingEachOperation": {
+    "operations": {
+      "name": "operations",
+      "type": "(GroupingOperationT)[]",
+      "unsigned": false
+    },
+    "label": {
+      "name": "label",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "GroupingExpression": {
+    "exprType": {
+      "name": "expr_type",
+      "type": "GroupingExpressionKind",
+      "unsigned": false
+    },
+    "expr": {
+      "name": "expr",
+      "type": "GroupingAggregationExpressionT|GroupingAliasReferenceT|GroupingAttributeExpressionT|GroupingBinaryExpressionT|GroupingBucketExpressionT|GroupingFunctionExpressionT|GroupingLiteralExpressionT|GroupingMapLookupExpressionT|GroupingMemberExpressionT|GroupingUnaryExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingFilterAnd": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(GroupingFilterExprT)[]",
+      "unsigned": false
+    }
+  },
+  "GroupingFilterExpr": {
+    "exprType": {
+      "name": "expr_type",
+      "type": "GroupingFilterExprKind",
+      "unsigned": false
+    },
+    "expr": {
+      "name": "expr",
+      "type": "GroupingFilterAndT|GroupingFilterIsTrueT|GroupingFilterNotT|GroupingFilterOrT|GroupingFilterRangeT|GroupingFilterRegexT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingFilterIsTrue": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingFilterNot": {
+    "clause": {
+      "name": "clause",
+      "type": "GroupingFilterExprT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingFilterOperation": {
+    "filter": {
+      "name": "filter",
+      "type": "GroupingFilterExprT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingFilterOr": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(GroupingFilterExprT)[]",
+      "unsigned": false
+    }
+  },
+  "GroupingFilterRange": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    },
+    "lower": {
+      "name": "lower",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    },
+    "upper": {
+      "name": "upper",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    },
+    "includeLower": {
+      "name": "include_lower",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "includeUpper": {
+      "name": "include_upper",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingFilterRegex": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    },
+    "pattern": {
+      "name": "pattern",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "GroupingFunctionExpression": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "arguments_": {
+      "name": "arguments",
+      "type": "(GroupingExpressionT)[]",
+      "unsigned": false
+    }
+  },
+  "GroupingGroupOperation": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingKeepOperation": {
+    "filter": {
+      "name": "filter",
+      "type": "GroupingFilterExprT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingLiteralExpression": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingMapLookupExpression": {
+    "base": {
+      "name": "base",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    },
+    "key": {
+      "name": "key",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingMaxOperation": {
+    "valueType": {
+      "name": "value_type",
+      "type": "GroupingMaxKind",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "FiniteGroupingMaxT|InfiniteGroupingMaxT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingMemberExpression": {
+    "base": {
+      "name": "base",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    },
+    "member": {
+      "name": "member",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "GroupingOperation": {
+    "operationType": {
+      "name": "operation_type",
+      "type": "GroupingOperationKind",
+      "unsigned": false
+    },
+    "operation": {
+      "name": "operation",
+      "type": "GroupingAliasOperationT|GroupingAllOperationT|GroupingEachOperationT|GroupingFilterOperationT|GroupingGroupOperationT|GroupingKeepOperationT|GroupingMaxOperationT|GroupingOrderOperationT|GroupingOutputOperationT|GroupingPrecisionOperationT|GroupingWhereOperationT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingOrderExpr": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingOrderOperation": {
+    "expressions": {
+      "name": "expressions",
+      "type": "(GroupingOrderExprT)[]",
+      "unsigned": false
+    }
+  },
+  "GroupingOutput": {
+    "label": {
+      "name": "label",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingOutputOperation": {
+    "outputs": {
+      "name": "outputs",
+      "type": "(GroupingOutputT)[]",
+      "unsigned": false
+    }
+  },
+  "GroupingPrecisionOperation": {
+    "value": {
+      "name": "value",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "GroupingRequest": {
+    "sourceType": {
+      "name": "source_type",
+      "type": "GroupingSourceKind",
+      "unsigned": false
+    },
+    "source": {
+      "name": "source",
+      "type": "RawGroupingSourceT|StructuredGroupingSourceT|null",
+      "unsigned": false
+    },
+    "continuations": {
+      "name": "continuations",
+      "type": "(string)[]",
+      "unsigned": false
+    }
+  },
+  "GroupingUnaryExpression": {
+    "op": {
+      "name": "op",
+      "type": "GroupingUnaryOperator",
+      "unsigned": false
+    },
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "GroupingWhereOperation": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "HighlightFragment": {
+    "text": {
+      "name": "text",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "matches": {
+      "name": "matches",
+      "type": "(HighlightSpanT)[]",
+      "unsigned": false
+    }
+  },
+  "HighlightRequest": {
+    "fields": {
+      "name": "fields",
+      "type": "(string)[]",
+      "unsigned": false
+    }
+  },
+  "HighlightResult": {
+    "field": {
+      "name": "field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "fragments": {
+      "name": "fragments",
+      "type": "(HighlightFragmentT)[]",
+      "unsigned": false
+    }
+  },
+  "HighlightSpan": {
+    "startByte": {
+      "name": "start_byte",
+      "type": "number",
+      "unsigned": false
+    },
+    "endByte": {
+      "name": "end_byte",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "Hit": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "relevance": {
+      "name": "relevance",
+      "type": "RelevanceT|null",
+      "unsigned": false
+    },
+    "fields": {
+      "name": "fields",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "highlights": {
+      "name": "highlights",
+      "type": "(HighlightResultT)[]",
+      "unsigned": false
+    },
+    "source": {
+      "name": "source",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "types": {
+      "name": "types",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "matchFeatures": {
+      "name": "match_features",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "summaryFeatures": {
+      "name": "summary_features",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "rankFeatures": {
+      "name": "rank_features",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "sortValues": {
+      "name": "sort_values",
+      "type": "(ValueT)[]",
+      "unsigned": false
+    }
+  },
+  "HnswIndexConfig": {
+    "maxLinksPerNode": {
+      "name": "max_links_per_node",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "neighborsToExploreAtInsert": {
+      "name": "neighbors_to_explore_at_insert",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "options": {
+      "name": "options",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "ImportedFieldDefinition": {
+    "referenceField": {
+      "name": "reference_field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "targetField": {
+      "name": "target_field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "alias": {
+      "name": "alias",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "IndexConfig": {
+    "enabled": {
+      "name": "enabled",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "hnsw": {
+      "name": "hnsw",
+      "type": "HnswIndexConfigT|null",
+      "unsigned": false
+    },
+    "options": {
+      "name": "options",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "IndexDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "fields": {
+      "name": "fields",
+      "type": "(FieldDefinitionT)[]",
+      "unsigned": false
+    },
+    "defaultSearchFields": {
+      "name": "default_search_fields",
+      "type": "SearchFieldSelectionT|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "documentType": {
+      "name": "document_type",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "schemaInherits": {
+      "name": "schema_inherits",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "documentInherits": {
+      "name": "document_inherits",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "structs": {
+      "name": "structs",
+      "type": "(NamedStructDefinitionT)[]",
+      "unsigned": false
+    },
+    "fieldsets": {
+      "name": "fieldsets",
+      "type": "(FieldSetDefinitionT)[]",
+      "unsigned": false
+    },
+    "schemaFields": {
+      "name": "schema_fields",
+      "type": "(SearchOnlyFieldDefinitionT)[]",
+      "unsigned": false
+    },
+    "importedFields": {
+      "name": "imported_fields",
+      "type": "(ImportedFieldDefinitionT)[]",
+      "unsigned": false
+    },
+    "documentSummaries": {
+      "name": "document_summaries",
+      "type": "(DocumentSummaryDefinitionT)[]",
+      "unsigned": false
+    },
+    "rankProfiles": {
+      "name": "rank_profiles",
+      "type": "(RankProfileDefinitionT)[]",
+      "unsigned": false
+    },
+    "constants": {
+      "name": "constants",
+      "type": "(ConstantDefinitionT)[]",
+      "unsigned": false
+    },
+    "onnxModels": {
+      "name": "onnx_models",
+      "type": "(OnnxModelDefinitionT)[]",
+      "unsigned": false
+    }
+  },
+  "IndexTarget": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "generation": {
+      "name": "generation",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "InfiniteGroupingMax": {},
+  "InsertRequest": {
+    "document": {
+      "name": "document",
+      "type": "DocumentT|null",
+      "unsigned": false
+    }
+  },
+  "InsertResult": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "InspectQueryRequest": {
+    "request": {
+      "name": "request",
+      "type": "SearchRequestT|null",
+      "unsigned": false
+    }
+  },
+  "InspectQueryResult": {
+    "resolvedRequest": {
+      "name": "resolved_request",
+      "type": "ResolvedSearchRequestT|null",
+      "unsigned": false
+    }
+  },
+  "Int64Value": {
+    "value": {
+      "name": "value",
+      "type": "bigint",
+      "unsigned": false
+    }
+  },
+  "ListIndexesRequest": {},
+  "ListIndexesResult": {
+    "targets": {
+      "name": "targets",
+      "type": "(string)[]",
+      "unsigned": false
+    }
+  },
+  "LiteralConstantSource": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "LiteralQueryInput": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "MapDataType": {
+    "keyType": {
+      "name": "key_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    },
+    "valueType": {
+      "name": "value_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    }
+  },
+  "MatchAllQuery": {},
+  "MatchUpdate": {
+    "element": {
+      "name": "element",
+      "type": "ValueT|null",
+      "unsigned": false
+    },
+    "update": {
+      "name": "update",
+      "type": "MatchedElementUpdateT|null",
+      "unsigned": false
+    }
+  },
+  "MatchedElementUpdate": {
+    "operationType": {
+      "name": "operation_type",
+      "type": "MatchedElementUpdateKind",
+      "unsigned": false
+    },
+    "operation": {
+      "name": "operation",
+      "type": "ArithmeticUpdateT|AssignUpdateT|ClearUpdateT|null",
+      "unsigned": false
+    }
+  },
+  "MatchingConfig": {
+    "mode": {
+      "name": "mode",
+      "type": "MatchingMode",
+      "unsigned": false
+    },
+    "options": {
+      "name": "options",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "MaxAggregation": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "MinAggregation": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "MissingAs": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "MissingFirst": {},
+  "MissingLast": {},
+  "MissingPolicy": {
+    "policyType": {
+      "name": "policy_type",
+      "type": "MissingPolicyKind",
+      "unsigned": false
+    },
+    "policy": {
+      "name": "policy",
+      "type": "MissingAsT|MissingFirstT|MissingLastT|null",
+      "unsigned": false
+    }
+  },
+  "MixedTensorBlocks": {
+    "blocks": {
+      "name": "blocks",
+      "type": "(TensorBlockT)[]",
+      "unsigned": false
+    }
+  },
+  "NamedStructDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "fields": {
+      "name": "fields",
+      "type": "(StructFieldDefinitionT)[]",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "NegativeInfinityBound": {},
+  "NegativeInfinityRelevance": {},
+  "NonFiniteFloatValue": {
+    "kind": {
+      "name": "kind",
+      "type": "NonFiniteFloatKind",
+      "unsigned": false
+    }
+  },
+  "NullValueValue": {
+    "value": {
+      "name": "value",
+      "type": "NullValue",
+      "unsigned": false
+    }
+  },
+  "OnnxModelDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "file": {
+      "name": "file",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "inputs": {
+      "name": "inputs",
+      "type": "(StringEntryT)[]",
+      "unsigned": false
+    },
+    "outputs": {
+      "name": "outputs",
+      "type": "(StringEntryT)[]",
+      "unsigned": false
+    },
+    "gpuDevice": {
+      "name": "gpu_device",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "intraopThreads": {
+      "name": "intraop_threads",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "interopThreads": {
+      "name": "interop_threads",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "OpenIndexRequest": {},
+  "OpenIndexResult": {
+    "index": {
+      "name": "index",
+      "type": "IndexDefinitionT|null",
+      "unsigned": false
+    },
+    "generation": {
+      "name": "generation",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "OptionalBool": {
+    "value": {
+      "name": "value",
+      "type": "boolean",
+      "unsigned": false
+    }
+  },
+  "OptionalDouble": {
+    "value": {
+      "name": "value",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "OptionalUInt32": {
+    "value": {
+      "name": "value",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "OptionalUInt64": {
+    "value": {
+      "name": "value",
+      "type": "bigint",
+      "unsigned": true
+    }
+  },
+  "PatchOperation": {
+    "operationType": {
+      "name": "operation_type",
+      "type": "PatchOperationKind",
+      "unsigned": false
+    },
+    "operation": {
+      "name": "operation",
+      "type": "SetFieldT|UnsetFieldT|null",
+      "unsigned": false
+    }
+  },
+  "PatchRequest": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "operations": {
+      "name": "operations",
+      "type": "(PatchOperationT)[]",
+      "unsigned": false
+    }
+  },
+  "PatchResult": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "PositionDataType": {},
+  "PositiveInfinityBound": {},
+  "PositiveInfinityRelevance": {},
+  "PredicateDataType": {},
+  "PresentationRequest": {
+    "summary": {
+      "name": "summary",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "fields": {
+      "name": "fields",
+      "type": "FieldProjectionT|null",
+      "unsigned": false
+    },
+    "highlighting": {
+      "name": "highlighting",
+      "type": "HighlightRequestT|null",
+      "unsigned": false
+    },
+    "format": {
+      "name": "format",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "bolding": {
+      "name": "bolding",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "timing": {
+      "name": "timing",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "PrimitiveDataType": {
+    "kind": {
+      "name": "kind",
+      "type": "PrimitiveDataTypeKind",
+      "unsigned": false
+    }
+  },
+  "QuantilesAggregation": {
+    "quantiles": {
+      "name": "quantiles",
+      "type": "(number)[]",
+      "unsigned": false
+    },
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "QueryAlternative": {
+    "query": {
+      "name": "query",
+      "type": "QueryExprT|null",
+      "unsigned": false
+    },
+    "exactness": {
+      "name": "exactness",
+      "type": "OptionalDoubleT|null",
+      "unsigned": false
+    }
+  },
+  "QueryAlternatives": {
+    "alternatives": {
+      "name": "alternatives",
+      "type": "(QueryAlternativeT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryAnd": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryComparison": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "op": {
+      "name": "op",
+      "type": "ComparisonOp",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "QueryContains": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "item": {
+      "name": "item",
+      "type": "QueryExprT|null",
+      "unsigned": false
+    }
+  },
+  "QueryDotProduct": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "items": {
+      "name": "items",
+      "type": "(WeightedQueryItemT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryEquiv": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryExpr": {
+    "exprType": {
+      "name": "expr_type",
+      "type": "QueryExprKind",
+      "unsigned": false
+    },
+    "expr": {
+      "name": "expr",
+      "type": "QueryAlternativesT|QueryAndT|QueryComparisonT|QueryContainsT|QueryDotProductT|QueryEquivT|QueryFalseT|QueryFuzzyT|QueryGeoBoundingBoxT|QueryGeoLocationT|QueryInT|QueryLabeledT|QueryMatchesT|QueryNearT|QueryNearestNeighborT|QueryNonEmptyT|QueryNotT|QueryONearT|QueryOrT|QueryPhraseT|QueryPredicateT|QueryRangeT|QueryRankT|QuerySameElementT|QueryTextT|QueryTrueT|QueryUserInputT|QueryUserQueryT|QueryWandT|QueryWeakAndT|QueryWeightedSetT|TermQueryT|null",
+      "unsigned": false
+    },
+    "annotations": {
+      "name": "annotations",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryFalse": {},
+  "QueryFieldRef": {
+    "path": {
+      "name": "path",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "elementIndex": {
+      "name": "element_index",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    }
+  },
+  "QueryFuzzy": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "QueryGeoBoundingBox": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "south": {
+      "name": "south",
+      "type": "number",
+      "unsigned": false
+    },
+    "west": {
+      "name": "west",
+      "type": "number",
+      "unsigned": false
+    },
+    "north": {
+      "name": "north",
+      "type": "number",
+      "unsigned": false
+    },
+    "east": {
+      "name": "east",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "QueryGeoLocation": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "latitude": {
+      "name": "latitude",
+      "type": "number",
+      "unsigned": false
+    },
+    "longitude": {
+      "name": "longitude",
+      "type": "number",
+      "unsigned": false
+    },
+    "radius": {
+      "name": "radius",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "QueryIn": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "values": {
+      "name": "values",
+      "type": "(ValueT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryInput": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "inputType": {
+      "name": "input_type",
+      "type": "QueryInputKind",
+      "unsigned": false
+    },
+    "input": {
+      "name": "input",
+      "type": "ExpressionQueryInputT|LiteralQueryInputT|null",
+      "unsigned": false
+    }
+  },
+  "QueryLabeled": {
+    "query": {
+      "name": "query",
+      "type": "QueryExprT|null",
+      "unsigned": false
+    },
+    "label": {
+      "name": "label",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "score": {
+      "name": "score",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "QueryMatches": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "pattern": {
+      "name": "pattern",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "QueryModel": {
+    "queryString": {
+      "name": "query_string",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "defaultIndex": {
+      "name": "default_index",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "encoding": {
+      "name": "encoding",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "filter": {
+      "name": "filter",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "language": {
+      "name": "language",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "locale": {
+      "name": "locale",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "type": {
+      "name": "type",
+      "type": "QueryModelTypeT|null",
+      "unsigned": false
+    },
+    "sources": {
+      "name": "sources",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "restrict": {
+      "name": "restrict",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "searchPath": {
+      "name": "search_path",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "searchGroup": {
+      "name": "search_group",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    }
+  },
+  "QueryModelType": {
+    "composite": {
+      "name": "composite",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "tokenization": {
+      "name": "tokenization",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "syntax": {
+      "name": "syntax",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "profile": {
+      "name": "profile",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "isYqlDefault": {
+      "name": "is_yql_default",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "QueryNear": {
+    "terms": {
+      "name": "terms",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryNearestNeighbor": {
+    "documentField": {
+      "name": "document_field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "queryTensor": {
+      "name": "query_tensor",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "QueryNonEmpty": {
+    "query": {
+      "name": "query",
+      "type": "QueryExprT|null",
+      "unsigned": false
+    }
+  },
+  "QueryNot": {
+    "clause": {
+      "name": "clause",
+      "type": "QueryExprT|null",
+      "unsigned": false
+    }
+  },
+  "QueryONear": {
+    "terms": {
+      "name": "terms",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryOr": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryPhrase": {
+    "terms": {
+      "name": "terms",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryPredicate": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "features": {
+      "name": "features",
+      "type": "ValueObjectT|null",
+      "unsigned": false
+    },
+    "rangeFeatures": {
+      "name": "range_features",
+      "type": "ValueObjectT|null",
+      "unsigned": false
+    }
+  },
+  "QueryRange": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "lower": {
+      "name": "lower",
+      "type": "RangeBoundT|null",
+      "unsigned": false
+    },
+    "upper": {
+      "name": "upper",
+      "type": "RangeBoundT|null",
+      "unsigned": false
+    },
+    "includeLower": {
+      "name": "include_lower",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "includeUpper": {
+      "name": "include_upper",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "QueryRank": {
+    "match": {
+      "name": "match",
+      "type": "QueryExprT|null",
+      "unsigned": false
+    },
+    "rank": {
+      "name": "rank",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QuerySameElement": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QuerySource": {
+    "sourceType": {
+      "name": "source_type",
+      "type": "QuerySourceKind",
+      "unsigned": false
+    },
+    "source": {
+      "name": "source",
+      "type": "MatchAllQueryT|SearchKernelTextQueryT|TypedQueryT|YqlQueryT|null",
+      "unsigned": false
+    }
+  },
+  "QueryText": {
+    "text": {
+      "name": "text",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "QueryTrue": {},
+  "QueryUserInput": {
+    "value": {
+      "name": "value",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "QueryUserQuery": {},
+  "QueryWand": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "items": {
+      "name": "items",
+      "type": "(WeightedQueryItemT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryWeakAnd": {
+    "clauses": {
+      "name": "clauses",
+      "type": "(QueryExprT)[]",
+      "unsigned": false
+    }
+  },
+  "QueryWeightedSet": {
+    "field": {
+      "name": "field",
+      "type": "QueryFieldRefT|null",
+      "unsigned": false
+    },
+    "items": {
+      "name": "items",
+      "type": "(WeightedQueryItemT)[]",
+      "unsigned": false
+    }
+  },
+  "RangeBound": {
+    "boundType": {
+      "name": "bound_type",
+      "type": "RangeBoundKind",
+      "unsigned": false
+    },
+    "bound": {
+      "name": "bound",
+      "type": "FiniteRangeBoundT|NegativeInfinityBoundT|PositiveInfinityBoundT|UnboundedRangeBoundT|null",
+      "unsigned": false
+    }
+  },
+  "RankFeatureSortTarget": {
+    "feature": {
+      "name": "feature",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "RankFunctionDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "arguments_": {
+      "name": "arguments",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "expression": {
+      "name": "expression",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "inline": {
+      "name": "inline",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "RankPhaseDefinition": {
+    "expression": {
+      "name": "expression",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "rerankCount": {
+      "name": "rerank_count",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "rankScoreDropLimit": {
+      "name": "rank_score_drop_limit",
+      "type": "OptionalDoubleT|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "totalRerankCount": {
+      "name": "total_rerank_count",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "keepRankCount": {
+      "name": "keep_rank_count",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "totalKeepRankCount": {
+      "name": "total_keep_rank_count",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    }
+  },
+  "RankProfileDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "inherits": {
+      "name": "inherits",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "inputs": {
+      "name": "inputs",
+      "type": "(RankProfileInputT)[]",
+      "unsigned": false
+    },
+    "functions": {
+      "name": "functions",
+      "type": "(RankFunctionDefinitionT)[]",
+      "unsigned": false
+    },
+    "firstPhase": {
+      "name": "first_phase",
+      "type": "RankPhaseDefinitionT|null",
+      "unsigned": false
+    },
+    "secondPhase": {
+      "name": "second_phase",
+      "type": "RankPhaseDefinitionT|null",
+      "unsigned": false
+    },
+    "globalPhase": {
+      "name": "global_phase",
+      "type": "RankPhaseDefinitionT|null",
+      "unsigned": false
+    },
+    "rankFeatures": {
+      "name": "rank_features",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "matchFeatures": {
+      "name": "match_features",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "summaryFeatures": {
+      "name": "summary_features",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "sortFeatures": {
+      "name": "sort_features",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "constants": {
+      "name": "constants",
+      "type": "(ConstantDefinitionT)[]",
+      "unsigned": false
+    },
+    "onnxModels": {
+      "name": "onnx_models",
+      "type": "(OnnxModelDefinitionT)[]",
+      "unsigned": false
+    },
+    "rankProperties": {
+      "name": "rank_properties",
+      "type": "(StringEntryT)[]",
+      "unsigned": false
+    },
+    "strict": {
+      "name": "strict",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "RankProfileInput": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "dataType": {
+      "name": "data_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    },
+    "defaultValue": {
+      "name": "default_value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "RankingRequest": {
+    "profile": {
+      "name": "profile",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(StringEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "RawGroupingSource": {
+    "expression": {
+      "name": "expression",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "RawSortTarget": {
+    "expression": {
+      "name": "expression",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "ReferenceDataType": {
+    "documentType": {
+      "name": "document_type",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "Relevance": {
+    "valueType": {
+      "name": "value_type",
+      "type": "RelevanceKind",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "FiniteRelevanceT|NegativeInfinityRelevanceT|PositiveInfinityRelevanceT|null",
+      "unsigned": false
+    }
+  },
+  "RelevanceSortTarget": {},
+  "RemoveUpdate": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "ResolvedGroupingRequest": {
+    "root": {
+      "name": "root",
+      "type": "GroupingAllOperationT|null",
+      "unsigned": false
+    },
+    "continuations": {
+      "name": "continuations",
+      "type": "(string)[]",
+      "unsigned": false
+    }
+  },
+  "ResolvedSearchRequest": {
+    "query": {
+      "name": "query",
+      "type": "QuerySourceT|null",
+      "unsigned": false
+    },
+    "searchFields": {
+      "name": "search_fields",
+      "type": "(SearchFieldT)[]",
+      "unsigned": false
+    },
+    "filters": {
+      "name": "filters",
+      "type": "(FilterExprT)[]",
+      "unsigned": false
+    },
+    "sort": {
+      "name": "sort",
+      "type": "(ResolvedSortExprT)[]",
+      "unsigned": false
+    },
+    "grouping": {
+      "name": "grouping",
+      "type": "(ResolvedGroupingRequestT)[]",
+      "unsigned": false
+    },
+    "ranking": {
+      "name": "ranking",
+      "type": "RankingRequestT|null",
+      "unsigned": false
+    },
+    "inputs": {
+      "name": "inputs",
+      "type": "(QueryInputT)[]",
+      "unsigned": false
+    },
+    "limit": {
+      "name": "limit",
+      "type": "number",
+      "unsigned": false
+    },
+    "offset": {
+      "name": "offset",
+      "type": "number",
+      "unsigned": false
+    },
+    "timeoutMs": {
+      "name": "timeout_ms",
+      "type": "OptionalUInt64T|null",
+      "unsigned": false
+    },
+    "queryModel": {
+      "name": "query_model",
+      "type": "QueryModelT|null",
+      "unsigned": false
+    },
+    "presentation": {
+      "name": "presentation",
+      "type": "PresentationRequestT|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "queryProfile": {
+      "name": "query_profile",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "searchChain": {
+      "name": "search_chain",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "ResolvedSortExpr": {
+    "target": {
+      "name": "target",
+      "type": "ResolvedSortTargetT|null",
+      "unsigned": false
+    },
+    "direction": {
+      "name": "direction",
+      "type": "SortDirection",
+      "unsigned": false
+    },
+    "missing": {
+      "name": "missing",
+      "type": "MissingPolicyT|null",
+      "unsigned": false
+    },
+    "annotations": {
+      "name": "annotations",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "ResolvedSortTarget": {
+    "targetType": {
+      "name": "target_type",
+      "type": "ResolvedSortTargetKind",
+      "unsigned": false
+    },
+    "target": {
+      "name": "target",
+      "type": "FieldSortTargetT|RankFeatureSortTargetT|RelevanceSortTargetT|null",
+      "unsigned": false
+    }
+  },
+  "ResultGroup": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "label": {
+      "name": "label",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    },
+    "fields": {
+      "name": "fields",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "children": {
+      "name": "children",
+      "type": "(ResultNodeT)[]",
+      "unsigned": false
+    },
+    "continuations": {
+      "name": "continuations",
+      "type": "(StringEntryT)[]",
+      "unsigned": false
+    },
+    "source": {
+      "name": "source",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "types": {
+      "name": "types",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "relevance": {
+      "name": "relevance",
+      "type": "RelevanceT|null",
+      "unsigned": false
+    },
+    "limits": {
+      "name": "limits",
+      "type": "ResultLimitsT|null",
+      "unsigned": false
+    },
+    "metadata": {
+      "name": "metadata",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "ResultLimits": {
+    "from": {
+      "name": "from",
+      "type": "ValueT|null",
+      "unsigned": false
+    },
+    "to": {
+      "name": "to",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "ResultNode": {
+    "nodeType": {
+      "name": "node_type",
+      "type": "ResultNodeKind",
+      "unsigned": false
+    },
+    "node": {
+      "name": "node",
+      "type": "HitT|ResultGroupT|null",
+      "unsigned": false
+    }
+  },
+  "SearchField": {
+    "field": {
+      "name": "field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "weight": {
+      "name": "weight",
+      "type": "OptionalDoubleT|null",
+      "unsigned": false
+    }
+  },
+  "SearchFieldSelection": {
+    "fields": {
+      "name": "fields",
+      "type": "(SearchFieldT)[]",
+      "unsigned": false
+    }
+  },
+  "SearchKernelTextQuery": {
+    "text": {
+      "name": "text",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "SearchOnlyFieldDefinition": {
+    "field": {
+      "name": "field",
+      "type": "FieldDefinitionT|null",
+      "unsigned": false
+    }
+  },
+  "SearchRequest": {
+    "query": {
+      "name": "query",
+      "type": "QuerySourceT|null",
+      "unsigned": false
+    },
+    "searchFields": {
+      "name": "search_fields",
+      "type": "SearchFieldSelectionT|null",
+      "unsigned": false
+    },
+    "filters": {
+      "name": "filters",
+      "type": "FilterRequestT|null",
+      "unsigned": false
+    },
+    "sort": {
+      "name": "sort",
+      "type": "(SortExprT)[]",
+      "unsigned": false
+    },
+    "grouping": {
+      "name": "grouping",
+      "type": "(GroupingRequestT)[]",
+      "unsigned": false
+    },
+    "ranking": {
+      "name": "ranking",
+      "type": "RankingRequestT|null",
+      "unsigned": false
+    },
+    "inputs": {
+      "name": "inputs",
+      "type": "(QueryInputT)[]",
+      "unsigned": false
+    },
+    "limit": {
+      "name": "limit",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "offset": {
+      "name": "offset",
+      "type": "OptionalUInt32T|null",
+      "unsigned": false
+    },
+    "timeoutMs": {
+      "name": "timeout_ms",
+      "type": "OptionalUInt64T|null",
+      "unsigned": false
+    },
+    "queryModel": {
+      "name": "query_model",
+      "type": "QueryModelT|null",
+      "unsigned": false
+    },
+    "presentation": {
+      "name": "presentation",
+      "type": "PresentationRequestT|null",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    },
+    "queryProfile": {
+      "name": "query_profile",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "searchChain": {
+      "name": "search_chain",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "SearchResult": {
+    "root": {
+      "name": "root",
+      "type": "ResultNodeT|null",
+      "unsigned": false
+    },
+    "totalHits": {
+      "name": "total_hits",
+      "type": "TotalHitsT|null",
+      "unsigned": false
+    },
+    "coverage": {
+      "name": "coverage",
+      "type": "CoverageT|null",
+      "unsigned": false
+    },
+    "timing": {
+      "name": "timing",
+      "type": "SearchTimingT|null",
+      "unsigned": false
+    },
+    "errors": {
+      "name": "errors",
+      "type": "(SearchResultErrorT)[]",
+      "unsigned": false
+    },
+    "trace": {
+      "name": "trace",
+      "type": "ValueT|null",
+      "unsigned": false
+    },
+    "metadata": {
+      "name": "metadata",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "SearchResultError": {
+    "code": {
+      "name": "code",
+      "type": "bigint",
+      "unsigned": false
+    },
+    "summary": {
+      "name": "summary",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "message": {
+      "name": "message",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "source": {
+      "name": "source",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "stackTrace": {
+      "name": "stack_trace",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "transient": {
+      "name": "transient",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "metadata": {
+      "name": "metadata",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "SearchTiming": {
+    "queryTimeSeconds": {
+      "name": "query_time_seconds",
+      "type": "OptionalDoubleT|null",
+      "unsigned": false
+    },
+    "searchTimeSeconds": {
+      "name": "search_time_seconds",
+      "type": "OptionalDoubleT|null",
+      "unsigned": false
+    },
+    "summaryFetchTimeSeconds": {
+      "name": "summary_fetch_time_seconds",
+      "type": "OptionalDoubleT|null",
+      "unsigned": false
+    },
+    "metadata": {
+      "name": "metadata",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "SetField": {
+    "field": {
+      "name": "field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "SortExpr": {
+    "target": {
+      "name": "target",
+      "type": "SortTargetT|null",
+      "unsigned": false
+    },
+    "direction": {
+      "name": "direction",
+      "type": "SortDirection",
+      "unsigned": false
+    },
+    "missing": {
+      "name": "missing",
+      "type": "MissingPolicyT|null",
+      "unsigned": false
+    },
+    "annotations": {
+      "name": "annotations",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "SortTarget": {
+    "targetType": {
+      "name": "target_type",
+      "type": "SortTargetKind",
+      "unsigned": false
+    },
+    "target": {
+      "name": "target",
+      "type": "FieldSortTargetT|RankFeatureSortTargetT|RawSortTargetT|RelevanceSortTargetT|null",
+      "unsigned": false
+    }
+  },
+  "SparseTensorCells": {
+    "cells": {
+      "name": "cells",
+      "type": "(TensorCellT)[]",
+      "unsigned": false
+    }
+  },
+  "StdDevAggregation": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "StringEntry": {
+    "key": {
+      "name": "key",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "StringValue": {
+    "value": {
+      "name": "value",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "StructDataType": {
+    "fields": {
+      "name": "fields",
+      "type": "(StructFieldDefinitionT)[]",
+      "unsigned": false
+    }
+  },
+  "StructFieldConfig": {
+    "path": {
+      "name": "path",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "indexingScript": {
+      "name": "indexing_script",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "matching": {
+      "name": "matching",
+      "type": "MatchingConfigT|null",
+      "unsigned": false
+    },
+    "index": {
+      "name": "index",
+      "type": "IndexConfigT|null",
+      "unsigned": false
+    },
+    "attribute": {
+      "name": "attribute",
+      "type": "AttributeConfigT|null",
+      "unsigned": false
+    },
+    "summary": {
+      "name": "summary",
+      "type": "SummaryConfigT|null",
+      "unsigned": false
+    },
+    "rank": {
+      "name": "rank",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "queryCommands": {
+      "name": "query_commands",
+      "type": "(string)[]",
+      "unsigned": false
+    },
+    "properties": {
+      "name": "properties",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "StructFieldDefinition": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "dataType": {
+      "name": "data_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    }
+  },
+  "StructReferenceDataType": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "StructuredGroupingSource": {
+    "root": {
+      "name": "root",
+      "type": "GroupingAllOperationT|null",
+      "unsigned": false
+    }
+  },
+  "SumAggregation": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "SummaryAggregation": {
+    "summary": {
+      "name": "summary",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "SummaryConfig": {
+    "enabled": {
+      "name": "enabled",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    },
+    "options": {
+      "name": "options",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "TensorAddressEntry": {
+    "dimension": {
+      "name": "dimension",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "label": {
+      "name": "label",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "TensorBlock": {
+    "address": {
+      "name": "address",
+      "type": "(TensorAddressEntryT)[]",
+      "unsigned": false
+    },
+    "values": {
+      "name": "values",
+      "type": "(number)[]",
+      "unsigned": false
+    }
+  },
+  "TensorCell": {
+    "address": {
+      "name": "address",
+      "type": "(TensorAddressEntryT)[]",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "number",
+      "unsigned": false
+    }
+  },
+  "TensorDataType": {
+    "typeSpec": {
+      "name": "type_spec",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "TensorModifyUpdate": {
+    "operator": {
+      "name": "operator",
+      "type": "TensorModifyOperator",
+      "unsigned": false
+    },
+    "payloadType": {
+      "name": "payload_type",
+      "type": "TensorModifyPayloadKind",
+      "unsigned": false
+    },
+    "payload": {
+      "name": "payload",
+      "type": "MixedTensorBlocksT|SparseTensorCellsT|null",
+      "unsigned": false
+    },
+    "create": {
+      "name": "create",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "TensorValue": {
+    "typeSpec": {
+      "name": "type_spec",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "payloadType": {
+      "name": "payload_type",
+      "type": "TensorPayloadKind",
+      "unsigned": false
+    },
+    "payload": {
+      "name": "payload",
+      "type": "DenseTensorValuesT|MixedTensorBlocksT|SparseTensorCellsT|null",
+      "unsigned": false
+    }
+  },
+  "TermQuery": {
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "TotalHits": {
+    "value": {
+      "name": "value",
+      "type": "bigint",
+      "unsigned": true
+    },
+    "relation": {
+      "name": "relation",
+      "type": "TotalHitsRelation",
+      "unsigned": false
+    }
+  },
+  "TypedQuery": {
+    "query": {
+      "name": "query",
+      "type": "QueryExprT|null",
+      "unsigned": false
+    }
+  },
+  "UInt64Value": {
+    "value": {
+      "name": "value",
+      "type": "bigint",
+      "unsigned": true
+    }
+  },
+  "UnboundedRangeBound": {},
+  "UnsetField": {
+    "field": {
+      "name": "field",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "UpdateOperation": {
+    "target": {
+      "name": "target",
+      "type": "FieldPathT|null",
+      "unsigned": false
+    },
+    "operationType": {
+      "name": "operation_type",
+      "type": "UpdateOperationKind",
+      "unsigned": false
+    },
+    "operation": {
+      "name": "operation",
+      "type": "AddUpdateT|ArithmeticUpdateT|AssignUpdateT|ClearUpdateT|MatchUpdateT|RemoveUpdateT|TensorModifyUpdateT|null",
+      "unsigned": false
+    }
+  },
+  "UpdateRequest": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "operations": {
+      "name": "operations",
+      "type": "(UpdateOperationT)[]",
+      "unsigned": false
+    },
+    "condition": {
+      "name": "condition",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "create": {
+      "name": "create",
+      "type": "OptionalBoolT|null",
+      "unsigned": false
+    }
+  },
+  "UpdateResult": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "UpsertRequest": {
+    "document": {
+      "name": "document",
+      "type": "DocumentT|null",
+      "unsigned": false
+    },
+    "condition": {
+      "name": "condition",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "UpsertResult": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    }
+  },
+  "Value": {
+    "kindType": {
+      "name": "kind_type",
+      "type": "ValueKind",
+      "unsigned": false
+    },
+    "kind": {
+      "name": "kind",
+      "type": "BoolValueT|BytesValueT|Float64ValueT|Int64ValueT|NonFiniteFloatValueT|NullValueValueT|StringValueT|TensorValueT|UInt64ValueT|ValueListT|ValueObjectT|null",
+      "unsigned": false
+    }
+  },
+  "ValueEntry": {
+    "key": {
+      "name": "key",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "unsigned": false
+    }
+  },
+  "ValueList": {
+    "values": {
+      "name": "values",
+      "type": "(ValueT)[]",
+      "unsigned": false
+    }
+  },
+  "ValueObject": {
+    "fields": {
+      "name": "fields",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  },
+  "WeightedQueryItem": {
+    "key": {
+      "name": "key",
+      "type": "ValueT|null",
+      "unsigned": false
+    },
+    "weight": {
+      "name": "weight",
+      "type": "bigint",
+      "unsigned": false
+    }
+  },
+  "WeightedSetDataType": {
+    "elementType": {
+      "name": "element_type",
+      "type": "DataTypeT|null",
+      "unsigned": false
+    }
+  },
+  "XorAggregation": {
+    "expression": {
+      "name": "expression",
+      "type": "GroupingExpressionT|null",
+      "unsigned": false
+    }
+  },
+  "YqlQuery": {
+    "source": {
+      "name": "source",
+      "type": "string|Uint8Array|null",
+      "unsigned": false
+    },
+    "parameters": {
+      "name": "parameters",
+      "type": "(ValueEntryT)[]",
+      "unsigned": false
+    }
+  }
+};
