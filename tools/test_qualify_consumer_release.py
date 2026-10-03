@@ -83,6 +83,17 @@ class QualificationPolicyTests(unittest.TestCase):
         self.assertNotIn("GITHUB_TOKEN", rust_runner)
         self.assertIn('"SEARCHKERNEL_BUILD_ENV"', rust_runner)
 
+    def test_all_rust_consumer_probes_reuse_local_native_base_sidecar(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        rust_probe = gate.split("def rust_embedded_probe", 1)[1].split("\n        def ", 1)[0]
+        self.assertIn(
+            "native_environment = run_rust_quickstart(rust_root, root)",
+            rust_probe,
+        )
+        self.assertIn("env=native_environment", rust_probe)
+        self.assertNotIn("GH_TOKEN", rust_probe)
+        self.assertNotIn("GITHUB_TOKEN", rust_probe)
+
     def test_packaged_supported_rows_own_clean_consumer_gate(self):
         authority = json.loads((ROOT / "docs/release-support.json").read_text())
         source = ast.parse((ROOT / "tools/qualify-consumer-release.py").read_text())
