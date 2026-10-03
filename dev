@@ -761,7 +761,8 @@ test_target() {
             "$PYTHON" "$ROOT/tools/render-release-quickstarts.py" --check
             "$PYTHON" "$ROOT/tools/package-consumer-release.py" --output "$release_output"
             "$PYTHON" "$ROOT/tools/check-consumer-release.py" "$release_output"
-            mkdir -p "$release_root/qualification"
+            mkdir -p "$release_root/qualification/native-base"
+            bash "$ROOT/tools/stage-native-base-qualification-artifact.sh" "$release_root/qualification/native-base"
             cp "$ROOT/tools/qualify-consumer-release.py" "$release_root/qualification/"
             cp -R "$ROOT/examples/release-quickstart" "$release_root/qualification/quickstarts"
             "$PYTHON" "$release_root/qualification/qualify-consumer-release.py" "$release_output"
