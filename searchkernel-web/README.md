@@ -1,39 +1,43 @@
-# Search Kernel Admin Dashboard — static first pass
+# Search Kernel Web
 
-A static React + TypeScript + Vite prototype for the Search Kernel Admin Dashboard.
+The default runtime connects to a real multi-index daemon through the public
+TypeScript client and its existing gRPC-Web transport. Set
+`VITE_SEARCHKERNEL_ENDPOINT` to the daemon's `--web-listen` endpoint (default
+`http://localhost:8081`). When the dashboard and daemon are on different
+origins, start the daemon with an exact `--web-origin <origin>` (or
+`SEARCHKERNEL_GRPC_WEB_ORIGIN`) for the dashboard origin. `--web-listen`
+alone does not authorize arbitrary websites to call the mutation-capable API.
+`VITE_SEARCHKERNEL_MODE=fixture` explicitly selects an offline demo. Logical
+targets come from ListIndexes, and only the selected
+workspace is opened. Schema metadata and generation come from OpenIndex.
 
-The development entry point uses representative local data through fixture implementations of the generated-client-shaped boundaries. The browser owns query state and display only; request, filter, schema, ranking, and change-plan semantics remain backend concerns.
+Search Lab offers Server default for ranking, summary and limit. Those controls
+are omitted from canonical requests. Explicit controls, including unknown names,
+reach canonical validation. Browsing uses match-all for an empty query and real
+text search otherwise. Documents are read through the same generation-bound
+handle. Stale handles are reported without automatic reconnection.
 
-## Run locally
+Metrics, health, diagnostics, query inspection and linguistic analysis are
+unavailable in this slice. No fixture values fill gaps in daemon output. Large
+integers and byte/tensor payloads use tagged JSON display values, preserving
+precision and payloads.
 
-```bash
-npm install
-npm run dev
+Verification uses registered container lanes, locally or on an exact pushed head:
+
+```sh
+./dev test --remote frontend
+./dev test --remote frontend-real-engine
+./dev test --remote typescript
+./dev test --remote searchkerneld-multi-index
+./dev verify --remote frontend.f8
 ```
 
-Build the production static bundle with:
+The browser integration lane starts a real daemon, creates two targets and a
+corpus, restarts it, drives the index picker/Search Lab/document drawer in
+Chromium, and checks stale-generation and sibling isolation through the browser
+adapter. The immutable F8 harness is invoked separately; its unimplemented
+verifier and unstaged dependencies cannot be treated as passing acceptance.
 
-```bash
-npm run build
-```
-
-The resulting `dist/` directory is suitable to be served as static assets by `searchkerneld`.
-
-### Production routing requirement
-
-This preview uses `BrowserRouter`. `searchkerneld` must serve concrete files from `dist/` first, keep `/api/*` on the API transport, and fall back to `dist/index.html` for every other unmatched request. That fallback is required for direct loads and reloads of routes such as `/indexes/products/search/lab?q=wireless+headphones`.
-
-## Included prototype surfaces
-
-- Parameterized React Router route tree with explicit canonical-child redirects and 404 handling
-- Global and index overview
-- Document browser with URL-backed client search and a keyboard-accessible document drawer
-- Search Lab with URL-backed query/ranking/limit state, committed-request results, opt-in debounced live preview, Cmd/Ctrl+Enter, and read-only request JSON/curl inspection
-- Client-backed Analyze; Query Inspector is deliberately unavailable until the server exposes an inspection response
-- Schema, Rank Profiles and Summaries
-- Index and global operations, diagnostics and settings
-- Command palette (`Cmd/Ctrl+K`)
-
-The dashboard has two explicit client seams. `src/api/searchkernel-client.ts` defines the generated-client-shaped `SearchKernelClient` contract for portable operations; `src/admin-client/admin-client.ts` defines the separately scoped `AdminClient` contract for operational endpoints. The fixture providers implement those contracts and are composed only in `src/main.tsx`, so features never import fixture storage. Replacing the providers with generated and daemon-backed clients does not change feature code. The UI does not infer product support from a server version.
-
-Catalyst components from the supplied Tailwind Plus kit are included under `src-components/`; dialog primitives are used directly and the rest of the UI follows its Tailwind visual patterns.
+Serving the built SPA requires an index.html fallback for workspace URLs.
+Portable network calls remain in the adapter; React does not construct protocol
+requests or implement query/schema/ranking semantics.

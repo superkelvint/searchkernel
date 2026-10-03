@@ -6,7 +6,7 @@ export interface ExecuteOptions {
 export class TransportError extends Error {
   override name = "TransportError";
 
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(message: string, readonly cause?: unknown, readonly kind: 'failure' | 'aborted' | 'timeout' = 'failure') {
     super(message);
   }
 }

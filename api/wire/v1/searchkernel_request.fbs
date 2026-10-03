@@ -18,7 +18,8 @@ union RequestPayload {
   SearchKernel.Wire.UpdateRequest,
   SearchKernel.Wire.CreateIndexRequest,
   SearchKernel.Wire.OpenIndexRequest,
-  SearchKernel.Wire.DeleteIndexRequest
+  SearchKernel.Wire.DeleteIndexRequest,
+  SearchKernel.Wire.ListIndexesRequest
 }
 
 table RequestEnvelope {
@@ -28,7 +29,8 @@ table RequestEnvelope {
   payload:RequestPayload;
 
   // Logical daemon routing identity. Multi-index daemon ingress requires this
-  // field for every index operation. Embedded/per-index callers may omit it
+  // field for every index operation. Server-scoped ListIndexes omits it.
+  // Embedded/per-index callers may omit it
   // because their target is already bound by the local handle.
   //
   // #848 establishes this field at the current slot as the forward-compatibility

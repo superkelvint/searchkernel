@@ -1250,8 +1250,23 @@
         "searchkerneld/tests/multi_index.rs"
       ],
       "limitations": [
-        "Target-less envelopes remain valid only for embedded/per-index callers; multi-index daemon ingress reports a canonical missing-target error."
+        "Target-bound operations require an explicit logical target; server-scoped ListIndexes requires none."
       ]
+    },
+    {
+      "id": "daemon.durable_index_discovery",
+      "title": "Server-scoped durable logical index discovery",
+      "area": "daemon",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "verified_by": [
+        "api/wire/v1/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/wire.rs",
+        "searchkerneld/tests/multi_index.rs",
+        "searchkernel-web/tests/real-daemon.test.ts"
+      ],
+      "limitations": ["Listing is an ordered candidate snapshot with per-target inspection, not a transaction across all targets; OpenIndex remains authoritative for definition and generation."]
     }
   ]
 }

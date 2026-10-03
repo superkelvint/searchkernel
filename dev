@@ -663,7 +663,10 @@ universe() {
                     universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
                 fi
                 ;;
-            product.integration)
+            frontend.f8)
+            "$ROOT/tools/frontend-harness/frontend-accept" F8
+            ;;
+        product.integration)
                 if ((m14_baseline_proved)); then
                     universe_dev_step "semantic verifier $target" verify "$target" --baseline-already-proved --skip-workspace-quality
                 else
@@ -719,6 +722,26 @@ test_target() {
     local requested=${1:-} target
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
+        frontend|frontend-real-engine)
+            "$NPM" ci --prefix "$ROOT/clients/typescript"
+            "$NPM" run build --prefix "$ROOT/clients/typescript"
+            "$NPM" ci --prefix "$ROOT/searchkernel-web"
+            "$NPM" run build --prefix "$ROOT/searchkernel-web"
+            if [[ "$target" == "frontend-real-engine" ]]; then
+                "$CARGO" build -p searchkerneld
+                # The canonical image uses Rocky Linux; Playwright's automatic
+                # dependency installer supports only apt-based distributions.
+                if command -v dnf >/dev/null 2>&1; then
+                    dnf install -y alsa-lib atk at-spi2-atk at-spi2-core cups-libs libdrm libX11 libXcomposite libXdamage libXext libXfixes libXrandr libxcb libxkbcommon mesa-libgbm nss pango cairo
+                else
+                    "$NPM" exec --prefix "$ROOT/searchkernel-web" -- playwright install-deps chromium
+                fi
+                "$NPM" exec --prefix "$ROOT/searchkernel-web" -- playwright install chromium
+                SEARCHKERNEL_FRONTEND_REAL_ENGINE=1 "$NPM" test --prefix "$ROOT/searchkernel-web" -- tests/real-daemon.test.ts
+            else
+                "$NPM" test --prefix "$ROOT/searchkernel-web"
+            fi
+            ;;
         native-base-artifact)
             "$PYTHON" "$ROOT/tools/test_check_native_runtime_closure.py"
             "$PYTHON" "$ROOT/tools/test_bundle_native_runtime_closure.py"
@@ -737,6 +760,7 @@ test_target() {
             ;;
         verification-control-plane)
             "$PYTHON" "$ROOT/tools/test_on_demand_verification_workflow.py"
+            "$PYTHON" "$ROOT/tools/test_verification_comment_cleanup_workflow.py"
             "$PYTHON" "$ROOT/tools/test_verification_request_normalizer.py"
             ;;
         ir)

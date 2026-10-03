@@ -32,16 +32,16 @@ module SearchKernel
 
     def execute(operation, payload)
       raise TransportError, "Search Kernel client is closed" if @closed
-      if @bind_on_use && @index_generation.nil? && !%i[create_index open_index].include?(operation.to_sym)
+      if @bind_on_use && @index_generation.nil? && !%i[create_index open_index list_indexes].include?(operation.to_sym)
         open_index({})
       end
 
-      lifecycle = %i[create_index open_index delete_index].include?(operation.to_sym)
+      lifecycle = %i[create_index open_index delete_index list_indexes].include?(operation.to_sym)
       response = @transport.execute(
         Protocol.request_envelope(
           operation,
           payload,
-          target: @target,
+          target: operation.to_sym == :list_indexes ? nil : @target,
           expected_index_generation: lifecycle ? nil : @index_generation
         )
       )
@@ -76,6 +76,14 @@ module SearchKernel
       define_method(operation) do |payload|
         execute(operation, payload)
       end
+    end
+
+    def list_indexes
+      targets = execute(:list_indexes, {}).fetch("targets")
+      unless targets.is_a?(Array) && targets.all? { |name| name.is_a?(String) }
+        raise ProtocolError, "ListIndexesResult.targets must be an array of strings"
+      end
+      targets
     end
   end
 end

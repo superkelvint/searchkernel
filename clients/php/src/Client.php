@@ -40,20 +40,20 @@ final class Client
             throw new TransportException('Search Kernel client is closed');
         }
         if ($this->bindOnUse && $this->indexGeneration === null &&
-            !in_array($operation, ['create_index', 'open_index'], true)) {
+            !in_array($operation, ['create_index', 'open_index', 'list_indexes'], true)) {
             $this->openIndex();
         }
         [$requestType, $responseType] = Protocol::operation($operation);
         $lifecycle = in_array(
             $operation,
-            ['create_index', 'open_index', 'delete_index'],
+            ['create_index', 'open_index', 'delete_index', 'list_indexes'],
             true,
         );
         $response = $this->transport->execute(
             Protocol::envelope(
                 $requestType,
                 $payload,
-                $this->target,
+                $operation === 'list_indexes' ? null : $this->target,
                 $lifecycle ? null : $this->indexGeneration,
             ),
         );
@@ -109,6 +109,21 @@ final class Client
     public function openIndex(): array { return $this->execute('open_index', JsonObject::empty()); }
     /** @return array<string,mixed> */
     public function deleteIndex(): array { return $this->execute('delete_index', JsonObject::empty()); }
+
+    /** @return list<string> Durable logical targets; does not open any index. */
+    public function listIndexes(): array
+    {
+        $targets = $this->execute('list_indexes', JsonObject::empty())['targets'] ?? null;
+        if (!is_array($targets) || !array_is_list($targets)) {
+            throw new ProtocolException('ListIndexesResult.targets must be a list');
+        }
+        foreach ($targets as $target) {
+            if (!is_string($target)) {
+                throw new ProtocolException('index target must be a string');
+            }
+        }
+        return $targets;
+    }
 
     /** Close this PHP handle without changing shared daemon index state. */
     public function close(): void

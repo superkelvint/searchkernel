@@ -1,6 +1,7 @@
 import { ByteBuffer } from "flatbuffers";
 import { describe, expect, it } from "vitest";
-import { Index, type ClientTransport } from "../src/client/index.js";
+import { Daemon, Index, type ClientTransport } from "../src/client/index.js";
+import { ListIndexesResultT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/list-indexes-result.js";
 import { CreateIndexRequest } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/create-index-request.js";
 import { CreateIndexResultT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/create-index-result.js";
 import { DeleteIndexRequest } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/delete-index-request.js";
@@ -31,6 +32,35 @@ function successfulTransport(responses: Uint8Array[]): ClientTransport {
 }
 
 describe("logical index lifecycle", () => {
+  // SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=browser
+  it("discovers targets without a target or opening every index", async () => {
+    const requests: Uint8Array[] = [];
+    const daemon = new Daemon("unused", { execute: async bytes => {
+      requests.push(bytes);
+      return envelope(ResponsePayload.SearchKernel_Wire_ListIndexesResult, new ListIndexesResultT(["alpha", "beta"]));
+    } });
+    expect(await daemon.listIndexes()).toEqual(["alpha", "beta"]);
+    expect(requests).toHaveLength(1);
+    const request = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[0]!));
+    expect(request.target()).toBeNull();
+    expect(request.payloadType()).toBe(RequestPayload.SearchKernel_Wire_ListIndexesRequest);
+  });
+
+  it("retains open definition and packs selected summary without inventing defaults", async () => {
+    const index = await Index.open("unused", "alpha", successfulTransport([
+      envelope(ResponsePayload.SearchKernel_Wire_OpenIndexResult, new OpenIndexResultT(new WireIndexDefinitionT("schema"), "generation")),
+    ]));
+    expect(index.definition.name).toBe("schema");
+    expect(index.generation).toBe("generation");
+    expect(index.browse().build().ranking).toBeNull();
+    expect(index.browse().build().presentation).toBeNull();
+    expect(index.search("orchid").ranking("custom").summary("compact").limit(3).build()).toMatchObject({
+      ranking: { profile: "custom" }, presentation: { summary: "compact" }, limit: { value: 3 },
+    });
+    expect(index.search("orchid").summary("compact").fields("title").build().presentation).toMatchObject({
+      summary: "compact", fields: { fields: ["title"] },
+    });
+  });
   it("targets create and every ordinary operation through the shared request packer", async () => {
     const requests: Uint8Array[] = [];
     const transport: ClientTransport = {

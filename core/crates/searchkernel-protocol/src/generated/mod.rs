@@ -220,6 +220,10 @@ pub mod search_kernel {
         pub use self::delete_index_request_generated::*;
         mod delete_index_result_generated;
         pub use self::delete_index_result_generated::*;
+        mod list_indexes_request_generated;
+        pub use self::list_indexes_request_generated::*;
+        mod list_indexes_result_generated;
+        pub use self::list_indexes_result_generated::*;
         mod index_definition_generated;
         pub use self::index_definition_generated::*;
         mod insert_request_generated;

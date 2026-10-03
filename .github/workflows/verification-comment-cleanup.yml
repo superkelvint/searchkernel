@@ -1,0 +1,166 @@
+name: Verification comment cleanup
+
+on:
+  pull_request:
+    types: [ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: prune verification comment history
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Keep only latest verification request/result per lane
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = context.payload.pull_request?.number;
+            if (!issueNumber) {
+              core.setFailed("ready-for-review event did not include a pull request number");
+              return;
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const parseRequest = (comment) => {
+              const firstLine = String(comment.body || "").split(/\r?\n/, 1)[0].trim();
+              const match = firstLine.match(
+                /^\/searchkernel-verify\s+(ci|test|verify)(?:\s+([A-Za-z0-9._-]{1,128}))?\s+([0-9a-fA-F]{40})$/
+              );
+              if (!match) return null;
+              const operation = match[1];
+              const target = match[2] || "";
+              if ((operation === "ci" && target) || (operation !== "ci" && !target)) {
+                return null;
+              }
+              return {
+                comment,
+                operation,
+                target,
+                lane: `${operation}:${target}`,
+              };
+            };
+
+            const parseResult = (comment) => {
+              if (comment.user?.login !== "github-actions[bot]") return null;
+              const body = String(comment.body || "");
+
+              const marker = body.match(
+                /<!-- searchkernel-verification:(ci|test|verify):([A-Za-z0-9._-]*) -->/
+              );
+              let operation = marker?.[1] || "";
+              let target = marker?.[2] || "";
+
+              if (!operation) {
+                const legacy = body.match(
+                  /###\s+[^\n`]*`\.\/dev (ci|test|verify)(?: ([A-Za-z0-9._-]+))?`\s+—/
+                );
+                operation = legacy?.[1] || "";
+                target = legacy?.[2] || "";
+              }
+
+              if (!operation) return null;
+              if ((operation === "ci" && target) || (operation !== "ci" && !target)) {
+                return null;
+              }
+
+              const linked =
+                body.match(/<!-- searchkernel-verification-request:(\d+) -->/) ||
+                body.match(/Exact-head request:\s*`comment-(\d+)`/);
+              const linkedRequestId = linked ? Number(linked[1]) : 0;
+
+              const isVerificationResult =
+                Boolean(marker) ||
+                (
+                  body.includes("View Actions run") &&
+                  body.includes("Exact-head request:")
+                );
+              if (!isVerificationResult) return null;
+
+              return {
+                comment,
+                operation,
+                target,
+                lane: `${operation}:${target}`,
+                linkedRequestId,
+              };
+            };
+
+            const requests = comments.map(parseRequest).filter(Boolean);
+            const results = comments.map(parseResult).filter(Boolean);
+
+            const latestRequestByLane = new Map();
+            for (const request of requests) {
+              const current = latestRequestByLane.get(request.lane);
+              if (!current || Number(request.comment.id) > Number(current.comment.id)) {
+                latestRequestByLane.set(request.lane, request);
+              }
+            }
+
+            const keepRequestIds = new Set(
+              [...latestRequestByLane.values()].map((request) => Number(request.comment.id))
+            );
+            const keepResultIds = new Set();
+
+            for (const [lane, request] of latestRequestByLane.entries()) {
+              const requestId = Number(request.comment.id);
+              const requestBody = String(request.comment.body || "");
+
+              // A short-lived implementation reported status directly on the
+              // slash-command comment. If such a latest request exists, it is
+              // already self-contained and should not retain an unrelated
+              // legacy bot result.
+              if (requestBody.includes("<!-- searchkernel-verification-run:")) {
+                continue;
+              }
+
+              const laneResults = results
+                .filter((result) => result.lane === lane)
+                .sort((left, right) => Number(right.comment.id) - Number(left.comment.id));
+
+              const exact = laneResults.find(
+                (result) => result.linkedRequestId === requestId
+              );
+              const fallback = laneResults.find(
+                (result) => !result.linkedRequestId
+              );
+              const keep = exact || fallback;
+              if (keep) keepResultIds.add(Number(keep.comment.id));
+            }
+
+            const deleteIds = new Set();
+            for (const request of requests) {
+              const id = Number(request.comment.id);
+              if (!keepRequestIds.has(id)) deleteIds.add(id);
+            }
+            for (const result of results) {
+              const id = Number(result.comment.id);
+              if (!keepResultIds.has(id)) deleteIds.add(id);
+            }
+
+            for (const commentId of [...deleteIds].sort((a, b) => a - b)) {
+              await github.rest.issues.deleteComment({
+                owner,
+                repo,
+                comment_id: commentId,
+              });
+            }
+
+            core.notice(
+              `verification cleanup kept ${keepRequestIds.size} request comment(s) and ${keepResultIds.size} result comment(s); deleted ${deleteIds.size}`
+            );

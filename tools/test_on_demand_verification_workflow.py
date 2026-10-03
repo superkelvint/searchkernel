@@ -176,7 +176,7 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
             text,
         )
 
-    def test_comment_triggered_status_is_created_running_then_updated_with_result(self):
+    def test_comment_triggered_status_is_created_then_updated_with_cleanup_markers(self):
         text = self.text
         status_start = text.index("  status-comment:")
         verify_start = text.index("  verify:")
@@ -184,8 +184,10 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         status = text[status_start:verify_start]
         reporter = text[reporter_start:]
 
-        self.assertIn("Exact-head verification RUNNING", status)
+        self.assertIn("searchkernel-verification:${operation}:${target}", status)
+        self.assertIn("searchkernel-verification-request:${requestCommentId}", status)
         self.assertIn("github.rest.issues.createComment", status)
+        self.assertNotIn("github.paginate(github.rest.issues.listComments", status)
         self.assertIn('core.setOutput("comment_id"', status)
         self.assertIn("[View Actions run]", status)
 
@@ -193,12 +195,12 @@ class OnDemandVerificationWorkflowTest(unittest.TestCase):
         self.assertIn("always()", reporter)
         self.assertIn("github.event_name == 'issue_comment'", reporter)
         self.assertIn("github.event.issue.pull_request", reporter)
-        self.assertIn("github.event.comment.author_association == 'OWNER'", reporter)
-        self.assertIn("github.event.comment.author_association == 'MEMBER'", reporter)
-        self.assertIn("github.event.comment.author_association == 'COLLABORATOR'", reporter)
         self.assertIn("STATUS_COMMENT_ID: ${{ needs.status-comment.outputs.comment_id }}", reporter)
+        self.assertIn("searchkernel-verification:${operation}:${target}", reporter)
+        self.assertIn("searchkernel-verification-request:${requestCommentId}", reporter)
         self.assertIn("github.rest.issues.updateComment", reporter)
         self.assertIn("github.rest.issues.createComment", reporter)
+        self.assertNotIn("github.rest.issues.getComment", reporter)
         self.assertIn(
             "RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
             reporter,

@@ -425,6 +425,22 @@ def create_index_target(gem_home: Path, target: str, endpoint: str, root: Path) 
     )
 
 
+def with_quickstart_daemon(
+    root: Path, daemon: Path, index_name: str, probe,
+) -> None:
+    data_root = root / f"{index_name}-data-root"
+    socket_path = root / f"{index_name}.sock"
+    target = index_name
+    port = free_port()
+    endpoint = f"unix://{socket_path}"
+    http = f"http://127.0.0.1:{port}"
+    proc, log = start_multi_daemon(daemon, data_root, socket_path, port)
+    try:
+        probe(endpoint, http, target)
+    finally:
+        stop_daemon(proc, log)
+
+
 def with_restarted_daemon(
     root: Path, daemon: Path, index_name: str, gem_home: Path, probe,
 ) -> None:
@@ -521,7 +537,7 @@ raise "installed gem entry point was not loaded" unless entry
 raise "Ruby client did not load from installed gem" unless File.expand_path(entry) == File.join(File.expand_path(spec.full_gem_path), "lib", "searchkernel.rb")
 
 phase, endpoint, target = ARGV
-index = phase == "reopened" ? SearchKernel::Index.open(endpoint, target: target) : SearchKernel::Index.connect(endpoint, target: target)
+index = phase == "reopened" ? SearchKernel::Index.open(endpoint, target: target, timeout: 120.0) : SearchKernel::Index.connect(endpoint, target: target)
 begin
   names = index.describe.fetch("fields").map { |field| field.fetch("name") }
   raise "schema missing release fields: #{names.inspect}" unless %w[title kind score embedding].all? { |name| names.include?(name) }
@@ -677,23 +693,41 @@ def main() -> None:
             )
 
         def typescript_node_connect_probe_runner() -> None:
-            def probe(phase, endpoint, _http, target):
-                if phase == "initial":
-                    run_node_quickstart(installs["node"], endpoint, target)
-                typescript_connect_probe(installs["node"], phase, endpoint, target)
-
+            with_quickstart_daemon(
+                root,
+                context["daemon"],
+                "typescript-node-quickstart",
+                lambda endpoint, _http, target: run_node_quickstart(
+                    installs["node"], endpoint, target
+                ),
+            )
             with_restarted_daemon(
-                root, context["daemon"], "typescript-node-index", installs["ruby"], probe,
+                root,
+                context["daemon"],
+                "typescript-node-index",
+                installs["ruby"],
+                lambda phase, endpoint, _http, target: typescript_connect_probe(
+                    installs["node"], phase, endpoint, target
+                ),
             )
 
         def ruby_connect_probe_runner() -> None:
-            def probe(phase, _endpoint, http, target):
-                if phase == "initial":
-                    run_ruby_quickstart(installs["ruby"], root, http, target)
-                ruby_connect_probe(installs["ruby"], root, phase, http, target)
-
+            with_quickstart_daemon(
+                root,
+                context["daemon"],
+                "ruby-quickstart",
+                lambda _endpoint, http, target: run_ruby_quickstart(
+                    installs["ruby"], root, http, target
+                ),
+            )
             with_restarted_daemon(
-                root, context["daemon"], "ruby-connect-index", installs["ruby"], probe,
+                root,
+                context["daemon"],
+                "ruby-connect-index",
+                installs["ruby"],
+                lambda phase, _endpoint, http, target: ruby_connect_probe(
+                    installs["ruby"], root, phase, http, target
+                ),
             )
 
         runners = {
