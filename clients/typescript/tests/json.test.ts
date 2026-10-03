@@ -10,7 +10,8 @@ describe('canonical BFBS JSON editor and independent request builder', () => {
     expect(fromCanonicalJson('QuerySource', toCanonicalJson(source))).toBeInstanceOf(QuerySourceT);
     for (const v of [int64('9007199254740993'), Tensor.dense('tensor<float>(x[2])', [1, 2])]) {
       const canonical = toCanonicalJson(new SearchRequestBuilder(null).input('x', v).build());
-      expect(canonical).toBeTruthy();
+      const encoded = (canonical as any).inputs[0].input.value;
+      expect(toCanonicalJson(jsonInput(encoded))).toEqual(encoded);
     }
     const large = toCanonicalJson(int64('9007199254740993'));
     expect(toCanonicalJson(jsonInput(large))).toEqual(large);
