@@ -22,7 +22,7 @@ export function DashboardRoute({page}:{page: PageName}) {
   const workspace = tabFor(page)
   const navigation = navigationFor(capabilities.capabilities)
   const { data: index, isLoading, isFetching, error, refetch } = useQuery({ queryKey: ['index', indexId], queryFn: clientQuery(signal => client.getIndex(indexId!, { signal })), ...clientQueryDefaults, staleTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: false, enabled: Boolean(workspace && indexId) })
-  const { data: summary, error: summaryError, refetch: refetchSummary } = useQuery({ queryKey: ['index-summary', indexId], queryFn: clientQuery(() => adminClient.getIndexSummary(indexId!)), ...clientQueryDefaults, enabled: Boolean(workspace && indexId) })
+  const { data: summary, error: summaryError, refetch: refetchSummary } = useQuery({ queryKey: ['index-summary', indexId], queryFn: clientQuery(async () => (await adminClient.getIndexSummary(indexId!)) ?? null), ...clientQueryDefaults, enabled: Boolean(workspace && indexId && capabilities.capabilities?.admin.overview) })
   const navigate: Nav = (next, targetIndexId = indexId) => { routerNavigate(pagePath(next, targetIndexId)); setMobileNav(false) }
   useEffect(() => {
     const shortcut = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setCommandOpen(true) } }
@@ -38,7 +38,7 @@ export function DashboardRoute({page}:{page: PageName}) {
     <GlobalSidebar page={page} navigate={navigate} open={mobileNav} onClose={() => setMobileNav(false)} />
     <main className="min-h-screen lg:pl-64">
       <div className="lg:hidden flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4"><Brand/><MobileMenuButton open={() => setMobileNav(true)} /></div>
-      {workspace && <IndexHeader current={workspace} index={index!} summary={summary} navigate={navigate} />}
+      {workspace && <IndexHeader current={workspace} index={index!} summary={summary ?? undefined} navigate={navigate} />}
       <div className="mx-auto max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">
         {Boolean(error) && index && <QueryErrorBanner error={error} retry={() => { void refetch() }} />}
         {Boolean(summaryError) && <QueryErrorBanner error={summaryError} retry={() => { void refetchSummary() }} />}

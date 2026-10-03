@@ -96,19 +96,24 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
     await page.getByRole('button', { name: 'Open two', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Open one', exact: true }).click()
     await page.getByRole('dialog').getByText('orchid blue', { exact: true }).waitFor()
+    await page.goto(`http://127.0.0.1:${uiPort}/indexes/alpha/data/documents/missing`)
+    await page.getByRole('dialog').getByText('The requested document was not found.', { exact: true }).waitFor()
 
-    const observed = await page.evaluate(async (serverEndpoint) => {
-      const modulePath = '/src/api/daemon-searchkernel-client.ts'
-      const { createDaemonSearchKernelClient } = await import(/* @vite-ignore */ modulePath)
-      const adapter = createDaemonSearchKernelClient(serverEndpoint)
-      ;(window as any).testAdapter = adapter
+    // Load a native browser module; Vitest transforms imports inside serialized
+    // evaluate callbacks into SSR helpers that do not exist in Chromium.
+    await page.addScriptTag({ type: 'module', content: `
+      import { createDaemonSearchKernelClient } from '/src/api/daemon-searchkernel-client.ts';
+      window.testAdapter = createDaemonSearchKernelClient(${JSON.stringify(webEndpoint)});
+    ` })
+    const observed = await page.evaluate(async () => {
+      const adapter = (window as any).testAdapter
       return {
         indexes: await adapter.listIndexes(), metadata: await adapter.getIndex('alpha'),
         sibling: await adapter.browseDocuments('beta', { query: '', limit: 10 }),
         found: await adapter.getDocument('alpha', 'one'), missing: await adapter.getDocument('alpha', 'sibling'),
         search: await adapter.search('alpha', { query: 'orchid', limit: 10 }),
       }
-    }, webEndpoint)
+    })
     expect(observed.indexes).toEqual([{ id: 'alpha' }, { id: 'beta' }])
     expect(observed.metadata.id).toBe('alpha')
     expect(observed.metadata.searchDefaults).toEqual({})
