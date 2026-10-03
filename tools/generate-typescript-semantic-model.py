@@ -80,18 +80,20 @@ def render(bfbs: Path) -> str:
         lines.append(f"  {table_name}: {{ {entries} }},")
     lines.append("};")
     # BFBS remains the authority for standard JSON field spelling and types.
+    base_names = {number: name for name, number in vars(type(schema.base)).items() if isinstance(number, int)}
     json_fields = {
         schema.short_name(obj): {
             schema.field_name(field): {
                 "name": field.Name().decode("utf-8"),
                 "type": schema.ts_type(field),
+                "scalar": base_names[field.Type().Element() if field.Type().BaseType() in (schema.base.Vector, schema.base.Vector64) else field.Type().BaseType()],
                 "unsigned": field.Type().BaseType() == schema.base.ULong or field.Type().Element() == schema.base.ULong,
             }
             for field in schema.fields(obj)
         }
         for obj in schema.wire_objects()
     }
-    lines.append("export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<string, { readonly name: string; readonly type: string; readonly unsigned: boolean }>>>> = " + json.dumps(json_fields, indent=2) + ";")
+    lines.append("export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<string, { readonly name: string; readonly type: string; readonly unsigned: boolean; readonly scalar: string }>>>> = " + json.dumps(json_fields, indent=2) + ";")
     return "\n".join(lines) + "\n"
 
 

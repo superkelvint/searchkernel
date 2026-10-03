@@ -69,6 +69,13 @@ export function fromCanonicalJson(table: string, input: unknown, path = table): 
     }
     if (['string', 'number', 'boolean'].includes(base)) {
       if (typeof item !== base || (typeof item === 'number' && !Number.isFinite(item))) throw new TypeError(`${at}: expected ${base}`);
+      if (typeof item === 'number') {
+        const scalar = specs[field]!.scalar;
+        const bounds: Record<string, [number, number]> = { Byte: [-128, 127], UByte: [0, 255], Short: [-32768, 32767], UShort: [0, 65535], Int: [-2147483648, 2147483647], UInt: [0, 4294967295] };
+        const range = bounds[scalar];
+        if (range && (!Number.isInteger(item) || item < range[0] || item > range[1])) throw new RangeError(`${at}: expected ${scalar} integer in [${range[0]}, ${range[1]}]`);
+        if (scalar === 'Float' && Math.abs(item) > 3.4028234663852886e38) throw new RangeError(`${at}: value overflows float32`);
+      }
       return item;
     }
     const enumValue = typeof item === 'string' ? models[base]?.[item] : undefined;

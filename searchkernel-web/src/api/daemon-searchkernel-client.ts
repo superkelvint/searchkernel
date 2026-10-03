@@ -68,7 +68,12 @@ export function daemonError(error: unknown): SearchKernelClientError {
   if (error instanceof SearchKernelError) return new SearchKernelClientError(error.message, {
     code: error.code, retryable: error.retryable, details: dashboardValue(error.details), origin: 'canonical',
   })
-  if (error instanceof TransportError) return new SearchKernelClientError(error.message, { code: error.kind === 'aborted' ? 'aborted' : 'transport_error', retryable: error.kind !== 'aborted', origin: 'transport' })
+  if (error instanceof TransportError) {
+    const cause = error.cause && typeof error.cause === 'object' ? error.cause as Record<string, unknown> : {}
+    return new SearchKernelClientError(error.message, { code: error.kind === 'aborted' ? 'aborted' : 'transport_error', retryable: error.kind !== 'aborted', origin: 'transport',
+      status: typeof cause.status === 'number' ? cause.status : undefined,
+      details: typeof cause.code === 'number' ? { transportCode: cause.code } : undefined })
+  }
   if (error instanceof ProtocolError) return new SearchKernelClientError(error.message, { code: 'protocol_error', origin: 'protocol' })
   if (error instanceof Error && error.name === 'AbortError') return new SearchKernelClientError(error.message, { code: 'aborted', origin: 'transport' })
   return new SearchKernelClientError(error instanceof Error ? error.message : 'Client request failed', { code: 'client_error', origin: 'client' })
