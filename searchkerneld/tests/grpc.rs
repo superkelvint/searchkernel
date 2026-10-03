@@ -1179,7 +1179,10 @@ async fn grpc_web_listener_accepts_browser_preflight_and_exposes_responses() {
         .await
         .expect("unauthorized preflight response");
     assert!(
-        unauthorized.headers().get("access-control-allow-origin").is_none(),
+        unauthorized
+            .headers()
+            .get("access-control-allow-origin")
+            .is_none(),
         "unconfigured origins must not receive browser authorization"
     );
 

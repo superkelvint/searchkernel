@@ -401,7 +401,10 @@ mod tests {
             unexpected_target.details[0].code,
             UNEXPECTED_INDEX_TARGET_DETAIL_CODE
         );
-        assert_eq!(unexpected_target.details[0].path.as_deref(), Some(TARGET_PATH));
+        assert_eq!(
+            unexpected_target.details[0].path.as_deref(),
+            Some(TARGET_PATH)
+        );
 
         let missing_definition = missing_definition_error();
         assert_eq!(missing_definition.code, ErrorCode::InvalidArgument);
