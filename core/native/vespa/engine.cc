@@ -2573,58 +2573,77 @@ class EmbeddedEngine {
     // remains untouched and continues to be the schema-identity input.
     static std::filesystem::path make_runtime_config_directory(
         const SchemaManifest &manifest, const std::filesystem::path &config_dir) {
+        constexpr std::array<std::string_view, 4> optional_config_names = {
+            "imported-fields.cfg",
+            "onnx-models.cfg",
+            "ranking-constants.cfg",
+            "ranking-expressions.cfg",
+        };
+        const bool needs_optional_config_placeholders = std::any_of(
+            optional_config_names.begin(), optional_config_names.end(),
+            [&](std::string_view name) {
+                return !std::filesystem::is_regular_file(config_dir / std::string(name));
+            });
+
+        bool rewrite_indexschema = false;
+        std::string indexschema_contents;
+        constexpr std::string_view old_interleaved_value = "interleavedfeatures false";
+
         const bool has_indexed_field = std::any_of(
             manifest.fields.begin(), manifest.fields.end(),
             [](const auto &field) { return field.index; });
-        if (!has_indexed_field) {
-            return {};
+        if (has_indexed_field) {
+            // The generated fallback BM25 profile needs interleaved features for
+            // the local Vespa index implementation. Explicit rank profiles are
+            // authoritative, however: changing their index settings here changes
+            // the semantics of the caller's Vespa expressions and breaks direct
+            // profile parity. Only normalize the compiler-generated fallback.
+            const auto rank_profiles = read_config(config_dir / "rank-profiles.cfg");
+            const auto profile_count = config_section_count(rank_profiles, "rankprofile");
+            const auto fallback_property_count =
+                profile_count >= 2
+                    ? config_section_count(rank_profiles, "rankprofile[1].fef.property")
+                    : 0;
+            const bool generated_direct_bm25_fallback =
+                profile_count == 2 &&
+                config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
+                fallback_property_count == 1 &&
+                config_value(rank_profiles, "rankprofile[1].fef.property[0].name") ==
+                    "vespa.rank.firstphase" &&
+                config_value(rank_profiles, "rankprofile[1].fef.property[0].value").starts_with(
+                    "bm25(");
+            const bool generated_script_bm25_fallback =
+                profile_count == 2 &&
+                config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
+                fallback_property_count == 2 &&
+                config_value(rank_profiles, "rankprofile[1].fef.property[1].name") ==
+                    "rankingExpression(bm25).rankingScript";
+            const bool uses_only_generated_fallback =
+                generated_direct_bm25_fallback || generated_script_bm25_fallback;
+
+            if (uses_only_generated_fallback) {
+                const auto indexschema = config_dir / "indexschema.cfg";
+                std::ifstream input(indexschema, std::ios::binary);
+                if (!input) {
+                    throw std::runtime_error("could not read generated configuration: " +
+                                             indexschema.string());
+                }
+                indexschema_contents.assign(std::istreambuf_iterator<char>(input),
+                                            std::istreambuf_iterator<char>());
+                if (!input.good() && !input.eof()) {
+                    throw std::runtime_error("could not read generated configuration: " +
+                                             indexschema.string());
+                }
+                rewrite_indexschema =
+                    indexschema_contents.find(old_interleaved_value) != std::string::npos;
+            }
         }
 
-        // The generated fallback BM25 profile needs interleaved features for
-        // the local Vespa index implementation. Explicit rank profiles are
-        // authoritative, however: changing their index settings here changes
-        // the semantics of the caller's Vespa expressions and breaks direct
-        // profile parity. Only normalize the compiler-generated fallback.
-        const auto rank_profiles = read_config(config_dir / "rank-profiles.cfg");
-        const auto profile_count = config_section_count(rank_profiles, "rankprofile");
-        const auto fallback_property_count =
-            profile_count >= 2
-                ? config_section_count(rank_profiles, "rankprofile[1].fef.property")
-                : 0;
-        const bool generated_direct_bm25_fallback =
-            profile_count == 2 &&
-            config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
-            fallback_property_count == 1 &&
-            config_value(rank_profiles, "rankprofile[1].fef.property[0].name") ==
-                "vespa.rank.firstphase" &&
-            config_value(rank_profiles, "rankprofile[1].fef.property[0].value").starts_with(
-                "bm25(");
-        const bool generated_script_bm25_fallback =
-            profile_count == 2 &&
-            config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
-            fallback_property_count == 2 &&
-            config_value(rank_profiles, "rankprofile[1].fef.property[1].name") ==
-                "rankingExpression(bm25).rankingScript";
-        const bool uses_only_generated_fallback =
-            generated_direct_bm25_fallback || generated_script_bm25_fallback;
-        if (!uses_only_generated_fallback) {
-            return {};
-        }
-
-        const auto indexschema = config_dir / "indexschema.cfg";
-        std::ifstream input(indexschema, std::ios::binary);
-        if (!input) {
-            throw std::runtime_error("could not read generated configuration: " +
-                                     indexschema.string());
-        }
-        const std::string contents((std::istreambuf_iterator<char>(input)),
-                                   std::istreambuf_iterator<char>());
-        if (!input.good() && !input.eof()) {
-            throw std::runtime_error("could not read generated configuration: " +
-                                     indexschema.string());
-        }
-        constexpr std::string_view old_value = "interleavedfeatures false";
-        if (contents.find(old_value) == std::string::npos) {
+        // Vespa's directory config source requests these optional files even when
+        // the corresponding feature is unused. Complete the private runtime view
+        // here instead of requiring every Search Kernel config producer or fixture
+        // to carry empty placeholder files.
+        if (!needs_optional_config_placeholders && !rewrite_indexschema) {
             return {};
         }
 
@@ -2654,22 +2673,41 @@ class EmbeddedEngine {
                 }
             }
 
-            std::string runtime_indexschema = contents;
-            size_t position = 0;
-            constexpr std::string_view new_value = "interleavedfeatures true";
-            while ((position = runtime_indexschema.find(old_value, position)) !=
-                   std::string::npos) {
-                runtime_indexschema.replace(position, old_value.size(), new_value);
-                position += new_value.size();
+            for (const auto name : optional_config_names) {
+                const auto placeholder = runtime_dir / std::string(name);
+                if (std::filesystem::is_regular_file(placeholder)) {
+                    continue;
+                }
+                std::ofstream output(placeholder, std::ios::binary | std::ios::trunc);
+                if (!output) {
+                    throw std::runtime_error("could not write runtime Vespa config placeholder: " +
+                                             placeholder.string());
+                }
+                output.close();
+                if (!output) {
+                    throw std::runtime_error("could not write runtime Vespa config placeholder: " +
+                                             placeholder.string());
+                }
             }
-            std::ofstream output(runtime_dir / "indexschema.cfg",
-                                 std::ios::binary | std::ios::trunc);
-            if (!output) {
-                throw std::runtime_error("could not write runtime Vespa configuration");
-            }
-            output << runtime_indexschema;
-            if (!output) {
-                throw std::runtime_error("could not write runtime Vespa configuration");
+
+            if (rewrite_indexschema) {
+                std::string runtime_indexschema = indexschema_contents;
+                size_t position = 0;
+                constexpr std::string_view new_value = "interleavedfeatures true";
+                while ((position = runtime_indexschema.find(old_interleaved_value, position)) !=
+                       std::string::npos) {
+                    runtime_indexschema.replace(position, old_interleaved_value.size(), new_value);
+                    position += new_value.size();
+                }
+                std::ofstream output(runtime_dir / "indexschema.cfg",
+                                     std::ios::binary | std::ios::trunc);
+                if (!output) {
+                    throw std::runtime_error("could not write runtime Vespa configuration");
+                }
+                output << runtime_indexschema;
+                if (!output) {
+                    throw std::runtime_error("could not write runtime Vespa configuration");
+                }
             }
         } catch (...) {
             std::filesystem::remove_all(runtime_dir, filesystem_error);
