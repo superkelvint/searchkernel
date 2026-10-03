@@ -18,6 +18,18 @@ describe('daemon dashboard boundary', () => {
     get.mockResolvedValue(null)
     expect(await client.getDocument('alpha', 'missing')).toBeUndefined()
   })
+  it('preserves disabled attributes and leaves script-owned capabilities unavailable', async () => {
+    const disabled = new Text({ stored: true, searchable: true }).definition('title')
+    Object.assign(disabled, { attribute: { enabled: { value: false } } })
+    const scripted = new Text().definition('scripted')
+    scripted.indexingScript = 'input scripted | index | summary'
+    vi.spyOn(RemoteIndex, 'open').mockResolvedValue({
+      definition: new IndexDefinitionT('schema', [disabled, scripted]), generation: 'incarnation',
+    } as unknown as RemoteIndex)
+    const index = await createDaemonSearchKernelClient('http://daemon').getIndex('alpha')
+    expect(index.fields[0].attribute).toBe(false)
+    expect(index.fields[1]).toMatchObject({ stored: undefined, searchable: undefined, attribute: undefined })
+  })
   it('passes explicit controls and cancellation and leaves omitted defaults absent', async () => {
     const execute = vi.fn().mockResolvedValue({ totalHits: 1n, hits: [{ id: 'one', fields: { title: 'orchid' }, score: 0.75 }], issues: [], coverage: null, timing: null })
     const builder = { limit: vi.fn(), ranking: vi.fn(), summary: vi.fn(), execute }

@@ -42,9 +42,9 @@ function metadata(target: string, definition: IndexDefinitionT): Index {
       type: field.dataType?.kind instanceof PrimitiveDataTypeT
         ? PrimitiveDataTypeKind[field.dataType.kind.kind].toLowerCase()
         : (DataTypeKind[field.dataType?.kindType ?? DataTypeKind.NONE] ?? 'Unknown').replace(/DataType$/, '').toLowerCase(),
-      stored: field.stored?.value === true,
-      searchable: field.searchable?.value === true,
-      attribute: field.attribute !== null,
+      stored: field.stored?.value,
+      searchable: field.searchable?.value,
+      attribute: field.attribute?.enabled?.value,
       analyzer: field.analyzer?.name ? text(field.analyzer.name) : 'Unavailable',
     })),
   }

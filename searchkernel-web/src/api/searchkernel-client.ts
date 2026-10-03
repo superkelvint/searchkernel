@@ -27,9 +27,9 @@ export type Document = {
 export type Field = {
   name: string
   type: string
-  searchable: boolean
-  attribute: boolean
-  stored: boolean
+  searchable?: boolean
+  attribute?: boolean
+  stored?: boolean
   analyzer: string
 }
 
