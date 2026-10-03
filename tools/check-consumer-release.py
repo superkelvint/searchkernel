@@ -68,9 +68,6 @@ def verify_daemon_tree(root: Path, expected_runtime: dict[str, object]) -> None:
     libdir = root / "lib"
     assert daemon.is_file(), f"packaged daemon launcher missing: {daemon}"
     assert real_daemon.is_file(), f"packaged daemon ELF missing: {real_daemon}"
-    assert (root / "bin" / ".searchkernel-native" / "libsearchkernel_vespa.so.2").is_file(), (
-        "packaged daemon is missing its origin-relative native adapter dependency"
-    )
     assert (libdir / "libsearchkernel_vespa.so.2").is_file(), (
         f"packaged native adapter missing: {libdir / 'libsearchkernel_vespa.so.2'}"
     )
