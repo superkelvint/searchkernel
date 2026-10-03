@@ -2,7 +2,8 @@
 mod m14;
 
 use crate::m14::load;
-use searchkernel_ir::{index_definition_to_ir, ErrorCode, PortableError};
+use searchkernel_ir::wire::v1::index_definition_to_ir;
+use searchkernel_ir::{ErrorCode, PortableError};
 use searchkernel_vespa_engine::{
     ConfigCompiler, DistanceMetric, Field, FieldType, HnswIndexConfig, Schema,
 };

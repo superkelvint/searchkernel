@@ -196,7 +196,7 @@ fn canonical_grouping_round_trips_through_flatbuffers_and_ir() {
         Vec::new(),
     )
     .expect("grouping test definition");
-    let bytes = searchkernel_ir::search_request_ir_to_api(&request);
+    let bytes = searchkernel_ir::wire::v1::search_request_ir_to_api(&request);
     let api_request = searchkernel_ir::__flatbuffers::root::<
         searchkernel_ir::wire::v1::schema::SearchRequest,
     >(&bytes)

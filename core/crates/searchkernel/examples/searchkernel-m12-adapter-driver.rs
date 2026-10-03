@@ -3,7 +3,8 @@ mod m12;
 
 use crate::m12::{canonical_response_hits, load, portable_request_json};
 use searchkernel_dispatch::Dispatcher;
-use searchkernel_ir::{index_definition_to_ir, Backend, BackendSession, IndexContext};
+use searchkernel_ir::wire::v1::index_definition_to_ir;
+use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::json::request_json_to_flatbuffer;
 use std::{path::PathBuf, sync::Arc};

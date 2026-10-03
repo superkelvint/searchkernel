@@ -24,7 +24,7 @@ fn policy() -> SearchEndpointPolicy {
 }
 
 fn docs_router() -> SearchEndpointRouter {
-    SearchEndpointRouter::new([SearchEndpointConfig::new("docs", policy())])
+    SearchEndpointRouter::new([SearchEndpointConfig::new("docs", "docs", policy())])
         .expect("valid docs endpoint")
 }
 
@@ -107,13 +107,13 @@ async fn wait_for_execution_capacity(
 
 #[test]
 fn endpoint_names_define_stable_safe_routes() {
-    let config = SearchEndpointConfig::new("docs-search_2", policy());
+    let config = SearchEndpointConfig::new("docs-search_2", "docs", policy());
     assert_eq!(config.name(), "docs-search_2");
     assert_eq!(config.route(), "/search/docs-search_2");
 
     for invalid in ["", "/docs", "docs/search", "docs search", "docs%2Fsearch"] {
         assert!(matches!(
-            SearchEndpointRouter::new([SearchEndpointConfig::new(invalid, policy())]),
+            SearchEndpointRouter::new([SearchEndpointConfig::new(invalid, "docs", policy())]),
             Err(SearchEndpointRouteError::InvalidEndpointName(name)) if name == invalid
         ));
     }
@@ -123,8 +123,9 @@ fn endpoint_names_define_stable_safe_routes() {
 fn duplicate_routes_and_invalid_policy_fail_registry_construction() {
     assert_eq!(
         SearchEndpointRouter::new([
-            SearchEndpointConfig::new("docs", policy()),
+            SearchEndpointConfig::new("docs", "docs", policy()),
             SearchEndpointConfig::new(
+                "docs",
                 "docs",
                 SearchEndpointPolicy::new(32, 2, 16, 10, 20).with_default_limit(10),
             ),
@@ -136,6 +137,7 @@ fn duplicate_routes_and_invalid_policy_fail_registry_construction() {
     assert_eq!(
         SearchEndpointRouter::new([SearchEndpointConfig::new(
             "bad-default",
+            "docs",
             SearchEndpointPolicy::new(64, 2, 32, 10, 20).with_default_limit(11),
         )])
         .expect_err("invalid default limit"),
@@ -147,6 +149,7 @@ fn duplicate_routes_and_invalid_policy_fail_registry_construction() {
     assert_eq!(
         SearchEndpointRouter::new([SearchEndpointConfig::new(
             "unsafe-no-default",
+            "docs",
             SearchEndpointPolicy::new(64, 2, 32, 10, 20),
         )])
         .expect_err("tight maximum requires an explicit endpoint default"),
@@ -157,6 +160,7 @@ fn duplicate_routes_and_invalid_policy_fail_registry_construction() {
 
     let tight = SearchEndpointRouter::new([SearchEndpointConfig::new(
         "tight-default",
+        "docs",
         SearchEndpointPolicy::new(64, 2, 32, 10, 20).with_default_limit(10),
     )])
     .expect("explicit default makes tight maximum safe");
@@ -321,6 +325,7 @@ fn alternate_path_spellings_never_alias_a_named_endpoint() {
 fn raw_query_size_and_parameter_count_fail_before_value_decoding() {
     let small = SearchEndpointRouter::new([SearchEndpointConfig::new(
         "small",
+        "docs",
         SearchEndpointPolicy::new(7, 1, 64, 100, 1_000),
     )])
     .expect("small router");
@@ -337,6 +342,7 @@ fn raw_query_size_and_parameter_count_fail_before_value_decoding() {
 
     let count_limited = SearchEndpointRouter::new([SearchEndpointConfig::new(
         "count",
+        "docs",
         SearchEndpointPolicy::new(256, 2, 64, 100, 1_000),
     )])
     .expect("count router");
@@ -387,6 +393,7 @@ fn unknown_duplicate_empty_segments_and_ambiguous_numbers_fail_closed() {
 fn decoded_query_and_numeric_bounds_reject_without_clamping() {
     let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
         "tiny",
+        "docs",
         SearchEndpointPolicy::new(256, 3, 3, 10, 20).with_default_limit(10),
     )])
     .expect("router");
@@ -424,6 +431,7 @@ fn decoded_query_and_numeric_bounds_reject_without_clamping() {
 fn endpoint_default_and_explicit_zero_preserve_presence() {
     let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
         "defaults",
+        "docs",
         policy().with_default_limit(7),
     )])
     .expect("router");
@@ -903,6 +911,7 @@ fn generated_unicode_percent_encoding_round_trips_without_double_decode() {
 
     let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
         "unicode",
+        "docs",
         SearchEndpointPolicy::new(1_024, 3, 256, 100, 1_000),
     )])
     .expect("unicode router");
