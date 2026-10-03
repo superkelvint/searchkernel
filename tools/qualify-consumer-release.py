@@ -92,6 +92,14 @@ def artifact(prefix: str, suffix: str) -> Path:
     return matches[0]
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def native_base_fixture() -> tuple[dict[str, object], Path]:
     fixture_root = QUALIFICATION_ROOT / "native-base"
     manifest_path = fixture_root / "manifest.json"
@@ -108,7 +116,7 @@ def native_base_fixture() -> tuple[dict[str, object], Path]:
         raise RuntimeError(f"qualification native-base artifact is missing: {archive}")
 
     expected = metadata.get("sha256")
-    actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+    actual = sha256_file(archive)
     if not isinstance(expected, str) or actual != expected:
         raise RuntimeError("qualification native-base artifact checksum mismatch")
 
