@@ -27,7 +27,10 @@ export function newDefinition(name: string, fields: NewField[]): IndexDefinition
   const builders = { text: Text, keyword: Keyword, int: Integer, float: Float, bool: Boolean }
   return new IndexDefinitionT(name, fields.map(field => {
     const Builder = builders[field.type]
-    const definition = new Builder({ stored: field.stored, searchable: field.searchable }).definition(field.name)
+    // Builders require a name, but an administration draft can be incomplete.
+    // Preserve that draft in the canonical table for backend validation.
+    const definition = new Builder({ stored: field.stored, searchable: field.searchable }).definition(field.name || 'draft')
+    definition.name = field.name
     definition.attribute = new AttributeConfigT(new OptionalBoolT(field.attribute))
     return definition
   }))

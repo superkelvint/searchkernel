@@ -3,6 +3,10 @@ import { IndexDefinitionT, RankPhaseDefinitionT, RankProfileDefinitionT, Text } 
 import { canonicalJson, newDefinition, withFirstPhase } from './configuration'
 
 describe('canonical configuration drafts', () => {
+  it('retains incomplete field names for backend validation while editing', () => {
+    const definition = newDefinition('schema', [{ name: '', type: 'text', stored: true, searchable: true, attribute: false }])
+    expect(definition.fields[0]?.name).toBe('')
+  })
   it('preserves all untouched canonical properties and optional phase settings', () => {
     const definition = new IndexDefinitionT('schema', [new Text().definition('title')])
     const profile = new RankProfileDefinitionT('custom', ['parent'])
