@@ -162,6 +162,7 @@ RUST_BUNDLE_PATHS = [
     "core/crates",
     "searchkerneld",
     "api",
+    "reference/client-real-e2e-parity/corpus.json",
 ]
 
 
