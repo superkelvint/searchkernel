@@ -307,13 +307,14 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     put_thread
         .join()
         .map_err(|_| "gated indexed PUT panicked")??;
-    if scalar_field(engine, "publication-gated-put", "qty")?
-        != Some(ScalarValue::Integer(61))
+    if scalar_field(engine, "publication-gated-put", "qty")? != Some(ScalarValue::Integer(61))
         || !term_search_ids(engine, "title", "gatedputmarker")?
             .iter()
             .any(|id| id == "publication-gated-put")
     {
-        return Err("indexed PUT returned before immediate GET/search publication completed".into());
+        return Err(
+            "indexed PUT returned before immediate GET/search publication completed".into(),
+        );
     }
 
     // UPSERT A -> B: the source-backed replacement must be visible before the
@@ -350,8 +351,7 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     upsert_thread
         .join()
         .map_err(|_| "gated UPSERT panicked")??;
-    if scalar_field(engine, "publication-gated-upsert", "qty")?
-        != Some(ScalarValue::Integer(72))
+    if scalar_field(engine, "publication-gated-upsert", "qty")? != Some(ScalarValue::Integer(72))
         || term_search_ids(engine, "title", "gatedupsertold")?
             .iter()
             .any(|id| id == "publication-gated-upsert")
@@ -359,7 +359,9 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
             .iter()
             .any(|id| id == "publication-gated-upsert")
     {
-        return Err("UPSERT returned before immediate GET/search replacement B was published".into());
+        return Err(
+            "UPSERT returned before immediate GET/search replacement B was published".into(),
+        );
     }
 
     // Indexed UPDATE A -> B uses the update path rather than replacement PUT.
