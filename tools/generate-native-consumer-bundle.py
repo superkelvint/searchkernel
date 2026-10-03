@@ -7,7 +7,7 @@ OUT = ROOT / "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs"
 files = [
     "tools/resolve-native-sdk.sh", "tools/install-native-base-artifact.sh",
     "tools/native-base-release-selection.py", "tools/resolve-python.sh", "tools/resolve-rust.sh",
-    "tools/native-build-fingerprint.py", "tools/check-native-sdk-hardening.sh",
+    "tools/native-build-fingerprint.py", "tools/check-native-runtime-closure.py", "tools/check-native-sdk-hardening.sh",
     "core/native/vespa/build-sdk.sh", "core/native/vespa/manifest.json",
 ]
 files += [f"core/native/vespa/{name}" for name in [
