@@ -33,3 +33,8 @@ TypeScript `Index.open()` retains the OpenIndex definition as `index.definition`
 and binds the returned generation. `SearchBuilder.summary(name)` sets canonical
 presentation.summary; omitting ranking, summary or limit leaves server resolution
 unchanged.
+
+The dedicated browser gRPC-Web listener answers CORS preflights for POST and
+the public client's gRPC-Web headers. Its CORS layer wraps admission as well as
+the generated service, so browsers can read overload responses and exposed
+gRPC status headers. The native gRPC listener retains its existing behavior.
