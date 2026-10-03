@@ -206,6 +206,10 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W1 real Sear
     await page.getByLabel('Limit', { exact: true }).fill('1')
     await page.getByLabel('Ranking profile', { exact: true }).fill('boosted')
     await page.getByLabel('Query inputs', { exact: true }).fill('{"boost":2.5}')
+    await expect.poll(async () => JSON.parse(await page.getByLabel('Request inspector', { exact: true }).innerText())).toMatchObject({
+      ranking: { profile: 'boosted' }, inputs: [{ name: 'boost' }],
+      filters: { structured: [{}, {}] }, sort: [{ direction: 'Asc' }], limit: { value: 1 },
+    })
     const request = JSON.parse(await page.getByLabel('Request inspector', { exact: true }).innerText())
     expect(request.ranking.profile).toBe('boosted')
     expect(request.inputs[0].name).toBe('boost')
