@@ -141,6 +141,18 @@ pub(super) struct LifecycleLock {
 }
 
 #[cfg(feature = "native")]
+impl Drop for LifecycleLock {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+
+        // Closing our descriptor alone does not release flock while a sibling
+        // subprocess retains its fork-time copy (even with close-on-exec).
+        // The owner releases the lock explicitly after backend shutdown.
+        unsafe { libc::flock(self._file.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
+#[cfg(feature = "native")]
 impl LifecycleLock {
     fn acquire(root: &std::path::Path) -> Result<Self> {
         use std::os::fd::AsRawFd;
