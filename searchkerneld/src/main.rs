@@ -243,7 +243,8 @@ mod native_main {
             server
         };
         for origin in web_origins {
-            let origin = HeaderValue::from_str(&origin)
+            let origin = origin
+                .parse::<HeaderValue>()
                 .map_err(|_| format!("invalid --web-origin value {origin:?}"))?;
             if origin.as_bytes() == b"*" {
                 return Err("--web-origin does not accept wildcard origins".into());
