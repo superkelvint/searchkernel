@@ -80,6 +80,7 @@ pub enum ControlPlaneRequest {
     },
     Delete {
         target: String,
+        expected_generation: Option<String>,
     },
     Route {
         target: String,

@@ -190,7 +190,10 @@ pub mod v1 {
                 envelope
                     .payload_as_search_kernel_wire_delete_index_request()
                     .ok_or(ControlPlaneDecodeError::InvalidRequest)?;
-                Ok(ControlPlaneRequest::Delete { target })
+                Ok(ControlPlaneRequest::Delete {
+                    target,
+                    expected_generation: target_view.generation().map(ToOwned::to_owned),
+                })
             }
             wire::RequestPayload::NONE => Err(ControlPlaneDecodeError::InvalidRequest),
             _ => Ok(ControlPlaneRequest::Route {

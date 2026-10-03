@@ -190,7 +190,12 @@ impl IndexRegistry {
                 self.create(&target, *definition, version)
             }
             ControlPlaneRequest::Open { target } => self.open(&target, version),
-            ControlPlaneRequest::Delete { target } => self.delete_index(&target, version),
+            ControlPlaneRequest::Delete {
+                target,
+                expected_generation,
+            } => {
+                self.delete_index(&target, expected_generation.as_deref(), version)
+            }
             ControlPlaneRequest::Route {
                 target,
                 expected_generation,
@@ -440,6 +445,7 @@ impl IndexRegistry {
     fn delete_index(
         &self,
         target: &str,
+        expected_generation: Option<&str>,
         version: WireVersion,
     ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
         let transition = self.transition_lock(target)?;
@@ -455,11 +461,22 @@ impl IndexRegistry {
             }
         };
 
-        let entry = self
+        let mut entries = self
             .entries
             .lock()
-            .map_err(|_| RegistryDispatchError::Poisoned)?
-            .remove(target);
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        // A generation belongs to a loaded incarnation of this process.
+        // Check before removing/closing storage, under the transition lock.
+        if let Some(expected) = expected_generation {
+            if entries.get(target).map(|entry| entry.generation.as_str()) != Some(expected) {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
+                    searchkernel_ir::stale_index_handle_error(),
+                )));
+            }
+        }
+        let entry = entries.remove(target);
+        drop(entries);
         if entry.is_none() && !path.exists() {
             return Ok(RegistryDispatchResult::payload(encode_registry_error(
                 version,
