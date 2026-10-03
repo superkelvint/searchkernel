@@ -27,8 +27,8 @@ describe('daemon dashboard boundary', () => {
       definition: new IndexDefinitionT('schema', [disabled, scripted]), generation: 'incarnation',
     } as unknown as RemoteIndex)
     const index = await createDaemonSearchKernelClient('http://daemon').getIndex('alpha')
-    expect(index.fields[0].attribute).toBe(false)
-    expect(index.fields[1]).toMatchObject({ stored: undefined, searchable: undefined, attribute: undefined })
+    expect(index?.fields[0].attribute).toBe(false)
+    expect(index?.fields[1]).toMatchObject({ stored: undefined, searchable: undefined, attribute: undefined })
   })
   it('passes explicit controls and cancellation and leaves omitted defaults absent', async () => {
     const execute = vi.fn().mockResolvedValue({ totalHits: 1n, hits: [{ id: 'one', fields: { title: 'orchid' }, score: 0.75 }], issues: [], coverage: null, timing: null })
