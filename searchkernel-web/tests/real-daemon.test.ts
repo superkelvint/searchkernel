@@ -158,10 +158,12 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W1 real Sear
   try {
     daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'), ['--data-root', root, '--listen', `127.0.0.1:${grpcPort}`, '--web-listen', `127.0.0.1:${webPort}`], { stdio: 'inherit' })
     await reachable(webEndpoint, daemon)
-    index = await Index.create(endpoint, 'workbench', new IndexDefinitionT('workbench_schema', [
+    const definition = new IndexDefinitionT('workbench_schema', [
       new Text({ stored: true, searchable: true }).definition('title'),
       new Integer({ stored: true, attribute: true }).definition('quantity'),
-    ], [new RankProfile('boosted').firstPhase('query(boost) * attribute(quantity)').matchFeature('query(boost)').definition()]))
+    ])
+    definition.rankProfiles = [new RankProfile('boosted').firstPhase('query(boost) * attribute(quantity)').matchFeature('query(boost)').definition()]
+    index = await Index.create(endpoint, 'workbench', definition)
     await index.upsert('a', { title: 'orchid blue', quantity: 7 })
     await index.upsert('b', { title: 'orchid red', quantity: 11 })
     await index.upsert('c', { title: 'tulip white', quantity: 2 })

@@ -17,7 +17,9 @@ export function SearchLab() {
     try { return { value: client.prepareSearch(state) } }
     catch (error) { return { error: normalizeClientError(error) } }
   }, [client, state])
-  const [response, setResponse] = useState<ClientSearchResponse | null>(null)
+  const scope = JSON.stringify([index.id, index.generation])
+  const [result, setResult] = useState<{ scope: string; value: ClientSearchResponse } | null>(null)
+  const response = result?.scope === scope ? result.value : null
   const [error, setError] = useState<ReturnType<typeof normalizeClientError>>()
   const [loading, setLoading] = useState(false)
   const [executed, setExecuted] = useState<PreparedSearchRequest>()
@@ -32,20 +34,22 @@ export function SearchLab() {
     setLoading(true); setError(undefined); setExecuted(request)
     try {
       const next = await client.executeSearch(index.id, request, { signal: abort.signal })
-      if (current === sequence.current) setResponse(next)
+      if (current === sequence.current) setResult({ scope, value: next })
     } catch (failure) { if (current === sequence.current) setError(normalizeClientError(failure)) }
     finally { if (current === sequence.current) setLoading(false) }
   }
   // URL is the editor state. A valid saved URL executes once on entry. Navigation
   // reconstructs the editor; it never launches lifecycle/mutation operations.
   useEffect(() => {
+    setResult(null); setError(undefined); setExecuted(undefined); setLoading(false)
+    setTermField(index.fields[0]?.name ?? '')
     if (!restored.error && prepared.value && (params.has('s') || params.has('q'))) void execute(prepared.value)
     return () => { ++sequence.current; controller.current?.abort() }
     // Entry/index lifetime only: editing or navigating the URL reconstructs
     // configuration without executing. StrictMode cleanup cancels its observer;
     // the next setup executes with a fresh signal.
   }, [client, index.id, index.generation])
-  const update = (patch: Partial<ClientSearchRequest>) => setParams(encodeSearchParams(updateSearchState(state, patch)))
+  const update = (patch: Partial<ClientSearchRequest>) => { const next = encodeSearchParams(updateSearchState(state, patch)); if (next.toString() !== key) setParams(next) }
   const run = () => { if (!loading && !restored.error && prepared.value) void execute(prepared.value) }
   useEffect(() => {
     const listener = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); run() } }
