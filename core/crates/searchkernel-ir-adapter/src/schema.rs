@@ -858,3 +858,19 @@ mod struct_reference_schema_tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+/// Storage-compatible configuration changes preserve the entire definition
+/// except rank profiles. Field/default/identity changes require a reindex path.
+pub fn rank_profile_change_supported(
+    current: &searchkernel_ir::IndexDefinitionIr,
+    proposed: &searchkernel_ir::IndexDefinitionIr,
+) -> bool {
+    let mut current = current.clone();
+    let mut proposed = proposed.clone();
+    current.set_rank_profiles(Vec::new());
+    proposed.set_rank_profiles(Vec::new());
+    // This identity is durable resolved state, not caller-editable schema data.
+    // Historical indexes can differ from today's fallback derived from name.
+    proposed.set_resolved_document_type(current.resolved_document_type());
+    current == proposed
+}

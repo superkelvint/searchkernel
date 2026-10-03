@@ -7,6 +7,10 @@ import searchkernel._wire.v1.generated.SearchKernel as SearchKernel
 import flatbuffers
 from flatbuffers.compat import import_numpy
 from typing import Any
+from searchkernel._wire.v1.generated.SearchKernel._lazy import lazy_type as _lazy_type
+_lazy_ConfigurationCapabilities = _lazy_type("searchkernel._wire.v1.generated.SearchKernel.Wire.ConfigurationCapabilities", "ConfigurationCapabilities")
+ConfigurationCapabilities = _lazy_ConfigurationCapabilities
+from typing import Optional
 np = import_numpy()
 
 class ListIndexesResult(object):
@@ -47,8 +51,18 @@ class ListIndexesResult(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         return o == 0
 
+    # ListIndexesResult
+    def Configuration(self) -> Optional[ConfigurationCapabilities]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
+        if o != 0:
+            x = self._tab.Indirect(o + self._tab.Pos)
+            obj = ConfigurationCapabilities()
+            obj.Init(self._tab.Bytes, x)
+            return obj
+        return None
+
 def ListIndexesResultStart(builder: flatbuffers.Builder):
-    builder.StartObject(1)
+    builder.StartObject(2)
 
 def Start(builder: flatbuffers.Builder):
     ListIndexesResultStart(builder)
@@ -65,14 +79,21 @@ def ListIndexesResultStartTargetsVector(builder, numElems: int) -> int:
 def StartTargetsVector(builder, numElems: int) -> int:
     return ListIndexesResultStartTargetsVector(builder, numElems)
 
+def ListIndexesResultAddConfiguration(builder: flatbuffers.Builder, configuration: int):
+    builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(configuration), 0)
+
+def AddConfiguration(builder: flatbuffers.Builder, configuration: int):
+    ListIndexesResultAddConfiguration(builder, configuration)
+
 def ListIndexesResultEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
 def End(builder: flatbuffers.Builder) -> int:
     return ListIndexesResultEnd(builder)
 
+from searchkernel._wire.v1.generated import SearchKernel
 try:
-    from typing import List
+    from typing import List, Optional
 except:
     pass
 
@@ -82,8 +103,10 @@ class ListIndexesResultT(object):
     def __init__(
         self,
         targets = None,
+        configuration = None,
     ):
         self.targets = targets  # type: Optional[List[Optional[str]]]
+        self.configuration = configuration  # type: Optional[SearchKernel.Wire.ConfigurationCapabilities.ConfigurationCapabilitiesT]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -110,6 +133,8 @@ class ListIndexesResultT(object):
             self.targets = []
             for i in range(listIndexesResult.TargetsLength()):
                 self.targets.append(listIndexesResult.Targets(i))
+        if listIndexesResult.Configuration() is not None:
+            self.configuration = SearchKernel.Wire.ConfigurationCapabilities.ConfigurationCapabilitiesT.InitFromObj(listIndexesResult.Configuration())
 
     # ListIndexesResultT
     def Pack(self, builder):
@@ -121,8 +146,12 @@ class ListIndexesResultT(object):
             for i in reversed(range(len(self.targets))):
                 builder.PrependUOffsetTRelative(targetslist[i])
             targets = builder.EndVector()
+        if self.configuration is not None:
+            configuration = self.configuration.Pack(builder)
         ListIndexesResultStart(builder)
         if self.targets is not None:
             ListIndexesResultAddTargets(builder, targets)
+        if self.configuration is not None:
+            ListIndexesResultAddConfiguration(builder, configuration)
         listIndexesResult = ListIndexesResultEnd(builder)
         return listIndexesResult

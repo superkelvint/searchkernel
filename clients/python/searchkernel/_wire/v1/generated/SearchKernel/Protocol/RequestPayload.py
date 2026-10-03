@@ -20,6 +20,8 @@ class RequestPayload(object):
     SearchKernel_Wire_OpenIndexRequest = 12
     SearchKernel_Wire_DeleteIndexRequest = 13
     SearchKernel_Wire_ListIndexesRequest = 14
+    SearchKernel_Wire_PlanIndexChangeRequest = 15
+    SearchKernel_Wire_ApplyIndexChangeRequest = 16
 
 def RequestPayloadCreator(unionType, table):
     from flatbuffers.table import Table
@@ -67,4 +69,10 @@ def RequestPayloadCreator(unionType, table):
     if unionType == RequestPayload.SearchKernel_Wire_ListIndexesRequest:
         from searchkernel._wire.v1.generated import SearchKernel
         return SearchKernel.Wire.ListIndexesRequest.ListIndexesRequestT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == RequestPayload.SearchKernel_Wire_PlanIndexChangeRequest:
+        from searchkernel._wire.v1.generated import SearchKernel
+        return SearchKernel.Wire.PlanIndexChangeRequest.PlanIndexChangeRequestT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == RequestPayload.SearchKernel_Wire_ApplyIndexChangeRequest:
+        from searchkernel._wire.v1.generated import SearchKernel
+        return SearchKernel.Wire.ApplyIndexChangeRequest.ApplyIndexChangeRequestT.InitFromBuf(table.Bytes, table.Pos)
     return None

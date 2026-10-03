@@ -45,6 +45,15 @@ export class AnalyzerT extends SemanticTable {
   declare options: (ValueEntryT)[];
   constructor(name: string|Uint8Array|null = null, version: number = 0, options: (ValueEntryT)[] = []) { super('Analyzer', ['name', 'version', 'options'], [name, version, options], [null, 0, []]); }
 }
+export class ApplyIndexChangeRequestT extends SemanticTable {
+  declare planId: string|Uint8Array|null;
+  constructor(planId: string|Uint8Array|null = null) { super('ApplyIndexChangeRequest', ['planId'], [planId], [null]); }
+}
+export class ApplyIndexChangeResultT extends SemanticTable {
+  declare index: IndexDefinitionT|null;
+  declare generation: string|Uint8Array|null;
+  constructor(index: IndexDefinitionT|null = null, generation: string|Uint8Array|null = null) { super('ApplyIndexChangeResult', ['index', 'generation'], [index, generation], [null, null]); }
+}
 export class ArithmeticUpdateT extends SemanticTable {
   declare operator: ArithmeticUpdateOperator;
   declare operand: ValueT|null;
@@ -80,6 +89,13 @@ export class BytesValueT extends SemanticTable {
 }
 export class ClearUpdateT extends SemanticTable {
   constructor() { super('ClearUpdate', [], [], []); }
+}
+export class ConfigurationCapabilitiesT extends SemanticTable {
+  declare createIndex: boolean;
+  declare rankProfilesWrite: boolean;
+  declare changePlan: boolean;
+  declare fieldMutation: boolean;
+  constructor(createIndex: boolean = false, rankProfilesWrite: boolean = false, changePlan: boolean = false, fieldMutation: boolean = false) { super('ConfigurationCapabilities', ['createIndex', 'rankProfilesWrite', 'changePlan', 'fieldMutation'], [createIndex, rankProfilesWrite, changePlan, fieldMutation], [false, false, false, false]); }
 }
 export class ConstantDefinitionT extends SemanticTable {
   declare name: string|Uint8Array|null;
@@ -571,7 +587,8 @@ export class ListIndexesRequestT extends SemanticTable {
 }
 export class ListIndexesResultT extends SemanticTable {
   declare targets: (string)[];
-  constructor(targets: (string)[] = []) { super('ListIndexesResult', ['targets'], [targets], [[]]); }
+  declare configuration: ConfigurationCapabilitiesT|null;
+  constructor(targets: (string)[] = [], configuration: ConfigurationCapabilitiesT|null = null) { super('ListIndexesResult', ['targets', 'configuration'], [targets, configuration], [[], null]); }
 }
 export class LiteralConstantSourceT extends SemanticTable {
   declare value: ValueT|null;
@@ -699,6 +716,19 @@ export class PatchRequestT extends SemanticTable {
 export class PatchResultT extends SemanticTable {
   declare id: string|Uint8Array|null;
   constructor(id: string|Uint8Array|null = null) { super('PatchResult', ['id'], [id], [null]); }
+}
+export class PlanIndexChangeRequestT extends SemanticTable {
+  declare definition: IndexDefinitionT|null;
+  constructor(definition: IndexDefinitionT|null = null) { super('PlanIndexChangeRequest', ['definition'], [definition], [null]); }
+}
+export class PlanIndexChangeResultT extends SemanticTable {
+  declare definition: IndexDefinitionT|null;
+  declare generation: string|Uint8Array|null;
+  declare planId: string|Uint8Array|null;
+  declare supported: boolean;
+  declare requiresReopen: boolean;
+  declare reasons: (string)[];
+  constructor(definition: IndexDefinitionT|null = null, generation: string|Uint8Array|null = null, planId: string|Uint8Array|null = null, supported: boolean = false, requiresReopen: boolean = false, reasons: (string)[] = []) { super('PlanIndexChangeResult', ['definition', 'generation', 'planId', 'supported', 'requiresReopen', 'reasons'], [definition, generation, planId, supported, requiresReopen, reasons], [null, null, null, false, false, []]); }
 }
 export class PositionDataTypeT extends SemanticTable {
   constructor() { super('PositionDataType', [], [], []); }

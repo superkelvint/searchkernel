@@ -26,7 +26,8 @@ pub mod snapshot;
 pub mod wire;
 
 pub use api_to_ir::control_plane::{
-    already_exists_error, index_discovery_failure, index_in_use_error, lifecycle_failure,
+    already_exists_error, index_discovery_failure, index_in_use_error,
+    invalid_configuration_plan_error, lifecycle_failure, missing_configuration_definition_error,
     not_found_error, path_failure, stale_index_handle_error, validate_index_target,
     ControlPlaneRequest, LifecycleFailure, LifecycleFailureCode, LifecycleFailureDetail,
     LifecycleOperation, PathFailure, TargetValidationError, CREATE_INDEX_DEFINITION_PATH,

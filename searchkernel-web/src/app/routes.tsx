@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { CreateIndex } from '../features/configuration/CreateIndex'
 import { DashboardRoute } from './DashboardRoute'
 import { About, NotFound, UnavailableFeature } from './fallback-pages'
 
@@ -12,7 +13,7 @@ export function AppRoutes() { return <Routes>
   <Route path="/" element={<Navigate replace to="/overview"/>}/>
   <Route path="/overview" element={<DashboardRoute page="global-overview"/>}/>
   <Route path="/indexes" element={<DashboardRoute page="indexes"/>}/>
-  <Route path="/indexes/new" element={<UnavailableFeature title="Create index"/>}/>
+  <Route path="/indexes/new" element={<CreateIndex/>}/>
   <Route path="/indexes/:indexId" element={<IndexDefault/>}/>
   <Route path="/indexes/:indexId/data" element={<IndexDefault section="data"/>}/>
   <Route path="/indexes/:indexId/search" element={<IndexDefault section="search"/>}/>

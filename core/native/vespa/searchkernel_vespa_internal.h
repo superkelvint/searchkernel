@@ -1,6 +1,10 @@
 #pragma once
 
 #include "searchkernel_vespa.h"
+#include <vespa/config-rank-profiles.h>
+#include <vespa/searchcore/proton/matching/matcher.h>
+#include <vespa/searchlib/fef/ranking_assets_repo.h>
+#include <vespa/eval/eval/value_cache/constant_tensor_loader.h>
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
 #include "searchkernel_vespa_test.h"
 #endif

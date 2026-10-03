@@ -1,5 +1,5 @@
 import {
-  Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
+  Client, GrpcWebTransport, Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
   DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
   type IndexDefinitionT, type ClientTransport,
 } from '@searchkernel/client'
@@ -33,6 +33,7 @@ function text(value: string | Uint8Array | null): string {
 function metadata(target: string, definition: IndexDefinitionT): Index {
   return {
     id: target,
+    definition,
     profiles: definition.rankProfiles.map(profile => text(profile.name)),
     summaries: definition.documentSummaries.map(summary => text(summary.name)),
     // Omitted controls reach the semantic resolver unchanged.
@@ -51,12 +52,12 @@ function metadata(target: string, definition: IndexDefinitionT): Index {
 }
 
 const capabilities: Capabilities = {
-  indexes: { read: true, create: false, delete: false },
+  indexes: { read: true, create: true, delete: false },
   documents: { read: true, write: false, bulk: false },
   search: { basic: true, sort: false, facets: false, grouping: false },
   analysis: { text: false }, query: { inspect: false },
-  schema: { read: true, write: false, changePlan: false },
-  ranking: { profiles: true, features: false, write: false },
+  schema: { read: true, write: false, changePlan: true },
+  ranking: { profiles: true, features: false, write: true },
   summaries: { read: true, write: false }, metrics: { query: false, storage: false },
   admin: { overview: false, health: false, diagnostics: false },
 }
@@ -76,6 +77,7 @@ export function daemonError(error: unknown): SearchKernelClientError {
 export function createDaemonSearchKernelClient(endpoint: string, transport?: () => ClientTransport): SearchKernelClient {
   const daemon = new Daemon(endpoint, transport?.())
   const handles = new Map<string, Promise<RemoteIndex>>()
+  const configurationClients = new Map<string, Client>()
   async function call<T>(read: () => Promise<T>): Promise<T> {
     try { return await read() } catch (error) { throw daemonError(error) }
   }
@@ -102,7 +104,42 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
     }
   }
   return {
-    async capabilities() { return capabilities },
+    planIndexChange(target, definition, options) { return call(async () => {
+      let client = configurationClients.get(target)
+      if (!client) {
+        client = handles.has(target) ? (await opened(target, options)).client : new Client(transport?.() ?? new GrpcWebTransport(endpoint), target)
+        configurationClients.set(target, client)
+      }
+      const plan = await client.planIndexChange(definition, options)
+      if (!plan.definition) throw new ProtocolError('Plan result is missing the canonical definition')
+      return { definition: plan.definition, generation: plan.generation ? text(plan.generation) : undefined,
+        planId: text(plan.planId), supported: plan.supported, requiresReopen: plan.requiresReopen, reasons: plan.reasons }
+    }) },
+    applyIndexChange(target, planId, options) { return call(async () => {
+      const client = configurationClients.get(target)
+      if (!client) throw new SearchKernelClientError('Validate this draft before applying it.', { code: 'invalid_configuration_plan', origin: 'client' })
+      const result = await client.applyIndexChange(planId, options)
+      if (!result.index) throw new ProtocolError('Apply result is missing the canonical definition')
+      configurationClients.delete(target)
+      return { ...metadata(target, result.index), generation: text(result.generation) }
+    }) },
+    reopenIndex(target, options) { return call(async () => {
+      const previous = handles.get(target)
+      handles.delete(target)
+      configurationClients.delete(target)
+      if (previous) await (await previous).client.close()
+      const index = await opened(target, options)
+      return { ...metadata(target, index.definition), generation: index.generation }
+    }) },
+    capabilities() { return call(async () => {
+      const discovery = await daemon.client.listIndexes()
+      const configuration = discovery.configuration
+      return { ...capabilities,
+        indexes: { ...capabilities.indexes, create: configuration?.createIndex ?? false },
+        schema: { ...capabilities.schema, write: configuration?.fieldMutation ?? false, changePlan: configuration?.changePlan ?? false },
+        ranking: { ...capabilities.ranking, write: configuration?.rankProfilesWrite ?? false },
+      }
+    }) },
     listIndexes(options) { return call(async () => (await daemon.listIndexes(options)).map(id => ({ id }))) },
     getIndex(target, options) { return call(async () => {
       const index = await opened(target, options)

@@ -147,3 +147,68 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
     await rm(root, { recursive: true, force: true })
   }
 }, 120_000)
+
+test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('schema and ranking administration validates, applies and persists the supported slice', async () => {
+  const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-configuration-browser-'))
+  const grpcPort = await port(), webPort = await port(), uiPort = await port()
+  const endpoint = `127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`
+  let daemon: ChildProcess | undefined, vite: ChildProcess | undefined, browser: Browser | undefined
+  async function start() {
+    daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'),
+      ['--data-root', root, '--listen', endpoint, '--web-listen', `127.0.0.1:${webPort}`, '--web-origin', `http://127.0.0.1:${uiPort}`], { stdio: 'inherit' })
+    await reachable(webEndpoint, daemon)
+  }
+  try {
+    await start()
+    vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(uiPort)], {
+      env: { ...process.env, VITE_SEARCHKERNEL_ENDPOINT: webEndpoint }, stdio: 'inherit',
+    })
+    await reachable(`http://127.0.0.1:${uiPort}`, vite)
+    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+    const page = await browser.newPage()
+    await page.goto(`http://127.0.0.1:${uiPort}/indexes/new`)
+    await page.getByRole('textbox', { name: 'Index target', exact: true }).fill('catalog')
+    await page.getByRole('textbox', { name: 'Schema name', exact: true }).fill('products')
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByText('Validation passed', { exact: true }).waitFor()
+    expect(await page.getByRole('button', { name: 'Apply validated change', exact: true }).isEnabled()).toBe(false)
+    await page.getByRole('checkbox', { name: /I confirm applying/ }).check()
+    await page.getByRole('button', { name: 'Apply validated change', exact: true }).click()
+    await page.getByRole('heading', { name: 'Complete canonical definition', exact: true }).waitFor()
+    const writer = await Index.open(endpoint, 'catalog')
+    await writer.upsert('one', { title: 'orchid' })
+    await writer.close()
+    await page.goto(`http://127.0.0.1:${uiPort}/indexes/catalog/configuration/ranking`)
+    await page.getByRole('button', { name: 'Create profile', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Profile name', exact: true }).fill('custom')
+    await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).fill('1')
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByText('Validation passed', { exact: true }).waitFor()
+    // Editing after validation removes the apply control immediately.
+    await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).fill('2')
+    expect(await page.getByRole('button', { name: 'Apply validated change', exact: true }).count()).toBe(0)
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByText('Validation passed', { exact: true }).waitFor()
+    await page.getByRole('checkbox', { name: /I confirm applying/ }).check()
+    await page.getByRole('button', { name: 'Apply validated change', exact: true }).click()
+    await page.getByRole('button', { name: 'custom', exact: true }).waitFor()
+    await page.locator('input[readonly]').waitFor()
+    await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).fill('invalid_function(')
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByRole('alert').waitFor()
+    expect(await page.getByRole('button', { name: 'Apply validated change', exact: true }).count()).toBe(0)
+    await stop(daemon); await start()
+    await page.reload()
+    await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).waitFor()
+    expect(await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).inputValue()).toBe('2')
+    const reopened = await Index.open(endpoint, 'catalog')
+    try {
+      expect(await reopened.get('one')).toMatchObject({ title: 'orchid' })
+      const result = await reopened.search('orchid').ranking('custom').execute()
+      expect(result.hits[0]?.score).toBe(2)
+    } finally { await reopened.close() }
+  } finally {
+    await browser?.close(); await stop(vite); await stop(daemon)
+    await rm(root, { recursive: true, force: true })
+  }
+}, 120_000)

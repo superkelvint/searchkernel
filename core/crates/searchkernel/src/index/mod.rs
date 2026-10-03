@@ -20,6 +20,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[cfg(feature = "native")]
+mod configuration;
+#[cfg(feature = "native")]
 mod manifest;
 #[cfg(feature = "native")]
 mod native;

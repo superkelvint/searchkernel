@@ -19,7 +19,9 @@ union RequestPayload {
   SearchKernel.Wire.CreateIndexRequest,
   SearchKernel.Wire.OpenIndexRequest,
   SearchKernel.Wire.DeleteIndexRequest,
-  SearchKernel.Wire.ListIndexesRequest
+  SearchKernel.Wire.ListIndexesRequest,
+  SearchKernel.Wire.PlanIndexChangeRequest,
+  SearchKernel.Wire.ApplyIndexChangeRequest
 }
 
 table RequestEnvelope {

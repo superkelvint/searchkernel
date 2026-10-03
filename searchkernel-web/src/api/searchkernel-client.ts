@@ -1,3 +1,4 @@
+import type { IndexDefinitionT } from '@searchkernel/client'
 /**
  * Browser-facing shape of the generated Search Kernel client.
  *
@@ -35,11 +36,21 @@ export type Field = {
 
 export type Index = {
   id: string
+  definition?: IndexDefinitionT
   generation?: string
   profiles: string[]
   summaries: string[]
   searchDefaults: SearchRequestDefaults
   fields: Field[]
+}
+
+export type ConfigurationPlan = {
+  definition: IndexDefinitionT
+  generation?: string
+  planId: string
+  supported: boolean
+  requiresReopen: boolean
+  reasons: string[]
 }
 
 export type ClientSearchRequest = { query: string; ranking?: string; limit?: number; summary?: string }
@@ -96,6 +107,9 @@ export function normalizeClientError(error: unknown): SearchKernelClientError {
 }
 
 export interface SearchKernelClient {
+  planIndexChange?(indexId: string, definition: IndexDefinitionT, options?: RequestOptions): Promise<ConfigurationPlan>
+  applyIndexChange?(indexId: string, planId: string, options?: RequestOptions): Promise<Index>
+  reopenIndex?(indexId: string, options?: RequestOptions): Promise<Index>
   capabilities(): Promise<Capabilities>
   listIndexes(options?: RequestOptions): Promise<Array<{ id: string }>>
   getIndex(indexId: string, options?: RequestOptions): Promise<Index | undefined>

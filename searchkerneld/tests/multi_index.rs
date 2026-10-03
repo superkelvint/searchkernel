@@ -1972,3 +1972,6 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
     server.shutdown().await.expect("shutdown restarted daemon");
     registry.close_all().expect("close restarted registry");
 }
+
+#[path = "multi_index/configuration_workflow.rs"]
+mod configuration_workflow;
