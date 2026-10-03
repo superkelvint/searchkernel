@@ -201,7 +201,7 @@ class QualificationPolicyTests(unittest.TestCase):
             self.assertTrue(path.is_file(), f"missing canonical release quickstart: {path}")
 
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
-        self.assertIn('QUICKSTARTS = Path(__file__).resolve().parent / "quickstarts"', gate)
+        self.assertIn('QUICKSTARTS = QUALIFICATION_ROOT / "quickstarts"', gate)
         self.assertIn("run_python_quickstart", gate)
         self.assertIn("run_node_quickstart", gate)
         self.assertIn("run_ruby_quickstart", gate)
