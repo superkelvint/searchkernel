@@ -193,9 +193,7 @@ impl IndexRegistry {
             ControlPlaneRequest::Delete {
                 target,
                 expected_generation,
-            } => {
-                self.delete_index(&target, expected_generation.as_deref(), version)
-            }
+            } => self.delete_index(&target, expected_generation.as_deref(), version),
             ControlPlaneRequest::Route {
                 target,
                 expected_generation,
