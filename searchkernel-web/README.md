@@ -3,8 +3,12 @@
 The default runtime connects to a real multi-index daemon through the public
 TypeScript client and its existing gRPC-Web transport. Set
 `VITE_SEARCHKERNEL_ENDPOINT` to the daemon's `--web-listen` endpoint (default
-`http://localhost:8081`). `VITE_SEARCHKERNEL_MODE=fixture` explicitly selects
-an offline demo. Logical targets come from ListIndexes, and only the selected
+`http://localhost:8081`). When the dashboard and daemon are on different
+origins, start the daemon with an exact `--web-origin <origin>` (or
+`SEARCHKERNEL_GRPC_WEB_ORIGIN`) for the dashboard origin. `--web-listen`
+alone does not authorize arbitrary websites to call the mutation-capable API.
+`VITE_SEARCHKERNEL_MODE=fixture` explicitly selects an offline demo. Logical
+targets come from ListIndexes, and only the selected
 workspace is opened. Schema metadata and generation come from OpenIndex.
 
 Search Lab offers Server default for ranking, summary and limit. Those controls
