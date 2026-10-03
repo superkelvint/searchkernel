@@ -993,9 +993,12 @@ class Client:
         """List durable logical targets without opening an index."""
         result = self.execute("list_indexes", ListIndexesRequestT())
         targets = getattr(result, "targets", None)
-        if not isinstance(targets, list) or not all(isinstance(name, str) for name in targets):
+        if not isinstance(targets, list) or not all(isinstance(name, (str, bytes)) for name in targets):
             raise ClientError("ListIndexesResult.targets is missing or malformed")
-        return targets
+        try:
+            return [name.decode("utf-8") if isinstance(name, bytes) else name for name in targets]
+        except UnicodeDecodeError as error:
+            raise ClientError("ListIndexesResult.targets contains invalid UTF-8") from error
 
     def close(self) -> None:
         self.transport.close()

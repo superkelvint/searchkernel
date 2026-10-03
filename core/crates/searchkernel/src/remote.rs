@@ -806,7 +806,7 @@ impl RemoteClient {
         })
     }
 
-    /// Create a logical target and return an index handle bound to it.
+    /// Discover durable logical targets without opening or binding an index.
     pub fn list_indexes(&self) -> Result<Vec<String>> {
         let response = self
             .transport
