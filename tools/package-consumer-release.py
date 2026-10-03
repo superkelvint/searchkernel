@@ -304,6 +304,49 @@ def verify_runtime_adapter_relocatable(adapter: Path) -> None:
         )
 
 
+def make_runtime_daemon_relocatable(daemon: Path) -> None:
+    original = b"$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2"
+    replacement = b"$ORIGIN/../lib/libsearchkernel_vespa.so.2"
+    if len(replacement) > len(original):
+        raise RuntimeError("release daemon dependency rewrite grew unexpectedly")
+    needle = original + b"\0"
+    padded = replacement + b"\0" * (len(needle) - len(replacement))
+    with daemon.open("r+b") as stream:
+        with mmap.mmap(stream.fileno(), 0) as image:
+            offsets: list[int] = []
+            offset = image.find(needle)
+            while offset >= 0:
+                offsets.append(offset)
+                offset = image.find(needle, offset + 1)
+            if len(offsets) != 1:
+                raise RuntimeError(
+                    "expected packaged daemon native adapter dependency exactly once; "
+                    f"found {len(offsets)} occurrences"
+                )
+            offset = offsets[0]
+            image[offset : offset + len(needle)] = padded
+            image.flush()
+
+
+def verify_runtime_daemon_relocatable(daemon: Path) -> None:
+    dynamic = subprocess.check_output(["readelf", "-d", str(daemon)], text=True)
+    needed = []
+    for line in dynamic.splitlines():
+        if "(NEEDED)" not in line:
+            continue
+        start = line.find("[")
+        end = line.rfind("]")
+        if start >= 0 and end > start:
+            needed.append(line[start + 1 : end])
+    expected = "$ORIGIN/../lib/libsearchkernel_vespa.so.2"
+    if expected not in needed:
+        raise RuntimeError(
+            "packaged daemon must resolve the native adapter directly from ../lib; "
+            f"needed={needed!r}"
+        )
+    if any(".searchkernel-native" in item for item in needed):
+        raise RuntimeError(f"packaged daemon retained Cargo-only native dependency: {needed!r}")
+
 def probe_runtime_launcher(launcher: Path) -> None:
     result = subprocess.run(
         [str(launcher), RUNTIME_PROBE_ARGUMENT],
@@ -341,11 +384,8 @@ def stage_runtime(daemon: Path, adapter_lib: Path, stage: Path, identity: dict[s
     staged_adapter = libdir / "libsearchkernel_vespa.so.2"
     make_runtime_adapter_relocatable(staged_adapter)
     verify_runtime_adapter_relocatable(staged_adapter)
-    cargo_adapter = bindir / ".searchkernel-native"
-    cargo_adapter.mkdir()
-    (cargo_adapter / "libsearchkernel_vespa.so.2").symlink_to(
-        "../../lib/libsearchkernel_vespa.so.2"
-    )
+    make_runtime_daemon_relocatable(staged_daemon)
+    verify_runtime_daemon_relocatable(staged_daemon)
 
     native_base = Path(
         subprocess.check_output(
