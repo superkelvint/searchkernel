@@ -35,6 +35,7 @@ export type Field = {
 
 export type Index = {
   id: string
+  generation?: string
   profiles: string[]
   summaries: string[]
   searchDefaults: SearchRequestDefaults

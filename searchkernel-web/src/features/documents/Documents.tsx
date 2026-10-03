@@ -12,8 +12,8 @@ import { displayFields, displayHitValue, displayValue, type DisplayField } from 
 
 export function Documents() {
   const index = useIndex(); const client = useSearchKernelClient(); const { documentId } = useParams(); const navigate = useNavigate(); const [params, setParams] = useSearchParams(); const query = params.get('query') ?? ''
-  const search = useQuery({ queryKey: ['document-browse', index.id, query], queryFn: clientQuery(signal => client.browseDocuments(index.id, { query, limit: 20 }, { signal })), ...clientQueryDefaults, placeholderData: keepPreviousData })
-  const document = useQuery({ queryKey: ['document', index.id, documentId], queryFn: clientQuery(signal => client.getDocument(index.id, documentId!, { signal })), ...clientQueryDefaults, enabled: Boolean(documentId) })
+  const search = useQuery({ queryKey: ['document-browse', index.id, index.generation, query], queryFn: clientQuery(signal => client.browseDocuments(index.id, { query, limit: 20 }, { signal })), ...clientQueryDefaults, placeholderData: keepPreviousData })
+  const document = useQuery({ queryKey: ['document', index.id, index.generation, documentId], queryFn: clientQuery(signal => client.getDocument(index.id, documentId!, { signal })), ...clientQueryDefaults, enabled: Boolean(documentId) })
   const fields = displayFields(index.id, index.fields); const rows = search.data?.documents ?? []
   const updateQuery = (value: string) => { const next = new URLSearchParams(params); value ? next.set('query', value) : next.delete('query'); setParams(next, { replace: true }) }; const open = (id: string) => navigate(`/indexes/${index.id}/data/documents/${encodeURIComponent(id)}?${params}`); const close = () => navigate(`/indexes/${index.id}/data/documents?${params}`)
   if (search.error && !search.data) return <QueryErrorPanel error={queryError(search.error)} retry={() => { void search.refetch() }} />

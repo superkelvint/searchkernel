@@ -95,7 +95,10 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
   return {
     async capabilities() { return capabilities },
     listIndexes(options) { return call(async () => (await daemon.listIndexes(options)).map(id => ({ id }))) },
-    getIndex(target, options) { return call(async () => metadata(target, (await opened(target, options, true)).definition)) },
+    getIndex(target, options) { return call(async () => {
+      const index = await opened(target, options, true)
+      return { ...metadata(target, index.definition), generation: index.generation }
+    }) },
     getDocument(target, id, options) { return call(async () => {
       const document = await (await opened(target, options)).get(id, undefined, options)
       if (document === null) return undefined

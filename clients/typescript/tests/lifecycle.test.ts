@@ -51,6 +51,7 @@ describe("logical index lifecycle", () => {
       envelope(ResponsePayload.SearchKernel_Wire_OpenIndexResult, new OpenIndexResultT(new WireIndexDefinitionT("schema"), "generation")),
     ]));
     expect(index.definition.name).toBe("schema");
+    expect(index.generation).toBe("generation");
     expect(index.browse().build().ranking).toBeNull();
     expect(index.browse().build().presentation).toBeNull();
     expect(index.search("orchid").ranking("custom").summary("compact").limit(3).build()).toMatchObject({

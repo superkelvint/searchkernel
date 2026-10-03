@@ -117,6 +117,8 @@ export class Client {
 
   constructor(readonly transport: ClientTransport, readonly target?: string) {}
 
+  get generation(): string | undefined { return this.indexGeneration; }
+
   bindGeneration(generation: string | Uint8Array | null): void {
     if (typeof generation !== "string" || generation.length === 0) {
       throw new ProtocolError("lifecycle result is missing canonical index generation");
@@ -261,6 +263,12 @@ export class Client {
 /** Public remote-index façade. Browser SDK intentionally has no local daemon lifecycle. */
 export class Index {
   readonly client: Client;
+
+  /** Opaque daemon incarnation returned by create/open. */
+  get generation(): string {
+    if (!this.client.generation) throw new ProtocolError("index has not finished opening");
+    return this.client.generation;
+  }
 
   /** Definition returned by the lifecycle request, without a second open/describe. */
   get definition(): IndexDefinitionT {

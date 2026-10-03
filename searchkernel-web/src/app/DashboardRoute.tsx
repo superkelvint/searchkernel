@@ -3,13 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAdminClient, useCapabilities, useSearchKernelClient } from './client-context'
 import { IndexContext } from './index-context'
-import { Loading, NotFound, QueryErrorState, UnavailableFeature } from './fallback-pages'
+import { Loading, NotFound, UnavailableFeature } from './fallback-pages'
 import { Page } from './Page'
 import { navigationFor, pagePath, tabFor, type Nav, type Page as PageName } from './navigation'
 import { Brand, GlobalSidebar, IndexHeader, MobileMenuButton, SectionNavigation } from '../components/DashboardChrome'
 import { CommandPalette } from '../components/CommandPalette'
 import { clientQuery, clientQueryDefaults, queryError } from './query'
-import { QueryErrorBanner } from '../components/Shared'
+import { QueryErrorBanner, QueryErrorPanel } from '../components/Shared'
 
 export function DashboardRoute({page}:{page: PageName}) {
   const [commandOpen, setCommandOpen] = useState(false)
@@ -21,7 +21,7 @@ export function DashboardRoute({page}:{page: PageName}) {
   const capabilities = useCapabilities()
   const workspace = tabFor(page)
   const navigation = navigationFor(capabilities.capabilities)
-  const { data: index, isLoading, error, refetch } = useQuery({ queryKey: ['index', indexId], queryFn: clientQuery(signal => client.getIndex(indexId!, { signal })), ...clientQueryDefaults, enabled: Boolean(workspace && indexId) })
+  const { data: index, isLoading, isFetching, error, refetch } = useQuery({ queryKey: ['index', indexId], queryFn: clientQuery(signal => client.getIndex(indexId!, { signal })), ...clientQueryDefaults, staleTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: false, enabled: Boolean(workspace && indexId) })
   const { data: summary, error: summaryError, refetch: refetchSummary } = useQuery({ queryKey: ['index-summary', indexId], queryFn: clientQuery(() => adminClient.getIndexSummary(indexId!)), ...clientQueryDefaults, enabled: Boolean(workspace && indexId) })
   const navigate: Nav = (next, targetIndexId = indexId) => { routerNavigate(pagePath(next, targetIndexId)); setMobileNav(false) }
   useEffect(() => {
@@ -29,8 +29,8 @@ export function DashboardRoute({page}:{page: PageName}) {
     addEventListener('keydown', shortcut)
     return () => removeEventListener('keydown', shortcut)
   }, [])
-  if (workspace && isLoading) return <Loading />
-  if (workspace && error && !index) return <QueryErrorState message={queryError(error)?.message ?? 'The index could not be loaded.'} retry={() => { void refetch() }} />
+  if (workspace && (isLoading || isFetching)) return <Loading />
+  if (workspace && error) return <div className="mx-auto max-w-xl p-6"><QueryErrorPanel error={error} retry={() => { void refetch() }} /></div>
   if (workspace && !index) return <NotFound/>
   const currentNavigation = workspace && (navigation.tabs.find(item => item.page === page) ?? navigation.sections[workspace].find(item => item.page === page))
   if (workspace && capabilities.capabilities && currentNavigation && !currentNavigation.enabled) return <UnavailableFeature title={currentNavigation.label} />
