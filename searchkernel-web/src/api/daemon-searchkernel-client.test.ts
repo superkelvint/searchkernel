@@ -72,7 +72,7 @@ describe('daemon dashboard boundary', () => {
     expect((toCanonicalJson(search.mock.calls[1][0]) as any).ranking).toBeUndefined()
   })
   it('keeps stale errors structured and never silently reopens', async () => {
-    const error = Object.assign(new SearchKernelError('stale'), { error: { code: 5, message: 'stale', retryable: false, details: [{ code: 'stale_index_handle', metadata: [] }] } })
+    const error = new SearchKernelError('stale', fromCanonicalJson('Error', { code: 'FailedPrecondition', message: 'stale', retryable: false, details: [{ code: 'stale_index_handle', path: 'target.generation', metadata: [{ key: 'target', value: 'alpha' }] }] }) as import('@searchkernel/client').ErrorT)
     const get = vi.fn().mockRejectedValue(error)
     const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT(), get } as unknown as RemoteIndex)
     const client = createDaemonSearchKernelClient('http://daemon')
@@ -80,6 +80,7 @@ describe('daemon dashboard boundary', () => {
     await expect(client.getDocument('alpha', 'one')).rejects.toMatchObject({ origin: 'canonical', retryable: false, details: [{ code: 'stale_index_handle' }] })
     await expect(client.getDocument('alpha', 'one')).rejects.toMatchObject({ origin: 'canonical' })
     expect(open).toHaveBeenCalledOnce()
+    expect(daemonError(error).details).toEqual([{ code: 'stale_index_handle', path: 'target.generation', metadata: [{ key: 'target', value: 'alpha' }] }])
     expect(daemonError(new ResultDecodeError('missing result metadata'))).toMatchObject({ origin: 'protocol' })
     expect(daemonError(new TransportError('admission', { status: 503, code: 14 }))).toMatchObject({ origin: 'transport', status: 503, details: { transportCode: 14 } })
     expect(daemonError(new TransportError('offline'))).toMatchObject({ origin: 'transport', retryable: true })

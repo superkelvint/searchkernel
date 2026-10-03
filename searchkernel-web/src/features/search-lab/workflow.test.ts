@@ -26,6 +26,14 @@ describe('Search Lab reproducible workflow', () => {
     expect(request.inputs.find((i: any) => i.name === 'large').input.value.kind.value).toBe('9007199254740993')
     expect(request.presentation.summary).toBe('compact')
   })
+  it('retains an immutable executed snapshot independently of later editor changes', () => {
+    const state = structuredClone(combination), prepared = prepareSearch(state)
+    state.filters![0].value = '99'
+    state.sorts!.reverse()
+    expect(prepared.request).toEqual(combination)
+    expect(() => { prepared.request.filters![0].value = '99' }).toThrow()
+    expect(JSON.parse(prepared.canonical)).toEqual(toCanonicalJson(preparedRequest(prepared)))
+  })
   it('leaves omitted controls absent and matches text/browse canonical sources', () => {
     expect(JSON.parse(prepareSearch({ query: 'orchid' }).canonical)).toMatchObject({ query: { source_type: 'SearchKernelTextQuery', source: { text: 'orchid' } } })
     const browse = JSON.parse(prepareSearch({ query: '' }).canonical)

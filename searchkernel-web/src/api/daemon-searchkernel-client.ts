@@ -66,7 +66,7 @@ const capabilities: Capabilities = {
 export function daemonError(error: unknown): SearchKernelClientError {
   if (error instanceof SearchKernelClientError) return error
   if (error instanceof SearchKernelError) return new SearchKernelClientError(error.message, {
-    code: error.code, retryable: error.retryable, details: dashboardValue(error.details), origin: 'canonical',
+    code: error.code, retryable: error.retryable, details: error.details.map(detail => dashboardValue(toCanonicalJson(detail))), origin: 'canonical',
   })
   if (error instanceof TransportError) {
     const cause = error.cause && typeof error.cause === 'object' ? error.cause as Record<string, unknown> : {}

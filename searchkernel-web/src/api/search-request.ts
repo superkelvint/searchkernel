@@ -24,9 +24,16 @@ export function prepareSearch(request: ClientSearchRequest): PreparedSearchReque
   let canonical: ReturnType<typeof buildSearchRequest>
   try { canonical = buildSearchRequest(request) }
   catch (error) { throw new SearchKernelClientError(error instanceof Error ? error.message : 'Invalid request', { origin: 'client', code: 'invalid_request' }) }
-  const result = Object.freeze({ request: structuredClone(request), canonical: JSON.stringify(toCanonicalJson(canonical), null, 2) })
+  const result = Object.freeze({ request: freezeState(structuredClone(request)), canonical: JSON.stringify(toCanonicalJson(canonical), null, 2) })
   prepared.set(result, canonical)
   return result
+}
+function freezeState<T>(state: T): T {
+  if (state && typeof state === 'object') {
+    Object.values(state).forEach(freezeState)
+    Object.freeze(state)
+  }
+  return state
 }
 export function preparedRequest(request: PreparedSearchRequest) {
   const canonical = prepared.get(request)
