@@ -51,8 +51,11 @@ if ! rg -n 'Query::NearestNeighbor|Query::NearestNeighborWithOptions' "$ROOT/cor
 fi
 
 # Tensor grammar belongs to native validation, not the IR adapter.
-if rg -n --glob '*.rs' --glob '!**/tests.rs' \
-    'tensor<[a-zA-Z0-9_]+>\(|split.*type_spec|parse.*type_spec|mapped dimension|indexed dimension' \
+# Match parsing/shape-validation behavior, not ordinary tensor values or test
+# fixtures. In particular, a loose `parse.*type_spec` pattern also matches
+# `Sparse { type_spec, ... }`, which is just value transport.
+if rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/tests.rs' \
+    '\bparse[A-Za-z0-9_]*\([^;\n]*type_spec|\bsplit[A-Za-z0-9_]*\([^;\n]*type_spec|type_spec[^;\n]*\.(split|split_once|splitn|rsplit|rsplit_once|rsplitn|chars|bytes|strip_prefix|strip_suffix|find)\b|mapped dimension|indexed dimension' \
     "$ROOT/core/crates/searchkernel-ir-adapter/src"; then
   fail "adapter appears to duplicate native tensor-type parsing/shape validation"
 fi

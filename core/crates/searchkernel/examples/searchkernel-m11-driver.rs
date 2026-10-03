@@ -479,7 +479,7 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
     Ok(())
 }
 
-fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()> {
+fn run_tensor_publication_regression(_config: &Path, data: &Path) -> AnyResult<()> {
     // The canonical generated config directory is intentionally file-only.
     // Keep this auxiliary tensor schema beside the scenario data root rather
     // than nesting it under `config`, otherwise later M11 reopen scenarios

@@ -72,3 +72,12 @@ race:search::StringAttribute::get_raw
 race:vespalib::datastore::BufferState::fallback_resize
 race:std::char_traits<char>::compare
 race:std::char_traits<char>::copy
+
+# Pinned Vespa's BufferedLogger::instance() is a C++ function-local static.
+# libvespalog is part of the prebuilt, uninstrumented Vespa base, so GCC TSan
+# does not observe the static-initialization happens-before edge between
+# BufferedLogger's BackingBuffer allocation and an internal worker's trimCache
+# call. The pinned source initializes _backing in bufferedlogger.cpp:266-268
+# and trimCache locks that same BackingBuffer at lines 238-240. Constrain this
+# suppression to the exact upstream cache-trim frame rather than the logger DSO.
+race:ns_log::BackingBuffer::trimCache

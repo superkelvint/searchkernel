@@ -87,6 +87,9 @@ case "${1:-}" in
     vespa.hardening.sanitizers)
         "$ROOT/verifiers/hardening/sanitizers/verify.sh" "${@:2}"
         ;;
+    vespa.hardening.tsan)
+        M11_SANITIZER_LANES=tsan "$ROOT/verifiers/hardening/sanitizers/verify.sh" "${@:2}"
+        ;;
     vespa.nearest-neighbor.query)
         "$ROOT/verifiers/nearest-neighbor/query/verify.sh" "${@:2}"
         ;;
