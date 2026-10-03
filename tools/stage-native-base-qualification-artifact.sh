@@ -27,9 +27,10 @@ case "$BUILD_ENV" in
 esac
 
 BASE=$(bash "$ROOT/tools/resolve-native-sdk.sh" path)
-MARKER="$BASE/.searchkernel-native-base-artifact.json"
+VESPA_ROOT=$(bash "$ROOT/tools/resolve-native-sdk.sh" vespa-root)
+MARKER="$VESPA_ROOT/.searchkernel-vespa-artifact.json"
 [[ -f "$MARKER" ]] || {
-    echo "installed native base lacks release metadata: $MARKER" >&2
+    echo "installed native-base toolchain lacks release metadata: $MARKER" >&2
     exit 1
 }
 GENERATION=$("$PYTHON_BIN" - "$MARKER" "$BUILD_ENV" "$TARGET" "$PINNED_VESPA_COMMIT" <<'PY'
@@ -47,7 +48,7 @@ expected = {
 for key, value in expected.items():
     if marker.get(key) != value:
         raise SystemExit(
-            f"installed native-base {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
+            f"installed native-base toolchain {key} mismatch: expected {value!r}, found {marker.get(key)!r}"
         )
 generation = marker.get("artifact_generation", marker.get("format_version"))
 if not isinstance(generation, int) or generation < 1:
