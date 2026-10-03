@@ -60,7 +60,9 @@ required_runner = (
     "docker.io/superkelvint/searchkernel-ci:latest",
     'IMAGE_ID=$(docker image inspect --format',
     'source_volume="searchkernel-dev-src-',
-    'target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")',
+    'head_sha=$(git -C "$ROOT" rev-parse HEAD)',
+    'target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id" "$head_sha")',
+    '"io.searchkernel.source-head=$head_sha"',
     'git -C "$ROOT" bundle create "$bundle" HEAD',
     'commit_epoch=$(git -C /workspace show -s --format=%ct "$SOURCE_HEAD")',
     '(cd /workspace && git ls-files -z | xargs -0r touch -h -d "@$commit_epoch" --)',
@@ -131,6 +133,11 @@ for fragment in required_runner:
 if 'SEARCHKERNEL_CI_EXACT_SOURCE: "1"' not in workflow:
     raise SystemExit("on-demand exact-SHA verification must disable working-tree overlays")
 
+head_resolution = runner.index('head_sha=$(git -C "$ROOT" rev-parse HEAD)')
+target_selection = runner.index('target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id" "$head_sha")')
+if head_resolution > target_selection:
+    raise SystemExit("persistent Cargo target selection must be keyed by the resolved source HEAD")
+
 exact_guard = runner.index('if [[ "$EXACT_SOURCE" == "1" ]]; then')
 overlay_command = runner.index('git -C "$ROOT" diff --no-renames --name-only -z HEAD')
 snapshot_verify = runner.index("# Verify that the private Git repository still names the exact host HEAD")
@@ -185,6 +192,27 @@ for forbidden in (
 
 print("dev CI-image source contract: PASS")
 PY
+
+# Persistent Cargo target state may be reused only for the same immutable
+# source revision. Different HEADs must never collide, even for the same
+# worktree and CI image environment.
+source "$RUNTIME"
+target_head_a=$(ci_runtime_target_volume "$ROOT" "test-environment" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+target_head_a_repeat=$(ci_runtime_target_volume "$ROOT" "test-environment" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+target_head_b=$(ci_runtime_target_volume "$ROOT" "test-environment" "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+[[ "$target_head_a" == "$target_head_a_repeat" ]] || {
+    echo "Cargo target identity is not stable for the same source HEAD" >&2
+    exit 1
+}
+[[ "$target_head_a" != "$target_head_b" ]] || {
+    echo "Cargo target identity leaked across source HEAD revisions" >&2
+    exit 1
+}
+if ci_runtime_target_volume "$ROOT" "test-environment" "main" >/dev/null 2>&1; then
+    echo "Cargo target identity accepted a mutable/non-SHA source ref" >&2
+    exit 1
+fi
+echo "dev CI-image HEAD-scoped Cargo target regression: PASS"
 
 for fragment in \
     'ci_runtime_create_volume()' \
