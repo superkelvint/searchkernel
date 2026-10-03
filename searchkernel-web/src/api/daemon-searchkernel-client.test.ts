@@ -19,6 +19,26 @@ describe('daemon dashboard boundary', () => {
     get.mockResolvedValue(null)
     expect(await client.getDocument('alpha', 'missing')).toBeUndefined()
   })
+  it('does not let one cancelled metadata observer abort the shared index open', async () => {
+    let resolveOpen!: (index: RemoteIndex) => void
+    const openPromise = new Promise<RemoteIndex>(resolve => { resolveOpen = resolve })
+    const open = vi.spyOn(RemoteIndex, 'open').mockReturnValue(openPromise)
+    const client = createDaemonSearchKernelClient('http://daemon')
+    const first = new AbortController()
+    const cancelled = client.getIndex('alpha', { signal: first.signal })
+    first.abort()
+    await expect(cancelled).rejects.toMatchObject({ code: 'aborted' })
+
+    const replacement = client.getIndex('alpha')
+    resolveOpen({
+      definition: new IndexDefinitionT('schema'),
+      generation: 'incarnation',
+    } as unknown as RemoteIndex)
+    await expect(replacement).resolves.toMatchObject({ id: 'alpha', generation: 'incarnation' })
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(open.mock.calls[0]?.[3]).toBeUndefined()
+  })
+
   it('preserves disabled attributes and leaves script-owned capabilities unavailable', async () => {
     const disabled = new Text({ stored: true, searchable: true }).definition('title')
     Object.assign(disabled, { attribute: { enabled: { value: false } } })
