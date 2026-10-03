@@ -19,6 +19,7 @@ DIST = Path(sys.argv[1]).resolve()
 MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
 QUALIFICATION_ROOT = Path(__file__).resolve().parent
 QUICKSTARTS = QUALIFICATION_ROOT / "quickstarts"
+LIFECYCLE_TIMEOUT_SECONDS = 120.0
 
 # The regression test compares this executable registry to release-support.json.
 # Every supported surface/runtime pair must map to one packaged consumer probe.
@@ -412,7 +413,7 @@ fields = {
 profile = SearchKernel::RankProfile.new("semantic")
   .first_phase("closeness(embedding)")
   .query_input("query_embedding", "tensor<float>(x[2])")
-index = SearchKernel::Index.create(endpoint, fields: fields, rank_profiles: [profile], target: target)
+index = SearchKernel::Index.create(endpoint, fields: fields, rank_profiles: [profile], target: target, timeout: 120.0)
 index.close
 '''
 
@@ -446,7 +447,7 @@ def with_restarted_daemon(
     try:
         open_target = r'''require "searchkernel"
 target, endpoint = ARGV
-index = SearchKernel::Index.open(endpoint, target: target)
+index = SearchKernel::Index.open(endpoint, target: target, timeout: 120.0)
 index.close
 '''
         run("ruby", "-e", open_target, target, f"http://127.0.0.1:{port}",
@@ -568,8 +569,8 @@ fields = {
 }
 
 if phase == "initial"
-  a = SearchKernel::Index.create(endpoint, fields: fields, target: "release-a")
-  b = SearchKernel::Index.create(endpoint, fields: fields, target: "release-b")
+  a = SearchKernel::Index.create(endpoint, fields: fields, target: "release-a", timeout: 120.0)
+  b = SearchKernel::Index.create(endpoint, fields: fields, target: "release-b", timeout: 120.0)
   begin
     a.insert("_id" => "a-only", "title" => "alpha registry", "kind" => "a", "score" => 1)
     b.insert("_id" => "b-only", "title" => "beta registry", "kind" => "b", "score" => 2)
@@ -585,8 +586,8 @@ if phase == "initial"
     b.close rescue nil
   end
 else
-  a = SearchKernel::Index.open(endpoint, target: "release-a")
-  b = SearchKernel::Index.open(endpoint, target: "release-b")
+  a = SearchKernel::Index.open(endpoint, target: "release-a", timeout: 120.0)
+  b = SearchKernel::Index.open(endpoint, target: "release-b", timeout: 120.0)
   begin
     raise "index A did not persist across daemon restart" unless a.get("a-only")
     raise "index B did not persist across daemon restart" unless b.get("b-only")
