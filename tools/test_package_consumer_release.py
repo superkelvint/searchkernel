@@ -221,6 +221,17 @@ class ConsumerReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "directly from ../lib"):
                 MODULE.verify_runtime_daemon_relocatable(daemon)
 
+    def test_packaged_native_consumer_bundle_contains_runtime_closure_checker(self) -> None:
+        installer = (ROOT / "tools/install-native-base-artifact.sh").read_text(
+            encoding="utf-8"
+        )
+        generated = (
+            ROOT / "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs"
+        ).read_text(encoding="utf-8")
+        helper = "tools/check-native-runtime-closure.py"
+        self.assertIn(helper, installer)
+        self.assertIn(f'("{helper}",', generated)
+
     def test_python_package_runtime_metadata_is_explicit(self) -> None:
         pyproject = (ROOT / "clients/python/pyproject.toml").read_text(encoding="utf-8")
         self.assertNotIn(".searchkernel-native", pyproject)
