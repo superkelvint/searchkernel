@@ -199,7 +199,7 @@ def run_ruby_quickstart(
     run("ruby", str(QUICKSTARTS / "ruby.rb"), cwd=root, env=env)
 
 
-def run_rust_quickstart(rust_root: Path, root: Path) -> None:
+def run_rust_quickstart(rust_root: Path, root: Path) -> dict[str, str]:
     quickstart = rust_root / "release-quickstart"
     shutil.copytree(QUICKSTARTS / "rust", quickstart)
     native_base, native_base_archive = native_base_fixture()
@@ -223,6 +223,7 @@ def run_rust_quickstart(rust_root: Path, root: Path) -> None:
         cwd=quickstart,
         env=environment,
     )
+    return environment
 
 
 def python_managed_local(venv: Path, index: Path) -> None:
@@ -651,10 +652,11 @@ def main() -> None:
             # Build exactly like a clean Rust consumer, but provision the
             # native prerequisite from the qualification-only local sidecar.
             # GitHub publication/discovery is intentionally outside this test.
-            run_rust_quickstart(rust_root, root)
+            native_environment = run_rust_quickstart(rust_root, root)
             run(
                 "cargo", "run", "--quiet", "-p", "searchkernel", "--features", "native",
                 "--example", "try_searchkernel_client_api_e2e", cwd=rust_root,
+                env=native_environment,
             )
 
         def searchkerneld_runtime_probe() -> None:
