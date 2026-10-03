@@ -913,3 +913,143 @@ fn configuration_error_to_portable(error: IndexError) -> PortableError {
     }
     result
 }
+
+
+#[cfg(all(test, feature = "native"))]
+mod configuration_lock_order_tests {
+    use super::*;
+    use std::sync::{mpsc, Arc};
+    use std::time::{Duration, Instant};
+
+    struct Root(PathBuf);
+
+    impl Root {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "searchkerneld-configuration-lock-order-{}-{}",
+                std::process::id(),
+                new_generation()
+            ));
+            std::fs::create_dir(&path).expect("create test root");
+            Self(path)
+        }
+    }
+
+    impl Drop for Root {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn apply_retires_entry_before_waiting_for_inflight_readers() {
+        let root = Root::new();
+        let registry = Arc::new(IndexRegistry::new(&root.0).expect("registry"));
+        let index = Index::create(
+            root.0.join("catalog"),
+            searchkernel::IndexDefinition::new()
+                .name("products")
+                .field(
+                    searchkernel::Field::text("title")
+                        .stored(true)
+                        .searchable(true),
+                )
+                .rank_profile(searchkernel::RankProfile::new("product_rank").first_phase("1")),
+        )
+        .expect("create index");
+
+        let (context, session) = index.clone().into_session_parts();
+        let generation = "test-generation".to_owned();
+        let entry = Arc::new(RegistryEntry {
+            index,
+            dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
+            lifecycle: RwLock::new(()),
+            generation: generation.clone(),
+        });
+        registry
+            .entries
+            .lock()
+            .expect("entries")
+            .insert("catalog".to_owned(), Arc::clone(&entry));
+
+        let mut proposed = context.definition().clone();
+        let mut profiles = proposed.rank_profiles().to_vec();
+        profiles[0]
+            .first_phase
+            .as_mut()
+            .expect("first phase")
+            .expression = Some("2".to_owned());
+        proposed.set_rank_profiles(profiles);
+        registry.plans.lock().expect("plans").insert(
+            "test-plan".to_owned(),
+            ConfigurationPlan {
+                target: "catalog".to_owned(),
+                generation: Some(generation.clone()),
+                definition: proposed,
+            },
+        );
+
+        // Model a request that was admitted before the configuration transition.
+        // apply_change must first retire the registry entry and only then wait
+        // for this reader to drain. The previous lock order waited for write()
+        // first and left the entry reachable, enabling entries <-> lifecycle
+        // ABBA deadlock with dispatch_loaded().
+        let admitted_reader = entry.lifecycle.read().expect("reader");
+        let apply_registry = Arc::clone(&registry);
+        let apply_generation = generation.clone();
+        let (sent, received) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let result = apply_registry.apply_change(
+                "catalog",
+                Some(&apply_generation),
+                "test-plan",
+                WireVersion::V1,
+            );
+            let _ = sent.send(result);
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if registry.loaded_targets().expect("loaded targets").is_empty() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "configuration apply waited for lifecycle.write() while the old entry remained reachable"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        // A new request can still acquire the global registry map while the
+        // transition waits for the admitted reader. It observes the retired
+        // incarnation instead of holding entries while blocking on its guard.
+        registry
+            .dispatch_loaded(
+                "catalog",
+                &[],
+                Some(&generation),
+                WireVersion::V1,
+            )
+            .expect("retired target returns a canonical response");
+
+        drop(admitted_reader);
+
+        received
+            .recv_timeout(Duration::from_secs(60))
+            .expect("configuration apply completed after reader drained")
+            .expect("configuration apply registry result");
+        worker.join().expect("apply worker");
+
+        let replacement_generation = registry
+            .entries
+            .lock()
+            .expect("entries")
+            .get("catalog")
+            .expect("replacement entry")
+            .generation
+            .clone();
+        assert_ne!(replacement_generation, generation);
+
+        registry.close_all().expect("close registry");
+    }
+}
