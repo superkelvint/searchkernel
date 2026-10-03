@@ -274,7 +274,7 @@ def stop_daemon(proc, log) -> None:
 
 
 def extract_daemon(root: Path) -> Path:
-    bundle = artifact("searchkerneld-", ".tar.gz")
+    bundle = artifact("searchkernel-runtime-", ".tar.gz")
     daemon_root = root / "daemon"
     daemon_root.mkdir()
     with tarfile.open(bundle) as archive:
