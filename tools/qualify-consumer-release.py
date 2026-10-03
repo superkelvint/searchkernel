@@ -648,9 +648,9 @@ def main() -> None:
             rust_root.mkdir()
             with tarfile.open(rust) as archive:
                 archive.extractall(rust_root, filter="data")
-            # Resolve the public host native-base generation exactly as an
-            # ordinary unauthenticated consumer would. The clean container has
-            # no GitHub token, build-environment override, or producer SDK cache.
+            # Build exactly like a clean Rust consumer, but provision the
+            # native prerequisite from the qualification-only local sidecar.
+            # GitHub publication/discovery is intentionally outside this test.
             run_rust_quickstart(rust_root, root)
             run(
                 "cargo", "run", "--quiet", "-p", "searchkernel", "--features", "native",
