@@ -4,7 +4,7 @@
 
 These are the exact executable quickstarts used by clean-consumer release qualification. The source files under `examples/release-quickstart/` are authoritative.
 
-Python managed-local and Rust embedded create their own local indexes. The TypeScript and Ruby connect examples expect a compatible packaged `searchkerneld` endpoint in `SEARCHKERNEL_ENDPOINT` (default `http://127.0.0.1:8080`) and a logical index name in `SEARCHKERNEL_TARGET`.
+All four quickstarts execute the same schema, insert, search, filter, sort, close, reopen, and persistence scenario. Python managed-local and Rust embedded use local index paths. TypeScript/Node creates and reopens `SEARCHKERNEL_TARGET` over the daemon gRPC listener (default `127.0.0.1:50051`); Ruby creates and reopens the same logical target shape over the HTTP listener (default `http://127.0.0.1:50052`).
 
 Rust embedded builds provision the pinned native runtime from the release service; use an authenticated GitHub CLI session or set `GH_TOKEN` when downloading from a private repository.
 
@@ -19,6 +19,40 @@ from pathlib import Path
 from searchkernel import Index, Integer, Keyword, Text
 
 path = Path(os.environ.get("SEARCHKERNEL_QUICKSTART_PATH", "./search-python"))
+documents = [
+    {
+        "_id": "quickstart-a",
+        "title": "quickstart alpha",
+        "kind": "guide",
+        "score": 2,
+    },
+    {
+        "_id": "quickstart-b",
+        "title": "quickstart beta",
+        "kind": "guide",
+        "score": 1,
+    },
+    {
+        "_id": "quickstart-c",
+        "title": "quickstart other",
+        "kind": "other",
+        "score": 0,
+    },
+]
+
+
+def matching_ids(index: Index) -> list[str]:
+    return [
+        hit.id
+        for hit in (
+            index.search("quickstart")
+            .filter("kind = 'guide'")
+            .sort("score", "asc")
+            .execute()
+            .hits
+        )
+    ]
+
 
 with Index.create(
     path,
@@ -28,19 +62,13 @@ with Index.create(
         "score": Integer(stored=True, sortable=True),
     },
 ) as index:
-    index.insert(
-        {
-            "_id": "quickstart-python",
-            "title": "quickstart example",
-            "kind": "quickstart",
-            "score": 1,
-        }
-    )
-    hits = index.search("quickstart").execute().hits
-    assert [hit.id for hit in hits] == ["quickstart-python"]
+    for document in documents:
+        index.insert(document)
+    assert matching_ids(index) == ["quickstart-b", "quickstart-a"]
 
 with Index.open(path) as index:
-    assert index.get("quickstart-python")["title"] == "quickstart example"
+    assert index.get("quickstart-b")["score"] == 1
+    assert matching_ids(index) == ["quickstart-b", "quickstart-a"]
 
 print("Python release quickstart PASS")
 ```
@@ -48,23 +76,48 @@ print("Python release quickstart PASS")
 ## TypeScript / Node connect
 
 ```javascript
-import { Index, q } from "@searchkernel/client/node";
+import { Index, Integer, Keyword, Text } from "@searchkernel/client/node";
 
-const endpoint = process.env.SEARCHKERNEL_ENDPOINT ?? "http://127.0.0.1:8080";
-const target = process.env.SEARCHKERNEL_TARGET;
-if (!target) throw new Error("Set SEARCHKERNEL_TARGET to a logical index name");
-const index = Index.connect(endpoint, target);
+const endpoint = process.env.SEARCHKERNEL_ENDPOINT ?? "127.0.0.1:50051";
+const target = process.env.SEARCHKERNEL_TARGET ?? "quickstart";
+const fields = {
+  title: new Text({ stored: true, searchable: true }),
+  kind: new Keyword({ stored: true, filterable: true }),
+  score: new Integer({ stored: true, sortable: true }),
+};
+const documents = [
+  { _id: "quickstart-a", title: "quickstart alpha", kind: "guide", score: 2n },
+  { _id: "quickstart-b", title: "quickstart beta", kind: "guide", score: 1n },
+  { _id: "quickstart-c", title: "quickstart other", kind: "other", score: 0n },
+];
 
+async function matchingIds(index) {
+  const results = await index
+    .search("quickstart")
+    .filter("kind = 'guide'")
+    .sort("score", "asc")
+    .execute();
+  return results.hits.map((hit) => hit.id);
+}
+
+let index = await Index.create(endpoint, target, { fields });
 try {
-  await index.insert({
-    _id: "quickstart-typescript",
-    title: "quickstart example",
-    kind: "quickstart",
-    score: 1n,
-  });
-  const hits = (await index.query(q.contains("title", "quickstart")).execute()).hits;
-  if (hits.map((hit) => hit.id).join(",") !== "quickstart-typescript") {
-    throw new Error("quickstart search did not return the inserted document");
+  for (const document of documents) await index.insert(document);
+  const ids = await matchingIds(index);
+  if (ids.join(",") !== "quickstart-b,quickstart-a") {
+    throw new Error(`unexpected filtered/sorted ids: ${ids.join(",")}`);
+  }
+} finally {
+  await index.close();
+}
+
+index = await Index.open(endpoint, target);
+try {
+  const document = await index.get("quickstart-b");
+  if (document?.score !== 1n) throw new Error("reopened index lost quickstart-b");
+  const ids = await matchingIds(index);
+  if (ids.join(",") !== "quickstart-b,quickstart-a") {
+    throw new Error(`unexpected reopened ids: ${ids.join(",")}`);
   }
 } finally {
   await index.close();
@@ -80,19 +133,42 @@ console.log("TypeScript release quickstart PASS");
 
 require "searchkernel"
 
-endpoint = ENV.fetch("SEARCHKERNEL_ENDPOINT", "http://127.0.0.1:8080")
-target = ENV.fetch("SEARCHKERNEL_TARGET")
-index = SearchKernel::Index.connect(endpoint, target: target)
+endpoint = ENV.fetch("SEARCHKERNEL_ENDPOINT", "http://127.0.0.1:50052")
+target = ENV.fetch("SEARCHKERNEL_TARGET", "quickstart")
+fields = {
+  "title" => SearchKernel::Text.new(stored: true, searchable: true),
+  "kind" => SearchKernel::Keyword.new(stored: true, filterable: true),
+  "score" => SearchKernel::Integer.new(stored: true, sortable: true)
+}
+documents = [
+  {"_id" => "quickstart-a", "title" => "quickstart alpha", "kind" => "guide", "score" => 2},
+  {"_id" => "quickstart-b", "title" => "quickstart beta", "kind" => "guide", "score" => 1},
+  {"_id" => "quickstart-c", "title" => "quickstart other", "kind" => "other", "score" => 0}
+]
 
+matching_ids = lambda do |index|
+  index.search("quickstart")
+    .filter("kind = 'guide'")
+    .sort("score", "asc")
+    .execute
+    .hits
+    .map(&:id)
+end
+
+index = SearchKernel::Index.create(endpoint, fields: fields, target: target)
 begin
-  index.insert(
-    "_id" => "quickstart-ruby",
-    "title" => "quickstart example",
-    "kind" => "quickstart",
-    "score" => 1
-  )
-  hits = index.query(SearchKernel::Query.contains("title", "quickstart")).execute.hits.map(&:id)
-  raise "quickstart search did not return the inserted document" unless hits == ["quickstart-ruby"]
+  documents.each { |document| index.insert(document) }
+  ids = matching_ids.call(index)
+  raise "unexpected filtered/sorted ids: #{ids.inspect}" unless ids == %w[quickstart-b quickstart-a]
+ensure
+  index.close
+end
+
+index = SearchKernel::Index.open(endpoint, target: target)
+begin
+  raise "reopened index lost quickstart-b" unless index.get("quickstart-b").fetch("score") == 1
+  ids = matching_ids.call(index)
+  raise "unexpected reopened ids: #{ids.inspect}" unless ids == %w[quickstart-b quickstart-a]
 ensure
   index.close
 end
@@ -118,8 +194,20 @@ serde_json = "1"
 ## Rust embedded program
 
 ```rust
-use searchkernel::{Field, Index, IndexDefinition};
+use searchkernel::{Field, Index, IndexDefinition, Sort};
 use serde_json::{json, Value};
+
+fn matching_ids(index: &Index) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    Ok(index
+        .search("quickstart")
+        .filter("kind = 'guide'")
+        .sort(Sort::asc("score"))
+        .execute::<Value>()?
+        .hits
+        .into_iter()
+        .map(|hit| hit.id)
+        .collect())
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path =
@@ -128,21 +216,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field(Field::text("title").stored(true).searchable(true))
         .field(Field::keyword("kind").stored(true).filterable(true))
         .field(Field::int64("score").stored(true).sortable(true));
+    let documents = [
+        (
+            "quickstart-a",
+            json!({"title":"quickstart alpha","kind":"guide","score":2}),
+        ),
+        (
+            "quickstart-b",
+            json!({"title":"quickstart beta","kind":"guide","score":1}),
+        ),
+        (
+            "quickstart-c",
+            json!({"title":"quickstart other","kind":"other","score":0}),
+        ),
+    ];
 
     let index = Index::create(&path, definition)?;
-    index.insert(
-        "quickstart-rust",
-        &json!({"title":"quickstart example","kind":"quickstart","score":1}),
-    )?;
-    let result = index.search("quickstart").execute::<Value>()?;
+    for (id, document) in documents {
+        index.insert(id, &document)?;
+    }
     assert_eq!(
-        result.hits.first().map(|hit| hit.id.as_str()),
-        Some("quickstart-rust")
+        matching_ids(&index)?,
+        vec!["quickstart-b".to_owned(), "quickstart-a".to_owned()]
     );
     index.close()?;
 
     let reopened = Index::open(&path)?;
-    assert!(reopened.get::<Value>("quickstart-rust")?.is_some());
+    assert_eq!(
+        reopened
+            .get::<Value>("quickstart-b")?
+            .and_then(|document| document.get("score").cloned()),
+        Some(json!(1))
+    );
+    assert_eq!(
+        matching_ids(&reopened)?,
+        vec!["quickstart-b".to_owned(), "quickstart-a".to_owned()]
+    );
     reopened.close()?;
 
     println!("Rust release quickstart PASS");
