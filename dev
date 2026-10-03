@@ -721,7 +721,14 @@ test_target() {
             "$NPM" run build --prefix "$ROOT/searchkernel-web"
             if [[ "$target" == "frontend-real-engine" ]]; then
                 "$CARGO" build -p searchkerneld
-                "$NPM" exec --prefix "$ROOT/searchkernel-web" -- playwright install --with-deps chromium
+                # The canonical image uses Rocky Linux; Playwright's automatic
+                # dependency installer supports only apt-based distributions.
+                if command -v dnf >/dev/null 2>&1; then
+                    dnf install -y alsa-lib atk at-spi2-atk at-spi2-core cups-libs libdrm libX11 libXcomposite libXdamage libXext libXfixes libXrandr libxcb libxkbcommon mesa-libgbm nss pango cairo
+                else
+                    "$NPM" exec --prefix "$ROOT/searchkernel-web" -- playwright install-deps chromium
+                fi
+                "$NPM" exec --prefix "$ROOT/searchkernel-web" -- playwright install chromium
                 SEARCHKERNEL_FRONTEND_REAL_ENGINE=1 "$NPM" test --prefix "$ROOT/searchkernel-web" -- tests/real-daemon.test.ts
             else
                 "$NPM" test --prefix "$ROOT/searchkernel-web"
