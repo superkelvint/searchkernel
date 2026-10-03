@@ -64,3 +64,5 @@ export { ProtocolError } from "./protocol/envelope.js";
 export type { ClientTransport } from "./client/index.js";
 
 export { toCanonicalJson, fromCanonicalJson, parseTypedQuery, jsonInput, queryEditorReference, type CanonicalJson } from "./client/json.js";
+
+export type { OperationRequestMap } from "./protocol/envelope.js";

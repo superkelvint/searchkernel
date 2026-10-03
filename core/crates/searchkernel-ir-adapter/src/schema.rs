@@ -108,25 +108,13 @@ pub fn compile_index_definition(
                 native = native.distance_metric(metric);
             }
         }
-        // Vespa cannot expose tensor fields through the default document
-        // summary, but its document retriever still returns the complete
-        // TensorFieldValue used by portable GET. Keep the portable stored
-        // capability without manufacturing an invalid tensor summary field.
-        let summary_unsupported = matches!(
-            field.data_type(),
-            searchkernel_ir::DataTypeIr::Position
-                | searchkernel_ir::DataTypeIr::Predicate
-                | searchkernel_ir::DataTypeIr::Tensor { .. }
-        ) || matches!(
-            field.data_type(),
-            searchkernel_ir::DataTypeIr::Array(element)
-                if matches!(
-                    element.as_ref(),
-                    searchkernel_ir::DataTypeIr::Struct { .. }
-                        | searchkernel_ir::DataTypeIr::StructReference { .. }
-                )
-        );
-        if capabilities.stored() && !summary_unsupported {
+        // Search projection support is semantic authority: native schema
+        // lowering must use the same classification as IR's default/explicit
+        // projection resolver. GET remains able to retrieve richer stored types.
+        if capabilities.stored()
+            && field.data_type().search_projection_support()
+                == searchkernel_ir::SearchProjectionSupport::Supported
+        {
             native = native.summary();
         }
         schema = schema.field(native);

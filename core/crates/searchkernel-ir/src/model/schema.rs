@@ -31,6 +31,15 @@ pub enum DataTypeIr {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchProjectionSupport {
+    Supported,
+    Position,
+    Predicate,
+    Tensor,
+    Structured,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrimitiveDataTypeIr {
     String,
     Bool,
@@ -430,6 +439,26 @@ impl FieldIr {
 }
 
 impl DataTypeIr {
+    /// Search-result projection capability shared by semantic resolution and
+    /// native summary lowering. GET is deliberately independent and may return
+    /// types that the native search-summary path cannot expose.
+    pub fn search_projection_support(&self) -> SearchProjectionSupport {
+        match self {
+            Self::Position => SearchProjectionSupport::Position,
+            Self::Predicate => SearchProjectionSupport::Predicate,
+            Self::Tensor { .. } => SearchProjectionSupport::Tensor,
+            Self::Array(element)
+                if matches!(
+                    element.as_ref(),
+                    Self::Struct { .. } | Self::StructReference { .. }
+                ) =>
+            {
+                SearchProjectionSupport::Structured
+            }
+            _ => SearchProjectionSupport::Supported,
+        }
+    }
+
     pub(crate) fn scalar_primitive(&self) -> Option<PrimitiveDataTypeIr> {
         match self {
             Self::Primitive(kind) => Some(*kind),

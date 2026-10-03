@@ -6,9 +6,9 @@ afterEach(() => vi.restoreAllMocks())
 describe('daemon dashboard boundary', () => {
   it('lists without open, hydrates only the selected target, and retains its bound handle', async () => {
     vi.spyOn(Daemon.prototype, 'listIndexes').mockResolvedValue(['alpha', 'beta'])
-    const get = vi.fn().mockResolvedValue({ _id: 'one', title: 'real title', quantity: 9007199254740993n })
+    const get = vi.fn().mockResolvedValue(fromCanonicalJson('GetResult', { document: { id: 'one', fields: [{ key: 'title', value: { kind_type: 'StringValue', kind: { value: 'real title' } } }, { key: 'quantity', value: { kind_type: 'Int64Value', kind: { value: '9007199254740993' } } }] } }))
     const definition = new IndexDefinitionT('different-schema', [new Text({ stored: true, searchable: true }).definition('title')])
-    const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition, generation: 'incarnation', get } as unknown as RemoteIndex)
+    const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition, generation: 'incarnation', client: { get } } as unknown as RemoteIndex)
     const client = createDaemonSearchKernelClient('http://daemon')
     expect(await client.listIndexes()).toEqual([{ id: 'alpha' }, { id: 'beta' }])
     expect(open).not.toHaveBeenCalled()
@@ -16,7 +16,7 @@ describe('daemon dashboard boundary', () => {
     expect(await client.getIndex('alpha')).toMatchObject({ id: 'alpha', generation: 'incarnation' })
     expect((await client.getDocument('alpha', 'one'))?.fields.quantity).toEqual({ $type: 'integer', decimal: '9007199254740993' })
     expect(open).toHaveBeenCalledTimes(1)
-    get.mockResolvedValue(null)
+    get.mockResolvedValue(fromCanonicalJson('GetResult', {}))
     expect(await client.getDocument('alpha', 'missing')).toBeUndefined()
   })
   it('does not let one cancelled metadata observer abort the shared index open', async () => {
@@ -74,7 +74,7 @@ describe('daemon dashboard boundary', () => {
   it('keeps stale errors structured and never silently reopens', async () => {
     const error = new SearchKernelError('stale', fromCanonicalJson('Error', { code: 'FailedPrecondition', message: 'stale', retryable: false, details: [{ code: 'stale_index_handle', path: 'target.generation', metadata: [{ key: 'target', value: 'alpha' }] }] }) as NonNullable<ConstructorParameters<typeof SearchKernelError>[1]>)
     const get = vi.fn().mockRejectedValue(error)
-    const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT(), get } as unknown as RemoteIndex)
+    const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT(), client: { get } } as unknown as RemoteIndex)
     const client = createDaemonSearchKernelClient('http://daemon')
     await client.getIndex('alpha')
     await expect(client.getDocument('alpha', 'one')).rejects.toMatchObject({ origin: 'canonical', retryable: false, details: [{ code: 'stale_index_handle' }] })
@@ -85,6 +85,20 @@ describe('daemon dashboard boundary', () => {
     expect(daemonError(new TransportError('admission', { status: 503, code: 14 }))).toMatchObject({ origin: 'transport', status: 503, details: { transportCode: 14 } })
     expect(daemonError(new TransportError('offline'))).toMatchObject({ origin: 'transport', retryable: true })
     expect(daemonError(new TransportError('cancelled', undefined, 'aborted'))).toMatchObject({ code: 'aborted', retryable: false })
+  })
+  it('sends the exact mutation payload through the bound public client without GET-based upsert', async () => {
+    const execute = vi.fn().mockResolvedValue(fromCanonicalJson('UpsertResult', { id: 'one' }))
+    const get = vi.fn()
+    vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT(), generation: 'incarnation', client: { execute, get } } as unknown as RemoteIndex)
+    const client = createDaemonSearchKernelClient('http://daemon')
+    const signal = new AbortController().signal
+    const prepared = client.prepareDocumentMutation({ operation: 'upsert', id: 'one', fields: '{"title":"real"}', operations: '[]' })
+    const result = await client.executeDocumentMutation('alpha', prepared, { signal })
+    expect(execute.mock.calls[0][0]).toBe('upsert')
+    expect(JSON.stringify(toCanonicalJson(execute.mock.calls[0][1]), null, 2)).toBe(prepared.canonical)
+    expect(execute.mock.calls[0][2]).toEqual({ signal })
+    expect(result).toMatchObject({ operation: 'upsert', id: 'one', canonicalResponse: JSON.stringify({ id: 'one' }, null, 2) })
+    expect(get).not.toHaveBeenCalled()
   })
   it('represents richer values without integer truncation or JSON failure', () => {
     const value = dashboardValue({ dense: [1, 2], integer: 9007199254740993n, bytes: new Uint8Array([0, 255]) })
