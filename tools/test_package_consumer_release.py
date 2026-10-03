@@ -201,6 +201,30 @@ class ConsumerReleaseTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "appear exactly once"):
                     MODULE.make_runtime_adapter_relocatable(adapter)
 
+    def test_release_daemon_relocation_points_directly_at_runtime_lib(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            daemon = Path(raw) / "searchkerneld.real"
+            original = b"$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2"
+            daemon.write_bytes(b"prefix\0" + original + b"\0suffix")
+            MODULE.make_runtime_daemon_relocatable(daemon)
+            payload = daemon.read_bytes()
+            self.assertIn(b"$ORIGIN/../lib/libsearchkernel_vespa.so.2\0", payload)
+            self.assertNotIn(original, payload)
+
+    def test_release_daemon_verifier_rejects_cargo_only_native_path(self) -> None:
+        daemon = Path("/tmp/searchkerneld.real")
+        dynamic = (
+            " 0x0000000000000001 (NEEDED)             "
+            "Shared library: [$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2]\n"
+        )
+        with mock.patch.object(MODULE.subprocess, "check_output", return_value=dynamic):
+            with self.assertRaisesRegex(RuntimeError, "directly from ../lib"):
+                MODULE.verify_runtime_daemon_relocatable(daemon)
+
+    def test_python_package_does_not_ship_cargo_only_native_alias(self) -> None:
+        pyproject = (ROOT / "clients/python/pyproject.toml").read_text(encoding="utf-8")
+        self.assertNotIn(".searchkernel-native", pyproject)
+
     def test_runtime_probe_requires_application_level_argument_error(self) -> None:
         launcher = Path("/tmp/packaged-searchkerneld")
         entered_program = subprocess.CompletedProcess(
