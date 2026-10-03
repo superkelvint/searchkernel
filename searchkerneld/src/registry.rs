@@ -428,7 +428,9 @@ impl IndexRegistry {
                 .lock()
                 .map_err(|_| RegistryDispatchError::Poisoned)?;
             if plans.len() >= 128 {
-                plans.clear();
+                if let Some(oldest) = plans.keys().next().cloned() {
+                    plans.remove(&oldest);
+                }
             }
             plans.insert(
                 plan_id.clone(),
@@ -484,6 +486,7 @@ impl IndexRegistry {
             .remove(plan_id)
             .ok_or(RegistryDispatchError::Poisoned)?;
         drop(plans);
+
         let path = match self.checked_index_path(target) {
             Ok(path) => path,
             Err(error) => {
@@ -492,65 +495,88 @@ impl IndexRegistry {
                 )))
             }
         };
-        let entry = self
-            .entries
-            .lock()
-            .map_err(|_| RegistryDispatchError::Poisoned)?
-            .get(target)
-            .cloned();
-        if entry.as_ref().map(|entry| entry.generation.as_str()) != expected_generation
-            || (entry.is_none() && path.exists())
-        {
-            return Ok(RegistryDispatchResult::payload(encode_registry_error(
-                version,
-                searchkernel_ir::stale_index_handle_error(),
-            )));
-        }
+
+        // Retire the currently reachable incarnation under the registry mutex
+        // before waiting for its exclusive lifecycle guard. This preserves the
+        // canonical map -> lifecycle lock order used by dispatch_loaded() and
+        // delete_index(): requests admitted before retirement drain, while new
+        // requests cannot select the retiring entry and deadlock the transition.
+        let entry = {
+            let mut entries = self
+                .entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            let entry = entries.get(target).cloned();
+            if entry.as_ref().map(|entry| entry.generation.as_str()) != expected_generation
+                || (entry.is_none() && path.exists())
+            {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
+                    searchkernel_ir::stale_index_handle_error(),
+                )));
+            }
+            if entry.is_some() {
+                entries.remove(target)
+            } else {
+                None
+            }
+        };
+
         let bytes = wire::v1::index_definition_ir_to_api(&plan.definition);
         let result = if let Some(entry) = entry.as_ref() {
-            let _lifecycle = entry
-                .lifecycle
-                .write()
-                .map_err(|_| RegistryDispatchError::Poisoned)?;
-            let result = match entry.index.apply_rank_definition_bytes(&bytes) {
-                Err(error) if entry.index.describe().is_ok() => {
-                    // Preparation failed before closing the active owner.
+            let _lifecycle = match entry.lifecycle.write() {
+                Ok(lifecycle) => lifecycle,
+                Err(_) => {
+                    self.entries
+                        .lock()
+                        .map_err(|_| RegistryDispatchError::Poisoned)?
+                        .insert(target.to_owned(), Arc::clone(entry));
+                    return Err(RegistryDispatchError::Poisoned);
+                }
+            };
+
+            match entry.index.apply_rank_definition_bytes_recovering(&bytes) {
+                Ok(index) => Ok(index),
+                Err((error, recovered)) => {
+                    if let Some(index) = recovered {
+                        // The old native owner was closed, rollback completed,
+                        // and the restored owner retained the filesystem
+                        // lifecycle lock throughout. Publish it as a fresh
+                        // incarnation so every stale client generation fails.
+                        let generation = new_generation();
+                        let (context, session) = index.clone().into_session_parts();
+                        let dispatcher = Arc::new(Dispatcher::new(context.clone(), session));
+                        self.entries
+                            .lock()
+                            .map_err(|_| RegistryDispatchError::Poisoned)?
+                            .insert(
+                                target.to_owned(),
+                                Arc::new(RegistryEntry {
+                                    index,
+                                    dispatcher,
+                                    lifecycle: RwLock::new(()),
+                                    generation,
+                                }),
+                            );
+                    } else if entry.index.describe().is_ok() {
+                        // Preparation failed before shutdown. Restore the same
+                        // entry and generation because its incarnation never
+                        // changed.
+                        self.entries
+                            .lock()
+                            .map_err(|_| RegistryDispatchError::Poisoned)?
+                            .insert(target.to_owned(), Arc::clone(entry));
+                    }
                     return Ok(RegistryDispatchResult::payload(encode_registry_error(
                         version,
                         configuration_error_to_portable(error),
                     )));
                 }
-                result => result,
-            };
-            // Remove the retired owner before publishing a fresh incarnation.
-            // On failure, reopen from the durable rollback journal.
-            self.entries
-                .lock()
-                .map_err(|_| RegistryDispatchError::Poisoned)?
-                .remove(target);
-            if result.is_err() {
-                let _ = entry.index.close();
-                if let Ok(index) = Index::open(&path) {
-                    let (context, session) = index.clone().into_session_parts();
-                    let dispatcher = Arc::new(Dispatcher::new(context.clone(), session));
-                    self.entries
-                        .lock()
-                        .map_err(|_| RegistryDispatchError::Poisoned)?
-                        .insert(
-                            target.to_owned(),
-                            Arc::new(RegistryEntry {
-                                index,
-                                dispatcher,
-                                lifecycle: RwLock::new(()),
-                                generation: new_generation(),
-                            }),
-                        );
-                }
             }
-            result
         } else {
             Index::create_from_definition_bytes(&path, &bytes)
         };
+
         match result {
             Ok(index) => {
                 let generation = new_generation();
