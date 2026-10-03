@@ -83,12 +83,21 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
     if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const existing = handles.get(target)
     if (existing) return waitForOpen(existing, options?.signal)
-    const pending = RemoteIndex.open(endpoint, target, transport?.(), options)
+    // The opened Index is adapter-owned and shared across React views. Do not
+    // bind its transport lifetime to one query observer's AbortSignal: StrictMode
+    // or route teardown may cancel that observer while another view immediately
+    // reuses the same target. Callers can still stop waiting via waitForOpen(),
+    // while ordinary search/get/browse operations propagate their own signals.
+    const pending = RemoteIndex.open(endpoint, target, transport?.())
     // One selected target keeps one generation-bound handle. Stale-generation
     // errors are surfaced rather than silently replacing this incarnation.
     handles.set(target, pending)
-    try { return await pending } catch (error) {
-      if (handles.get(target) === pending) handles.delete(target)
+    try { return await waitForOpen(pending, options?.signal) } catch (error) {
+      // Only discard the shared open if the open itself failed. A caller-local
+      // abort from waitForOpen must not poison a still-progressing handle.
+      pending.catch(() => {
+        if (handles.get(target) === pending) handles.delete(target)
+      })
       throw error
     }
   }
