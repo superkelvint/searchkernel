@@ -136,7 +136,7 @@ class M11VerifierRuntimeTests(unittest.TestCase):
 
     def test_tensor_publication_config_stays_outside_canonical_config(self):
         driver = (
-            Path(__file__).parents[2]
+            Path(__file__).parents[3]
             / "core/crates/searchkernel/examples/searchkernel-m11-driver.rs"
         ).read_text()
         self.assertNotIn(
