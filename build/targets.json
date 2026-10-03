@@ -86,6 +86,12 @@
     },
     "consumer-release": {
       "description": "Publishable consumer artifacts and fresh-project package qualification"
+    },
+    "frontend": {
+      "description": "Dashboard build and adapter unit tests"
+    },
+    "frontend-real-engine": {
+      "description": "Real browser gRPC-Web discovery/open/search/browse/get across daemon restart and reincarnation"
     }
   },
   "verify": {
@@ -266,6 +272,9 @@
       "aliases": [
         "m14"
       ]
+    },
+    "frontend.f8": {
+      "description": "Immutable F8 acceptance route"
     }
   },
   "change_areas": {

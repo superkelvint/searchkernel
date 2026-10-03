@@ -2662,8 +2662,16 @@ class EmbeddedEngine {
                     throw std::runtime_error("could not inspect generated configuration: " +
                                              filesystem_error.message());
                 }
-                if (!entry->is_regular_file(filesystem_error) || filesystem_error) {
-                    throw std::invalid_argument("generated configuration contains a non-file entry");
+                const bool is_regular_file = entry->is_regular_file(filesystem_error);
+                if (filesystem_error) {
+                    throw std::runtime_error(
+                        "could not inspect generated configuration entry '" +
+                        entry->path().string() + "': " + filesystem_error.message());
+                }
+                if (!is_regular_file) {
+                    throw std::invalid_argument(
+                        "generated configuration contains a non-file entry: " +
+                        entry->path().string());
                 }
                 std::filesystem::copy_file(entry->path(), runtime_dir / entry->path().filename(),
                                            std::filesystem::copy_options::none, filesystem_error);

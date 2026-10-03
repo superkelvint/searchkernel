@@ -11,13 +11,13 @@ pub const ENUM_MIN_REQUEST_PAYLOAD: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_REQUEST_PAYLOAD: u8 = 13;
+pub const ENUM_MAX_REQUEST_PAYLOAD: u8 = 14;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 14] = [
+pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 15] = [
     RequestPayload::NONE,
     RequestPayload::SearchKernel_Wire_InsertRequest,
     RequestPayload::SearchKernel_Wire_UpsertRequest,
@@ -32,6 +32,7 @@ pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 14] = [
     RequestPayload::SearchKernel_Wire_CreateIndexRequest,
     RequestPayload::SearchKernel_Wire_OpenIndexRequest,
     RequestPayload::SearchKernel_Wire_DeleteIndexRequest,
+    RequestPayload::SearchKernel_Wire_ListIndexesRequest,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -53,9 +54,10 @@ impl RequestPayload {
     pub const SearchKernel_Wire_CreateIndexRequest: Self = Self(11);
     pub const SearchKernel_Wire_OpenIndexRequest: Self = Self(12);
     pub const SearchKernel_Wire_DeleteIndexRequest: Self = Self(13);
+    pub const SearchKernel_Wire_ListIndexesRequest: Self = Self(14);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 13;
+    pub const ENUM_MAX: u8 = 14;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::NONE,
         Self::SearchKernel_Wire_InsertRequest,
@@ -71,6 +73,7 @@ impl RequestPayload {
         Self::SearchKernel_Wire_CreateIndexRequest,
         Self::SearchKernel_Wire_OpenIndexRequest,
         Self::SearchKernel_Wire_DeleteIndexRequest,
+        Self::SearchKernel_Wire_ListIndexesRequest,
     ];
     /// Returns the variant's name or "" if unknown.
     pub fn variant_name(self) -> Option<&'static str> {
@@ -94,6 +97,9 @@ impl RequestPayload {
             Self::SearchKernel_Wire_OpenIndexRequest => Some("SearchKernel_Wire_OpenIndexRequest"),
             Self::SearchKernel_Wire_DeleteIndexRequest => {
                 Some("SearchKernel_Wire_DeleteIndexRequest")
+            }
+            Self::SearchKernel_Wire_ListIndexesRequest => {
+                Some("SearchKernel_Wire_ListIndexesRequest")
             }
             _ => None,
         }

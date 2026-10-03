@@ -134,7 +134,9 @@ canonical FlatBuffers semantics, not transport metadata. Remote clients never
 supply arbitrary server filesystem paths; the daemon maps validated logical
 identifiers under its configured data root.
 
-A daemon-bound `RequestEnvelope` therefore carries an explicit `IndexTarget`.
+A target-bound daemon `RequestEnvelope` carries an explicit `IndexTarget`.
+Server-scoped `ListIndexesRequest` needs none; it lists durable logical targets
+without opening them or exposing generation tokens. See [index discovery](index-discovery.md).
 Ordinary operations and canonical `CreateIndexRequest` / `OpenIndexRequest` /
 `DeleteIndexRequest` lifecycle operations are direct members of the same request
 union. After mechanical envelope verification, `searchkernel-ir` resolves and
@@ -146,8 +148,9 @@ Search Kernel target grammar.
 
 `IndexDefinition.name` remains schema identity and may differ from the logical
 daemon target; routing must never be inferred from it. Target-less envelopes are
-valid for embedded/per-index callers, but multi-index daemon ingress must reject
-them rather than falling back to a default. Client-handle close remains local
+valid for embedded/per-index callers and server-scoped discovery. Multi-index
+daemon ingress must reject target-less index operations rather than falling back
+to a default. Client-handle close remains local
 and must not unload an index shared by other clients.
 
 #848 establishes this shape as the forward-compatibility baseline. Earlier

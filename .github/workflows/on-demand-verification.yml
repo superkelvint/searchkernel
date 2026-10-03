@@ -42,13 +42,18 @@ jobs:
             const runId = process.env.GITHUB_RUN_ID;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
             const request = String(context.payload.comment?.body || "").replaceAll("`", "\\`");
+            const requestCommentId = Number(context.payload.comment?.id || 0);
             const fields = String(context.payload.comment?.body || "").trim().split(/\s+/);
             const operation = fields[1] || "";
             const target = operation === "ci" ? "" : (fields[2] || "");
             const command = operation === "ci"
               ? "./dev ci"
               : (operation && target ? `./dev ${operation} ${target}` : "verification request");
+            const laneMarker = `<!-- searchkernel-verification:${operation}:${target} -->`;
+            const requestMarker = `<!-- searchkernel-verification-request:${requestCommentId} -->`;
             const body = [
+              laneMarker,
+              requestMarker,
               `### ⏳ \`${command}\` — RUNNING`,
               "",
               `- Exact-head request: \`${request}\``,
@@ -386,9 +391,17 @@ jobs:
             const runId = process.env.RUN_ID;
             const runUrl = process.env.RUN_URL;
             const code = (value) => "`" + value + "`";
+            const fields = String(context.payload.comment?.body || "").trim().split(/\s+/);
+            const operation = fields[1] || "";
+            const target = operation === "ci" ? "" : (fields[2] || "");
+            const requestCommentId = Number(context.payload.comment?.id || 0);
+            const laneMarker = `<!-- searchkernel-verification:${operation}:${target} -->`;
+            const requestMarker = `<!-- searchkernel-verification-request:${requestCommentId} -->`;
 
             const headline = command ? code(command) : "verification";
             const body = [
+              laneMarker,
+              requestMarker,
               `### ${icon} ${headline} — ${status}`,
               "",
               `- Requested SHA: ${code(requested)}`,
@@ -413,4 +426,3 @@ jobs:
                 body,
               });
             }
-

@@ -27,9 +27,10 @@ export const PROTOCOL_VERSION = 1;
 export const REQUEST_IDENTIFIER = "SKRQ";
 export const RESPONSE_IDENTIFIER = "SKRS";
 
-export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex" | "deleteIndex";
+export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex" | "deleteIndex" | "listIndexes";
 
 export interface OperationRequestMap {
+  listIndexes: Semantic.ListIndexesRequestT;
   insert: Semantic.InsertRequestT;
   upsert: Semantic.UpsertRequestT;
   patch: Semantic.PatchRequestT;
@@ -46,6 +47,7 @@ export interface OperationRequestMap {
 }
 
 const requestTypes: Record<Operation, RequestPayload> = {
+  listIndexes: RequestPayload.SearchKernel_Wire_ListIndexesRequest,
   insert: RequestPayload.SearchKernel_Wire_InsertRequest,
   upsert: RequestPayload.SearchKernel_Wire_UpsertRequest,
   patch: RequestPayload.SearchKernel_Wire_PatchRequest,
@@ -62,6 +64,7 @@ const requestTypes: Record<Operation, RequestPayload> = {
 };
 
 const responseTypes: Record<Operation, ResponsePayload> = {
+  listIndexes: ResponsePayload.SearchKernel_Wire_ListIndexesResult,
   insert: ResponsePayload.SearchKernel_Wire_InsertResult,
   upsert: ResponsePayload.SearchKernel_Wire_UpsertResult,
   patch: ResponsePayload.SearchKernel_Wire_PatchResult,

@@ -210,7 +210,8 @@ expected_operations = {
   inspect_query: %w[InspectQueryRequest InspectQueryResult],
   create_index: %w[CreateIndexRequest CreateIndexResult],
   open_index: %w[OpenIndexRequest OpenIndexResult],
-  delete_index: %w[DeleteIndexRequest DeleteIndexResult]
+  delete_index: %w[DeleteIndexRequest DeleteIndexResult],
+  list_indexes: %w[ListIndexesRequest ListIndexesResult]
 }
 
 same(expected_operations.keys.sort, SearchKernel::Protocol::OPERATIONS.keys.sort, "all portable operations are mapped")
@@ -369,6 +370,20 @@ class RecordingTransport
 end
 
 recording = RecordingTransport.new
+# SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=http
+discovery_requests = []
+discovery_transport = Object.new
+discovery_transport.define_singleton_method(:execute) do |request|
+  discovery_requests << request
+  { "protocol_version" => 1,
+    "payload_type" => "SearchKernel_Wire_ListIndexesResult",
+    "payload" => { "targets" => ["alpha", "beta"] } }
+end
+discovery_client = SearchKernel::Client.new(discovery_transport, target: "must-not-open")
+discovery_client.require_open_before_operations
+same(["alpha", "beta"], discovery_client.list_indexes, "discover logical targets")
+same(1, discovery_requests.length, "discovery never opens targets")
+same(nil, discovery_requests.first["target"], "discovery is server scoped")
 client = SearchKernel::Client.new(recording)
 same(canonical_search_result, client.search({ "query" => { "source_type" => "MatchAllQuery" } }), "client returns operation payload")
 same([], client.search_results({}).hits, "client result wrapper derives hits from root")
