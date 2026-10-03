@@ -480,7 +480,14 @@ fn run_indexed_publication_regressions(engine: &Arc<Engine>) -> AnyResult<()> {
 }
 
 fn run_tensor_publication_regression(config: &Path, data: &Path) -> AnyResult<()> {
-    let tensor_config = config.join("publication-tensor-config");
+    // The canonical generated config directory is intentionally file-only.
+    // Keep this auxiliary tensor schema beside the scenario data root rather
+    // than nesting it under `config`, otherwise later M11 reopen scenarios
+    // reject the leftover subdirectory as a non-file config entry.
+    let tensor_config = data
+        .parent()
+        .unwrap_or(data)
+        .join("publication-tensor-config");
     let tensor_data = data.join("publication-tensor-data");
     let tensor_type = "tensor<float>(x[2])".to_owned();
     let tensor_schema = Schema::new("publicationtensor")
