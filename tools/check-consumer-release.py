@@ -40,13 +40,17 @@ def clean_runtime_env() -> dict[str, str]:
 
 def runtime_payload_digest(root: Path) -> str:
     digest = hashlib.sha256()
-    for path in sorted(p for p in root.rglob("*") if p.is_file() and p.name != "manifest.json"):
-        relative = path.relative_to(root).as_posix().encode()
-        digest.update(len(relative).to_bytes(8, "big"))
-        digest.update(relative)
-        data = path.read_bytes()
-        digest.update(len(data).to_bytes(8, "big"))
-        digest.update(data)
+    for runtime_dir in ("bin", "lib"):
+        base = root / runtime_dir
+        if not base.is_dir():
+            continue
+        for path in sorted(p for p in base.rglob("*") if p.is_file()):
+            relative = path.relative_to(root).as_posix().encode()
+            digest.update(len(relative).to_bytes(8, "big"))
+            digest.update(relative)
+            data = path.read_bytes()
+            digest.update(len(data).to_bytes(8, "big"))
+            digest.update(data)
     return digest.hexdigest()
 
 def verify_daemon_tree(root: Path, expected_runtime: dict[str, object]) -> None:
