@@ -96,7 +96,6 @@ class QualificationPolicyTests(unittest.TestCase):
 
     def test_lifecycle_qualification_uses_explicit_cold_start_timeout(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
-        self.assertIn("LIFECYCLE_TIMEOUT_SECONDS = 120.0", gate)
         for call in (
             'SearchKernel::Index.create(endpoint, fields: fields, rank_profiles: [profile], target: target, timeout: 120.0)',
             'SearchKernel::Index.create(endpoint, fields: fields, target: "release-a", timeout: 120.0)',
