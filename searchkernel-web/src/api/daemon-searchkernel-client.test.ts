@@ -13,6 +13,7 @@ describe('daemon dashboard boundary', () => {
     expect(await client.listIndexes()).toEqual([{ id: 'alpha' }, { id: 'beta' }])
     expect(open).not.toHaveBeenCalled()
     expect(await client.getIndex('alpha')).toMatchObject({ id: 'alpha', generation: 'incarnation', searchDefaults: {}, profiles: [], summaries: [] })
+    expect(await client.getIndex('alpha')).toMatchObject({ id: 'alpha', generation: 'incarnation' })
     expect((await client.getDocument('alpha', 'one'))?.fields.quantity).toEqual({ $type: 'integer', decimal: '9007199254740993' })
     expect(open).toHaveBeenCalledTimes(1)
     get.mockResolvedValue(null)
