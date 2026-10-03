@@ -169,6 +169,11 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('schema and r
     await page.goto(`http://127.0.0.1:${uiPort}/indexes/new`)
     await page.getByRole('textbox', { name: 'Index target', exact: true }).fill('catalog')
     await page.getByRole('textbox', { name: 'Schema name', exact: true }).fill('products')
+    for (const [position, field] of ([['sku', 'keyword'], ['stock', 'int'], ['price', 'float'], ['active', 'bool']] as const).entries()) {
+      await page.getByRole('button', { name: 'Add field', exact: true }).click()
+      await page.getByRole('textbox', { name: `Field ${position + 2} name`, exact: true }).fill(field[0])
+      await page.getByRole('combobox', { name: 'Type', exact: true }).nth(position + 1).selectOption(field[1])
+    }
     await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
     await page.getByText('Validation passed', { exact: true }).waitFor()
     expect(await page.getByRole('button', { name: 'Apply validated change', exact: true }).isEnabled()).toBe(false)
@@ -176,7 +181,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('schema and r
     await page.getByRole('button', { name: 'Apply validated change', exact: true }).click()
     await page.getByRole('heading', { name: 'Complete canonical definition', exact: true }).waitFor()
     const writer = await Index.open(endpoint, 'catalog')
-    await writer.upsert('one', { title: 'orchid' })
+    await writer.upsert('one', { title: 'orchid', sku: 'orchid-1', stock: 4n, price: 1.5, active: true })
     await writer.close()
     await page.goto(`http://127.0.0.1:${uiPort}/indexes/catalog/configuration/ranking`)
     await page.getByRole('button', { name: 'Create profile', exact: true }).click()
@@ -203,7 +208,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('schema and r
     expect(await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).inputValue()).toBe('2')
     const reopened = await Index.open(endpoint, 'catalog')
     try {
-      expect(await reopened.get('one')).toMatchObject({ title: 'orchid' })
+      expect(await reopened.get('one')).toMatchObject({ title: 'orchid', sku: 'orchid-1', stock: 4n, price: 1.5, active: true })
       const result = await reopened.search('orchid').ranking('custom').execute()
       expect(result.hits[0]?.score).toBe(2)
     } finally { await reopened.close() }
