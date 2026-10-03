@@ -980,6 +980,7 @@ async fn admission_limit_is_shared_by_grpc_web() {
     let server = start(
         ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0)))
             .with_web_listen_addr(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_web_allowed_origin(http::HeaderValue::from_static("http://localhost:5173"))
             .with_execution_limit(1)
             .with_admission_limit(1),
         dispatcher,
