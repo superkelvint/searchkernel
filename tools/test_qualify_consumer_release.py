@@ -130,6 +130,11 @@ class QualificationPolicyTests(unittest.TestCase):
             for node in ast.walk(main)
         ), "registry entries must resolve through the runtime probe dispatch map")
 
+    def test_qualifier_selects_versioned_runtime_artifact(self):
+        gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
+        self.assertIn('artifact("searchkernel-runtime-", ".tar.gz")', gate)
+        self.assertNotIn('artifact("searchkerneld-", ".tar.gz")', gate)
+
     def test_packaged_daemon_primary_probe_uses_multi_index_registry(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
         self.assertIn('"--data-root"', gate)
