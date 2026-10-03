@@ -173,6 +173,10 @@
     "vespa.hardening.sanitizers": {
       "universe": "semantic"
     },
+    "vespa.hardening.tsan": {
+      "description": "ThreadSanitizer-only M11 hardening verification",
+      "universe": "semantic"
+    },
     "vespa.nearest-neighbor.query": {
       "universe": "semantic"
     },
