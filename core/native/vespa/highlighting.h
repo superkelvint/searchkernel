@@ -49,11 +49,14 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
             const auto anchor = teaser.find(annotation_anchor, index);
             const auto separator = teaser.find(annotation_separator, index);
             const auto boundary = teaser.find_first_of("\x1e\x1f", index);
-            // SummaryDesc can begin a continued excerpt inside annotation
-            // metadata. Only its suffix before the first backend delimiter
-            // belongs to the clipped annotation, not to visible surface text.
+            // SummaryDesc can begin a continued excerpt inside an annotation.
+            // Preserve surface text before a remaining separator, and discard
+            // clipped metadata through the terminator before any delimiter.
             if (terminator != std::string_view::npos && terminator < anchor &&
-                terminator < separator && terminator < boundary) {
+                terminator < boundary) {
+                if (separator < terminator) {
+                    fragment.text.append(teaser.substr(index, separator - index));
+                }
                 index = terminator + annotation_terminator.size();
                 continue;
             }

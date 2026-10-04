@@ -32,6 +32,8 @@ void highlighting_decoder_unit() {
     assert(clipped_prefix && clipped_prefix->at(0).text == " intro headphones");
     assert(clipped_prefix->at(0).matches.at(0).start_byte == 7);
     assert(clipped_prefix->at(0).matches.at(0).end_byte == 17);
+    const auto clipped_prefix_surface = searchkernel::native_highlighting::decode("\x1e" "An\xEF\xBF\xBA" "an\xEF\xBF\xBB next");
+    assert(clipped_prefix_surface && clipped_prefix_surface->at(0).text == "An next");
     for (const auto malformed : {
              "\xEF\xBF\xB9Long\xEF\xBF\xBAlong",
              "\xEF\xBF\xB9Long",
