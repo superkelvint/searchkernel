@@ -108,6 +108,7 @@ export function SearchLab() {
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
       <section className="surface min-w-0 p-4" aria-label="Search results"><h2 className="font-semibold">Results</h2>{loading && <p role="status">Running request… Previous results are retained.</p>}{error && response && <p>Previous successful response retained; the latest request failed.</p>}{dirty && <p className="text-amber-700">Editor differs from the last executed request.</p>}<p>{response ? `${response.matches} matches` : executed ? 'No successful response yet.' : 'No query executed. Enter a query, or run an empty text query to browse.'} {response?.totalRelation} {response?.timingMs}</p>{response && !response.hits.length && <p>{String(response.matches) === '0' ? 'No hits matched this query.' : 'This page returned no hits.'}</p>}{response && <div className="my-3 flex flex-wrap gap-2">
         <button className="soft-button" disabled={!capabilities?.query.diagnostics} onClick={() => { setSelected([]); setDebuggerIntent(String(response.matches) === '0' ? 'zero-results' : 'query-interpretation') }}>{String(response.matches) === '0' ? 'Find out why' : "What's wrong with this search?"}</button>
+        <button className="soft-button" disabled={!capabilities?.query.diagnostics || selected.length !== 2} onClick={() => setDebuggerIntent('ranking-comparison')}>Compare pinned results</button>
         <label><input type="checkbox" checked={lens} disabled={!capabilities?.query.diagnostics} onChange={e => { setLens(e.target.checked); if (e.target.checked) { setSelected([]); setDebuggerIntent('explain-hit') } }}/> Explain lens</label>
         {lens && <label>Signals to show (comma-separated)<input aria-label="Explain lens signals" className="input" value={lensSignals} onChange={e => setLensSignals(e.target.value)}/></label>}
       </div>}
@@ -125,7 +126,7 @@ export function SearchLab() {
         key={JSON.stringify([scope, response.sourceRunId, diagnosticBaseline.canonical])}
         client={client} index={index} baseline={diagnosticBaseline} response={response}
         selected={selected} initialIntent={debuggerIntent} onClose={() => setDebuggerIntent(undefined)}
-        onEvidence={value => setLensEvidence({ scope, source: response.sourceRunId, value })}/ > :
+        onEvidence={value => setLensEvidence(value.execution.kind === 'DiagnosticRerun' ? { scope, source: response.sourceRunId, value } : undefined)}/ > :
       <section className="surface min-w-0 p-4"><div className="flex flex-wrap gap-2" role="tablist">{['Request', 'Response', 'Executed request', 'Error'].map(name => <button key={name} role="tab" aria-selected={name === tab} className="soft-button" onClick={() => setTab(name)}>{name}</button>)}</div><p className="my-2 text-xs">{tab === 'Response' ? 'SearchResult payload' : tab === 'Error' ? 'Search Kernel error' : 'SearchRequest payload'} · target {index.id} · generation {index.generation ?? 'unavailable'}</p><CopyButton text={inspector} label={`Copy ${tab}`} /><pre aria-label={`${tab} inspector`} className="mt-3 max-h-150 overflow-auto rounded bg-slate-950 p-4 font-mono text-xs text-slate-100">{inspector}</pre></section>}
     </div>
   </div>

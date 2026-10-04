@@ -80,7 +80,7 @@ class GrpcTransportTest(unittest.TestCase):
         request = QueryDiagnosticsRequest(); request.Init(payload.Bytes, payload.Pos)
         self.assertEqual(request.Intent(), DiagnosticIntent.ExplainHit)
         self.assertEqual(request.SourceRunId().decode(), "original")
-        self.assertEqual(result.warnings, expected.warnings)
+        self.assertEqual([value.decode() for value in result.warnings], expected.warnings)
 
     def test_index_handle_carries_open_generation_on_target_requests(self):
         transport = _FrameTransport([
