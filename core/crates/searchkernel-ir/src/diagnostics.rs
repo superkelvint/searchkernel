@@ -248,11 +248,6 @@ fn filter_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> 
         FilterIr::And(clauses) => clauses.clone(),
         other => vec![other.clone()],
     };
-    // Root annotations can affect retrieval; removing a clause must not silently
-    // discard or reinterpret those controls.
-    if !expression.annotations.is_empty() {
-        return Vec::new();
-    }
     clauses
         .iter()
         .enumerate()
@@ -357,6 +352,11 @@ fn positive_clause_variants(request: &SearchRequestIr) -> Vec<(String, SearchReq
     let QueryExprKindIr::And(clauses) = &expression.kind else {
         return Vec::new();
     };
+    // Root annotations can affect retrieval; removing a clause must not silently
+    // discard or reinterpret those controls.
+    if !expression.annotations.is_empty() {
+        return Vec::new();
+    }
     clauses
         .iter()
         .enumerate()
