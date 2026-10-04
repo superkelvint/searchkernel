@@ -563,8 +563,14 @@ pub fn execute(
         ranking.status = DiagnosticStatus::Truncated;
         warnings.push("Ranking evidence exceeded the hit/tensor limit.".into());
     }
-    if let Some(unavailable) = acquired.result.metadata.get("diagnostic_unavailable_features") {
-        ranking.values.insert("unavailable_features".into(), unavailable.clone());
+    if let Some(unavailable) = acquired
+        .result
+        .metadata
+        .get("diagnostic_unavailable_features")
+    {
+        ranking
+            .values
+            .insert("unavailable_features".into(), unavailable.clone());
         warnings.push("Some configured ranking features could not be decoded within supported tensor types and diagnostic limits. Their values were omitted.".into());
     }
     let mut timing = evidence("timing", DiagnosticSection::Timing, &execution,

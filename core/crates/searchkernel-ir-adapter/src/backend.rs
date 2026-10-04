@@ -313,14 +313,26 @@ impl VespaBackend {
                                 }
                                 MatchFeatureValue::Data(value) => {
                                     if let Some((_, limits)) = diagnostics {
-                                        match searchkernel_vespa_engine::decode_diagnostic_tensor(&value, limits.tensor_cells) {
-                                            Ok(tensor) => searchkernel_ir::Value::Tensor(crate::tensor_to_ir(&tensor)),
+                                        match searchkernel_vespa_engine::decode_diagnostic_tensor(
+                                            &value,
+                                            limits.tensor_cells,
+                                        ) {
+                                            Ok(tensor) => searchkernel_ir::Value::Tensor(
+                                                crate::tensor_to_ir(&tensor),
+                                            ),
                                             Err(error) => {
-                                                unavailable_features.insert(name, searchkernel_ir::Value::String(error.to_string()));
+                                                unavailable_features.insert(
+                                                    name,
+                                                    searchkernel_ir::Value::String(
+                                                        error.to_string(),
+                                                    ),
+                                                );
                                                 return None;
-                                            },
+                                            }
                                         }
-                                    } else { searchkernel_ir::Value::Bytes(value) }
+                                    } else {
+                                        searchkernel_ir::Value::Bytes(value)
+                                    }
                                 }
                             };
                             Some((name, value))
@@ -477,8 +489,18 @@ impl VespaBackend {
                 trace: None,
                 metadata: {
                     let mut metadata = std::collections::BTreeMap::new();
-                    if feature_payload_truncated { metadata.insert("diagnostic_feature_truncated".into(), searchkernel_ir::Value::Bool(true)); }
-                    if !unavailable_features.is_empty() { metadata.insert("diagnostic_unavailable_features".into(), searchkernel_ir::Value::Object(unavailable_features)); }
+                    if feature_payload_truncated {
+                        metadata.insert(
+                            "diagnostic_feature_truncated".into(),
+                            searchkernel_ir::Value::Bool(true),
+                        );
+                    }
+                    if !unavailable_features.is_empty() {
+                        metadata.insert(
+                            "diagnostic_unavailable_features".into(),
+                            searchkernel_ir::Value::Object(unavailable_features),
+                        );
+                    }
                     metadata
                 },
             },
