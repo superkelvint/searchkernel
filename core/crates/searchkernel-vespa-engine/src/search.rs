@@ -161,6 +161,26 @@ pub struct SearchDiagnostics {
     pub matching_seconds: f64,
     pub summary_seconds: f64,
     pub query_seconds: f64,
+    pub match_evidence: Option<MatchEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TermFieldMatchEvidence {
+    pub document_id: String,
+    pub term_id: u32,
+    pub operator: String,
+    pub term: Option<String>,
+    pub field: String,
+    pub matched: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchEvidence {
+    pub available: bool,
+    pub truncated: bool,
+    pub partial: bool,
+    pub failed: bool,
+    pub records: Vec<TermFieldMatchEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +190,7 @@ pub struct SearchDiagnosticControls {
     pub first_phase_depth: u32,
     pub second_phase_depth: u32,
     pub raw_bytes: u32,
+    pub match_evidence_hit_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
