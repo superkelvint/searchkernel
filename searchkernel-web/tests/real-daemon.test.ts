@@ -129,6 +129,11 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     await Index.delete(endpoint, 'debugger')
     const recreated = await Index.create(endpoint, 'debugger', definition)
     try {
+      await recreated.upsert('replacement', { title: 'replacement-only', quantity: 99, embedding: Tensor.dense('tensor(x[2])', [0.5, 0.5]) })
+      await page.getByLabel('Find expected document').fill('replacement-only')
+      await page.getByRole('button', { name: 'Find documents', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'stale' }).waitFor()
+      expect(await page.getByRole('button', { name: /replacement ·/ }).count()).toBe(0)
       await expect(index.queryDiagnostics(diagnostic)).rejects.toMatchObject({ code: 'failed_precondition' })
       await page.getByRole('button', { name: 'I want to understand the query.', exact: true }).click()
       await page.getByRole('alert').filter({ hasText: 'stale' }).waitFor()
