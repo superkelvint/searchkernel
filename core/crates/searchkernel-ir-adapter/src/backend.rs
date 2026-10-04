@@ -237,6 +237,11 @@ impl VespaBackend {
                     0
                 },
                 raw_bytes: limits.raw_bytes,
+                match_evidence_hit_count: if sections.contains(&Section::MatchedTerms) {
+                    limits.feature_hit_count.min(64)
+                } else {
+                    0
+                },
             });
         }
         let expected_facets = m_request.facets.len();
@@ -387,6 +392,9 @@ impl VespaBackend {
         let feature_payload_truncated = native_diagnostics
             .as_ref()
             .is_some_and(|value| value.features_truncated);
+        let native_match_evidence = native_diagnostics
+            .as_ref()
+            .and_then(|value| value.match_evidence.clone());
         let mut timing = native_diagnostics
             .as_ref()
             .map(|value| searchkernel_ir::SearchTiming {
@@ -468,6 +476,74 @@ impl VespaBackend {
                 });
             }
         }
+        let mut engine_evidence = Vec::new();
+        if let Some(value) = native_match_evidence {
+            use searchkernel_ir::{
+                DiagnosticEvidence, DiagnosticProvenance, DiagnosticSection, DiagnosticStatus,
+                Value,
+            };
+            let mut values = std::collections::BTreeMap::new();
+            values.insert(
+                "scope".into(),
+                Value::String("proton_ranked_term_field_match_data".into()),
+            );
+            values.insert("partial".into(), Value::Bool(value.partial));
+            values.insert("truncated".into(), Value::Bool(value.truncated));
+            values.insert(
+                "records".into(),
+                Value::List(
+                    value
+                        .records
+                        .into_iter()
+                        .map(|record| {
+                            Value::Object(std::collections::BTreeMap::from([
+                                ("document_id".into(), Value::String(record.document_id)),
+                                ("term_id".into(), Value::UInt64(u64::from(record.term_id))),
+                                ("operator".into(), Value::String(record.operator)),
+                                (
+                                    "term".into(),
+                                    record.term.map(Value::String).unwrap_or(Value::Null),
+                                ),
+                                ("field".into(), Value::String(record.field)),
+                                ("matched".into(), Value::Bool(record.matched)),
+                            ]))
+                        })
+                        .collect(),
+                ),
+            );
+            let status = if value.failed {
+                DiagnosticStatus::Failed
+            } else if value.truncated {
+                DiagnosticStatus::Truncated
+            } else if value.available {
+                DiagnosticStatus::Available
+            } else {
+                DiagnosticStatus::Unsupported
+            };
+            if value.available {
+                observed_sections.push(DiagnosticSection::MatchedTerms);
+            }
+            engine_evidence.push(DiagnosticEvidence {
+                id: "matched-terms".into(),
+                section: DiagnosticSection::MatchedTerms,
+                status,
+                provenance: DiagnosticProvenance::Engine,
+                execution_id: String::new(),
+                message: if value.failed {
+                    "The pinned Proton match-data replay failed; no term/field match claim is made."
+                        .into()
+                } else if value.partial {
+                    "Authoritative Proton TermFieldMatchData observations for supported ranked term/field pairs. Vector, predicate, geo, compound weighted/range, negative-context, and other non-extracted term families remain explicitly outside this evidence scope."
+                        .into()
+                } else {
+                    "Authoritative Proton TermFieldMatchData observations for supported ranked term/field pairs in this diagnostic rerun. matched=false is an observed negative; values are not inferred from field contents or highlights."
+                        .into()
+                },
+                values,
+                canonical_request: None,
+                result: None,
+            });
+        }
         Ok(searchkernel_ir::DiagnosticSearchResult {
             result: SearchResult {
                 root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
@@ -504,6 +580,7 @@ impl VespaBackend {
                     metadata
                 },
             },
+            evidence: engine_evidence,
             raw_engine,
             observed_sections,
         })
