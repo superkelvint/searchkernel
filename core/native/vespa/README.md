@@ -16,6 +16,8 @@ configuration details, and native error translation belong.
    for the environment-specific SDK paths and automatic rebuild behavior.
 5. Read `build-sdk.sh` only when a native SDK rebuild is required.
 6. Read `../ABI.md` for the required debug-info and ABI comparison workflow.
+7. Read [per-hit match evidence](../../../docs/vespa-match-evidence.md) before
+   adding query diagnostics that depend on Proton match-data lifetimes.
 
 ## Key concepts
 
