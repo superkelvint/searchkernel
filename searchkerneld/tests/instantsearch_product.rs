@@ -55,7 +55,9 @@ async fn real_pinned_consumer_uses_public_endpoint_and_vespa() {
                 ),
         )
         .expect("create real Vespa index");
-        for i in 1..=24 {
+        // Different cardinalities make a swapped/global target fail acceptance.
+        let count = if target == "products" { 24 } else { 12 };
+        for i in 1..=count {
             let mut document = json!({
                 "title": if i <= 18 { format!("Wireless <angle> & Headphones {i:02}") } else { format!("Wired Speaker {i:02}") },
                 "description": format!("{} {} {}", "An introductory description. ".repeat(40), if i <= 18 { "wireless headphones" } else { "wired speaker" }, "Long trailing text. ".repeat(40)),

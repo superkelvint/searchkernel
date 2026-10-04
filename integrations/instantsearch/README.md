@@ -95,7 +95,7 @@ The server bounds headers, URI, body (64 KiB), batch (16), query (4096 UTF-8 byt
 
 `SearchKernelInstantSearchError` exposes `code` and optional `requestIndex`. Stable codes: `invalid_request`, `unsupported`, `unknown_index`, `stale_target`, `unavailable`, `timeout`, `overloaded`, `backend_failure`, and adapter-only `invalid_response`. Messages are fixed. Canonical details, filesystem paths, panic text, and stack traces are not returned. Errors never become successful empty results.
 
-Searchable refinement lists, facet-value search, hierarchical facets, arbitrary Algolia textual `filters`, ranking controls, geo search, recommendations, analytics, and replicas are explicitly excluded. React/Vue bindings are not advertised by this profile.
+Searchable refinement lists, facet-value search, hierarchical facets, arbitrary Algolia textual `filters`, ranking controls, geo search, recommendations, analytics, and replicas are explicitly excluded. React/Vue bindings are not advertised by this profile. Widget status describes tested support; the search-client boundary cannot identify a rendering-only widget. An unlisted/unsupported widget has no compatibility guarantee even when it emits allowed parameters. Unsupported methods and parameters fail explicitly.
 
 ## Verification
 

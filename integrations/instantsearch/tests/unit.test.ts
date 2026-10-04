@@ -40,10 +40,16 @@ describe('bounded representation', () => {
       Response.json({error:{code:'backend_failure',message:'/private/path stack trace',requestIndex:1}},{status:502})) as typeof fetch});
     await expect(client.search([{indexName:'one'}])).rejects.toEqual(new SearchKernelInstantSearchError('backend_failure',1));
   });
-  it('does not share slots across overlapping calls', async () => {
-    const {client} = setup();
-    const [a,b] = await Promise.all([client.search([{indexName:'one',params:{query:'a'}}]),client.search([{indexName:'two',params:{query:'b'}}])]);
-    expect(a.results[0].query).toBe('a'); expect(b.results[0].query).toBe('b');
+  it('does not share slots when overlapping calls complete in reverse order', async () => {
+    const pending: {requests:any[]; resolve:(value:Response)=>void}[] = [];
+    const client = createSearchKernelInstantSearchClient({endpoint:'http://localhost/search',fetch:((_url,init)=>new Promise(resolve=>pending.push({requests:JSON.parse(init!.body as string).searches,resolve}))) as typeof fetch});
+    const a = client.search([{indexName:'one',params:{query:'a'}},{indexName:'one',params:{query:'second'}}]);
+    const b = client.search([{indexName:'two',params:{query:'b'}}]);
+    const finish = (position:number) => pending[position].resolve(Response.json({results:pending[position].requests.map(request=>({
+      endpoint:request.endpoint,query:request.query,hits:[],totalHits:0,exact:true,processingTimeMs:0,facets:{},exhaustiveFacetsCount:true,
+    }))}));
+    finish(1); expect((await b).results.map(result=>[result.index,result.query])).toEqual([['two','b']]);
+    finish(0); expect((await a).results.map(result=>[result.index,result.query])).toEqual([['one','a'],['one','second']]);
   });
   it('rejects unsupported methods through the stable adapter error', async () => {
     const {client} = setup();

@@ -95,11 +95,12 @@ it('actual pinned widgets search, refine, paginate, browse, sort and render thro
     expect(document.querySelectorAll('#hits .ais-Hits-item')).toHaveLength(0);
     await change({}, () => search.helper!.lastResults?.nbHits === 24);
     const batch = await client.search([{indexName:'products',params:{query:'wireless',hitsPerPage:3,page:1}},
-      {indexName:'other',params:{query:'speaker',hitsPerPage:2}}, {indexName:'products',params:{query:'speaker',hitsPerPage:0}}]);
+      {indexName:'other',params:{query:'wireless',hitsPerPage:2}}, {indexName:'products',params:{query:'speaker',hitsPerPage:0}}]);
     expect(batch.results.map(r => [r.index,r.query,r.nbHits,r.hits.length])).toEqual([
-      ['products','wireless',18,3],['other','speaker',6,2],['products','speaker',6,0]]);
+      ['products','wireless',18,3],['other','wireless',12,2],['products','speaker',6,0]]);
     const beyond = await client.search([{indexName:'products',params:{page:99,hitsPerPage:6}}]);
     expect(beyond.results[0]).toMatchObject({nbHits:24,nbPages:4,page:99,hits:[]});
+    batch.results.forEach((result,i)=>expect(result.hits.every(hit=>hit.objectID.startsWith(['products-','other-','products-'][i]))).toBe(true));
     await expect(client.search([{indexName:'missing'}])).rejects.toMatchObject({code:'unknown_index',requestIndex:0});
     await expect(client.search([{indexName:'products',params:{filters:'brand:Acme'}}])).rejects.toMatchObject({code:'unsupported'});
     const malformed = await fetch(endpoint!,{method:'POST',headers:{'Content-Type':'application/json'},body:'{"searches":['});
