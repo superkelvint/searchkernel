@@ -1,5 +1,5 @@
 use searchkernel_protocol::{protocol::v1 as wire, wire::v1 as api};
-use searchkerneld::public_search::{PublicSearchConfig, PublicSearchError, PublicSearchRequest};
+use searchkerneld::search_endpoints::{PublicSearchConfig, PublicSearchError, PublicSearchRequest};
 
 fn config() -> PublicSearchConfig {
     serde_json::from_str(
