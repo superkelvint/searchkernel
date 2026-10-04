@@ -54,6 +54,61 @@ fn native_long_annotated_teaser_remains_valid() {
             .all(|fragment| !fragment.text.contains(['\u{fff9}', '\u{fffa}', '\u{fffb}'])));
     }
 }
+
+#[test]
+fn native_multi_term_html_sensitive_teaser_remains_valid() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-html-teaser-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let runtime = IndexRuntime::create(
+        &path,
+        IndexDefinition::new()
+            .field(Field::text("title").stored(true))
+            .field(Field::text("description").stored(true)),
+    )
+    .unwrap();
+    let index = runtime.index();
+    index.upsert("headphones", &json!({"title":"Wireless <angle> & Headphones 01",
+        "description":format!("{} wireless <img src=x> & headphones {}", "An introductory description. ".repeat(40), "Long trailing text. ".repeat(40))})).unwrap();
+    let result = index
+        .search("wireless headphones")
+        .highlight(["title", "description"])
+        .execute::<serde_json::Value>();
+    runtime.close().unwrap();
+    std::fs::remove_dir_all(path).unwrap();
+    let result = result.expect("multi-term backend teaser must decode");
+    assert_eq!(result.total_hits.value, 1);
+    let description = result.hits[0]
+        .highlights
+        .iter()
+        .find(|highlight| highlight.field == "description")
+        .unwrap();
+    assert!(description
+        .fragments
+        .iter()
+        .any(|fragment| fragment.text.contains("<img src=x> &")));
+    for field in ["title", "description"] {
+        let highlight = result.hits[0]
+            .highlights
+            .iter()
+            .find(|highlight| highlight.field == field)
+            .unwrap();
+        for word in ["wireless", "headphones"] {
+            assert!(highlight
+                .fragments
+                .iter()
+                .any(|fragment| fragment.matches.iter().any(|span| fragment.text
+                    [span.start_byte as usize..span.end_byte as usize]
+                    .eq_ignore_ascii_case(word))));
+        }
+        assert!(highlight
+            .fragments
+            .iter()
+            .all(|fragment| !fragment.text.contains(['\u{fff9}', '\u{fffa}', '\u{fffb}'])));
+    }
+}
 use std::collections::BTreeSet;
 use std::sync::{Arc, Barrier};
 
