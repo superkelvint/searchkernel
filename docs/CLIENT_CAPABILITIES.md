@@ -547,8 +547,8 @@ has real-runtime evidence.
 ### Targeted multi-index daemon lifecycle protocol (daemon.multi_index_lifecycle)
 
 - **Basic behavior** (basic)
-  - rust / grpc / e2e / runtime — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1888)
-  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1888)
+  - rust / grpc / e2e / runtime — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1893)
+  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1893)
 
 ### Server-scoped durable logical index discovery (daemon.durable_index_discovery)
 
@@ -556,7 +556,7 @@ has real-runtime evidence.
   - php / http / ergonomic / builder — [clients/php/tests/run.php](../clients/php/tests/run.php#L209)
   - python / grpc / ergonomic / builder — [clients/python/tests/test_grpc_transport.py](../clients/python/tests/test_grpc_transport.py#L140)
   - ruby / http / ergonomic / builder — [clients/ruby/test/run.rb](../clients/ruby/test/run.rb#L374)
-  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1958)
+  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1963)
   - typescript / browser / ergonomic / builder — [clients/typescript/tests/lifecycle.test.ts](../clients/typescript/tests/lifecycle.test.ts#L37)
 
 ### Validated index creation and rank-profile configuration apply (daemon.configuration_workflow)
