@@ -77,4 +77,19 @@ describe('bounded representation', () => {
     await expect(invalid.search([{indexName:'one'}])).rejects.toMatchObject({code:'invalid_response'});
   });
 
+  it('projects authoritative UTF-8 spans, multiple attributes and separate snippets', async () => {
+    const result = {endpoint:'one',query:'é wireless',totalHits:1,exact:true,processingTimeMs:2,facets:{brand:{Acme:1}},exhaustiveFacetsCount:true,
+      hits:[{id:'doc-1',fields:{title:'é & <x> wireless',brand:'Acme'},highlights:{
+        title:[{text:'é & <x> wireless',matches:[{startByte:0,endByte:2},{startByte:9,endByte:17}]}],
+        description:[{text:'unmatched <script> & text',matches:[]}],
+      }}]};
+    const client = createSearchKernelInstantSearchClient({endpoint:'http://localhost/search',fetch:(async()=>Response.json({results:[result]})) as typeof fetch});
+    const {results:[response]} = await client.search([{indexName:'one',params:{query:'é wireless',attributesToHighlight:['title','description'],attributesToSnippet:['description']}}]);
+    expect(response.hits[0].objectID).toBe('doc-1');
+    expect(response.hits[0]._highlightResult.title).toEqual({value:'__ais-highlight__é__/ais-highlight__ & <x> __ais-highlight__wireless__/ais-highlight__',matchLevel:'partial',matchedWords:['é','wireless']});
+    expect(response.hits[0]._snippetResult.description).toEqual({value:'unmatched <script> & text',matchLevel:'none',matchedWords:[]});
+    expect(response.hits[0]._snippetResult.title).toBeUndefined();
+    expect(response.hits[0]._highlightResult.brand).toBeUndefined();
+  });
+
 });
