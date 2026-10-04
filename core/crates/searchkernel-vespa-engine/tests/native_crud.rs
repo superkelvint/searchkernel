@@ -2214,12 +2214,17 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
         .as_array()
         .unwrap();
     let property = |entries: &[serde_json::Value], name: &str| {
-        entries.iter().find(|entry| entry["name"] == name).unwrap()["value"].clone()
+        entries
+            .iter()
+            .find(|entry| entry["name"] == name)
+            .unwrap_or_else(|| panic!("missing lowered property {name}: {entries:?}"))["value"]
+            .clone()
     };
     assert_eq!(property(rank, "vespa.matching.numthreadspersearch"), "1");
     assert_eq!(property(rank, "private_property"), "[redacted]");
     assert_eq!(property(rank, "query(private_tensor)"), "[redacted]");
-    assert_eq!(property(features, "query(weight)"), "[redacted]");
+    assert_eq!(property(rank, "weight"), "[redacted]");
+    assert!(features.is_empty());
     let snapshot_text = snapshot.to_string();
     for secret in ["secretterm", "secret_value", "9182.5", "8371.25", "2.75"] {
         assert!(!snapshot_text.contains(secret), "snapshot leaked {secret}");
