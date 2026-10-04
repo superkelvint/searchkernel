@@ -309,3 +309,12 @@ fn timeout_returns_partial_evidence_without_inventing_absence_or_findings() {
         .iter()
         .any(|item| item.status == DiagnosticStatus::TimedOut));
 }
+
+#[test]
+fn friendly_query_comes_from_canonical_operators_without_engine_syntax_guessing() {
+    let term = QueryExprIr { kind: QueryExprKindIr::Text { text: "orchid".into() }, annotations: Default::default() };
+    let expression = QueryExprIr { kind: QueryExprKindIr::And(vec![term.clone(), term]), annotations: Default::default() };
+    assert!(friendly_typed_query(&expression).contains(" AND "));
+    let expression = QueryExprIr { kind: QueryExprKindIr::NearestNeighbor { document_field: QueryFieldRefIr { path: FieldName::parse("embedding").unwrap(), element_index: None }, query_tensor: "q".into() }, annotations: Default::default() };
+    assert!(friendly_typed_query(&expression).contains("not exhaustive"));
+}

@@ -345,6 +345,31 @@ fn exact_variant(request: &SearchRequestIr, limits: &DiagnosticLimits) -> Option
     Some(variant)
 }
 
+fn friendly_typed_query(expression: &QueryExprIr) -> String {
+    let list = |children: &[QueryExprIr], operator: &str| children.iter().map(|child| format!("({})", friendly_typed_query(child))).collect::<Vec<_>>().join(operator);
+    let text = match &expression.kind {
+        QueryExprKindIr::True => "Match all".into(),
+        QueryExprKindIr::False => "Match none".into(),
+        QueryExprKindIr::Term { value } => format!("Term {value:?}"),
+        QueryExprKindIr::Text { text } => format!("Text query {text:?}, using configured analysis"),
+        QueryExprKindIr::Contains { field, item } => format!("Field {} contains ({})", field.path.as_str(), friendly_typed_query(item)),
+        QueryExprKindIr::And(children) => list(children, " AND "),
+        QueryExprKindIr::Or(children) => list(children, " OR "),
+        QueryExprKindIr::Not(child) => format!("NOT ({})", friendly_typed_query(child)),
+        QueryExprKindIr::Comparison { field, op, value } => format!("Field {} {op:?} {value:?}", field.path.as_str()),
+        QueryExprKindIr::In { field, values } => format!("Field {} is in {values:?}", field.path.as_str()),
+        QueryExprKindIr::Rank { matching, ranking } => format!("Retrieve using ({}); {} additional ranking clause(s) do not themselves define the matching branch", friendly_typed_query(matching), ranking.len()),
+        QueryExprKindIr::NearestNeighbor { document_field, query_tensor } => format!("Nearest-neighbor retrieval in {} using query tensor {query_tensor:?}. This is top-k retrieval, not exhaustive matching", document_field.path.as_str()),
+        QueryExprKindIr::WeakAnd { children, target_hits } => format!("Weak-AND candidate retrieval with target {target_hits} hits from ({})", list(children, ", ")),
+        QueryExprKindIr::Labeled { query, label, .. } => format!("Label {label:?}: ({})", friendly_typed_query(query)),
+        QueryExprKindIr::Phrase(children) => format!("Phrase ({})", list(children, ", ")),
+        // The technical tree is authoritative for operators without a friendly
+        // renderer. Never guess their semantics from an engine query string.
+        _ => "Advanced canonical operator; inspect its normalized query tree for exact controls".into(),
+    };
+    if expression.annotations.is_empty() { text } else { format!("{text}. Explicit operator annotations are shown in the normalized request") }
+}
+
 fn positive_clause_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> {
     let QueryIr::Typed(expression) = request.query() else {
         return Vec::new();
@@ -481,6 +506,10 @@ pub fn execute(
             QueryIr::Yql { .. } => "Engine-owned YQL query. Friendly interpretation of arbitrary YQL is unavailable; inspect the exact source and engine tree.",
         });
     effective.canonical_request = Some(request.clone());
+    if let QueryIr::Typed(query) = request.query() {
+        effective.values.insert("friendly_query".into(), Value::String(friendly_typed_query(query)));
+    }
+
     effective.values.insert(
         "searchkernel_version".into(),
         Value::String(env!("CARGO_PKG_VERSION").into()),

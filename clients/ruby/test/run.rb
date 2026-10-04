@@ -208,6 +208,7 @@ expected_operations = {
   analyze: %w[AnalyzeRequest AnalyzeResult],
   describe: %w[DescribeRequest DescribeResult],
   inspect_query: %w[InspectQueryRequest InspectQueryResult],
+  query_diagnostics: %w[QueryDiagnosticsRequest QueryDiagnosticsResult],
   create_index: %w[CreateIndexRequest CreateIndexResult],
   open_index: %w[OpenIndexRequest OpenIndexResult],
   delete_index: %w[DeleteIndexRequest DeleteIndexResult],

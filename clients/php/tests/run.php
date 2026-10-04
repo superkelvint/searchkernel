@@ -1546,6 +1546,7 @@ $expectedOperations = [
     'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
     'describe' => ['DescribeRequest', 'DescribeResult'],
     'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+    'query_diagnostics' => ['QueryDiagnosticsRequest', 'QueryDiagnosticsResult'],
     'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
     'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
     'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult'],
