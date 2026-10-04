@@ -6,7 +6,7 @@ import { ReopenIndex } from './ChangeWorkflow'
 export function Schema() {
   const index = useIndex()
   return <div className="min-w-0">
-    <Heading title="Schema" description={`Canonical index definition for ${index.id}.`}><ReopenIndex target={index.id} /></Heading>
+    <Heading title="Schema" description={`Canonical index definition for ${index.id}.`}><ReopenIndex target={index.target ?? index.id} /></Heading>
     <section className="surface overflow-hidden"><div className="border-b border-slate-200 p-5"><h3 className="font-semibold">Fields</h3><p className="muted mt-1">Declared optional capabilities remain absent when the definition omits them.</p></div>
       <div className="overflow-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr>{['Field', 'Type', 'Searchable', 'Attribute', 'Stored', 'Analyzer'].map(name => <th key={name} className="px-5 py-3">{name}</th>)}</tr></thead><tbody>{index.fields.map(field => <tr key={field.name} className="border-t border-slate-100"><td className="px-5 py-4 font-mono">{field.name}</td><td className="px-5 py-4">{field.type}</td>{[field.searchable, field.attribute, field.stored].map((value, position) => <td key={position} className="px-5 py-4">{value === undefined ? 'Not declared' : value ? 'Enabled' : 'Disabled'}</td>)}<td className="px-5 py-4">{field.analyzer}</td></tr>)}</tbody></table></div>
     </section>

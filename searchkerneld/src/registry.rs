@@ -115,6 +115,101 @@ pub struct IndexRegistry {
 }
 
 impl IndexRegistry {
+    /// Read storage under each target's lifecycle lock; never open an index to
+    /// obtain diagnostics. An in-progress sibling must not block this snapshot.
+    pub fn diagnostics(&self) -> Result<crate::diagnostics::DaemonStatus, RegistryDispatchError> {
+        use crate::diagnostics::{DaemonStatus, IndexStatus};
+        let shutdown = self
+            .shutdown
+            .read()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        let mut names = std::collections::BTreeSet::new();
+        for entry in
+            std::fs::read_dir(&self.data_root).map_err(|_| RegistryDispatchError::InvalidRequest)?
+        {
+            let entry = entry.map_err(|_| RegistryDispatchError::InvalidRequest)?;
+            if let Some(name) = entry.file_name().to_str() {
+                if searchkernel_ir::validate_index_target(name).is_ok() {
+                    names.insert(name.to_owned());
+                }
+            }
+        }
+        names.extend(
+            self.entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?
+                .keys()
+                .cloned(),
+        );
+        let mut indexes = Vec::new();
+        for name in names {
+            let transition = self.transition_lock(&name)?;
+            let guard = match transition.try_lock() {
+                Ok(guard) => Some(guard),
+                Err(std::sync::TryLockError::WouldBlock) => None,
+                Err(std::sync::TryLockError::Poisoned(_)) => {
+                    return Err(RegistryDispatchError::Poisoned)
+                }
+            };
+            if guard.is_none() {
+                // Discovery also holds this lock. Contention cannot establish
+                // that a loaded incarnation disappeared; preserve registry
+                // identity and leave only unsampled storage state unknown.
+                let entries = self
+                    .entries
+                    .lock()
+                    .map_err(|_| RegistryDispatchError::Poisoned)?;
+                let entry = entries.get(&name);
+                let generation = entry.map(|entry| entry.generation.clone());
+                let schema_name = entry.and_then(|entry| {
+                    let (context, _) = entry.index.clone().into_session_parts();
+                    context.definition().name().map(|name| name.to_string())
+                });
+                indexes.push(IndexStatus {
+                    name,
+                    state: if entry.is_some() { "open" } else { "transitioning" },
+                    generation,
+                    persisted: None,
+                    schema_name,
+                    warning: Some("Lifecycle/discovery lock busy; storage state was not sampled. Refresh to reconcile."),
+                });
+                continue;
+            }
+            let path = self.checked_index_path(&name);
+            let persisted = path
+                .as_ref()
+                .is_ok_and(|path| Index::inspect_storage(path).is_ok());
+            let entries = self
+                .entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            let entry = entries.get(&name);
+            let schema_name = entry.and_then(|entry| {
+                let (context, _) = entry.index.clone().into_session_parts();
+                context.definition().name().map(|name| name.to_string())
+            });
+            indexes.push(IndexStatus {
+                name: name.clone(), generation: entry.map(|entry| entry.generation.clone()),
+                state: if entry.is_some() { "open" } else if persisted { "persisted" } else { "unopenable" },
+                persisted: Some(persisted), schema_name,
+                warning: if persisted { None } else { Some("Storage is unavailable or invalid. Open may return a canonical lifecycle error.") },
+            });
+        }
+        Ok(DaemonStatus {
+            version: env!("CARGO_PKG_VERSION"),
+            ready: !*shutdown,
+            native_runtime: "linked",
+            lifecycle: if *shutdown { "closed" } else { "ready" },
+            indexes,
+            unavailable: [
+                "resource metrics",
+                "document counts",
+                "last lifecycle failure",
+                "native runtime version",
+            ],
+        })
+    }
+
     pub fn new(data_root: impl Into<PathBuf>) -> Result<Self, RegistryInitError> {
         let data_root = data_root.into();
         std::fs::create_dir_all(&data_root).map_err(RegistryInitError::Io)?;
@@ -1049,5 +1144,37 @@ mod configuration_lock_order_tests {
         assert_ne!(replacement_generation, generation);
 
         registry.close_all().expect("close registry");
+    }
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+
+    #[test]
+    fn busy_discovery_preserves_loaded_incarnation_in_diagnostics() {
+        let root = std::env::temp_dir().join(format!("sk-diagnostics-{}", new_generation()));
+        let registry = IndexRegistry::new(&root).unwrap();
+        let index = Index::create(
+            root.join("alpha"),
+            searchkernel::IndexDefinition::new().field(
+                searchkernel::Field::text("title")
+                    .stored(true)
+                    .searchable(true),
+            ),
+        )
+        .unwrap();
+        index.close().unwrap();
+        registry.open("alpha", WireVersion::V1).unwrap();
+        let before = registry.diagnostics().unwrap().indexes.remove(0);
+        let transition = registry.transition_lock("alpha").unwrap();
+        let guard = transition.lock().unwrap();
+        let during = registry.diagnostics().unwrap().indexes.remove(0);
+        assert_eq!(during.generation, before.generation);
+        assert_eq!(during.state, "open");
+        assert_eq!(during.persisted, None);
+        drop(guard);
+        registry.close_all().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

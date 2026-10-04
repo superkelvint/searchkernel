@@ -1,12 +1,13 @@
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CreateIndex } from '../features/configuration/CreateIndex'
+import { BrowserRouter, Navigate, Route, Routes, useParams, useLocation } from 'react-router-dom'
 import { DashboardRoute } from './DashboardRoute'
 import { About, NotFound, UnavailableFeature } from './fallback-pages'
 
 function IndexDefault({section}:{section?: 'data'|'search'|'configuration'|'operations'}) {
   const { indexId } = useParams()
+  const { search } = useLocation()
   const suffix = section === 'data' ? 'data/documents' : section === 'search' ? 'search/lab' : section === 'configuration' ? 'configuration/schema/fields' : section === 'operations' ? 'operations/health' : 'overview'
-  return <Navigate replace to={`/indexes/${indexId}/${suffix}`}/>
+  return <Navigate replace to={`/indexes/${indexId}/${suffix}${search}`}/>
 }
 
 export function AppRoutes() { return <Routes>

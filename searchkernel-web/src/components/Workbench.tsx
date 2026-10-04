@@ -1,3 +1,4 @@
+import { failureAction } from '../features/indexes/lifecycle'
 import { useState } from 'react'
 import { normalizeClientError } from '../api/searchkernel-client'
 
@@ -13,5 +14,5 @@ export function errorJson(error: unknown): string {
 export function ErrorNotice({ error }: { error?: unknown }) {
   if (!error) return null
   const value = normalizeClientError(error)
-  return <div role="alert" className="surface my-3 border-red-200 p-4 text-red-800"><strong>{value.origin ?? 'client'} · {value.code}</strong><p>{value.message}</p><CanonicalInspector label="Error" text={errorJson(value)}/></div>
+  return <div role="alert" className="surface my-3 border-red-200 p-4 text-red-800"><strong>{value.origin ?? 'client'} · {value.code}</strong><p>{value.message}</p><p>{failureAction(value)}</p><CanonicalInspector label="Error" text={errorJson(value)}/></div>
 }

@@ -5,6 +5,8 @@
 //! dispatcher.
 
 #[cfg(feature = "native")]
+pub mod diagnostics;
+#[cfg(feature = "native")]
 mod registry;
 mod search_endpoints;
 
@@ -571,6 +573,50 @@ where
             return Box::pin(async move { Ok(response) });
         };
 
+        #[cfg(feature = "native")]
+        if request.uri().path() == "/admin/status" {
+            if let Some(transport) = self.json_transport.clone() {
+                return Box::pin(async move {
+                    let response = if request.method() != Method::POST {
+                        http_body_response(
+                            StatusCode::METHOD_NOT_ALLOWED,
+                            "text/plain",
+                            "Use POST".to_owned(),
+                        )
+                    } else if let DispatchTarget::Registry(registry) = transport.target {
+                        match tokio::task::spawn_blocking(move || {
+                            let _admission = permit;
+                            registry.diagnostics()
+                        })
+                        .await
+                        {
+                            Ok(Ok(status)) => match serde_json::to_string(&status) {
+                                Ok(body) => {
+                                    http_body_response(StatusCode::OK, "application/json", body)
+                                }
+                                Err(_) => http_body_response(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    "text/plain",
+                                    "Diagnostics encoding failed".to_owned(),
+                                ),
+                            },
+                            _ => http_body_response(
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                "text/plain",
+                                "Lifecycle diagnostics unavailable".to_owned(),
+                            ),
+                        }
+                    } else {
+                        http_body_response(
+                            StatusCode::NOT_IMPLEMENTED,
+                            "text/plain",
+                            "Diagnostics require multi-index mode".to_owned(),
+                        )
+                    };
+                    Ok(response)
+                });
+            }
+        }
         if request.uri().path() == JSON_EXECUTE_PATH {
             if let Some(transport) = self.json_transport.clone() {
                 return Box::pin(async move {
@@ -591,7 +637,7 @@ where
 }
 
 fn admission_response(request: &HttpRequest<BoxBody>) -> HttpResponse<BoxBody> {
-    if request.uri().path() == JSON_EXECUTE_PATH {
+    if matches!(request.uri().path(), JSON_EXECUTE_PATH | "/admin/status") {
         return http_body_response(
             StatusCode::TOO_MANY_REQUESTS,
             "text/plain; charset=utf-8",
@@ -1178,6 +1224,17 @@ async fn bind_unix_listener(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn admin_overload_is_an_http_error_not_grpc_success() {
+        let request = super::HttpRequest::builder()
+            .uri("/admin/status")
+            .body(tonic::body::empty_body())
+            .unwrap();
+        assert_eq!(
+            super::admission_response(&request).status(),
+            super::StatusCode::TOO_MANY_REQUESTS
+        );
+    }
     #[cfg(unix)]
     use std::path::PathBuf;
     use std::sync::{
