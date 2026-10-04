@@ -554,9 +554,9 @@ has real-runtime evidence.
 
 - **Basic behavior** (basic)
   - php / http / ergonomic / builder — [clients/php/tests/run.php](../clients/php/tests/run.php#L209)
-  - python / grpc / ergonomic / builder — [clients/python/tests/test_grpc_transport.py](../clients/python/tests/test_grpc_transport.py#L118)
-  - ruby / http / ergonomic / builder — [clients/ruby/test/run.rb](../clients/ruby/test/run.rb#L373)
-  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1842)
+  - python / grpc / ergonomic / builder — [clients/python/tests/test_grpc_transport.py](../clients/python/tests/test_grpc_transport.py#L140)
+  - ruby / http / ergonomic / builder — [clients/ruby/test/run.rb](../clients/ruby/test/run.rb#L374)
+  - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1997)
   - typescript / browser / ergonomic / builder — [clients/typescript/tests/lifecycle.test.ts](../clients/typescript/tests/lifecycle.test.ts#L53)
 
 ### Validated index creation and rank-profile configuration apply (daemon.configuration_workflow)
