@@ -2774,6 +2774,18 @@ extern "C" int32_t sk_generic_search_request_set_diagnostics(
     return SK_NATIVE_STATUS_OK;
 }
 
+
+extern "C" int32_t sk_generic_search_request_set_match_evidence(
+    sk_generic_search_request *request, uint32_t hit_limit,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || hit_limit == 0 || hit_limit > 64) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "match-evidence hit limit must be in [1,64]");
+    }
+    request->diagnostic_match_evidence_hits = hit_limit;
+    return SK_NATIVE_STATUS_OK;
+}
+
 extern "C" int32_t sk_generic_search_request_add_sort(
     sk_generic_search_request *request, const char *field, uint32_t order,
     uint32_t missing, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
@@ -3012,6 +3024,54 @@ extern "C" int32_t sk_generic_search_result_diagnostics(
     *out_query_seconds = result->diagnostic_query_seconds;
     return SK_NATIVE_STATUS_OK;
 }
+
+extern "C" uint32_t sk_generic_search_result_match_evidence_status(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? result->diagnostic_match_evidence_status : 0;
+}
+
+extern "C" uint32_t sk_generic_search_result_term_field_evidence_count(
+    const sk_generic_search_result *result, uint32_t hit_index) SK_NOEXCEPT {
+    if (!result || hit_index >= result->hits.size()) {
+        return 0;
+    }
+    return static_cast<uint32_t>(result->hits[hit_index].term_field_evidence.size());
+}
+
+extern "C" int32_t sk_generic_search_result_term_field_evidence(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t evidence_index, uint32_t *out_term_id,
+    const char **out_operator, uint32_t *out_operator_length,
+    const char **out_term, uint32_t *out_term_length,
+    const char **out_field, uint32_t *out_field_length,
+    uint8_t *out_matched, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_operator) *out_operator = nullptr;
+    if (out_operator_length) *out_operator_length = 0;
+    if (out_term) *out_term = nullptr;
+    if (out_term_length) *out_term_length = 0;
+    if (out_field) *out_field = nullptr;
+    if (out_field_length) *out_field_length = 0;
+    if (out_matched) *out_matched = 0;
+    if (!result || !out_term_id || !out_operator || !out_operator_length ||
+        !out_term || !out_term_length || !out_field || !out_field_length ||
+        !out_matched || hit_index >= result->hits.size() ||
+        evidence_index >= result->hits[hit_index].term_field_evidence.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "term-field evidence arguments are invalid");
+    }
+    const auto &evidence = result->hits[hit_index].term_field_evidence[evidence_index];
+    *out_term_id = evidence.term_id;
+    *out_operator = evidence.operator_name.data();
+    *out_operator_length = static_cast<uint32_t>(evidence.operator_name.size());
+    *out_term = evidence.term.data();
+    *out_term_length = static_cast<uint32_t>(evidence.term.size());
+    *out_field = evidence.field.data();
+    *out_field_length = static_cast<uint32_t>(evidence.field.size());
+    *out_matched = evidence.matched ? 1 : 0;
+    return SK_NATIVE_STATUS_OK;
+}
+
 extern "C" uint32_t sk_generic_search_result_hit_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {
     return sk_local_search_result_hit_count(static_cast<const sk_local_search_result *>(result));
