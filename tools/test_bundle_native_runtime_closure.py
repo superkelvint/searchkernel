@@ -445,9 +445,11 @@ def main() -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        if package_check.returncode != 0:
+        # Adding a new packaged ELF invalidates the existing inventory. Prove
+        # the checker rejects stale provenance before refreshing it below.
+        if package_check.returncode == 0 or "packaged ELF inventory" not in package_check.stderr:
             raise SystemExit(
-                "closure checker rejected package-local origin alias into lib/:\n"
+                "closure checker did not reject stale package provenance:\n"
                 + package_check.stderr
             )
         run(
@@ -461,6 +463,23 @@ def main() -> int:
             "--source-root", f"producer={producer}",
             env=env,
         )
+        package_check = subprocess.run(
+            [
+                sys.executable,
+                str(CHECKER),
+                str(bundle),
+                str(package_consumer),
+                "--require-provenance",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if package_check.returncode != 0:
+            raise SystemExit(
+                "closure checker rejected package-local origin alias into lib/:\n"
+                + package_check.stderr
+            )
 
         # Link-time aliases need to survive package staging and runtime
         # pruning so an isolated consumer can rebuild with the configured

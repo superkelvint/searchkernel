@@ -1,5 +1,87 @@
 use super::*;
 
+#[cfg(feature = "hardening")]
+#[test]
+fn delete_waits_for_upsert_source_visibility() {
+    use searchkernel_vespa_engine::hardening::{self, Action};
+    use std::sync::{mpsc, Arc};
+    use std::time::{Duration, Instant};
+
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-upsert-delete-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    std::fs::create_dir_all(&data).unwrap();
+    ConfigCompiler
+        .compile_to(
+            &Schema::new("searchkernel").field(
+                Field::new("value", FieldType::Integer)
+                    .attribute()
+                    .summary(),
+            ),
+            &config,
+        )
+        .unwrap();
+    let backend = Arc::new(VespaBackend::open(&data, &config).unwrap());
+    let stage = "mutation_before_visibility_wait";
+    hardening::set(&backend.engine, stage, 1, Action::Block).unwrap();
+    let writer = Arc::clone(&backend);
+    let upsert = std::thread::spawn(move || writer.upsert(UpsertRequestIr::new(test_document(1))));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !hardening::is_blocked(&backend.engine, stage).unwrap() {
+        if Instant::now() >= deadline {
+            hardening::release(&backend.engine, stage).unwrap();
+            let result = upsert.join().unwrap();
+            panic!("upsert did not reach visibility barrier: {result:?}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // The native put has completed, but its source-state wait has not. Delete
+    // must not remove that state before the upsert can observe it.
+    assert!(
+        !backend
+            .delete(DeleteRequestIr::new(
+                DocumentId::parse("other-doc").unwrap()
+            ))
+            .unwrap()
+            .deleted
+    );
+    let (started_sender, started_receiver) = mpsc::channel();
+    let (done_sender, done_receiver) = mpsc::channel();
+    let deleter = Arc::clone(&backend);
+    let delete = std::thread::spawn(move || {
+        started_sender.send(()).unwrap();
+        let result = deleter.delete(DeleteRequestIr::new(DocumentId::parse("doc-1").unwrap()));
+        done_sender.send(()).unwrap();
+        result
+    });
+    started_receiver.recv().unwrap();
+    let deleted_before_release = done_receiver.recv_timeout(Duration::from_secs(2)).is_ok();
+    hardening::release(&backend.engine, stage).unwrap();
+    let upsert_result = upsert.join().unwrap();
+    let delete_result = delete.join().unwrap();
+    let stored = backend.engine.get("doc-1").unwrap();
+    hardening::clear(&backend.engine, stage).unwrap();
+    let backend = Arc::try_unwrap(backend).unwrap_or_else(|_| panic!("backend still shared"));
+    backend.engine.close().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert!(
+        !deleted_before_release,
+        "delete bypassed the upsert visibility barrier"
+    );
+    assert!(upsert_result.is_ok(), "upsert failed: {upsert_result:?}");
+    assert!(delete_result.unwrap().deleted);
+    assert!(stored.is_none());
+}
+
 #[test]
 fn typed_query_b_non_empty_rejects_false_and_documents_alternatives_shape() {
     let error = lower_query(
