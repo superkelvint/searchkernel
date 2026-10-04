@@ -1,10 +1,56 @@
 use super::grouping::grouping_tree_node;
 use super::*;
 
+fn evidence_string(
+    pointer: *const ::std::os::raw::c_char,
+    length: u32,
+    label: &str,
+) -> Result<String, Error> {
+    if pointer.is_null() && length != 0 {
+        return Err(Error::message(format!("native match evidence returned null {label}")));
+    }
+    let bytes = if length == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(pointer.cast::<u8>(), length as usize) }
+    };
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| Error::message(format!("native match evidence returned invalid UTF-8 {label}")))
+}
+
 pub(crate) fn read_generic_search_result(
     pointer: NonNull<sys::sk_generic_search_result>,
 ) -> Result<SearchResult, Error> {
     let result = NativeGenericSearchResult(pointer);
+    let match_evidence_status =
+        unsafe { sys::sk_generic_search_result_match_evidence_status(result.0.as_ptr()) };
+    let known_match_evidence_status = sys::SK_MATCH_EVIDENCE_AVAILABLE
+        | sys::SK_MATCH_EVIDENCE_TRUNCATED
+        | sys::SK_MATCH_EVIDENCE_PARTIAL
+        | sys::SK_MATCH_EVIDENCE_FAILED;
+    if match_evidence_status & !known_match_evidence_status != 0 {
+        return Err(Error::message("native match-evidence status has unknown flags"));
+    }
+    let match_evidence_available =
+        match_evidence_status & sys::SK_MATCH_EVIDENCE_AVAILABLE != 0;
+    let match_evidence_truncated =
+        match_evidence_status & sys::SK_MATCH_EVIDENCE_TRUNCATED != 0;
+    let match_evidence_partial =
+        match_evidence_status & sys::SK_MATCH_EVIDENCE_PARTIAL != 0;
+    let match_evidence_failed =
+        match_evidence_status & sys::SK_MATCH_EVIDENCE_FAILED != 0;
+    if (match_evidence_truncated || match_evidence_partial) && !match_evidence_available {
+        return Err(Error::message(
+            "native match-evidence partial/truncated status is not available",
+        ));
+    }
+    if match_evidence_failed
+        && (match_evidence_available || match_evidence_truncated || match_evidence_partial)
+    {
+        return Err(Error::message(
+            "native match-evidence failed status is internally inconsistent",
+        ));
+    }
     let mut trace = ptr::null();
     let mut length = 0;
     let mut truncated = 0;
@@ -34,7 +80,8 @@ pub(crate) fn read_generic_search_result(
     {
         return Err(Error::message("native diagnostic metadata is invalid"));
     }
-    let diagnostics = if query_seconds == 0.0 && length == 0 && truncated == 0 {
+    let mut diagnostics =
+        if query_seconds == 0.0 && length == 0 && truncated == 0 && match_evidence_status == 0 {
         None
     } else {
         // The opaque result owns this bounded buffer. Copy before its Drop.
@@ -63,6 +110,7 @@ pub(crate) fn read_generic_search_result(
             matching_seconds,
             summary_seconds,
             query_seconds,
+            match_evidence: None,
         })
     };
     let hit_count = unsafe { sys::sk_generic_search_result_hit_count(result.0.as_ptr()) } as usize;
@@ -143,6 +191,7 @@ pub(crate) fn read_generic_search_result(
         match_feature_names.push(name);
     }
     let mut hits = Vec::with_capacity(hit_count);
+    let mut match_evidence_records = Vec::new();
     for index in 0..hit_count {
         let mut id = ptr::null();
         let mut id_length = 0;
@@ -168,6 +217,69 @@ pub(crate) fn read_generic_search_result(
         let id = unsafe { std::slice::from_raw_parts(id.cast::<u8>(), id_length as usize) };
         let document_id = String::from_utf8(id.to_vec())
             .map_err(|_| Error::message("native result returned invalid UTF-8"))?;
+        if match_evidence_available {
+            let evidence_count = unsafe {
+                sys::sk_generic_search_result_term_field_evidence_count(
+                    result.0.as_ptr(),
+                    index as u32,
+                )
+            } as usize;
+            if match_evidence_records.len().saturating_add(evidence_count) > 4096 {
+                return Err(Error::message(
+                    "native match evidence exceeds the bounded record count",
+                ));
+            }
+            for evidence_index in 0..evidence_count {
+                let mut term_id = 0;
+                let mut operator = ptr::null();
+                let mut operator_length = 0;
+                let mut term = ptr::null();
+                let mut term_length = 0;
+                let mut field = ptr::null();
+                let mut field_length = 0;
+                let mut matched = 0;
+                let mut error = NativeError::new();
+                let status = unsafe {
+                    sys::sk_generic_search_result_term_field_evidence(
+                        result.0.as_ptr(),
+                        index as u32,
+                        evidence_index as u32,
+                        &mut term_id,
+                        &mut operator,
+                        &mut operator_length,
+                        &mut term,
+                        &mut term_length,
+                        &mut field,
+                        &mut field_length,
+                        &mut matched,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                };
+                check(status, &error)?;
+                if matched > 1 {
+                    return Err(Error::message(
+                        "native match evidence returned invalid boolean",
+                    ));
+                }
+                let operator = evidence_string(operator, operator_length, "operator")?;
+                let term = evidence_string(term, term_length, "term")?;
+                let field = evidence_string(field, field_length, "field")?;
+                if operator.is_empty() || field.is_empty() {
+                    return Err(Error::message(
+                        "native match evidence returned an empty operator or field",
+                    ));
+                }
+                match_evidence_records.push(crate::search::TermFieldMatchEvidence {
+                    document_id: document_id.clone(),
+                    term_id,
+                    operator,
+                    term: (!term.is_empty()).then_some(term),
+                    field,
+                    matched: matched != 0,
+                });
+            }
+        }
         let summaries =
             unsafe { sys::sk_generic_search_result_summary_count(result.0.as_ptr(), index as u32) }
                 as usize;
@@ -423,6 +535,28 @@ pub(crate) fn read_generic_search_result(
                 .map(|(name, value)| (name, FieldValue::Scalar(value)))
                 .collect(),
         });
+    }
+    if match_evidence_status != 0 {
+        let match_evidence = crate::search::MatchEvidence {
+            available: match_evidence_available,
+            truncated: match_evidence_truncated,
+            partial: match_evidence_partial,
+            failed: match_evidence_failed,
+            records: match_evidence_records,
+        };
+        if let Some(diagnostics) = diagnostics.as_mut() {
+            diagnostics.match_evidence = Some(match_evidence);
+        } else {
+            diagnostics = Some(crate::search::SearchDiagnostics {
+                trace: String::new(),
+                truncated: false,
+                features_truncated: false,
+                matching_seconds: 0.0,
+                summary_seconds: 0.0,
+                query_seconds: 0.0,
+                match_evidence: Some(match_evidence),
+            });
+        }
     }
     let grouping_count = unsafe { sys::sk_generic_search_result_grouping_count(result.0.as_ptr()) };
     let mut facets = Vec::with_capacity(grouping_count as usize);
