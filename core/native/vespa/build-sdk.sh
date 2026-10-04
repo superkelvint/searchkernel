@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -eu
 
 # Do not let an application/runtime preload leak into the build tools. In

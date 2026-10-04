@@ -2219,7 +2219,7 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
     };
     assert_eq!(property(rank, "vespa.matching.numthreadspersearch"), "1");
     assert_eq!(property(rank, "private_property"), "[redacted]");
-    assert_eq!(property(rank, "private_tensor"), "[redacted]");
+    assert_eq!(property(rank, "query(private_tensor)"), "[redacted]");
     assert_eq!(property(features, "query(weight)"), "[redacted]");
     let snapshot_text = snapshot.to_string();
     for secret in ["private_term", "secret_value", "9182.5", "8371.25", "2.75"] {
