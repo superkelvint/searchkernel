@@ -91,7 +91,6 @@ export function SearchLab() {
     try { void execute(client.prepareSearch(pendingWrite.current?.state ?? state)) }
     catch (failure) { setError(normalizeClientError(failure)) }
   }
-  const update = (patch: Partial<ClientSearchRequest>) => writeState(updateSearchState(pendingWrite.current?.state ?? state, patch))
   useEffect(() => {
     const listener = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); run() } }
     addEventListener('keydown', listener); return () => removeEventListener('keydown', listener)
@@ -127,7 +126,6 @@ export function SearchLab() {
     </div></details>
     {visibleError && <div role="alert" className="surface mt-4 border-red-200 p-4 text-red-800"><strong>{visibleError.origin ?? 'client'} · {visibleError.code}</strong><p>{visibleError.message}</p><details><summary>Structured error</summary><pre className="overflow-auto text-xs">{errorJson}</pre></details></div>}
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
-      <section className="surface min-w-0 p-4" aria-label="Search results"><h2 className="font-semibold">Results</h2>{loading && <p role="status">Running request… Previous results are retained.</p>}{error && response && <p>Previous successful response retained; the latest request failed.</p>}{dirty && <p className="text-amber-700">Editor differs from the last executed request.</p>}<p>{response ? `${response.matches} matches` : executed ? 'No successful response yet.' : 'No query executed. Enter a query, or run an empty text query to browse.'} {response?.totalRelation} {response?.timingMs}</p>{response && !response.hits.length && <p>{String(response.matches) === '0' ? 'No hits matched this query.' : 'This page returned no hits.'}</p>}{response && <div className="my-3 flex flex-wrap gap-2">
       <section className="surface min-w-0 p-4" aria-label="Search results"><h2 className="font-semibold">Results</h2>{loading && <p role="status">Running request… Previous results are retained.</p>}{error && response && <p>Previous successful response retained; the latest request failed.</p>}{dirty && <p className="text-amber-700">Editor differs from the last executed request.</p>}<p>{response ? `${response.matches} matches` : executed ? 'No successful response yet.' : 'No query executed. Enter a query, or run an empty text query to browse.'} {response?.totalRelation} {response?.timingMs}</p>{response && !response.hits.length && <p>{String(response.matches) === '0' ? 'No hits matched this query.' : 'This page returned no hits.'}</p>}{response && <div className="my-3 flex flex-wrap gap-2">
         <button className="soft-button" disabled={!capabilities?.query.diagnostics} onClick={() => { setSelected([]); setDebuggerIntent(String(response.matches) === '0' ? 'zero-results' : 'query-interpretation') }}>{String(response.matches) === '0' ? 'Find out why' : "What's wrong with this search?"}</button>
         <button className="soft-button" disabled={!capabilities?.query.diagnostics || selected.length !== 2} onClick={() => setDebuggerIntent('ranking-comparison')}>Compare pinned results</button>
