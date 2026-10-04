@@ -200,6 +200,17 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SDK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ABI_HEADER");
     println!("cargo:rerun-if-changed={}", source_header.display());
+    // The diagnostic request snapshot embeds provenance from this manifest.
+    // Recompile the adapter when the pin or its build definition changes.
+    for source in ["manifest.json", "build-sdk.sh"] {
+        println!(
+            "cargo:rerun-if-changed={}",
+            manifest_dir
+                .join("../../native/vespa")
+                .join(source)
+                .display()
+        );
+    }
     println!(
         "cargo:rerun-if-changed={}",
         manifest_dir.join("../../native/vespa/abi.cc").display()
