@@ -8,9 +8,18 @@ fn filter_membership_preserves_the_same_native_in_node_as_typed_queries() {
         (
             PrimitiveDataTypeIr::String,
             "member IN ('Acme', 'TrailCo')",
-            vec![ScalarValueIr::String("Acme".into()), ScalarValueIr::String("TrailCo".into())],
-            vec![RequestValueIr::String("Acme".into()), RequestValueIr::String("TrailCo".into())],
-            vec![InQueryValue::String("Acme".into()), InQueryValue::String("TrailCo".into())],
+            vec![
+                ScalarValueIr::String("Acme".into()),
+                ScalarValueIr::String("TrailCo".into()),
+            ],
+            vec![
+                RequestValueIr::String("Acme".into()),
+                RequestValueIr::String("TrailCo".into()),
+            ],
+            vec![
+                InQueryValue::String("Acme".into()),
+                InQueryValue::String("TrailCo".into()),
+            ],
         ),
         (
             PrimitiveDataTypeIr::Int64,
@@ -33,10 +42,17 @@ fn filter_membership_preserves_the_same_native_in_node_as_typed_queries() {
             });
         }
         let definition = IndexDefinitionIr::new(None, vec![member], Vec::new()).unwrap();
-        let structured = FilterIr::In { field: field("member"), values };
-        let textual = bind_filter_expression(source, &definition, &FilterParameters::new()).unwrap();
+        let structured = FilterIr::In {
+            field: field("member"),
+            values,
+        };
+        let textual =
+            bind_filter_expression(source, &definition, &FilterParameters::new()).unwrap();
         assert_eq!(textual, structured);
-        let expected = Query::In { field: "member".into(), values: native_values };
+        let expected = Query::In {
+            field: "member".into(),
+            values: native_values,
+        };
         let typed = typed_expression(QueryExprKindIr::In {
             field: typed_field("member"),
             values: typed_values,
