@@ -61,7 +61,7 @@
       ]
     },
     "rust-native-e2e": {
-      "description": "Native Rust API integration tests against the Vespa engine"
+      "description": "Native Rust API integration and configuration recovery tests against the Vespa engine"
     },
     "native-crud": {
       "description": "Native Vespa engine CRUD integration tests"

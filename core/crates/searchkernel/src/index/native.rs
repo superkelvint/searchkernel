@@ -114,7 +114,7 @@ fn delete_tombstone_path(root: &std::path::Path) -> Result<std::path::PathBuf> {
 }
 
 #[cfg(feature = "native")]
-fn open_native_backend(
+pub(super) fn open_native_backend(
     data: &std::path::Path,
     config: &std::path::Path,
 ) -> std::result::Result<searchkernel_ir_adapter::VespaBackend, searchkernel_ir::PortableError> {
@@ -137,6 +137,7 @@ thread_local! {
 
 #[cfg(feature = "native")]
 pub(super) struct LifecycleLock {
+    pub(super) root: std::path::PathBuf,
     _file: std::fs::File,
 }
 
@@ -185,7 +186,10 @@ impl LifecycleLock {
                 path.display()
             )));
         }
-        Ok(Self { _file: file })
+        Ok(Self {
+            _file: file,
+            root: root.to_owned(),
+        })
     }
 }
 
@@ -400,6 +404,7 @@ impl Index {
         if !root.is_dir() {
             return Err(Error::not_found(root.display().to_string()));
         }
+        super::configuration::recover(root)?;
         let manifest = super::manifest::IndexManifest::read(root)?;
         let config = root.join("config");
         if !root.join("data").is_dir() || !config.is_dir() {

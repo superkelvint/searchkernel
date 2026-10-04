@@ -29,7 +29,9 @@ pub use backend::VespaBackend;
 pub(crate) use backend::{portable_coverage, portable_errors_from_native_issues};
 #[cfg(test)]
 pub(crate) use backend::{MutationProbe, SearchGroupingProbe};
-pub use schema::{compile_index_definition, validate_index_definition};
+pub use schema::{
+    compile_index_definition, rank_profile_change_supported, validate_index_definition,
+};
 #[cfg(test)]
 pub(crate) use search::filter::{lower_comparison, lower_filter};
 #[cfg(test)]

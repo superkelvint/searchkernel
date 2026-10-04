@@ -72,6 +72,16 @@ pub enum PathFailure {
 #[derive(Clone, Debug)]
 pub enum ControlPlaneRequest {
     ListIndexes,
+    PlanChange {
+        target: String,
+        expected_generation: Option<String>,
+        definition: Box<IndexDefinitionIr>,
+    },
+    ApplyChange {
+        target: String,
+        expected_generation: Option<String>,
+        plan_id: String,
+    },
     Create {
         target: String,
         definition: Box<IndexDefinitionIr>,
@@ -87,6 +97,25 @@ pub enum ControlPlaneRequest {
         target: String,
         expected_generation: Option<String>,
     },
+}
+
+/// Configuration plans use one error domain for missing, expired and replayed tokens.
+pub fn invalid_configuration_plan_error() -> PortableError {
+    PortableError::new(ErrorCode::InvalidArgument,
+        "Configuration plan is absent, expired, already used, or belongs to another target/incarnation")
+        .with_detail("invalid_configuration_plan", Some("plan_id"), "Validate the current draft again")
+}
+
+pub fn missing_configuration_definition_error() -> PortableError {
+    PortableError::new(
+        ErrorCode::InvalidArgument,
+        "Canonical index definition is required",
+    )
+    .with_detail(
+        MISSING_INDEX_DEFINITION_DETAIL_CODE,
+        Some("plan_index_change.definition"),
+        "Canonical index definition is required",
+    )
 }
 
 /// Discovery cannot reveal server paths or underlying filesystem diagnostics.

@@ -21,6 +21,7 @@ impl<'a> ::flatbuffers::Follow<'a> for ListIndexesResult<'a> {
 
 impl<'a> ListIndexesResult<'a> {
     pub const VT_TARGETS: ::flatbuffers::VOffsetT = 4;
+    pub const VT_CONFIGURATION: ::flatbuffers::VOffsetT = 6;
 
     #[inline]
     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -37,6 +38,9 @@ impl<'a> ListIndexesResult<'a> {
         args: &'args ListIndexesResultArgs<'args>,
     ) -> ::flatbuffers::WIPOffset<ListIndexesResult<'bldr>> {
         let mut builder = ListIndexesResultBuilder::new(_fbb);
+        if let Some(x) = args.configuration {
+            builder.add_configuration(x);
+        }
         if let Some(x) = args.targets {
             builder.add_targets(x);
         }
@@ -56,6 +60,19 @@ impl<'a> ListIndexesResult<'a> {
             >>(ListIndexesResult::VT_TARGETS, None)
         }
     }
+    #[inline]
+    pub fn configuration(&self) -> Option<ConfigurationCapabilities<'a>> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<::flatbuffers::ForwardsUOffset<ConfigurationCapabilities>>(
+                    ListIndexesResult::VT_CONFIGURATION,
+                    None,
+                )
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for ListIndexesResult<'_> {
@@ -68,6 +85,11 @@ impl ::flatbuffers::Verifiable for ListIndexesResult<'_> {
             .visit_field::<::flatbuffers::ForwardsUOffset<
                 ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<&'_ str>>,
             >>("targets", Self::VT_TARGETS, false)?
+            .visit_field::<::flatbuffers::ForwardsUOffset<ConfigurationCapabilities>>(
+                "configuration",
+                Self::VT_CONFIGURATION,
+                false,
+            )?
             .finish();
         Ok(())
     }
@@ -78,11 +100,15 @@ pub struct ListIndexesResultArgs<'a> {
             ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<&'a str>>,
         >,
     >,
+    pub configuration: Option<::flatbuffers::WIPOffset<ConfigurationCapabilities<'a>>>,
 }
 impl<'a> Default for ListIndexesResultArgs<'a> {
     #[inline]
     fn default() -> Self {
-        ListIndexesResultArgs { targets: None }
+        ListIndexesResultArgs {
+            targets: None,
+            configuration: None,
+        }
     }
 }
 
@@ -102,6 +128,17 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ListIndexesResultBuilder<'a, 
             ListIndexesResult::VT_TARGETS,
             targets,
         );
+    }
+    #[inline]
+    pub fn add_configuration(
+        &mut self,
+        configuration: ::flatbuffers::WIPOffset<ConfigurationCapabilities<'b>>,
+    ) {
+        self.fbb_
+            .push_slot_always::<::flatbuffers::WIPOffset<ConfigurationCapabilities>>(
+                ListIndexesResult::VT_CONFIGURATION,
+                configuration,
+            );
     }
     #[inline]
     pub fn new(
@@ -124,6 +161,7 @@ impl ::core::fmt::Debug for ListIndexesResult<'_> {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         let mut ds = f.debug_struct("ListIndexesResult");
         ds.field("targets", &self.targets());
+        ds.field("configuration", &self.configuration());
         ds.finish()
     }
 }

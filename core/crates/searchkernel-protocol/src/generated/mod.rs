@@ -222,8 +222,18 @@ pub mod search_kernel {
         pub use self::delete_index_result_generated::*;
         mod list_indexes_request_generated;
         pub use self::list_indexes_request_generated::*;
+        mod configuration_capabilities_generated;
+        pub use self::configuration_capabilities_generated::*;
         mod list_indexes_result_generated;
         pub use self::list_indexes_result_generated::*;
+        mod plan_index_change_request_generated;
+        pub use self::plan_index_change_request_generated::*;
+        mod plan_index_change_result_generated;
+        pub use self::plan_index_change_result_generated::*;
+        mod apply_index_change_request_generated;
+        pub use self::apply_index_change_request_generated::*;
+        mod apply_index_change_result_generated;
+        pub use self::apply_index_change_result_generated::*;
         mod index_definition_generated;
         pub use self::index_definition_generated::*;
         mod insert_request_generated;

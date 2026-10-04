@@ -2005,3 +2005,6 @@ fn diagnostics_observe_persistence_without_opening_and_track_incarnations() {
     assert_eq!(reopened.indexes[1].state, "persisted");
     registry.close_all().unwrap();
 }
+
+#[path = "multi_index/configuration_workflow.rs"]
+mod configuration_workflow;

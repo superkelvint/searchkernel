@@ -1,3 +1,4 @@
+import type { IndexDefinitionT } from '@searchkernel/client'
 import { IndexTargetT } from '@searchkernel/client'
 export { IndexTargetT }
 export type Target = string | IndexTargetT
@@ -43,6 +44,7 @@ export type Field = {
 
 export type Index = {
   id: string
+  definition?: IndexDefinitionT
   generation?: string
   target?: IndexTargetT
   profileInputs?: Record<string, string>
@@ -115,12 +117,14 @@ export function normalizeClientError(error: unknown): SearchKernelClientError {
 }
 
 export interface SearchKernelClient {
-  validateDefinition?(definition: string, options?: RequestOptions): Promise<void>
-  createIndex?(name: string, definition: string): Promise<Index>
+  createIndex?(name: string, definition: IndexDefinitionT): Promise<Index>
   openIndex?(name: string, options?: RequestOptions): Promise<Index>
   deleteIndex?(target: IndexTargetT, options?: RequestOptions): Promise<void>
   daemonStatus?(options?: RequestOptions): Promise<DaemonStatus>
   indexDiagnostics?(target: IndexTargetT, options?: RequestOptions): Promise<{ status: IndexStatus; definition: unknown; canonical: string }>
+  planIndexChange?(target: Target, definition: IndexDefinitionT, options?: RequestOptions): Promise<ConfigurationPlan>
+  applyIndexChange?(target: Target, planId: string, options?: RequestOptions): Promise<Index>
+  reopenIndex?(target: Target, options?: RequestOptions): Promise<Index>
   capabilities(): Promise<Capabilities>
   listIndexes(options?: RequestOptions): Promise<Array<{ id: string }>>
   getIndex(indexId: Target, options?: RequestOptions): Promise<Index | undefined>
@@ -145,3 +149,5 @@ export function reconcileTarget(target: IndexTargetT, inventory: IndexStatus[]):
   if (item.state === 'transitioning') return 'transitioning'
   return item.generation === target.generation ? 'current' : 'stale'
 }
+
+export type ConfigurationPlan = { definition: IndexDefinitionT; generation?: string; planId: string; supported: boolean; requiresReopen: boolean; reasons: string[] }

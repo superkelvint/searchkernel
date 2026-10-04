@@ -1,7 +1,7 @@
 import { prepareDocumentMutation, preparedDocumentRequest } from './document-request'
 import { prepareSearch, preparedRequest } from './search-request'
 import {
-  Client, IndexTargetT, fromCanonicalJson, GrpcWebTransport, Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
+  Client, IndexTargetT, GrpcWebTransport, Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
   SearchResults, ResultDecodeError, ValueDecodeError, fromValue, toCanonicalJson, DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
   type IndexDefinitionT, type ClientTransport,
 } from '@searchkernel/client'
@@ -35,6 +35,7 @@ function text(value: string | Uint8Array | null): string {
 function metadata(target: string, definition: IndexDefinitionT): Index {
   return {
     id: target,
+    definition,
     profileInputs: Object.fromEntries(definition.rankProfiles.map(profile => [text(profile.name), JSON.stringify(profile.inputs.map(toCanonicalJson), null, 2)])),
     profiles: definition.rankProfiles.map(profile => text(profile.name)),
     summaries: definition.documentSummaries.map(summary => text(summary.name)),
@@ -58,8 +59,8 @@ const capabilities: Capabilities = {
   documents: { read: true, write: true, bulk: false },
   search: { basic: true, sort: true, facets: false, grouping: false },
   analysis: { text: false }, query: { inspect: false },
-  schema: { read: true, write: false, changePlan: false },
-  ranking: { profiles: true, features: false, write: false },
+  schema: { read: true, write: false, changePlan: true },
+  ranking: { profiles: true, features: false, write: true },
   summaries: { read: true, write: false }, metrics: { query: false, storage: false },
   admin: { overview: false, health: true, diagnostics: true },
 }
@@ -85,6 +86,7 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
   const daemon = new Daemon(endpoint, transport?.())
   type BoundIndex = Pick<RemoteIndex, 'client' | 'definition' | 'generation'>
   const handles = new Map<string, Promise<BoundIndex>>()
+  const configurationClients = new Map<string, { client: Client; target: string }>()
   async function call<T>(read: () => Promise<T>): Promise<T> {
     try { return await read() } catch (error) { throw daemonError(error) }
   }
@@ -137,16 +139,28 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
   }
   return {
     daemonStatus: status,
-    validateDefinition(definition, options) { return call(async () => {
-      const canonical = toCanonicalJson(fromCanonicalJson('IndexDefinition', JSON.parse(definition)))
-      let response: Response
-      try { response = await fetch(`${endpoint.replace(/\/$/, '')}/admin/validate-definition`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(canonical), signal: options?.signal }) }
-      catch (error) { throw new TransportError('Definition validation could not reach the daemon', error) }
-      if (!response.ok) throw new TransportError(`Definition validation failed: HTTP ${response.status}`)
-      const result = await response.json()
-      if (result.payload_type === 'SearchKernel_Wire_Error') throw new SearchKernelError(result.payload.message, fromCanonicalJson('Error', result.payload) as NonNullable<ConstructorParameters<typeof SearchKernelError>[1]>)
+    createIndex(name, definition) { return call(async () => retained(name, await RemoteIndex.create(endpoint, name, definition, transport?.()))) },
+    planIndexChange(target, definition, options) { return call(async () => {
+      // Configuration owns a separate client: ApplyIndexChange updates its
+      // binding, and must never mutate a cached historical incarnation handle.
+      const client = new Client(transport?.() ?? new GrpcWebTransport(endpoint), targetName(target))
+      if (typeof target !== 'string') client.bindGeneration(target.generation)
+      const plan = await client.planIndexChange(definition, options)
+      if (!plan.definition) throw new ProtocolError('Plan result is missing the canonical definition')
+      configurationClients.set(text(plan.planId), { client, target: targetKey(target) })
+      return { definition: plan.definition, generation: plan.generation ? text(plan.generation) : undefined, planId: text(plan.planId), supported: plan.supported, requiresReopen: plan.requiresReopen, reasons: plan.reasons }
     }) },
-    createIndex(name, definition) { return call(async () => retained(name, await RemoteIndex.create(endpoint, name, fromCanonicalJson('IndexDefinition', JSON.parse(definition)) as IndexDefinitionT, transport?.()))) },
+    applyIndexChange(target, planId, options) { return call(async () => {
+      const owner = configurationClients.get(planId)
+      if (!owner || owner.target !== targetKey(target)) throw new SearchKernelClientError('Validate this exact target before applying.', { code: 'invalid_configuration_plan', origin: 'client' })
+      const result = await owner.client.applyIndexChange(planId, options)
+      if (!result.index) throw new ProtocolError('Apply result is missing the canonical definition')
+      configurationClients.delete(planId)
+      owner.client.bindGeneration(result.generation)
+      owner.client.indexDefinition = result.index
+      return retained(targetName(target), { client: owner.client, definition: result.index, generation: text(result.generation) })
+    }) },
+    reopenIndex(target, options) { return this.openIndex!(targetName(target), options) },
     openIndex(name, options) { return call(async () => retained(name, await RemoteIndex.open(endpoint, name, transport?.(), options))) },
     deleteIndex(target, options) { return call(async () => { await (await opened(target, options)).client.deleteIndex(options) }) },
     indexDiagnostics(target, options) { return call(async () => {
@@ -162,7 +176,15 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
       }
       return { status: current, definition: toCanonicalJson(definition), canonical: JSON.stringify({ status: current, definition: toCanonicalJson(definition) }, null, 2) }
     }) },
-    async capabilities() { return capabilities },
+    capabilities() { return call(async () => {
+      const discovery = await daemon.client.listIndexes()
+      const configuration = discovery.configuration
+      return { ...capabilities,
+        indexes: { ...capabilities.indexes, create: configuration?.createIndex ?? false },
+        schema: { ...capabilities.schema, write: configuration?.fieldMutation ?? false, changePlan: configuration?.changePlan ?? false },
+        ranking: { ...capabilities.ranking, write: configuration?.rankProfilesWrite ?? false },
+      }
+    }) },
     listIndexes(options) { return call(async () => (await daemon.listIndexes(options)).map(id => ({ id }))) },
     getIndex(target, options) { return call(async () => {
       const index = await opened(target, options)

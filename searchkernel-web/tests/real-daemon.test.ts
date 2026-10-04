@@ -524,23 +524,37 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W4 browser l
     await page.getByText('not_found', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Refresh inventory / select current incarnation', exact: true }).click()
     await page.getByText('No persisted indexes.', { exact: true }).waitFor()
-    // Semantic validation traverses the daemon's canonical resolver without creating storage.
     const definition = JSON.stringify({ name: 'w4_schema', fields: [{ name: 'title', data_type: { kind_type: 'PrimitiveDataType', kind: { kind: 'String' } }, stored: { value: true }, searchable: { value: true }, matching: { mode: 'Text' } }] })
-    await page.getByLabel('Canonical IndexDefinition').fill(JSON.stringify({ ...JSON.parse(definition), fields: [...JSON.parse(definition).fields, ...JSON.parse(definition).fields] }))
-    await page.getByRole('button', { name: 'Validate definition', exact: true }).click()
-    await page.getByRole('alert').filter({ hasText: 'invalid_argument' }).waitFor()
-    await page.getByLabel('Canonical IndexDefinition').fill(definition)
-    await page.getByRole('button', { name: 'Validate definition', exact: true }).click()
-    await page.getByText('validated', { exact: true }).waitFor()
+    async function edit(name: string, json = definition) {
+      await page.goto(`${ui}/indexes/new`)
+      await page.getByLabel('Index target', { exact: true }).fill(name)
+      await page.getByRole('button', { name: 'Edit canonical definition', exact: true }).click()
+      await page.getByLabel('Canonical IndexDefinition').fill(json)
+    }
+    async function validate() {
+      await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+      await page.getByText('Validation passed', { exact: true }).waitFor()
+      await page.getByRole('checkbox', { name: /I confirm applying/ }).check()
+    }
     async function create(name: string) {
-      await page.getByLabel('Logical index name').fill(name)
+      await edit(name); await validate()
       await page.getByRole('button', { name: 'Create index', exact: true }).click()
-      await page.getByText(new RegExp(`Created and open: ${name}`)).waitFor()
+      await page.getByRole('heading', { name: 'Complete canonical definition', exact: true }).waitFor()
+      await page.goto(`${ui}/indexes`)
       await page.getByRole('article', { name: `Index ${name}`, exact: true }).waitFor()
     }
+    await edit('alpha', JSON.stringify({ ...JSON.parse(definition), fields: [...JSON.parse(definition).fields, ...JSON.parse(definition).fields] }))
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: 'invalid_argument' }).waitFor()
     await create('alpha'); await create('beta')
+    // Canonical create must refuse a target created after validation by another client.
+    await edit('race'); await validate()
+    const racer = await Index.create(endpoint, 'race', new IndexDefinitionT('w4_schema', [new Text({ stored: true, searchable: true }).definition('title')]))
+    handles.push(racer)
     await page.getByRole('button', { name: 'Create index', exact: true }).click()
     await page.getByRole('alert').filter({ hasText: 'already_exists' }).waitFor()
+    await Index.delete(endpoint, 'race')
+    await page.goto(`${ui}/indexes`)
     const alpha = await Index.open(endpoint, 'alpha'), beta = await Index.open(endpoint, 'beta')
     handles.push(alpha, beta)
     expect(alpha.generation).not.toBe(beta.generation)
@@ -577,9 +591,6 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W4 browser l
     expect((await beta.get('sibling'))?.title).toBe('durable sibling')
     await expect(alpha.get('one')).rejects.toMatchObject({ code: 'not_found' })
     await expect(Index.open(endpoint, 'alpha')).rejects.toMatchObject({ code: 'not_found' })
-    await page.getByLabel('Canonical IndexDefinition').fill(definition)
-    await page.getByRole('button', { name: 'Validate definition', exact: true }).click()
-    await page.getByText('validated', { exact: true }).waitFor()
     await create('alpha')
     let replacement = await Index.open(endpoint, 'alpha'); handles.push(replacement)
     expect(replacement.generation).not.toBe(alpha.generation)
@@ -678,3 +689,80 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W4 browser l
     await browser?.close(); await stop(vite); await Promise.all(handles.map(index => index.close())); await stop(daemon); await rm(root, { recursive: true, force: true })
   }
 }, 180_000)
+
+test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('schema and ranking administration validates, applies and persists the supported slice', async () => {
+  const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-configuration-browser-'))
+  const grpcPort = await port(), webPort = await port(), uiPort = await port()
+  const endpoint = `127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`
+  let daemon: ChildProcess | undefined, vite: ChildProcess | undefined, browser: Browser | undefined
+  async function start() {
+    daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'),
+      ['--data-root', root, '--listen', endpoint, '--web-listen', `127.0.0.1:${webPort}`, '--web-origin', `http://127.0.0.1:${uiPort}`], { stdio: 'inherit' })
+    await reachable(webEndpoint, daemon)
+  }
+  try {
+    await start()
+    vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(uiPort)], {
+      env: { ...process.env, VITE_SEARCHKERNEL_ENDPOINT: webEndpoint }, stdio: 'inherit',
+    })
+    await reachable(`http://127.0.0.1:${uiPort}`, vite)
+    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+    const page = await browser.newPage()
+    await page.goto(`http://127.0.0.1:${uiPort}/indexes/new`)
+    await page.getByRole('textbox', { name: 'Index target', exact: true }).fill('catalog')
+    await page.getByRole('textbox', { name: 'Schema name', exact: true }).fill('products')
+    for (const [position, field] of ([['sku', 'keyword'], ['stock', 'int'], ['price', 'float'], ['active', 'bool']] as const).entries()) {
+      await page.getByRole('button', { name: 'Add field', exact: true }).click()
+      await page.getByRole('textbox', { name: `Field ${position + 2} name`, exact: true }).fill(field[0])
+      await page.getByRole('combobox', { name: 'Type', exact: true }).nth(position + 1).selectOption(field[1])
+    }
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByText('Validation passed', { exact: true }).waitFor()
+    expect(await page.getByRole('button', { name: 'Create index', exact: true }).isEnabled()).toBe(false)
+    await page.getByRole('checkbox', { name: /I confirm applying/ }).check()
+    await page.getByRole('button', { name: 'Create index', exact: true }).click()
+    await page.getByRole('heading', { name: 'Complete canonical definition', exact: true }).waitFor()
+    const writer = await Index.open(endpoint, 'catalog')
+    await writer.upsert('one', { title: 'orchid', sku: 'orchid-1', stock: 4n, price: 1.5, active: true })
+    await writer.close()
+    await page.goto(`http://127.0.0.1:${uiPort}/indexes/catalog/configuration/ranking`)
+    await page.getByRole('button', { name: 'Create profile', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Profile name', exact: true }).fill('custom')
+    await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).fill('1')
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByText('Validation passed', { exact: true }).waitFor()
+    // Editing after validation removes the apply control immediately.
+    await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).fill('2')
+    expect(await page.getByRole('button', { name: 'Apply validated change', exact: true }).count()).toBe(0)
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByText('Validation passed', { exact: true }).waitFor()
+    await page.getByRole('checkbox', { name: /I confirm applying/ }).check()
+    await page.getByRole('button', { name: 'Apply validated change', exact: true }).click()
+    await page.getByRole('button', { name: 'custom', exact: true }).waitFor()
+    await page.locator('input[readonly]').waitFor()
+    await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).fill('invalid_function(')
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).click()
+    await page.getByRole('alert').waitFor()
+    expect(await page.getByRole('button', { name: 'Apply validated change', exact: true }).count()).toBe(0)
+    await stop(daemon); await start()
+    const current = await Index.open(endpoint, 'catalog')
+    await page.reload()
+    await page.getByText(/Continuing with this handle is unsafe/).waitFor()
+    await page.goto(`http://127.0.0.1:${uiPort}/indexes`)
+    await page.getByRole('button', { name: 'catalog', exact: true }).click()
+    await page.getByRole('button', { name: 'Search documents', exact: true }).waitFor()
+    await page.goto(`http://127.0.0.1:${uiPort}/indexes/catalog/configuration/ranking?generation=${current.generation}`)
+    await current.close()
+    await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).waitFor()
+    expect(await page.getByRole('textbox', { name: 'First-phase expression', exact: true }).inputValue()).toBe('2')
+    const reopened = await Index.open(endpoint, 'catalog')
+    try {
+      expect(await reopened.get('one')).toMatchObject({ title: 'orchid', sku: 'orchid-1', stock: 4n, price: 1.5, active: true })
+      const result = await reopened.search('orchid').ranking('custom').execute()
+      expect(result.hits[0]?.score).toBe(2)
+    } finally { await reopened.close() }
+  } finally {
+    await browser?.close(); await stop(vite); await stop(daemon)
+    await rm(root, { recursive: true, force: true })
+  }
+}, 120_000)
