@@ -60,7 +60,7 @@ async fn real_pinned_consumer_uses_public_endpoint_and_vespa() {
         for i in 1..=count {
             let mut document = json!({
                 "title": if i <= 18 { format!("Wireless <angle> & Headphones {i:02}") } else { format!("Wired Speaker {i:02}") },
-                "description": format!("{} {} {}", "An introductory description. ".repeat(40), if i <= 18 { "wireless headphones" } else { "wired speaker" }, "Long trailing text. ".repeat(40)),
+                "description": format!("{} {} {}", "An introductory description. ".repeat(40), if i <= 18 { "wireless <img src=x> & headphones" } else { "wired speaker" }, "Long trailing text. ".repeat(40)),
                 "brand": if i % 2 == 1 { "Acme" } else { "Bravo" },
                 "category": if i <= 18 { "audio" } else { "home" }, "price": i * 10, "stock": i % 2 == 1, "rating": i as f64 / 10.0
             });
@@ -164,6 +164,7 @@ async fn real_pinned_consumer_uses_public_endpoint_and_vespa() {
         ("products", "wireless", 3, 3),
         ("other", "speaker", 2, 0),
         ("products", "speaker", 0, 0),
+        ("products", "wireless headphones", 20, 0),
     ] {
         let request = searchkerneld::public_search::PublicSearchRequest {
             endpoint: name.into(),

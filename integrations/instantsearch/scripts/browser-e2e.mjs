@@ -48,6 +48,8 @@ try {
   assert.equal(await page.locator('#hits angle').count(),0);
   assert.ok((await page.locator('#hits h2').first().textContent()).includes('<angle> &'));
   assert.ok(await page.locator('#hits p mark').count());
+  assert.equal(await page.locator('#hits p img').count(),0);
+  assert.ok((await page.locator('#hits p').first().textContent()).includes('<img src=x> &'));
   await page.locator('#pagination a').getByText('2',{exact:true}).click();
   await state({page:1});
   await page.locator('#pagination a').getByText('3',{exact:true}).click();
