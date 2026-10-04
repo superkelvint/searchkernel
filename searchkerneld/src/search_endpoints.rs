@@ -1228,6 +1228,7 @@ impl SearchEndpointRouter {
     }
 
     // GET parsing produces the same neutral inputs as POST, then uses the same binder.
+    #[cfg(feature = "native")]
     fn prepare_get(
         &self,
         path: &str,
