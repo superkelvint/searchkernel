@@ -4,15 +4,17 @@ import type { ClientDiagnostics, ClientSearchResponse, DiagnosticOptions, Index,
 import { normalizeClientError } from '../../api/searchkernel-client'
 import { CanonicalInspector, CopyButton, ErrorNotice } from '../../components/Workbench'
 import { diagnosticBundle, signalComparison } from './diagnostic-export'
+import { ReopenIndex } from '../configuration/ChangeWorkflow'
 
 function parseEnginePayload(payload: string): unknown {
   try { return JSON.parse(payload) } catch { return payload }
 }
 
 function EvidenceTree({ value, name = 'Root' }: { value: unknown; name?: string }) {
+  const [expanded, setExpanded] = useState(false)
   if (value === null || typeof value !== 'object') return <p><strong>{name}:</strong> {JSON.stringify(value)}</p>
   const entries = Object.entries(value)
-  return <details><summary>{name} · {entries.length} {Array.isArray(value) ? 'items' : 'properties'}</summary><div className="ml-4 border-l pl-3">{entries.map(([key, child]) => <EvidenceTree key={key} name={key} value={child}/>)}</div></details>
+  return <details onToggle={event => setExpanded(event.currentTarget.open)}><summary>{name} · {entries.length} {Array.isArray(value) ? 'items' : 'properties'}</summary>{expanded && <div className="ml-4 border-l pl-3">{entries.map(([key, child]) => <EvidenceTree key={key} name={key} value={child}/>)}</div>}</details>
 }
 
 const problems: { label: string; intent: DiagnosticOptions['intent'] }[] = [
@@ -92,6 +94,8 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
     <div className="my-3 flex gap-2" role="tablist" aria-label="Diagnostic workflow">{(['Explain', 'Investigate', 'Inspect'] as const).map((name, i, names) => <button className="soft-button" id={`diagnostic-tab-${name}`} aria-controls={`diagnostic-panel-${name}`} key={name} role="tab" tabIndex={tab === name ? 0 : -1} aria-selected={tab === name} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? names[0] : event.key === 'End' ? names[2] : names[(i + (event.key === 'ArrowRight' ? 1 : 2)) % 3]; setTab(next); document.getElementById(`diagnostic-tab-${next}`)?.focus() } }} onClick={() => setTab(name)}>{name}</button>)}</div>
     {loading && <div role="status" aria-live="polite"><p>{loading} Original search results remain visible.</p><button className="soft-button" onClick={() => { ++sequence.current; abort.current?.abort(); setLoading(''); setError(new Error('Diagnostic collection cancelled. Retained evidence belongs to the preceding completed run.')) }}>Cancel diagnostics</button></div>}
     <ErrorNotice error={error}/>
+    {error && <div className="my-3 text-sm"><p>Diagnostics remain bound to target {index.id}, generation {index.generation}. If this incarnation changed, reopen explicitly; operations are never silently retargeted.</p><ReopenIndex target={index.id}/></div>}
+
     {result && <div className="my-3 rounded border p-3 text-sm"><strong>{result.execution.kind === 'Experiment' ? 'Experimental rerun' : result.execution.kind === 'Counterfactual' ? 'Counterfactual diagnostic rerun — not the original execution' : 'Diagnostic rerun — not the original execution'}</strong><p>Run {result.execution.id} · {result.execution.complete ? 'Complete' : 'Incomplete; do not treat this as a complete explanation.'}</p>{result.sourceRun && <p>Original run: {result.sourceRun.id}</p>}{result.comparison?.changed && <p role="status">Results changed from the original search. Overlap: {result.comparison.overlapCount}/{result.comparison.comparisonCount} returned documents.</p>}{result.warnings.map((warning, i) => <p key={i}>{warning}</p>)}</div>}
     {tab === 'Explain' && <div role="tabpanel" id="diagnostic-panel-Explain" aria-labelledby="diagnostic-tab-Explain">
       {!selected.length && <p>Select a result to ask “Why this result?”, or enable the Explain lens to scan named signals.</p>}

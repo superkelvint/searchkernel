@@ -9,7 +9,7 @@ import { createServer, createConnection } from 'node:net'
 import { Daemon, Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client/node'
 
 test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diagnostics keep original results, investigate, compare, experiment and reject reincarnation', async () => {
-  const { RankProfile, TensorField, Tensor, SearchRequestBuilder, QueryDiagnosticsRequestT, DiagnosticIntent, DiagnosticSection, DiagnosticStatus, DiagnosticLimitsT, OptionalUInt32T, fromCanonicalJson, toCanonicalJson, q } = await import('@searchkernel/client/node')
+  const { RankProfile, TensorField, Tensor, SearchRequestBuilder, QueryDiagnosticsRequestT, DiagnosticIntent, DiagnosticSection, DiagnosticStatus, DiagnosticLimitsT, OptionalUInt32T, fromCanonicalJson, toCanonicalJson, q, TypedQueryT, ValueEntryT, value } = await import('@searchkernel/client/node')
   const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-w5-e2e-'))
   const grpcPort = await port(), webPort = await port(), uiPort = await port()
   const endpoint = `127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`, ui = `http://127.0.0.1:${uiPort}`
@@ -34,6 +34,9 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     for (const [id, title, quantity, vector] of [['a', 'orchid blue', 7, [1, 0]], ['b', 'orchid red', 11, [0.9, 0.1]], ['c', 'tulip white', 13, [0, 1]]] as const) {
       await index.upsert(id, { title, quantity, embedding: Tensor.dense('tensor(x[2])', [...vector]) })
     }
+    // Keep NN target hits well below the indexed corpus size; a three-document
+    // corpus cannot exercise meaningful approximate top-k acquisition.
+    for (let n = 0; n < 48; n++) await index.upsert(`vector-${n}`, { title: 'vector diagnostic corpus', quantity: 100 + n, embedding: Tensor.dense('tensor(x[2])', [2 + n, 0]) })
     await index.close(); await stop(daemon); await start()
     index = await Index.open(endpoint, 'debugger')
     const canonical = new SearchRequestBuilder('orchid').ranking('signals').input('boost', 2).limit(10).build()
@@ -47,7 +50,9 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     expect(explained.hits).toHaveLength(2)
     expect(explained.hits[0]?.signals.find(value => value.name === 'bm25(title)')?.comparisonCount).toBe(2)
     expect(explained.evidence.find(value => value.section === DiagnosticSection.Counterfactual)?.status).toBe(DiagnosticStatus.Unsupported)
-    const vectorRequest = new SearchRequestBuilder(q.nearestNeighbor('embedding', 'q')).ranking('vector').input('q', Tensor.dense('tensor(x[2])', [1, 0])).limit(2).build()
+    const neighbor = q.nearestNeighbor('embedding', 'q')
+    ;(neighbor.source as InstanceType<typeof TypedQueryT>).query!.annotations = [new ValueEntryT('approximate', value(true)), new ValueEntryT('targetNumHits', value(10))]
+    const vectorRequest = new SearchRequestBuilder(neighbor).ranking('vector').input('q', Tensor.dense('tensor(x[2])', [1, 0])).limit(2).build()
     const vectorDiagnostic = new QueryDiagnosticsRequestT(vectorRequest, DiagnosticIntent.VectorRetrieval, [DiagnosticSection.Vectors])
     vectorDiagnostic.compareExact = true
     const vectors = await index.queryDiagnostics(vectorDiagnostic)
@@ -57,7 +62,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     expect(JSON.stringify(toCanonicalJson(vectors.hits[0]!.signals.find(value => value.name === 'query(q)')!))).toContain('tensor(x[2])')
     const profileDiagnostic = new QueryDiagnosticsRequestT(canonical, DiagnosticIntent.Performance, [DiagnosticSection.MatchingProfiler, DiagnosticSection.FirstPhaseProfiler, DiagnosticSection.SecondPhaseProfiler])
     const profiled = await index.queryDiagnostics(profileDiagnostic)
-    for (const section of profileDiagnostic.requestedEvidence) expect(profiled.evidence.find(item => item.section === section)?.status).toBe(DiagnosticStatus.Available)
+    for (const section of profileDiagnostic.requestedEvidence) expect(profiled.evidence.find(item => item.section === section)?.status, JSON.stringify(toCanonicalJson(profiled))).toBe(DiagnosticStatus.Available)
     expect(profiled.rawEngine[0]?.version).toBe('2300ef0412bdb76f227ae3b497c8ca5e73c5da4e')
     const truncatedRequest = new QueryDiagnosticsRequestT(canonical, DiagnosticIntent.DeepEngine, [DiagnosticSection.Trace, DiagnosticSection.RawEngine])
     truncatedRequest.limits = new DiagnosticLimitsT(); truncatedRequest.limits.rawBytes = new OptionalUInt32T(128)
@@ -88,6 +93,10 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     await page.getByRole('tab', { name: 'Inspect', exact: true }).click()
     await page.getByRole('button', { name: 'Inspect Vespa internals', exact: true }).click()
     await page.getByText(/Vespa internals · Trace ·/).waitFor()
+    await page.getByText(/Vespa internals · Trace ·/).click()
+    await page.getByText('Raw engine payload', { exact: true }).click()
+    expect((await page.getByLabel('Raw engine payload inspector', { exact: true }).innerText()).length).toBeGreaterThan(10)
+
     await page.getByRole('button', { name: 'Close evidence', exact: true }).click()
     await page.getByLabel('Ranking profile', { exact: true }).fill('signals')
     await page.getByLabel('Query inputs', { exact: true }).fill('{"boost":2}')
