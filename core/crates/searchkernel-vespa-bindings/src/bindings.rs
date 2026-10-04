@@ -88,7 +88,11 @@ pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
 pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
 pub const SK_FEATURE_VALUE_DATA: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 16;
+pub const SK_NATIVE_ABI_VERSION: u32 = 17;
+pub const SK_MATCH_EVIDENCE_AVAILABLE: u32 = 1;
+pub const SK_MATCH_EVIDENCE_TRUNCATED: u32 = 2;
+pub const SK_MATCH_EVIDENCE_PARTIAL: u32 = 4;
+pub const SK_MATCH_EVIDENCE_FAILED: u32 = 8;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -1550,6 +1554,14 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_generic_search_request_set_match_evidence(
+        request: *mut sk_generic_search_request,
+        hit_limit: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_request_add_sort(
         request: *mut sk_generic_search_request,
         field: *const ::std::os::raw::c_char,
@@ -1703,6 +1715,34 @@ unsafe extern "C" {
         out_matching_seconds: *mut f64,
         out_summary_seconds: *mut f64,
         out_query_seconds: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_match_evidence_status(
+        result: *const sk_generic_search_result,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_term_field_evidence_count(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_term_field_evidence(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        evidence_index: u32,
+        out_term_id: *mut u32,
+        out_operator: *mut *const ::std::os::raw::c_char,
+        out_operator_length: *mut u32,
+        out_term: *mut *const ::std::os::raw::c_char,
+        out_term_length: *mut u32,
+        out_field: *mut *const ::std::os::raw::c_char,
+        out_field_length: *mut u32,
+        out_matched: *mut u8,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
