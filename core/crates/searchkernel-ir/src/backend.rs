@@ -39,6 +39,7 @@ pub trait Backend: Send + Sync {
         self.search(request)
             .map(|result| crate::DiagnosticSearchResult {
                 result,
+                evidence: Vec::new(),
                 raw_engine: Vec::new(),
                 observed_sections: Vec::new(),
             })
