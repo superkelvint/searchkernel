@@ -3,7 +3,7 @@
 pub mod control_plane;
 mod diagnostics;
 mod document;
-pub use diagnostics::query_diagnostics_to_ir;
+pub use diagnostics::{query_diagnostics_to_ir, validate_diagnostic_identity};
 mod filter;
 mod grouping;
 mod query;

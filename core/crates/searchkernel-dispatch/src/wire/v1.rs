@@ -184,6 +184,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 let request = ir_wire::query_diagnostics_to_ir(context, payload)?;
                 let target = envelope.target().and_then(|target| target.name());
                 let generation = envelope.target().and_then(|target| target.generation());
+                ir_wire::validate_diagnostic_identity(target, generation)?;
                 let source =
                     dispatcher.source_run(request.source_run_id.as_deref(), target, generation)?;
                 let execution = dispatcher.execution(

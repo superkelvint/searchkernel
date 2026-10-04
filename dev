@@ -663,9 +663,6 @@ universe() {
                     universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
                 fi
                 ;;
-            frontend.f8)
-            "$ROOT/tools/frontend-harness/frontend-accept" F8
-            ;;
         product.integration)
                 if ((m14_baseline_proved)); then
                     universe_dev_step "semantic verifier $target" verify "$target" --baseline-already-proved --skip-workspace-quality
@@ -840,6 +837,9 @@ verify_target() {
     set -- "$target" "$@"
 
     case "$target" in
+        frontend.f8)
+            "$ROOT/tools/frontend-harness/frontend-accept" F8
+            ;;
         product.integration)
             "$ROOT/reference/vespa/verify-through.sh" "$@"
             ;;
