@@ -35,6 +35,7 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
     Fragment fragment;
     bool highlighted = false;
     uint32_t highlight_start = 0;
+    bool continued_start = false;
     const auto flush_fragment = [&]() {
         if (!fragment.text.empty() || !fragment.matches.empty()) {
             fragments.push_back(std::move(fragment));
@@ -42,6 +43,24 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
         }
     };
     for (size_t index = 0; index < teaser.size();) {
+        if (continued_start) {
+            continued_start = false;
+            const auto terminator = teaser.find(annotation_terminator, index);
+            const auto anchor = teaser.find(annotation_anchor, index);
+            const auto separator = teaser.find(annotation_separator, index);
+            const auto boundary = teaser.find_first_of("\x1e\x1f", index);
+            // SummaryDesc can begin a continued excerpt inside an annotation.
+            // Preserve surface text before a remaining separator, and discard
+            // clipped metadata through the terminator before any delimiter.
+            if (terminator != std::string_view::npos && terminator < anchor &&
+                terminator < boundary) {
+                if (separator < terminator) {
+                    fragment.text.append(teaser.substr(index, separator - index));
+                }
+                index = terminator + annotation_terminator.size();
+                continue;
+            }
+        }
         if (teaser[index] == '\x1f') {
             if (!highlighted) {
                 highlighted = true;
@@ -56,18 +75,40 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
                 throw std::runtime_error("Vespa teaser continuation interrupts highlight markup");
             }
             flush_fragment();
+            continued_start = true;
             ++index;
         } else if (teaser.substr(index, annotation_anchor.size()) == annotation_anchor) {
             const auto separator = teaser.find(annotation_separator, index + annotation_anchor.size());
+            const auto continuation = teaser.find('\x1e', index + annotation_anchor.size());
             const auto terminator = separator == std::string_view::npos
                                         ? std::string_view::npos
                                         : teaser.find(annotation_terminator, separator + annotation_separator.size());
-            if (separator == std::string_view::npos || terminator == std::string_view::npos) {
+            // Pinned Juniper SummaryDesc::get_summary can end an excerpt in
+            // annotation metadata and append its continuation delimiter before
+            // the terminator. Preserve the complete surface form before the
+            // separator; discard only that clipped metadata. Without the
+            // backend continuation boundary a missing terminator is malformed.
+            const bool clipped_metadata = continuation != std::string_view::npos &&
+                                          (terminator == std::string_view::npos || continuation < terminator);
+            // A continued excerpt may also end before the annotation's
+            // separator. These backend-selected bytes are surface text;
+            // preserve them without manufacturing a highlight or completion.
+            if (continuation != std::string_view::npos &&
+                (separator == std::string_view::npos || continuation < separator)) {
+                if (highlighted) throw std::runtime_error("Vespa teaser contains malformed interlinear annotation");
+                fragment.text.append(teaser.substr(index + annotation_anchor.size(),
+                                                   continuation - index - annotation_anchor.size()));
+                index = continuation;
+                continue;
+            }
+            if (separator == std::string_view::npos ||
+                (clipped_metadata && highlighted) ||
+                (terminator == std::string_view::npos && !clipped_metadata)) {
                 throw std::runtime_error("Vespa teaser contains malformed interlinear annotation");
             }
             fragment.text.append(teaser.substr(index + annotation_anchor.size(),
                                                separator - index - annotation_anchor.size()));
-            index = terminator + annotation_terminator.size();
+            index = clipped_metadata ? continuation : terminator + annotation_terminator.size();
         } else {
             fragment.text.push_back(teaser[index++]);
         }
