@@ -209,6 +209,8 @@ pub struct QueryDiagnosticsResult {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DiagnosticSearchResult {
     pub result: SearchResult,
+    /// Structured, typed evidence observed directly by the engine adapter.
+    pub evidence: Vec<DiagnosticEvidence>,
     pub raw_engine: Vec<RawEngineDiagnostics>,
     /// Sections actually observed by the engine adapter, backed by its raw
     /// execution payload. Raw field names remain private to that adapter.
