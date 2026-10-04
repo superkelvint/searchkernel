@@ -25,6 +25,8 @@ Vespa already solves the hard problems here — ranking, tensors, vector search,
 If you are new to the codebase, start with the [codebase reading guide](docs/reading-the-codebase.md).
 Agents should check the [current status](docs/status.md) before using the roadmap.
 For cross-layer feature availability, use the [capability ledger](docs/CAPABILITIES.md).
+For W5 forced-score limits and the pinned engine investigation, see
+[forced-document ranking](docs/forced-document-ranking.md).
 
 ## What it is
 
