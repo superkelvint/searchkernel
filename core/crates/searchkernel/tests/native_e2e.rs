@@ -8,6 +8,52 @@ use searchkernel::{
     RankProfile, Ranking, SearchField, Sort, Tensor, WeightedQueryItem,
 };
 use serde_json::json;
+
+#[test]
+fn native_long_annotated_teaser_remains_valid() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-long-teaser-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let runtime = IndexRuntime::create(
+        &path,
+        IndexDefinition::new()
+            .field(Field::text("title").stored(true))
+            .field(Field::text("description").stored(true)),
+    )
+    .expect("create native index");
+    let index = runtime.index();
+    index.upsert("speaker", &json!({
+        "title":"Wired Speaker 19",
+        "description":format!("{} wired speaker {}", "An introductory description. ".repeat(40), "Long trailing text. ".repeat(40))
+    })).expect("index annotated description");
+    let result = index
+        .search("speaker")
+        .highlight(["title", "description"])
+        .execute::<serde_json::Value>();
+    runtime.close().expect("close index");
+    std::fs::remove_dir_all(path).expect("remove fixture");
+    let result = result.expect("backend-selected annotated teaser must decode");
+    assert_eq!(result.total_hits.value, 1);
+    for field in ["title", "description"] {
+        let highlight = result.hits[0]
+            .highlights
+            .iter()
+            .find(|highlight| highlight.field == field)
+            .expect("requested highlight");
+        assert!(highlight
+            .fragments
+            .iter()
+            .any(|fragment| fragment.matches.iter().any(|span| fragment.text
+                [span.start_byte as usize..span.end_byte as usize]
+                .eq_ignore_ascii_case("speaker"))));
+        assert!(highlight
+            .fragments
+            .iter()
+            .all(|fragment| !fragment.text.contains(['\u{fff9}', '\u{fffa}', '\u{fffb}'])));
+    }
+}
 use std::collections::BTreeSet;
 use std::sync::{Arc, Barrier};
 

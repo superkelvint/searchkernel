@@ -59,15 +59,26 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
             ++index;
         } else if (teaser.substr(index, annotation_anchor.size()) == annotation_anchor) {
             const auto separator = teaser.find(annotation_separator, index + annotation_anchor.size());
+            const auto continuation = teaser.find('\x1e', index + annotation_anchor.size());
             const auto terminator = separator == std::string_view::npos
                                         ? std::string_view::npos
                                         : teaser.find(annotation_terminator, separator + annotation_separator.size());
-            if (separator == std::string_view::npos || terminator == std::string_view::npos) {
+            // Pinned Juniper SummaryDesc::get_summary can end an excerpt in
+            // annotation metadata and append its continuation delimiter before
+            // the terminator. Preserve the complete surface form before the
+            // separator; discard only that clipped metadata. Without the
+            // backend continuation boundary a missing terminator is malformed.
+            const bool clipped_metadata = continuation != std::string_view::npos &&
+                                          (terminator == std::string_view::npos || continuation < terminator);
+            if (separator == std::string_view::npos ||
+                (continuation != std::string_view::npos && separator > continuation) ||
+                (clipped_metadata && highlighted) ||
+                (terminator == std::string_view::npos && !clipped_metadata)) {
                 throw std::runtime_error("Vespa teaser contains malformed interlinear annotation");
             }
             fragment.text.append(teaser.substr(index + annotation_anchor.size(),
                                                separator - index - annotation_anchor.size()));
-            index = terminator + annotation_terminator.size();
+            index = clipped_metadata ? continuation : terminator + annotation_terminator.size();
         } else {
             fragment.text.push_back(teaser[index++]);
         }
