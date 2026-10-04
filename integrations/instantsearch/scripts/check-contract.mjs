@@ -32,8 +32,8 @@ const labels = {supported:'supported',constrained:'supported with documented con
 const matrix = ['<!-- compatibility-matrix:start -->',
   '| Pinned upstream package | Version |','| --- | --- |',
   ...Object.entries(contract.packages).map(([name,version])=>`| ${name} | ${version} |`), '',
-  '| Upstream widget | Status | Coverage / reason |','| --- | --- | --- |',
-  ...Object.entries(contract.widgets).map(([name,widget])=>`| ${name} | ${labels[widget.status]} | ${widget.acceptance?.join(', ') ?? widget.reason} |`),
+  '| Upstream widget | Status | Coverage / constraints / reason |','| --- | --- | --- |',
+  ...Object.entries(contract.widgets).map(([name,widget])=>`| ${name} | ${labels[widget.status]} | ${widget.acceptance ? widget.acceptance.join(', ') + '; ' + widget.constraints : widget.reason} |`),
   '<!-- compatibility-matrix:end -->'].join('\n');
 const documentation = new URL('README.md',root);
 const original = readFileSync(documentation,'utf8');

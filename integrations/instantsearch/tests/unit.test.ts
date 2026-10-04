@@ -92,4 +92,13 @@ describe('bounded representation', () => {
     expect(response.hits[0]._highlightResult.brand).toBeUndefined();
   });
 
+  it('projects snippets selected by a configured-field wildcard', async () => {
+    const client = createSearchKernelInstantSearchClient({endpoint:'http://localhost/search',fetch:(async()=>Response.json({results:[{
+      endpoint:'one',query:'',totalHits:1,exact:true,processingTimeMs:0,facets:{},exhaustiveFacetsCount:true,
+      hits:[{id:'doc',fields:{title:'value'},highlights:{title:[{text:'value',matches:[]}]}}],
+    }]})) as typeof fetch});
+    const {results} = await client.search([{indexName:'one',params:{attributesToSnippet:['*']}}]);
+    expect(results[0].hits[0]._snippetResult.title).toEqual({value:'value',matchLevel:'none',matchedWords:[]});
+  });
+
 });

@@ -43,7 +43,7 @@
     "maxValuesPerFacet": "Integer 1..100; backend grouping limit",
     "attributesToRetrieve": "Configured fields only; wildcard means configured projection",
     "attributesToHighlight": "Configured scalar text fields only; canonical Vespa teaser fragments",
-    "attributesToSnippet": "Configured scalar text fields; backend Juniper excerpts; Algolia :wordCount is unsupported",
+    "attributesToSnippet": "Configured scalar text fields or configured-field wildcard; backend Juniper excerpts; Algolia :wordCount is unsupported",
     "highlightPreTag": "Only the pinned consumer __ais-highlight__ placeholder",
     "highlightPostTag": "Only the pinned consumer __/ais-highlight__ placeholder",
     "analytics": "Only false; deliberately disables the unsupported analytics surface",
@@ -135,7 +135,7 @@
       "acceptance": [
         "real-engine:clearRefinements"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Declared scalar facet and numeric refinements only"
     },
     "compareBar": {
       "status": "unsupported",
@@ -146,14 +146,14 @@
       "acceptance": [
         "real-engine:configure"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Declared request parameter allowlist only; analytics:false"
     },
     "currentRefinements": {
       "status": "constrained",
       "acceptance": [
         "real-engine:currentRefinements"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Declared scalar facet and numeric refinements only"
     },
     "dynamicWidgets": {
       "status": "unsupported",
@@ -184,21 +184,21 @@
       "acceptance": [
         "real-engine:hits"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "escapeHTML:true; configured fields; Highlight/Snippet use scalar backend excerpts"
     },
     "hitsPerPage": {
       "status": "constrained",
       "acceptance": [
         "real-engine:hitsPerPage"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Integer page sizes 1..100; checked offset <=10000"
     },
     "index": {
       "status": "constrained",
       "acceptance": [
         "real-engine:index"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Configured public aliases only; combined batches <=16"
     },
     "infiniteHits": {
       "status": "unsupported",
@@ -213,7 +213,7 @@
       "acceptance": [
         "real-engine:menu"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "One selected scalar value of a configured facet"
     },
     "menuSelect": {
       "status": "unsupported",
@@ -224,14 +224,14 @@
       "acceptance": [
         "real-engine:numericMenu"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Configured numeric fields and typed inclusive/exclusive comparisons; no unrefined numeric statistics"
     },
     "pagination": {
       "status": "constrained",
       "acceptance": [
         "real-engine:pagination"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Canonical backend limit/offset; checked offset <=10000"
     },
     "panel": {
       "status": "unsupported",
@@ -274,7 +274,7 @@
       "acceptance": [
         "real-engine:refinementList"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Configured scalar facets; OR/AND; searchable:false; no hierarchical refinements"
     },
     "relatedProducts": {
       "status": "unsupported",
@@ -293,21 +293,21 @@
       "acceptance": [
         "real-engine:searchBox"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Canonical text queries <=4096 UTF-8 bytes; insights:false; empty text browses"
     },
     "sortBy": {
       "status": "constrained",
       "acceptance": [
         "real-engine:sortBy"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Configured aliases with fixed canonical sorts; no arbitrary replica semantics"
     },
     "stats": {
       "status": "constrained",
       "acceptance": [
         "real-engine:stats"
       ],
-      "constraints": "See profile constraints and parameter allowlist"
+      "constraints": "Canonical total/relation and dispatch/projection wall time"
     },
     "toggleRefinement": {
       "status": "unsupported",

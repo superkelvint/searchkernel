@@ -115,7 +115,7 @@ Changing an ecosystem pin requires updating the declaration and lock and passing
 | algoliasearch | 5.59.0 |
 | @algolia/client-search | 5.59.0 |
 
-| Upstream widget | Status | Coverage / reason |
+| Upstream widget | Status | Coverage / constraints / reason |
 | --- | --- | --- |
 | EXPERIMENTAL_answers | unsupported | Outside the declared backend and acceptance profile |
 | EXPERIMENTAL_autocomplete | unsupported | Outside the declared backend and acceptance profile |
@@ -126,25 +126,25 @@ Changing an ecosystem pin requires updating the declaration and lock and passing
 | breadcrumb | unsupported | Outside the declared backend and acceptance profile |
 | chat | unsupported | Outside the declared backend and acceptance profile |
 | chatTrigger | unsupported | Outside the declared backend and acceptance profile |
-| clearRefinements | supported with documented constraints | real-engine:clearRefinements |
+| clearRefinements | supported with documented constraints | real-engine:clearRefinements; Declared scalar facet and numeric refinements only |
 | compareBar | unsupported | Outside the declared backend and acceptance profile |
-| configure | supported with documented constraints | real-engine:configure |
-| currentRefinements | supported with documented constraints | real-engine:currentRefinements |
+| configure | supported with documented constraints | real-engine:configure; Declared request parameter allowlist only; analytics:false |
+| currentRefinements | supported with documented constraints | real-engine:currentRefinements; Declared scalar facet and numeric refinements only |
 | dynamicWidgets | unsupported | Outside the declared backend and acceptance profile |
 | feeds | unsupported | Outside the declared backend and acceptance profile |
 | filterSuggestions | unsupported | Outside the declared backend and acceptance profile |
 | frequentlyBoughtTogether | unsupported | Outside the declared backend and acceptance profile |
 | geoSearch | unsupported | Outside the declared backend and acceptance profile |
 | hierarchicalMenu | unsupported | Outside the declared backend and acceptance profile |
-| hits | supported with documented constraints | real-engine:hits |
-| hitsPerPage | supported with documented constraints | real-engine:hitsPerPage |
-| index | supported with documented constraints | real-engine:index |
+| hits | supported with documented constraints | real-engine:hits; escapeHTML:true; configured fields; Highlight/Snippet use scalar backend excerpts |
+| hitsPerPage | supported with documented constraints | real-engine:hitsPerPage; Integer page sizes 1..100; checked offset <=10000 |
+| index | supported with documented constraints | real-engine:index; Configured public aliases only; combined batches <=16 |
 | infiniteHits | unsupported | Outside the declared backend and acceptance profile |
 | lookingSimilar | unsupported | Outside the declared backend and acceptance profile |
-| menu | supported with documented constraints | real-engine:menu |
+| menu | supported with documented constraints | real-engine:menu; One selected scalar value of a configured facet |
 | menuSelect | unsupported | Outside the declared backend and acceptance profile |
-| numericMenu | supported with documented constraints | real-engine:numericMenu |
-| pagination | supported with documented constraints | real-engine:pagination |
+| numericMenu | supported with documented constraints | real-engine:numericMenu; Configured numeric fields and typed inclusive/exclusive comparisons; no unrefined numeric statistics |
+| pagination | supported with documented constraints | real-engine:pagination; Canonical backend limit/offset; checked offset <=10000 |
 | panel | unsupported | Outside the declared backend and acceptance profile |
 | places | unsupported | Outside the declared backend and acceptance profile |
 | poweredBy | unsupported | Outside the declared backend and acceptance profile |
@@ -154,13 +154,13 @@ Changing an ecosystem pin requires updating the declaration and lock and passing
 | rangeInput | unsupported | Outside the declared backend and acceptance profile |
 | rangeSlider | unsupported | Outside the declared backend and acceptance profile |
 | ratingMenu | unsupported | Outside the declared backend and acceptance profile |
-| refinementList | supported with documented constraints | real-engine:refinementList |
+| refinementList | supported with documented constraints | real-engine:refinementList; Configured scalar facets; OR/AND; searchable:false; no hierarchical refinements |
 | relatedProducts | unsupported | Outside the declared backend and acceptance profile |
 | relevantSort | unsupported | Outside the declared backend and acceptance profile |
 | resultCard | unsupported | Outside the declared backend and acceptance profile |
-| searchBox | supported with documented constraints | real-engine:searchBox |
-| sortBy | supported with documented constraints | real-engine:sortBy |
-| stats | supported with documented constraints | real-engine:stats |
+| searchBox | supported with documented constraints | real-engine:searchBox; Canonical text queries <=4096 UTF-8 bytes; insights:false; empty text browses |
+| sortBy | supported with documented constraints | real-engine:sortBy; Configured aliases with fixed canonical sorts; no arbitrary replica semantics |
+| stats | supported with documented constraints | real-engine:stats; Canonical total/relation and dispatch/projection wall time |
 | toggleRefinement | unsupported | Outside the declared backend and acceptance profile |
 | trendingFacets | unsupported | Outside the declared backend and acceptance profile |
 | trendingItems | unsupported | Outside the declared backend and acceptance profile |

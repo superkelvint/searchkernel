@@ -117,6 +117,18 @@ it('actual pinned widgets search, refine, paginate, browse, sort and render thro
     expect(numeric.results.map(r=>r.nbHits)).toEqual([2,12,18]);
     expect(numeric.results[2].hits[0]._highlightResult.title.matchedWords.map(w=>w.toLowerCase())).toEqual(expect.arrayContaining(['wireless','headphones']));
     expect(numeric.results[2].hits[0]._snippetResult.description.matchLevel).toBe('partial');
+    const projection = await client.search([{indexName:'price_asc',params:{query:'speaker',attributesToRetrieve:['title'],attributesToHighlight:['title','description'],attributesToSnippet:['*']}},
+      {indexName:'products',params:{hitsPerPage:0,facets:['brand'],maxValuesPerFacet:1}},
+      {indexName:'products',params:{attributesToRetrieve:[],attributesToHighlight:[]}},
+      {indexName:'products',params:{facets:['*'],attributesToRetrieve:['*'],attributesToHighlight:['*']}}]);
+    expect(Object.keys(projection.results[0].hits[0]).sort()).toEqual(['_highlightResult','_snippetResult','objectID','title']);
+    expect(projection.results[0].hits[0]._highlightResult.description.matchLevel).toBe('partial');
+    expect(projection.results[0].hits[0]._snippetResult.title.matchLevel).toBe('partial');
+    expect(Object.keys(projection.results[1].facets.brand)).toHaveLength(1);
+    expect(projection.results[1].exhaustiveFacetsCount).toBe(false);
+    expect(Object.keys(projection.results[2].hits[0]).sort()).toEqual(['_highlightResult','_snippetResult','objectID']);
+    expect(Object.keys(projection.results[2].hits[0]._highlightResult)).toHaveLength(0);
+    expect(Object.keys(projection.results[3].facets).sort()).toEqual(['brand','category','stock']);
     const typed = await client.search([{indexName:'products',params:{facets:['stock'],facetFilters:['stock:true'],numericFilters:['rating>1.0','rating<1.3']}}]);
     expect(typed.results[0].nbHits).toBe(1);
     expect(typed.results[0].hits[0].rating).toBe(1.1);

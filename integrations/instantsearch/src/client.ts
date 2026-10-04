@@ -188,7 +188,7 @@ function project(result: EndpointResult, request: InstantSearchRequest, translat
     const snippetResult: Record<string, ReturnType<typeof highlighted>> = Object.create(null);
     for (const [field, fragments] of Object.entries(hit.highlights)) {
       const value = highlighted(fragments);
-      if (translated.snippets.includes(field)) snippetResult[field] = value;
+      if (translated.snippets.includes("*") || translated.snippets.includes(field)) snippetResult[field] = value;
       if (translated.highlights === undefined || translated.highlights.includes("*") || translated.highlights.includes(field)) {
         highlightResult[field] = value;
       }
