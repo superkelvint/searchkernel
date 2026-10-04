@@ -1,6 +1,6 @@
 import { CopyButton } from '../../components/Workbench'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { type ClientSearchRequest, type ClientSearchResponse, type PreparedSearchRequest, type ClientDiagnostics, type DiagnosticIntent, normalizeClientError } from '../../api/searchkernel-client'
 import { typedTerm, typedQueryReference } from '../../api/search-request'
 import { useSearchKernelClient, useCapabilities } from '../../app/client-context'
@@ -13,9 +13,14 @@ export function SearchLab() {
   const index = useIndex(), client = useSearchKernelClient()
   const { capabilities } = useCapabilities()
   const [params, setParams] = useSearchParams()
+  const location = useLocation()
   const key = params.toString()
   const restored = useMemo(() => decodeSearchParams(new URLSearchParams(key)), [key])
-  const state = restored.state
+  // Query feature values stay in this history entry unless explicitly shared.
+  // Reload/back/forward retain them; a copied URL deliberately excludes them.
+  const privateInputs = typeof location.state?.searchLabInputs === 'string' ? location.state.searchLabInputs : undefined
+  const state = useMemo(() => privateInputs === undefined ? restored.state : { ...restored.state, inputs: privateInputs }, [restored.state, privateInputs])
+  const shareInputs = restored.state.inputs !== undefined
   const prepared = useMemo(() => {
     try { return { value: client.prepareSearch(state) } }
     catch (error) { return { error: normalizeClientError(error) } }
@@ -59,7 +64,12 @@ export function SearchLab() {
     // configuration without executing. StrictMode cleanup cancels its observer;
     // the next setup executes with a fresh signal.
   }, [client, index.id, index.generation])
-  const update = (patch: Partial<ClientSearchRequest>) => { const next = encodeSearchParams(updateSearchState(state, patch)); if (next.toString() !== key) setParams(next) }
+  const writeState = (value: ClientSearchRequest, includeInputs = shareInputs) => {
+    const next = encodeSearchParams(value, { includeInputs })
+    const history = !includeInputs && value.inputs !== undefined ? { searchLabInputs: value.inputs } : null
+    if (next.toString() !== key || history?.searchLabInputs !== privateInputs) setParams(next, { state: history })
+  }
+  const update = (patch: Partial<ClientSearchRequest>) => writeState(updateSearchState(state, patch))
   const run = () => { if (!loading && !restored.error && prepared.value) void execute(prepared.value) }
   useEffect(() => {
     const listener = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); run() } }
@@ -75,7 +85,7 @@ export function SearchLab() {
     : tab === 'Response' ? response?.canonicalResponse ?? 'No canonical response is available. Run a query against the daemon.'
     : tab === 'Executed request' ? executed?.canonical ?? 'No request executed yet.' : executionErrorJson ?? errorJson ?? 'No error.'
   return <div className="min-w-0">
-    <Heading title="Search Lab" description="Construct, execute, inspect and share canonical Search Kernel queries."><CopyButton text={location.href} label="Copy URL" /></Heading>
+    <Heading title="Search Lab" description="Construct, execute, inspect and share canonical Search Kernel queries."><CopyButton text={window.location.href} label="Copy URL" /></Heading>
     {restored.error && <div role="alert" className="surface mb-4 p-4 text-red-800">{restored.error}<button className="soft-button ml-3" onClick={() => setParams(encodeSearchParams({ query: '' }))}>Reset URL state</button></div>}
     <form className="surface flex flex-wrap gap-3 p-4" onSubmit={event => { event.preventDefault(); run() }}>
       <label className="text-sm">Query mode<select aria-label="Query mode" className="input" value={state.mode ?? 'text'} onChange={e => update({ mode: e.target.value as 'text' | 'typed', typedQuery: state.typedQuery ?? typedTerm(termField, state.query) })}><option value="text">Text</option><option value="typed">Typed JSON</option></select></label>
@@ -92,6 +102,7 @@ export function SearchLab() {
       <label>Limit<input aria-label="Limit" type="number" className="input" placeholder="Server default" value={state.limit ?? ''} onChange={e => update({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
       <label>Offset<input aria-label="Offset" type="number" className="input" placeholder="Server default" value={state.offset ?? ''} onChange={e => update({ offset: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
       <label className="md:col-span-2">Query inputs<textarea aria-label="Query inputs" className="input min-h-24 font-mono text-xs" value={state.inputs ?? ''} placeholder='{"boost": 2}' onChange={e => update({ inputs: e.target.value || undefined })} /><p className="mt-2 text-xs text-slate-500">Literal inputs: numeric scalars and dense tensors execute in this daemon. JSON object keyed by input name. Scalar/container values retain their types; int64, uint64 and tensors can use canonical Value JSON. Expression inputs require a container-aware backend and are unavailable here; other unsupported literal types retain canonical errors.</p>{state.ranking && index.profileInputs?.[state.ranking] && <details><summary className="text-sm">Declared profile inputs</summary><pre className="overflow-auto text-xs">{index.profileInputs[state.ranking]}</pre></details>}</label>
+      <label className="md:col-span-2"><input type="checkbox" aria-label="Include query inputs in shareable URL" checked={shareInputs} onChange={e => writeState(state, e.target.checked)}/> Include query inputs in shareable URL (may contain sensitive values).<p className="text-xs">By default, query inputs remain in this browser history entry and survive reload/back/forward. Copied URLs omit them; explicitly opt in to reproduce those values in another session.</p></label>
     </div></details>
     {visibleError && <div role="alert" className="surface mt-4 border-red-200 p-4 text-red-800"><strong>{visibleError.origin ?? 'client'} · {visibleError.code}</strong><p>{visibleError.message}</p><details><summary>Structured error</summary><pre className="overflow-auto text-xs">{errorJson}</pre></details></div>}
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
@@ -109,7 +120,7 @@ export function SearchLab() {
         </div>
         {lens && lensEvidence?.scope === scope && lensEvidence.source === response.sourceRunId && <div className="text-xs"><p>Diagnostic rerun signals — not captured in the original execution.</p>{lensEvidence.value.hits.find(value => value.id === hit.document.id)?.signals.filter(value => !lensSignals.trim() || lensSignals.split(',').map(name => name.trim()).includes(value.name)).slice(0, 3).map(value => <p key={value.name}>{value.name}: {JSON.stringify(value.value)} · #{value.position ?? 'unavailable'} among {value.comparisonCount} returned values; ties {value.ties ?? 'unavailable'}</p>)}</div>}
         <pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(hit.document.fields, null, 2)}</pre>
-      </article>)}<div className="mt-4 flex flex-wrap gap-2"><button className="soft-button" disabled={loading || !!prepared.error || !!restored.error || dirty || !!error || state.limit === undefined || !state.offset} onClick={() => { const next = { ...state, offset: Math.max(0, (state.offset ?? 0) - state.limit!) }; setParams(encodeSearchParams(next)); try { void execute(client.prepareSearch(next)) } catch (e) { setError(normalizeClientError(e)) } }}>Previous page</button><button className="soft-button" disabled={loading || !!prepared.error || !!restored.error || dirty || !!error || !canAdvancePage(state, response)} onClick={() => { const next = { ...state, offset: (state.offset ?? 0) + state.limit! }; setParams(encodeSearchParams(next)); try { void execute(client.prepareSearch(next)) } catch (e) { setError(normalizeClientError(e)) } }}>Next page</button></div>{state.limit === undefined && <p className="mt-2 text-xs">Set an explicit limit to use page controls.</p>}</section>
+      </article>)}<div className="mt-4 flex flex-wrap gap-2"><button className="soft-button" disabled={loading || !!prepared.error || !!restored.error || dirty || !!error || state.limit === undefined || !state.offset} onClick={() => { const next = { ...state, offset: Math.max(0, (state.offset ?? 0) - state.limit!) }; writeState(next); try { void execute(client.prepareSearch(next)) } catch (e) { setError(normalizeClientError(e)) } }}>Previous page</button><button className="soft-button" disabled={loading || !!prepared.error || !!restored.error || dirty || !!error || !canAdvancePage(state, response)} onClick={() => { const next = { ...state, offset: (state.offset ?? 0) + state.limit! }; writeState(next); try { void execute(client.prepareSearch(next)) } catch (e) { setError(normalizeClientError(e)) } }}>Next page</button></div>{state.limit === undefined && <p className="mt-2 text-xs">Set an explicit limit to use page controls.</p>}</section>
       {debuggerIntent && diagnosticBaseline && response ? <QueryDiagnostics
         key={JSON.stringify([scope, response.sourceRunId, diagnosticBaseline.canonical])}
         client={client} index={index} baseline={diagnosticBaseline} response={response}

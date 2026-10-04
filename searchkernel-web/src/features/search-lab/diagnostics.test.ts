@@ -4,9 +4,21 @@ import { prepareSearch } from '../../api/search-request'
 import { prepareDiagnostics, preparedDiagnosticRequest } from '../../api/diagnostic-request'
 import type { ClientDiagnostics, Index } from '../../api/searchkernel-client'
 import { diagnosticBundle, signalComparison } from './diagnostic-export'
+import { encodeSearchParams } from './search-params'
+import { diagnosticCurl } from '../../api/diagnostic-request'
 
 const index: Index = { id: 'products', generation: 'G1', profiles: [], summaries: [], fields: [], searchDefaults: {} }
 describe('canonical diagnostic construction and export', () => {
+  it('keeps query feature values out of default shared URLs and curl rejects credential-bearing endpoints', () => {
+    const state = { query: 'orchid', inputs: '{"PRIVATE_FEATURE":42}' }
+    expect(encodeSearchParams(state, { includeInputs: false }).toString()).not.toContain('PRIVATE_FEATURE')
+    expect(encodeSearchParams(state, { includeInputs: true }).toString()).toContain('PRIVATE_FEATURE')
+    const prepared = prepareDiagnostics(index, prepareSearch(state), 'source', { intent: 'explain-hit' })
+    expect(diagnosticCurl(prepared, 'http://localhost:8080')).toContain('/v1/execute')
+    expect(diagnosticCurl(prepared, 'http://localhost:8080')).toContain('G1')
+    expect(() => diagnosticCurl(prepared, 'http://user:password@localhost:8080')).toThrow('credentials')
+    expect(() => diagnosticCurl(prepared, 'http://localhost:8080?token=secret')).toThrow('credentials')
+  })
   it('uses the exact W1 request and preserves typed inputs, filters, profile and pagination', () => {
     const query = prepareSearch({ query: 'orchid', ranking: 'lexical', limit: 10, offset: 20,
       filters: [{ field: 'quantity', operator: 'gte', value: '7' }],

@@ -1174,7 +1174,8 @@ export class ResolvedSearchRequestT extends SemanticTable {
   declare properties: (ValueEntryT)[];
   declare queryProfile: string|Uint8Array|null;
   declare searchChain: string|Uint8Array|null;
-  constructor(query: QuerySourceT|null = null, searchFields: (SearchFieldT)[] = [], filters: (FilterExprT)[] = [], sort: (ResolvedSortExprT)[] = [], grouping: (ResolvedGroupingRequestT)[] = [], ranking: RankingRequestT|null = null, inputs: (QueryInputT)[] = [], limit: number = 0, offset: number = 0, timeoutMs: OptionalUInt64T|null = null, queryModel: QueryModelT|null = null, presentation: PresentationRequestT|null = null, properties: (ValueEntryT)[] = [], queryProfile: string|Uint8Array|null = null, searchChain: string|Uint8Array|null = null) { super('ResolvedSearchRequest', ['query', 'searchFields', 'filters', 'sort', 'grouping', 'ranking', 'inputs', 'limit', 'offset', 'timeoutMs', 'queryModel', 'presentation', 'properties', 'queryProfile', 'searchChain'], [query, searchFields, filters, sort, grouping, ranking, inputs, limit, offset, timeoutMs, queryModel, presentation, properties, queryProfile, searchChain], [null, [], [], [], [], null, [], 0, 0, null, null, null, [], null, null]); }
+  declare diagnosticSource: boolean;
+  constructor(query: QuerySourceT|null = null, searchFields: (SearchFieldT)[] = [], filters: (FilterExprT)[] = [], sort: (ResolvedSortExprT)[] = [], grouping: (ResolvedGroupingRequestT)[] = [], ranking: RankingRequestT|null = null, inputs: (QueryInputT)[] = [], limit: number = 0, offset: number = 0, timeoutMs: OptionalUInt64T|null = null, queryModel: QueryModelT|null = null, presentation: PresentationRequestT|null = null, properties: (ValueEntryT)[] = [], queryProfile: string|Uint8Array|null = null, searchChain: string|Uint8Array|null = null, diagnosticSource: boolean = false) { super('ResolvedSearchRequest', ['query', 'searchFields', 'filters', 'sort', 'grouping', 'ranking', 'inputs', 'limit', 'offset', 'timeoutMs', 'queryModel', 'presentation', 'properties', 'queryProfile', 'searchChain', 'diagnosticSource'], [query, searchFields, filters, sort, grouping, ranking, inputs, limit, offset, timeoutMs, queryModel, presentation, properties, queryProfile, searchChain, diagnosticSource], [null, [], [], [], [], null, [], 0, 0, null, null, null, [], null, null, false]); }
 }
 export class ResolvedSortExprT extends SemanticTable {
   declare target: ResolvedSortTargetT|null;
@@ -1245,7 +1246,8 @@ export class SearchRequestT extends SemanticTable {
   declare properties: (ValueEntryT)[];
   declare queryProfile: string|Uint8Array|null;
   declare searchChain: string|Uint8Array|null;
-  constructor(query: QuerySourceT|null = null, searchFields: SearchFieldSelectionT|null = null, filters: FilterRequestT|null = null, sort: (SortExprT)[] = [], grouping: (GroupingRequestT)[] = [], ranking: RankingRequestT|null = null, inputs: (QueryInputT)[] = [], limit: OptionalUInt32T|null = null, offset: OptionalUInt32T|null = null, timeoutMs: OptionalUInt64T|null = null, queryModel: QueryModelT|null = null, presentation: PresentationRequestT|null = null, properties: (ValueEntryT)[] = [], queryProfile: string|Uint8Array|null = null, searchChain: string|Uint8Array|null = null) { super('SearchRequest', ['query', 'searchFields', 'filters', 'sort', 'grouping', 'ranking', 'inputs', 'limit', 'offset', 'timeoutMs', 'queryModel', 'presentation', 'properties', 'queryProfile', 'searchChain'], [query, searchFields, filters, sort, grouping, ranking, inputs, limit, offset, timeoutMs, queryModel, presentation, properties, queryProfile, searchChain], [null, null, null, [], [], null, [], null, null, null, null, null, [], null, null]); }
+  declare diagnosticSource: boolean;
+  constructor(query: QuerySourceT|null = null, searchFields: SearchFieldSelectionT|null = null, filters: FilterRequestT|null = null, sort: (SortExprT)[] = [], grouping: (GroupingRequestT)[] = [], ranking: RankingRequestT|null = null, inputs: (QueryInputT)[] = [], limit: OptionalUInt32T|null = null, offset: OptionalUInt32T|null = null, timeoutMs: OptionalUInt64T|null = null, queryModel: QueryModelT|null = null, presentation: PresentationRequestT|null = null, properties: (ValueEntryT)[] = [], queryProfile: string|Uint8Array|null = null, searchChain: string|Uint8Array|null = null, diagnosticSource: boolean = false) { super('SearchRequest', ['query', 'searchFields', 'filters', 'sort', 'grouping', 'ranking', 'inputs', 'limit', 'offset', 'timeoutMs', 'queryModel', 'presentation', 'properties', 'queryProfile', 'searchChain', 'diagnosticSource'], [query, searchFields, filters, sort, grouping, ranking, inputs, limit, offset, timeoutMs, queryModel, presentation, properties, queryProfile, searchChain, diagnosticSource], [null, null, null, [], [], null, [], null, null, null, null, null, [], null, null, false]); }
 }
 export class SearchResultT extends SemanticTable {
   declare root: ResultNodeT|null;
@@ -5500,6 +5502,12 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "type": "string|Uint8Array|null",
       "scalar": "String",
       "unsigned": false
+    },
+    "diagnosticSource": {
+      "name": "diagnostic_source",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
     }
   },
   "ResolvedSortExpr": {
@@ -5765,6 +5773,12 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "name": "search_chain",
       "type": "string|Uint8Array|null",
       "scalar": "String",
+      "unsigned": false
+    },
+    "diagnosticSource": {
+      "name": "diagnostic_source",
+      "type": "boolean",
+      "scalar": "Bool",
       "unsigned": false
     }
   },
