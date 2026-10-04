@@ -59,7 +59,29 @@ def _response(payload_type, payload):
     )
 
 
+from searchkernel._wire.v1.generated.SearchKernel.Wire.QueryDiagnosticsRequest import QueryDiagnosticsRequestT, QueryDiagnosticsRequest
+from searchkernel._wire.v1.generated.SearchKernel.Wire.QueryDiagnosticsResult import QueryDiagnosticsResultT
+from searchkernel._wire.v1.generated.SearchKernel.Wire.DiagnosticIntent import DiagnosticIntent
+from searchkernel._wire.v1.generated.SearchKernel.Wire.SearchRequest import SearchRequestT
+
 class GrpcTransportTest(unittest.TestCase):
+    def test_diagnostics_use_opened_generation_and_keep_the_decoded_response(self):
+        expected = QueryDiagnosticsResultT(warnings=["partial engine evidence"])
+        transport = _FrameTransport([
+            _response(ResponsePayload.SearchKernel_Wire_OpenIndexResult, OpenIndexResultT(IndexDefinitionT(name="products"), "G1")),
+            _response(ResponsePayload.SearchKernel_Wire_QueryDiagnosticsResult, expected),
+        ])
+        index = Index(Client(transport, target="products"))
+        result = index.query_diagnostics(QueryDiagnosticsRequestT(request=SearchRequestT(), intent=DiagnosticIntent.ExplainHit, sourceRunId="original"))
+        envelope = RequestEnvelope.GetRootAs(transport.calls[-1])
+        self.assertEqual(envelope.Target().Generation().decode(), "G1")
+        self.assertEqual(envelope.Target().Name().decode(), "products")
+        payload = envelope.Payload()
+        request = QueryDiagnosticsRequest(); request.Init(payload.Bytes, payload.Pos)
+        self.assertEqual(request.Intent(), DiagnosticIntent.ExplainHit)
+        self.assertEqual(request.SourceRunId().decode(), "original")
+        self.assertEqual(result.warnings, expected.warnings)
+
     def test_index_handle_carries_open_generation_on_target_requests(self):
         transport = _FrameTransport([
             _response(
