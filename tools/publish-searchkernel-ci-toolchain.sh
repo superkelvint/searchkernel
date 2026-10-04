@@ -54,9 +54,6 @@ mkdir -p "$BUILD_CONTEXT/clients/typescript"
 cp "$RECIPE/Dockerfile" "$BUILD_CONTEXT/Dockerfile"
 cp "$TYPESCRIPT_PACKAGE" "$BUILD_CONTEXT/clients/typescript/package.json"
 cp "$TYPESCRIPT_LOCK" "$BUILD_CONTEXT/clients/typescript/package-lock.json"
-mkdir -p "$BUILD_CONTEXT/integrations/instantsearch"
-cp "$ROOT/integrations/instantsearch/package.json" "$BUILD_CONTEXT/integrations/instantsearch/package.json"
-cp "$ROOT/integrations/instantsearch/package-lock.json" "$BUILD_CONTEXT/integrations/instantsearch/package-lock.json"
 
 echo
 echo "==> Building reusable CI toolchain"

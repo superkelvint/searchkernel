@@ -190,20 +190,15 @@ manually rebuild Vespa as an ad-hoc repair.
 ### InstantSearch compatibility prerequisites
 
 `./dev test instantsearch-compat` is the canonical independent integration lane.
-It uses the exact dependency lock under `integrations/instantsearch` and real
-Chromium through the pinned Playwright package. The immutable toolchain image
-owns the browser binaries and operating-system libraries; ordinary acceptance
-checks fail if they are absent and never install system packages.
+It uses the exact dependency lock under `integrations/instantsearch` and runs the
+actual pinned InstantSearch.js widgets in Vitest's JSDOM environment. No browser
+binary or browser-specific operating-system packages are prerequisites.
 
-When introducing or upgrading these prerequisites, publish the toolchain axis
-with `./dev image toolchain publish`, then publish a source image following the
-normal image workflow. A candidate source tag can qualify a task branch via
-`SEARCHKERNEL_CI_IMAGE=superkelvint/searchkernel-ci:<candidate-tag>` without
-moving `latest`. Updating `latest` remains a main-branch release operation.
-The toolchain identity includes the InstantSearch package manifest and lock.
-The lane runs real widgets and browser UI through the production adapter and
-public endpoint against the dispatcher/IR/Vespa backend. It is also owned by
-PR CI and Universe.
+The lane runs pin, matrix, documentation, upstream-type, adapter, canonical
+binding, request-profile, and real-widget checks through the production adapter
+and public endpoint against the dispatcher/IR/Vespa backend. It is owned by PR
+CI and Universe. JavaScript dependencies remain ordinary package dependencies;
+changing them does not require publishing a browser-capable CI toolchain image.
 
 This file is the authoritative guide for building, compiling, toolchain setup,
 native SDK acquisition, standard Rust verification commands, and

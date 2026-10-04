@@ -11,7 +11,7 @@ use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "real pinned consumer and Chromium prerequisites are owned by ./dev test instantsearch-compat"]
+#[ignore = "real pinned consumer prerequisites are owned by ./dev test instantsearch-compat"]
 async fn real_pinned_consumer_uses_public_endpoint_and_vespa() {
     let root = std::env::temp_dir().join(format!(
         "instantsearch-product-{}-{}",

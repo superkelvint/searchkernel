@@ -136,8 +136,6 @@ inputs = [
     *sorted(path for path in recipe.rglob("*") if path.is_file()),
     root / "clients/typescript/package.json",
     root / "clients/typescript/package-lock.json",
-    root / "integrations/instantsearch/package.json",
-    root / "integrations/instantsearch/package-lock.json",
 ]
 for path in inputs:
     if not path.is_file():

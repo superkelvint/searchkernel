@@ -87,7 +87,7 @@ Canonical hit IDs become `objectID`; allowlisted fields become hit attributes. C
 
 Highlight and Snippet are distinct properties over backend-selected Juniper excerpts and canonical byte spans, including unhighlighted excerpts. This profile does not promise full-field Algolia highlighting or Algolia word-count truncation. `:wordCount` snippet directives, nested/multi-valued presentation, and custom markup are unsupported. Missing fields have no result entry. `matchLevel` is `partial` when spans prove a match and `none` otherwise; `matchedWords` records those surface spans without inventing query analysis.
 
-Keep Hits' default `escapeHTML: true`. The adapter inserts only the pinned consumer's placeholders at backend spans; the consumer escapes text and turns placeholders into `<mark>`. Chromium acceptance checks HTML-sensitive values. There is no substring highlighting or client-side snippet truncation.
+Keep Hits' default `escapeHTML: true`. The adapter inserts only the pinned consumer's placeholders at backend spans; the consumer escapes text and turns placeholders into `<mark>`. The real-widget JSDOM acceptance checks HTML-sensitive values. There is no substring highlighting or client-side snippet truncation.
 
 ## Bounds and errors
 
@@ -103,7 +103,7 @@ Searchable refinement lists, facet-value search, hierarchical facets, arbitrary 
 ./dev test instantsearch-compat
 ```
 
-The canonical containerized lane runs pin/matrix/documentation guards, upstream type checks, adapter units, canonical binding checks, initial request-profile regressions, actual pinned widgets against the public listener/dispatcher/Vespa path, and Chromium UI acceptance. The same lane runs in PR CI and Universe.
+The canonical containerized lane runs pin/matrix/documentation guards, upstream type checks, adapter units, canonical binding checks, initial request-profile regressions, and the actual pinned InstantSearch.js widgets in Vitest/JSDOM against the public listener/dispatcher/Vespa path. The same lane runs in PR CI and Universe; no browser binary is required.
 
 Changing an ecosystem pin requires updating the declaration and lock and passing acceptance. CI fails on pin, installed-version, upstream widget-inventory, matrix-coverage, or generated-document drift. The production adapter has no dashboard or framework runtime dependency.
 

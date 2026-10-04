@@ -71,16 +71,14 @@
     "Highlight": {
       "status": "constrained",
       "acceptance": [
-        "real-engine:highlight",
-        "chromium:highlight"
+        "real-engine:highlight"
       ],
       "constraints": "Scalar top-level fields; backend excerpts and byte spans; matchLevel is partial or none, matchedWords are backend surface spans; escapeHTML:true"
     },
     "Snippet": {
       "status": "constrained",
       "acceptance": [
-        "real-engine:snippet",
-        "chromium:snippet"
+        "real-engine:snippet"
       ],
       "constraints": "Scalar top-level fields; backend Juniper excerpts; no Algolia word-count directives; missing field is absent"
     }
