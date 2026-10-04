@@ -2,7 +2,7 @@
 
 This independent adapter connects external applications to Search Kernel's bounded public search listener. Search execution uses canonical FlatBuffers `SearchRequest`, the multi-index registry, dispatcher, shared IR resolver, and Vespa. It does not require `searchkernel-web`.
 
-The compatibility promise is **compatibility with the declared pinned InstantSearch.js/search-client contract and tested supported-widget matrix**. It is not general Algolia API compatibility. The authoritative declaration is [src/compatibility.json](src/compatibility.json). `releaseStatus: unverified` means acceptance has not qualified a release; rendering a demonstration is insufficient.
+The compatibility promise is **compatibility with the declared pinned InstantSearch.js/search-client contract and tested supported-widget matrix**. It is not general Algolia API compatibility. The authoritative declaration is [src/compatibility.json](src/compatibility.json). `releaseStatus: qualified` records canonical real-engine JSDOM qualification for these exact package versions and declared client-side surfaces. It is not a package-publication or unrestricted Algolia compatibility claim.
 
 ## Application integration
 
@@ -33,6 +33,62 @@ search.addWidgets([
 ]);
 search.start();
 ```
+
+
+## React InstantSearch
+
+```sh
+npm install --save-exact react-instantsearch@7.51.0 react-instantsearch-core@7.51.0 react@19.3.0 react-dom@19.3.0 @searchkernel/instantsearch@0.1.0
+```
+
+```tsx
+import { InstantSearch, Configure, SearchBox, Hits, Highlight, Snippet, Pagination } from 'react-instantsearch';
+import { createSearchKernelInstantSearchClient } from '@searchkernel/instantsearch';
+
+// Keep this reference outside renders (or memoize it).
+const searchClient = createSearchKernelInstantSearchClient({endpoint: 'https://search.example.com/search'});
+function Product({hit}) {
+  return <article><Highlight attribute="title" hit={hit}/><Snippet attribute="description" hit={hit}/></article>;
+}
+export function ProductSearch() {
+  return <InstantSearch indexName="products" searchClient={searchClient} insights={false}>
+    <Configure analytics={false} hitsPerPage={6} attributesToHighlight={['title']} attributesToSnippet={['description']}/>
+    <SearchBox/><Hits hitComponent={Product}/><Pagination/>
+  </InstantSearch>;
+}
+```
+
+React 7.51.0 provides `useNumericMenu`, not a ready-made `NumericMenu` export. Numeric-menu qualification uses that real hook's items/refine interface with ordinary rendering. React search-client prop replacement is qualified. Server rendering, hydration and routing are outside this client-side profile.
+
+## Vue InstantSearch (Vue 3)
+
+```sh
+npm install --save-exact vue-instantsearch@4.30.0 vue@3.5.43 @searchkernel/instantsearch@0.1.0
+```
+
+```vue
+<script setup>
+import { AisInstantSearch, AisConfigure, AisSearchBox, AisHits, AisHighlight, AisSnippet, AisPagination } from 'vue-instantsearch/vue3/es';
+import { createSearchKernelInstantSearchClient } from '@searchkernel/instantsearch';
+const searchClient = createSearchKernelInstantSearchClient({endpoint: 'https://search.example.com/search'});
+</script>
+<template>
+  <ais-instant-search index-name="products" :search-client="searchClient" :insights="false">
+    <ais-configure :analytics="false" :hits-per-page="6" :attributes-to-highlight="['title']" :attributes-to-snippet="['description']"/>
+    <ais-search-box/>
+    <ais-hits><template #item="{item}">
+      <ais-highlight attribute="title" :hit="item"/><ais-snippet attribute="description" :hit="item"/>
+    </template></ais-hits>
+    <ais-pagination/>
+  </ais-instant-search>
+</template>
+```
+
+Vue qualification is for Vue 3 and the `vue-instantsearch/vue3/es` entry point, not Vue 2 or SSR. **Keep the search-client reference stable for the root's lifetime.** In pinned Vue 4.30.0, its prop watcher calls `instantSearchInstance.helper.setClient(...).search()` while execution remains on the original main helper/client. Real-engine acceptance records that the replacement client receives no requests. Dynamic client replacement is excluded; remount the root when changing client configuration. This is an upstream lifecycle constraint, not a separate Search Kernel adapter.
+
+React InstantSearch and Vue InstantSearch are supported for the widgets and request semantics declared in this profile. Components requiring unsupported underlying features remain unsupported: hierarchical navigation, infinite hits, range widgets, toggle refinement, facet-value search/searchable lists, geo search, dynamic widgets, analytics/insights and recommendations. Framework bindings do not add backend semantics. Keep default hit escaping enabled. Advanced Configure numericFilters must not be mixed with managed numeric refinements on the same field; the upstream helper rejects this combination.
+
+The adapter package has no framework runtime dependency. As with vanilla installation, use the locally packed archive until the package is published.
 
 `search(requests)` sends one bounded POST and returns results in input order. Each request has its own index, query, refinements, pagination, and projection. Maximum batch size is 16. Validation failure rejects before sending; the endpoint validates the whole batch before dispatch, then rejects on the first execution failure in input order; `requestIndex` identifies the failure. There are no response caches or mutable current-index slots. Overlapping calls have separate buffers and deadlines. The pinned consumer owns UI request ordering; aborting HTTP does not claim to cancel native work.
 
@@ -95,7 +151,7 @@ The server bounds headers, URI, body (64 KiB), batch (16), query (4096 UTF-8 byt
 
 `SearchKernelInstantSearchError` exposes `code` and optional `requestIndex`. Stable codes: `invalid_request`, `unsupported`, `unknown_index`, `stale_target`, `unavailable`, `timeout`, `overloaded`, `backend_failure`, and adapter-only `invalid_response`. Messages are fixed. Canonical details, filesystem paths, panic text, and stack traces are not returned. Errors never become successful empty results.
 
-Searchable refinement lists, facet-value search, hierarchical facets, arbitrary Algolia textual `filters`, ranking controls, geo search, recommendations, analytics, and replicas are explicitly excluded. React/Vue bindings are not advertised by this profile. Widget status describes tested support; the search-client boundary cannot identify a rendering-only widget. An unlisted/unsupported widget has no compatibility guarantee even when it emits allowed parameters. Unsupported methods and parameters fail explicitly.
+Searchable refinement lists, facet-value search, hierarchical facets, arbitrary Algolia textual `filters`, ranking controls, geo search, recommendations, analytics, and replicas are explicitly excluded. React/Vue qualification inherits these exclusions and the framework constraints above. Widget status describes tested support; the search-client boundary cannot identify a rendering-only widget. An unlisted/unsupported widget has no compatibility guarantee even when it emits allowed parameters. Unsupported methods and parameters fail explicitly.
 
 ## Verification
 
@@ -105,7 +161,7 @@ Searchable refinement lists, facet-value search, hierarchical facets, arbitrary 
 
 The canonical containerized lane runs pin/matrix/documentation guards, upstream type checks, adapter units, canonical binding checks, initial request-profile regressions, and the actual pinned InstantSearch.js widgets in Vitest/JSDOM against the public listener/dispatcher/Vespa path. The same lane runs in PR CI and Universe; no browser binary is required.
 
-Changing an ecosystem pin requires updating the declaration and lock and passing acceptance. CI fails on pin, installed-version, upstream widget-inventory, matrix-coverage, or generated-document drift. The production adapter has no dashboard or framework runtime dependency.
+Changing an ecosystem pin requires updating the declaration and lock and passing acceptance. CI fails on pin, installed-version, nested ecosystem-version, upstream source/widget-inventory, framework qualification registry, component-coverage, or generated-document drift. The executable registry loads both actual framework mounts; runtime acceptance checks every supported widget/helper is mounted and behavior asserted. The production adapter has no dashboard or framework runtime dependency.
 
 <!-- compatibility-matrix:start -->
 | Pinned upstream package | Version |
@@ -114,6 +170,35 @@ Changing an ecosystem pin requires updating the declaration and lock and passing
 | algoliasearch-helper | 3.30.0 |
 | algoliasearch | 5.59.0 |
 | @algolia/client-search | 5.59.0 |
+| react-instantsearch | 7.51.0 |
+| react-instantsearch-core | 7.51.0 |
+| vue-instantsearch | 4.30.0 |
+| react | 19.3.0 |
+| react-dom | 19.3.0 |
+| vue | 3.5.43 |
+
+| Framework | Status | Qualification / constraints |
+| --- | --- | --- |
+| react-instantsearch | supported with documented constraints | react-profile; Client-side only; inherits the declared scalar fields, bounded request semantics and supported widget/helper profile. SSR, hydration, routing and unsupported underlying capabilities are not qualified. Configure numericFilters must not share a field with a managed NumericMenu refinement. Numeric menu uses the actual useNumericMenu hook; this version has no NumericMenu UI export. Search-client prop replacement is qualified. |
+| vue-instantsearch | supported with documented constraints | vue3-profile; Client-side only; inherits the declared scalar fields, bounded request semantics and supported widget/helper profile. SSR, hydration, routing and unsupported underlying capabilities are not qualified. Configure numericFilters must not share a field with a managed NumericMenu refinement. Vue 3 only, using vue-instantsearch/vue3/es. Keep a stable search-client reference: this pinned Vue watcher updates helper.client rather than the executing mainHelper; dynamic prop replacement is not supported by this qualification. |
+
+| Underlying capability | React surface | Vue 3 surface |
+| --- | --- | --- |
+| Highlight | Highlight | AisHighlight |
+| Snippet | Snippet | AisSnippet |
+| clearRefinements | ClearRefinements | AisClearRefinements |
+| configure | Configure | AisConfigure |
+| currentRefinements | CurrentRefinements | AisCurrentRefinements |
+| hits | Hits | AisHits |
+| hitsPerPage | HitsPerPage | AisHitsPerPage |
+| index | Index | AisIndex |
+| menu | Menu | AisMenu |
+| numericMenu | useNumericMenu | AisNumericMenu |
+| pagination | Pagination | AisPagination |
+| refinementList | RefinementList | AisRefinementList |
+| searchBox | SearchBox | AisSearchBox |
+| sortBy | SortBy | AisSortBy |
+| stats | Stats | AisStats |
 
 | Upstream widget | Status | Coverage / constraints / reason |
 | --- | --- | --- |
