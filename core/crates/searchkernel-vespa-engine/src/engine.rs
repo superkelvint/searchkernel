@@ -38,18 +38,42 @@ const EXPECTED_ABI: u32 = sys::EXPECTED_ABI;
 /// binary codec; callers never reinterpret its bytes as doubles themselves.
 pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorValue> {
     if bytes.is_empty() || bytes.len() > 262_144 || max_cells == 0 || max_cells > 4096 {
-        return Err(Error::message("diagnostic tensor exceeds input/cell bounds"));
+        return Err(Error::message(
+            "diagnostic tensor exceeds input/cell bounds",
+        ));
     }
     let mut type_spec = vec![0_u8; 1024];
     let mut cells = vec![0.0; max_cells as usize];
     let (mut type_length, mut cell_count) = (0_u32, 0_u32);
     let mut error = NativeError::new();
     // Both outputs are caller-owned, sized above, and copied before returning.
-    let status = unsafe { sys::sk_diagnostic_tensor_decode(bytes.as_ptr(), bytes.len() as u32, type_spec.as_mut_ptr().cast(), type_spec.len() as u32, &mut type_length, cells.as_mut_ptr(), max_cells, &mut cell_count, error.as_mut_ptr(), error.capacity()) };
+    let status = unsafe {
+        sys::sk_diagnostic_tensor_decode(
+            bytes.as_ptr(),
+            bytes.len() as u32,
+            type_spec.as_mut_ptr().cast(),
+            type_spec.len() as u32,
+            &mut type_length,
+            cells.as_mut_ptr(),
+            max_cells,
+            &mut cell_count,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
     check(status, &error)?;
-    if type_length as usize > type_spec.len() || cell_count as usize > cells.len() { return Err(Error::message("native diagnostic tensor output exceeds capacity")); }
-    type_spec.truncate(type_length as usize); cells.truncate(cell_count as usize);
-    Ok(TensorValue::dense(String::from_utf8(type_spec).map_err(|_| Error::message("native tensor type is not UTF-8"))?, cells))
+    if type_length as usize > type_spec.len() || cell_count as usize > cells.len() {
+        return Err(Error::message(
+            "native diagnostic tensor output exceeds capacity",
+        ));
+    }
+    type_spec.truncate(type_length as usize);
+    cells.truncate(cell_count as usize);
+    Ok(TensorValue::dense(
+        String::from_utf8(type_spec)
+            .map_err(|_| Error::message("native tensor type is not UTF-8"))?,
+        cells,
+    ))
 }
 
 fn json_f64(value: &serde_json::Value, field: &str, context: &str) -> Result<f64, Error> {
