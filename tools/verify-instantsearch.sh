@@ -14,4 +14,4 @@ cd "$ROOT"
 "$NPM" run check:contract --prefix "$package"
 "$NPM" test --prefix "$package"
 (cd "$package" && "$NODE" scripts/check-package.mjs)
-"$CARGO" test -p searchkerneld --all-features --test public_search_binding --test instantsearch_compat --test instantsearch_product -- --include-ignored
+"$CARGO" test -p searchkerneld --all-features --test search_endpoints --test public_search_binding --test instantsearch_compat --test instantsearch_product -- --include-ignored
