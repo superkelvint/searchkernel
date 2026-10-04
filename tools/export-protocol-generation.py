@@ -32,7 +32,16 @@ def main():
     ).strip()
     # Intent-to-add makes newly generated files part of the ordinary binary
     # diff. This index belongs to the CI invocation, never the caller's tree.
-    subprocess.run(["git", "add", "--intent-to-add", "--", *OUTPUTS],
+    files = []
+    for output in OUTPUTS:
+        path = root / output
+        candidates = path.rglob("*") if path.is_dir() else [path]
+        files.extend(str(item.relative_to(root)) for item in candidates
+                     if item.is_file() and "__pycache__" not in item.parts
+                     and item.suffix not in (".pyc", ".pyo"))
+    # Generated trees are ignored for ordinary discovery. Explicitly include
+    # new generator outputs while excluding Python's incidental bytecode.
+    subprocess.run(["git", "add", "--intent-to-add", "--force", "--", *files],
                    cwd=root, check=True)
     patch = subprocess.check_output(
         ["git", "diff", "--binary", "HEAD", "--", *OUTPUTS], cwd=root
