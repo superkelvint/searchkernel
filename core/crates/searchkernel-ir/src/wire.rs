@@ -429,6 +429,7 @@ pub mod v1 {
             &schema::ListIndexesResultArgs {
                 targets: Some(targets),
                 configuration: Some(configuration),
+                query_diagnostics: true,
             },
         )
         .as_union_value();

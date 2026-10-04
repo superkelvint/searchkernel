@@ -1538,6 +1538,18 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_generic_search_request_set_diagnostics(
+        request: *mut sk_generic_search_request,
+        trace_level: u32,
+        matching_depth: u32,
+        first_phase_depth: u32,
+        second_phase_depth: u32,
+        raw_bytes: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_request_add_sort(
         request: *mut sk_generic_search_request,
         field: *const ::std::os::raw::c_char,
@@ -1667,6 +1679,19 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_generic_search_result_issue_count(result: *const sk_generic_search_result) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_diagnostics(
+        result: *const sk_generic_search_result,
+        out_trace: *mut *const u8,
+        out_length: *mut u32,
+        out_truncated: *mut u32,
+        out_matching_seconds: *mut f64,
+        out_summary_seconds: *mut f64,
+        out_query_seconds: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_generic_search_result_issue_message(

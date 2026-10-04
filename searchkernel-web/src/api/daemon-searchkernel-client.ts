@@ -1,5 +1,7 @@
 import { prepareDocumentMutation, preparedDocumentRequest } from './document-request'
 import { prepareSearch, preparedRequest } from './search-request'
+import { prepareDiagnostics, preparedDiagnosticRequest } from './diagnostic-request'
+import { diagnosticResponse } from './diagnostic-response'
 import {
   Client, GrpcWebTransport, Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
   SearchResults, ResultDecodeError, ValueDecodeError, fromValue, toCanonicalJson, DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
@@ -112,6 +114,15 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
     }
   }
   return {
+    prepareDiagnostics,
+    executeDiagnostics(prepared, options) { return call(async () => {
+      const index = await opened(prepared.target, options)
+      if (index.generation !== prepared.generation) throw new SearchKernelClientError(
+        'The index is no longer the same incarnation. Refresh/reselect it explicitly before collecting evidence.',
+        { code: 'stale_index_handle', origin: 'client', retryable: false })
+      const raw = await index.queryDiagnostics(preparedDiagnosticRequest(prepared), options)
+      return diagnosticResponse(raw, dashboardValue)
+    }) },
     planIndexChange(target, definition, options) { return call(async () => {
       let client = configurationClients.get(target)
       if (!client) {
@@ -143,6 +154,7 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
       const discovery = await daemon.client.listIndexes()
       const configuration = discovery.configuration
       return { ...capabilities,
+        query: { ...capabilities.query, diagnostics: discovery.queryDiagnostics },
         indexes: { ...capabilities.indexes, create: configuration?.createIndex ?? false },
         schema: { ...capabilities.schema, write: configuration?.fieldMutation ?? false, changePlan: configuration?.changePlan ?? false },
         ranking: { ...capabilities.ranking, write: configuration?.rankProfilesWrite ?? false },
@@ -183,6 +195,8 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
       const raw = await index.client.search(preparedRequest(prepared), options)
       const result = new SearchResults(raw)
       return {
+        sourceRunId: raw.metadata.find(entry => entry.key === 'searchkernel.source_run')?.value
+          ? String(fromValue(raw.metadata.find(entry => entry.key === 'searchkernel.source_run')!.value!)) : undefined,
         canonicalResponse: JSON.stringify(toCanonicalJson(raw), null, 2), totalRelation: result.totalHitsRelation,
         request, matches: result.totalHits.toString(),
         timingMs: result.timing?.queryTimeSeconds == null ? undefined : `${result.timing.queryTimeSeconds * 1000} ms`,

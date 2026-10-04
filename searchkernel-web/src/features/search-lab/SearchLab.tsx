@@ -1,15 +1,17 @@
 import { CopyButton } from '../../components/Workbench'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { type ClientSearchRequest, type ClientSearchResponse, type PreparedSearchRequest, normalizeClientError } from '../../api/searchkernel-client'
+import { type ClientSearchRequest, type ClientSearchResponse, type PreparedSearchRequest, type ClientDiagnostics, type DiagnosticIntent, normalizeClientError } from '../../api/searchkernel-client'
 import { typedTerm, typedQueryReference } from '../../api/search-request'
-import { useSearchKernelClient } from '../../app/client-context'
+import { useSearchKernelClient, useCapabilities } from '../../app/client-context'
+import { QueryDiagnostics } from './QueryDiagnostics'
 import { useIndex } from '../../app/index-context'
 import { Heading } from '../../components/Shared'
 import { decodeSearchParams, encodeSearchParams, updateSearchState, canAdvancePage } from './search-params'
 
 export function SearchLab() {
   const index = useIndex(), client = useSearchKernelClient()
+  const { capabilities } = useCapabilities()
   const [params, setParams] = useSearchParams()
   const key = params.toString()
   const restored = useMemo(() => decodeSearchParams(new URLSearchParams(key)), [key])
@@ -26,6 +28,12 @@ export function SearchLab() {
   const [executed, setExecuted] = useState<PreparedSearchRequest>()
   const [tab, setTab] = useState('Request')
   const [termField, setTermField] = useState(index.fields[0]?.name ?? '')
+  const [debuggerIntent, setDebuggerIntent] = useState<DiagnosticIntent>()
+  const [selected, setSelected] = useState<string[]>([])
+  const [lens, setLens] = useState(false)
+  const [lensEvidence, setLensEvidence] = useState<{ scope: string; source?: string; value: ClientDiagnostics }>()
+  const [lensSignals, setLensSignals] = useState('')
+  const diagnosticBaseline = useMemo(() => response ? client.prepareSearch(response.request) : undefined, [client, response])
   const controller = useRef<AbortController | null>(null)
   const sequence = useRef(0)
   async function execute(request: PreparedSearchRequest) {
@@ -43,6 +51,7 @@ export function SearchLab() {
   // reconstructs the editor; it never launches lifecycle/mutation operations.
   useEffect(() => {
     setResult(null); setError(undefined); setExecuted(undefined); setLoading(false)
+    setDebuggerIntent(undefined); setSelected([]); setLens(false); setLensEvidence(undefined)
     setTermField(index.fields[0]?.name ?? '')
     if (!restored.error && prepared.value && (params.has('s') || params.has('q'))) void execute(prepared.value)
     return () => { ++sequence.current; controller.current?.abort() }
@@ -86,8 +95,27 @@ export function SearchLab() {
     </div></details>
     {visibleError && <div role="alert" className="surface mt-4 border-red-200 p-4 text-red-800"><strong>{visibleError.origin ?? 'client'} · {visibleError.code}</strong><p>{visibleError.message}</p><details><summary>Structured error</summary><pre className="overflow-auto text-xs">{errorJson}</pre></details></div>}
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
-      <section className="surface min-w-0 p-4" aria-label="Search results"><h2 className="font-semibold">Results</h2>{loading && <p role="status">Running request… Previous results are retained.</p>}{error && response && <p>Previous successful response retained; the latest request failed.</p>}{dirty && <p className="text-amber-700">Editor differs from the last executed request.</p>}<p>{response ? `${response.matches} matches` : executed ? 'No successful response yet.' : 'No query executed. Enter a query, or run an empty text query to browse.'} {response?.totalRelation} {response?.timingMs}</p>{response && !response.hits.length && <p>{String(response.matches) === '0' ? 'No hits matched this query.' : 'This page returned no hits.'}</p>}{response?.hits.map(hit => <article key={hit.document.id} className="mt-3 border-t py-3"><div className="flex justify-between"><strong>{hit.document.id}</strong><code>Score: {hit.score}</code></div><pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(hit.document.fields, null, 2)}</pre></article>)}<div className="mt-4 flex flex-wrap gap-2"><button className="soft-button" disabled={loading || !!prepared.error || !!restored.error || dirty || !!error || state.limit === undefined || !state.offset} onClick={() => { const next = { ...state, offset: Math.max(0, (state.offset ?? 0) - state.limit!) }; setParams(encodeSearchParams(next)); try { void execute(client.prepareSearch(next)) } catch (e) { setError(normalizeClientError(e)) } }}>Previous page</button><button className="soft-button" disabled={loading || !!prepared.error || !!restored.error || dirty || !!error || !canAdvancePage(state, response)} onClick={() => { const next = { ...state, offset: (state.offset ?? 0) + state.limit! }; setParams(encodeSearchParams(next)); try { void execute(client.prepareSearch(next)) } catch (e) { setError(normalizeClientError(e)) } }}>Next page</button></div>{state.limit === undefined && <p className="mt-2 text-xs">Set an explicit limit to use page controls.</p>}</section>
-      <section className="surface min-w-0 p-4"><div className="flex flex-wrap gap-2" role="tablist">{['Request', 'Response', 'Executed request', 'Error'].map(name => <button key={name} role="tab" aria-selected={name === tab} className="soft-button" onClick={() => setTab(name)}>{name}</button>)}</div><p className="my-2 text-xs">{tab === 'Response' ? 'SearchResult payload' : tab === 'Error' ? 'Search Kernel error' : 'SearchRequest payload'} · target {index.id} · generation {index.generation ?? 'unavailable'}</p><CopyButton text={inspector} label={`Copy ${tab}`} /><pre aria-label={`${tab} inspector`} className="mt-3 max-h-150 overflow-auto rounded bg-slate-950 p-4 font-mono text-xs text-slate-100">{inspector}</pre></section>
+      <section className="surface min-w-0 p-4" aria-label="Search results"><h2 className="font-semibold">Results</h2>{loading && <p role="status">Running request… Previous results are retained.</p>}{error && response && <p>Previous successful response retained; the latest request failed.</p>}{dirty && <p className="text-amber-700">Editor differs from the last executed request.</p>}<p>{response ? `${response.matches} matches` : executed ? 'No successful response yet.' : 'No query executed. Enter a query, or run an empty text query to browse.'} {response?.totalRelation} {response?.timingMs}</p>{response && !response.hits.length && <p>{String(response.matches) === '0' ? 'No hits matched this query.' : 'This page returned no hits.'}</p>}{response && <div className="my-3 flex flex-wrap gap-2">
+        <button className="soft-button" disabled={!capabilities?.query.diagnostics} onClick={() => { setSelected([]); setDebuggerIntent(String(response.matches) === '0' ? 'zero-results' : 'query-interpretation') }}>{String(response.matches) === '0' ? 'Find out why' : "What's wrong with this search?"}</button>
+        <label><input type="checkbox" checked={lens} disabled={!capabilities?.query.diagnostics} onChange={e => { setLens(e.target.checked); if (e.target.checked) { setSelected([]); setDebuggerIntent('explain-hit') } }}/> Explain lens</label>
+        {lens && <label>Signals to show (comma-separated)<input aria-label="Explain lens signals" className="input" value={lensSignals} onChange={e => setLensSignals(e.target.value)}/></label>}
+      </div>}
+      {response?.hits.map((hit, position) => <article key={hit.document.id} className="mt-3 border-t py-3">
+        <div className="flex justify-between"><strong>{hit.document.id}</strong><code>Score: {hit.score}</code></div>
+        <div className="my-2 flex flex-wrap gap-2">
+          <button className="soft-button" disabled={!capabilities?.query.diagnostics} onClick={() => { setSelected([hit.document.id]); setDebuggerIntent('explain-hit') }}>Why this result? {hit.document.id}</button>
+          <button className="soft-button" disabled={!capabilities?.query.diagnostics} aria-pressed={selected.includes(hit.document.id)} onClick={() => setSelected(selected.includes(hit.document.id) ? selected.filter(id => id !== hit.document.id) : [...selected.slice(-1), hit.document.id])}>{selected.includes(hit.document.id) ? 'Unpin' : 'Pin'} {hit.document.id}</button>
+          {position > 0 && <button className="soft-button" disabled={!capabilities?.query.diagnostics} onClick={() => { setSelected([response.hits[position - 1].document.id, hit.document.id]); setDebuggerIntent('ranking-comparison') }}>Compare with result above</button>}
+        </div>
+        {lens && lensEvidence?.scope === scope && lensEvidence.source === response.sourceRunId && <div className="text-xs"><p>Diagnostic rerun signals — not captured in the original execution.</p>{lensEvidence.value.hits.find(value => value.id === hit.document.id)?.signals.filter(value => !lensSignals.trim() || lensSignals.split(',').map(name => name.trim()).includes(value.name)).slice(0, 3).map(value => <p key={value.name}>{value.name}: {JSON.stringify(value.value)} · #{value.position ?? 'unavailable'} among {value.comparisonCount} returned values; ties {value.ties ?? 'unavailable'}</p>)}</div>}
+        <pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(hit.document.fields, null, 2)}</pre>
+      </article>)}<div className="mt-4 flex flex-wrap gap-2"><button className="soft-button" disabled={loading || !!prepared.error || !!restored.error || dirty || !!error || state.limit === undefined || !state.offset} onClick={() => { const next = { ...state, offset: Math.max(0, (state.offset ?? 0) - state.limit!) }; setParams(encodeSearchParams(next)); try { void execute(client.prepareSearch(next)) } catch (e) { setError(normalizeClientError(e)) } }}>Previous page</button><button className="soft-button" disabled={loading || !!prepared.error || !!restored.error || dirty || !!error || !canAdvancePage(state, response)} onClick={() => { const next = { ...state, offset: (state.offset ?? 0) + state.limit! }; setParams(encodeSearchParams(next)); try { void execute(client.prepareSearch(next)) } catch (e) { setError(normalizeClientError(e)) } }}>Next page</button></div>{state.limit === undefined && <p className="mt-2 text-xs">Set an explicit limit to use page controls.</p>}</section>
+      {debuggerIntent && diagnosticBaseline && response ? <QueryDiagnostics
+        key={JSON.stringify([scope, response.sourceRunId, diagnosticBaseline.canonical])}
+        client={client} index={index} baseline={diagnosticBaseline} response={response}
+        selected={selected} initialIntent={debuggerIntent} onClose={() => setDebuggerIntent(undefined)}
+        onEvidence={value => setLensEvidence({ scope, source: response.sourceRunId, value })}/ > :
+      <section className="surface min-w-0 p-4"><div className="flex flex-wrap gap-2" role="tablist">{['Request', 'Response', 'Executed request', 'Error'].map(name => <button key={name} role="tab" aria-selected={name === tab} className="soft-button" onClick={() => setTab(name)}>{name}</button>)}</div><p className="my-2 text-xs">{tab === 'Response' ? 'SearchResult payload' : tab === 'Error' ? 'Search Kernel error' : 'SearchRequest payload'} · target {index.id} · generation {index.generation ?? 'unavailable'}</p><CopyButton text={inspector} label={`Copy ${tab}`} /><pre aria-label={`${tab} inspector`} className="mt-3 max-h-150 overflow-auto rounded bg-slate-950 p-4 font-mono text-xs text-slate-100">{inspector}</pre></section>}
     </div>
   </div>
 }

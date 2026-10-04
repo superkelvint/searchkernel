@@ -162,18 +162,24 @@ impl Dispatcher {
         id: Option<&str>,
         target: Option<&str>,
         generation: Option<&str>,
-    ) -> Option<searchkernel_ir::DiagnosticSourceRun> {
-        let id = id?;
-        self.source_runs
+    ) -> searchkernel_ir::Result<Option<searchkernel_ir::DiagnosticSourceRun>> {
+        let Some(id) = id else { return Ok(None) };
+        if !id.starts_with(&format!("{}-", self.execution_prefix)) {
+            return Err(searchkernel_ir::PortableError::failed_precondition(
+                "diagnostic_source_incarnation_mismatch", Some("source_run_id"),
+                "the original search belongs to another target incarnation; refresh/reselect explicitly"));
+        }
+        Ok(self.source_runs
             .lock()
-            .ok()?
+            .map_err(|_| searchkernel_ir::PortableError::new(searchkernel_ir::ErrorCode::Internal,
+                "diagnostic source cache is unavailable"))?
             .iter()
             .find(|source| {
                 source.execution.id == id
                     && source.execution.target.as_deref() == target
                     && source.execution.generation.as_deref() == generation
             })
-            .cloned()
+            .cloned())
     }
 
     fn execute_backend<T>(

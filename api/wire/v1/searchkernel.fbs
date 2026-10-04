@@ -611,6 +611,7 @@ table ConfigurationCapabilities {
 table ListIndexesResult {
   targets:[string];
   configuration:ConfigurationCapabilities;
+  query_diagnostics:bool = false;
 }
 
 // Configuration administration validates through the same IR/backend path as

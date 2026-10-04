@@ -185,7 +185,7 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
                 let target = envelope.target().and_then(|target| target.name());
                 let generation = envelope.target().and_then(|target| target.generation());
                 let source =
-                    dispatcher.source_run(request.source_run_id.as_deref(), target, generation);
+                    dispatcher.source_run(request.source_run_id.as_deref(), target, generation)?;
                 let execution = dispatcher.execution(
                     &request.request,
                     target,

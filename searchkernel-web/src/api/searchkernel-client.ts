@@ -10,7 +10,7 @@ export type Capabilities = {
   documents: { read: boolean; write: boolean; bulk: boolean }
   search: { basic: boolean; sort: boolean; facets: boolean; grouping: boolean }
   analysis: { text: boolean }
-  query: { inspect: boolean }
+  query: { inspect: boolean; diagnostics?: boolean }
   schema: { read: boolean; write: boolean; changePlan: boolean }
   ranking: { profiles: boolean; features: boolean; write: boolean }
   summaries: { read: boolean; write: boolean }
@@ -60,6 +60,25 @@ export type SearchFilter = { field: string; operator: 'eq' | 'ne' | 'lt' | 'lte'
 export type SearchSort = { field: string; direction: 'asc' | 'desc' }
 export type ClientSearchRequest = { query: string; mode?: 'text' | 'typed'; typedQuery?: string; filters?: SearchFilter[]; sorts?: SearchSort[]; offset?: number; ranking?: string; limit?: number; summary?: string; inputs?: string }
 export type PreparedSearchRequest = { readonly request: ClientSearchRequest; readonly canonical: string }
+export type DiagnosticIntent = 'explain-hit' | 'zero-results' | 'missing-document' | 'ranking-comparison' | 'overmatching' | 'query-interpretation' | 'vector-retrieval' | 'performance' | 'deep-engine' | 'experiment'
+export type DiagnosticSection = 'query' | 'retrieval' | 'ranking' | 'timing' | 'matched-terms' | 'vectors' | 'trace' | 'matching-profiler' | 'first-phase-profiler' | 'second-phase-profiler' | 'blueprint' | 'iterator-tree' | 'raw-engine' | 'counterfactual'
+export type DiagnosticOptions = {
+  intent: DiagnosticIntent; sections?: DiagnosticSection[]; selectedHits?: string[]
+  expectedDocumentId?: string; experiment?: PreparedSearchRequest; compareExact?: boolean
+  timeoutMs?: number; traceDepth?: number; profilerDepth?: number
+}
+export type PreparedDiagnostics = { readonly target: string; readonly generation: string; readonly canonical: string }
+export type DiagnosticExecution = { id: string; kind: string; target?: string; generation?: string; complete: boolean; requestHash: string }
+export type ClientDiagnostics = {
+  execution: DiagnosticExecution; sourceRun?: DiagnosticExecution; canonicalResponse: string
+  findings: { code: string; message: string; evidenceIds: string[] }[]
+  evidence: { id: string; section: string; status: string; provenance: string; executionId: string; message: string; values: Record<string, FieldValue>; canonicalRequest?: string; result?: string }[]
+  hits: { id: string; executionId: string; position: number; relevance: string; signals: { name: string; value: FieldValue; position?: number; ties?: number; comparisonCount: number; comparisonSet: string }[] }[]
+  expectedDocument?: { id: string; stages: { name: string; observation: string; evidenceIds: string[] }[] }
+  comparison?: { changed?: boolean; overlapCount: number; comparisonCount: number; entering: string[]; leaving: string[]; movements: { id: string; baselinePosition?: number; rerunPosition?: number }[] }
+  rawEngine: { engine: string; version: string; executionId: string; section: string; status: string; mediaType: string; payload: string }[]
+  warnings: string[]
+}
 export type DocumentMutationOperation = 'insert' | 'upsert' | 'patch' | 'update' | 'delete'
 export type DocumentEditorState = { operation: DocumentMutationOperation; id: string; fields: string; operations: string; condition?: string; create?: boolean }
 export type PreparedDocumentMutation = { readonly operation: DocumentMutationOperation; readonly id: string; readonly canonical: string }
@@ -79,6 +98,7 @@ export type ClientSearchResponse = {
   canonicalResponse?: string
   totalRelation?: string
   coverage?: FieldValue
+  sourceRunId?: string
 }
 export type AnalysisToken = { position: number; original: string; normalized: string; term: string }
 export type RequestOptions = { signal?: AbortSignal }
@@ -119,6 +139,8 @@ export function normalizeClientError(error: unknown): SearchKernelClientError {
 }
 
 export interface SearchKernelClient {
+  prepareDiagnostics?(index: Index, request: PreparedSearchRequest, sourceRunId: string | undefined, options: DiagnosticOptions): PreparedDiagnostics
+  executeDiagnostics?(request: PreparedDiagnostics, options?: RequestOptions): Promise<ClientDiagnostics>
   planIndexChange?(indexId: string, definition: IndexDefinitionT, options?: RequestOptions): Promise<ConfigurationPlan>
   applyIndexChange?(indexId: string, planId: string, options?: RequestOptions): Promise<Index>
   reopenIndex?(indexId: string, options?: RequestOptions): Promise<Index>
