@@ -121,7 +121,9 @@ pub(super) fn lower_in_value(value: &ScalarValueIr) -> Result<InQueryValue> {
     match lower_attribute_value(value)? {
         VespaValue::String(value) => Ok(InQueryValue::String(value)),
         VespaValue::Integer(value) => Ok(InQueryValue::Integer(value)),
-        _ => Err(unsupported("in query supports only string and integer values")),
+        _ => Err(unsupported(
+            "in query supports only string and integer values",
+        )),
     }
 }
 

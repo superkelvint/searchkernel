@@ -5,15 +5,24 @@ fn filter_and_typed_membership_share_unsupported_value_and_sentinel_errors() {
     for (scalar, typed) in [
         (ScalarValueIr::Bool(true), RequestValueIr::Bool(true)),
         (ScalarValueIr::Float64(1.5), RequestValueIr::Float64(1.5)),
-        (ScalarValueIr::Int64(i64::MIN), RequestValueIr::Int64(i64::MIN)),
+        (
+            ScalarValueIr::Int64(i64::MIN),
+            RequestValueIr::Int64(i64::MIN),
+        ),
     ] {
         let filter_error = lower_filter(&FilterIr::In {
             field: field("member"),
             values: vec![scalar],
-        }).unwrap_err();
-        let typed_error = lower_query(&typed_expression(QueryExprKindIr::In {
-            field: typed_field("member"), values: vec![typed],
-        }), &[]).unwrap_err();
+        })
+        .unwrap_err();
+        let typed_error = lower_query(
+            &typed_expression(QueryExprKindIr::In {
+                field: typed_field("member"),
+                values: vec![typed],
+            }),
+            &[],
+        )
+        .unwrap_err();
         assert_eq!(filter_error, typed_error);
         assert_eq!(filter_error.code, ErrorCode::Unsupported);
         assert_eq!(filter_error.details[0].code, "m_lowering");
@@ -25,26 +34,60 @@ fn membership_validation_remains_at_the_canonical_boundary() {
     let definition = IndexDefinitionIr::new(
         None,
         vec![
-            FieldIr::new(field("qty"), DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64), None, FieldCapabilities::new(false, false, true, false, false)),
-            FieldIr::new(field("price"), DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64), None, FieldCapabilities::new(false, false, true, false, false)),
-            FieldIr::new(field("active"), DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool), None, FieldCapabilities::new(false, false, true, false, false)),
+            FieldIr::new(
+                field("qty"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                None,
+                FieldCapabilities::new(false, false, true, false, false),
+            ),
+            FieldIr::new(
+                field("price"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+                None,
+                FieldCapabilities::new(false, false, true, false, false),
+            ),
+            FieldIr::new(
+                field("active"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+                None,
+                FieldCapabilities::new(false, false, true, false, false),
+            ),
         ],
         Vec::new(),
-    ).unwrap();
+    )
+    .unwrap();
     let context = IndexContext::from_definition_ir(definition);
     for (name, values, detail) in [
         ("qty", Vec::new(), "empty_in"),
-        ("qty", vec![ScalarValueIr::Int64(1), ScalarValueIr::String("two".into())], "type_mismatch"),
+        (
+            "qty",
+            vec![ScalarValueIr::Int64(1), ScalarValueIr::String("two".into())],
+            "type_mismatch",
+        ),
         ("price", vec![ScalarValueIr::Float64(1.0)], "invalid_filter"),
         ("active", vec![ScalarValueIr::Bool(true)], "invalid_filter"),
     ] {
         let request = SearchRequestIr::new(
-            QueryIr::MatchAll, Vec::new(), Some(FilterIr::In { field: field(name), values }),
-            Vec::new(), 10, 0, ProjectionIr::new(Vec::new()), HighlightingIr::Disabled,
-            None, PrefixPolicy::Disabled, TypoPolicy::Disabled,
+            QueryIr::MatchAll,
+            Vec::new(),
+            Some(FilterIr::In {
+                field: field(name),
+                values,
+            }),
+            Vec::new(),
+            10,
+            0,
+            ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
         );
         let bytes = searchkernel_ir::wire::v1::search_request_ir_to_api(&request);
-        let decoded = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::wire::v1::schema::SearchRequest>(&bytes).unwrap();
+        let decoded = searchkernel_ir::__flatbuffers::root::<
+            searchkernel_ir::wire::v1::schema::SearchRequest,
+        >(&bytes)
+        .unwrap();
         let error = searchkernel_ir::wire::v1::search_to_ir(&context, decoded).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidArgument);
         assert_eq!(error.details[0].code, detail);

@@ -200,10 +200,7 @@ fn lower_typed_query(
                 .iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    lower_in_value(&typed_scalar(
-                        value,
-                        &format!("{path}.in.values[{index}]"),
-                    )?)
+                    lower_in_value(&typed_scalar(value, &format!("{path}.in.values[{index}]"))?)
                 })
                 .collect::<Result<Vec<_>>>()?;
             Ok(Query::In {
