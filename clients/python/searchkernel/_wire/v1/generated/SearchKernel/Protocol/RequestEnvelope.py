@@ -121,6 +121,8 @@ from searchkernel._wire.v1.generated import SearchKernel
 from searchkernel._wire.v1.generated import SearchKernel
 from searchkernel._wire.v1.generated import SearchKernel
 from searchkernel._wire.v1.generated import SearchKernel
+from searchkernel._wire.v1.generated import SearchKernel
+from searchkernel._wire.v1.generated import SearchKernel
 try:
     from typing import Optional, Union
 except:
@@ -138,7 +140,7 @@ class RequestEnvelopeT(object):
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.Wire.InsertRequest.InsertRequestT', 'SearchKernel.Wire.UpsertRequest.UpsertRequestT', 'SearchKernel.Wire.PatchRequest.PatchRequestT', 'SearchKernel.Wire.DeleteRequest.DeleteRequestT', 'SearchKernel.Wire.GetRequest.GetRequestT', 'SearchKernel.Wire.SearchRequest.SearchRequestT', 'SearchKernel.Wire.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.Wire.DescribeRequest.DescribeRequestT', 'SearchKernel.Wire.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.Wire.UpdateRequest.UpdateRequestT', 'SearchKernel.Wire.CreateIndexRequest.CreateIndexRequestT', 'SearchKernel.Wire.OpenIndexRequest.OpenIndexRequestT', 'SearchKernel.Wire.DeleteIndexRequest.DeleteIndexRequestT', 'SearchKernel.Wire.ListIndexesRequest.ListIndexesRequestT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.Wire.InsertRequest.InsertRequestT', 'SearchKernel.Wire.UpsertRequest.UpsertRequestT', 'SearchKernel.Wire.PatchRequest.PatchRequestT', 'SearchKernel.Wire.DeleteRequest.DeleteRequestT', 'SearchKernel.Wire.GetRequest.GetRequestT', 'SearchKernel.Wire.SearchRequest.SearchRequestT', 'SearchKernel.Wire.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.Wire.DescribeRequest.DescribeRequestT', 'SearchKernel.Wire.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.Wire.UpdateRequest.UpdateRequestT', 'SearchKernel.Wire.CreateIndexRequest.CreateIndexRequestT', 'SearchKernel.Wire.OpenIndexRequest.OpenIndexRequestT', 'SearchKernel.Wire.DeleteIndexRequest.DeleteIndexRequestT', 'SearchKernel.Wire.ListIndexesRequest.ListIndexesRequestT', 'SearchKernel.Wire.PlanIndexChangeRequest.PlanIndexChangeRequestT', 'SearchKernel.Wire.ApplyIndexChangeRequest.ApplyIndexChangeRequestT']
         self.target = target  # type: Optional[SearchKernel.Wire.IndexTarget.IndexTargetT]
 
     @classmethod

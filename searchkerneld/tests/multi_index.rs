@@ -1972,3 +1972,39 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
     server.shutdown().await.expect("shutdown restarted daemon");
     registry.close_all().expect("close restarted registry");
 }
+
+#[test]
+fn diagnostics_observe_persistence_without_opening_and_track_incarnations() {
+    let temp = TempDir::new("diagnostics");
+    let registry = IndexRegistry::new(&temp.0).unwrap();
+    let empty = registry.diagnostics().unwrap();
+    assert!(empty.ready);
+    assert!(empty.indexes.is_empty());
+    registry
+        .dispatch(&create_request("alpha", "title"))
+        .unwrap();
+    registry.dispatch(&create_request("beta", "title")).unwrap();
+    let old = registry.diagnostics().unwrap();
+    assert_eq!(old.indexes.len(), 2);
+    assert!(old
+        .indexes
+        .iter()
+        .all(|index| index.state == "open" && index.persisted == Some(true)));
+    assert_ne!(old.indexes[0].generation, old.indexes[1].generation);
+    registry.close_all().unwrap();
+    let registry = IndexRegistry::new(&temp.0).unwrap();
+    let restarted = registry.diagnostics().unwrap();
+    assert!(restarted
+        .indexes
+        .iter()
+        .all(|index| index.state == "persisted" && index.generation.is_none()));
+    assert!(registry.loaded_targets().unwrap().is_empty());
+    registry.dispatch(&open_request(Some("alpha"))).unwrap();
+    let reopened = registry.diagnostics().unwrap();
+    assert_ne!(old.indexes[0].generation, reopened.indexes[0].generation);
+    assert_eq!(reopened.indexes[1].state, "persisted");
+    registry.close_all().unwrap();
+}
+
+#[path = "multi_index/configuration_workflow.rs"]
+mod configuration_workflow;

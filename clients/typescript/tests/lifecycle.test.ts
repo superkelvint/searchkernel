@@ -1,3 +1,5 @@
+import { PlanIndexChangeResultT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/plan-index-change-result.js";
+import { ApplyIndexChangeResultT } from "../src/_wire/v1/generated/flatbuffers/search-kernel/wire/apply-index-change-result.js";
 import { ByteBuffer } from "flatbuffers";
 import { describe, expect, it } from "vitest";
 import { Daemon, Index, type ClientTransport } from "../src/client/index.js";
@@ -32,6 +34,22 @@ function successfulTransport(responses: Uint8Array[]): ClientTransport {
 }
 
 describe("logical index lifecycle", () => {
+  it("deletes through a bound handle with its exact generation", async () => {
+    const sent: Uint8Array[] = [];
+    const transport: ClientTransport = {
+      execute: async (request) => {
+        sent.push(request);
+        return sent.length === 1
+          ? envelope(ResponsePayload.SearchKernel_Wire_OpenIndexResult, new OpenIndexResultT(new WireIndexDefinitionT("schema"), "old-generation"))
+          : envelope(ResponsePayload.SearchKernel_Wire_DeleteIndexResult, new DeleteIndexResultT());
+      },
+      close: async () => {},
+    };
+    const index = await Index.open("unused", "alpha", transport);
+    await index.client.deleteIndex();
+    const request = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(sent[1]));
+    expect(request.target(new IndexTarget())?.generation()).toBe("old-generation");
+  });
   // SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=browser
   it("discovers targets without a target or opening every index", async () => {
     const requests: Uint8Array[] = [];
@@ -44,6 +62,30 @@ describe("logical index lifecycle", () => {
     const request = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[0]!));
     expect(request.target()).toBeNull();
     expect(request.payloadType()).toBe(RequestPayload.SearchKernel_Wire_ListIndexesRequest);
+  });
+
+  // SKC: daemon.configuration_workflow/basic kinds=ergonomic runtime=browser
+  it("binds plans to the opened generation and replaces metadata only after successful apply", async () => {
+    const requests: Uint8Array[] = [];
+    const responses = [
+      envelope(ResponsePayload.SearchKernel_Wire_OpenIndexResult, new OpenIndexResultT(new WireIndexDefinitionT("schema"), "old")),
+      envelope(ResponsePayload.SearchKernel_Wire_PlanIndexChangeResult, new PlanIndexChangeResultT(new WireIndexDefinitionT("schema"), "old", "plan", true, true, ["Rank-only change"])),
+      envelope(ResponsePayload.SearchKernel_Wire_ApplyIndexChangeResult, new ApplyIndexChangeResultT(new WireIndexDefinitionT("applied"), "new")),
+    ];
+    const index = await Index.open("unused", "alpha", { execute: async request => {
+      requests.push(request); return responses.shift()!;
+    } });
+    expect(await index.client.planIndexChange(new IndexDefinitionT("schema"))).toMatchObject({ planId: "plan", supported: true });
+    expect(index.generation).toBe("old");
+    const planned = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[1]!));
+    expect(planned.target()?.generation()).toBe("old");
+    expect(planned.payloadType()).toBe(RequestPayload.SearchKernel_Wire_PlanIndexChangeRequest);
+    await index.client.applyIndexChange("plan");
+    const applied = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(requests[2]!));
+    expect(applied.target()?.generation()).toBe("old");
+    expect(index.generation).toBe("new");
+    expect(index.definition.name).toBe("applied");
+    await index.close();
   });
 
   it("retains open definition and packs selected summary without inventing defaults", async () => {

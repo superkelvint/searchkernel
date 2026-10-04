@@ -1,3 +1,4 @@
+import { PlanIndexChangeRequestT, PlanIndexChangeResultT, ApplyIndexChangeRequestT, ApplyIndexChangeResultT } from "../semantic.js";
 import { AnalyzeFieldTargetT } from "../semantic.js";
 import { AnalyzeRequestT } from "../semantic.js";
 import { AnalyzeTarget } from "../semantic.js";
@@ -89,6 +90,8 @@ function document(id: string, fields: Record<string, ValueInput>): DocumentT {
 
 export interface OperationResponseMap {
   listIndexes: ListIndexesResultT;
+  planIndexChange: PlanIndexChangeResultT;
+  applyIndexChange: ApplyIndexChangeResultT;
   insert: InsertResultT;
   upsert: UpsertResultT;
   patch: PatchResultT;
@@ -143,15 +146,17 @@ export class Client {
       await this.binding;
     }
     try {
-      const lifecycleOperation =
-        operation === "createIndex" || operation === "openIndex" || operation === "deleteIndex";
+      // Create/open establish an incarnation. A bound delete must retain the
+      // captured generation so replacing the logical name cannot retarget it.
+      const establishesIncarnation =
+        operation === "createIndex" || operation === "openIndex";
       const decoded = unpackResponse(
         await this.transport.execute(
           packRequest(
             operation,
             request,
             operation === "listIndexes" ? undefined : this.target,
-            lifecycleOperation ? undefined : this.indexGeneration,
+            establishesIncarnation ? undefined : this.indexGeneration,
           ),
           options,
         ),
@@ -164,8 +169,8 @@ export class Client {
           error,
         );
       }
-      if (operation === "createIndex" || operation === "openIndex") {
-        const lifecycle = decoded.payload as CreateIndexResultT | OpenIndexResultT;
+      if (operation === "createIndex" || operation === "openIndex" || operation === "applyIndexChange") {
+        const lifecycle = decoded.payload as CreateIndexResultT | OpenIndexResultT | ApplyIndexChangeResultT;
         if (typeof lifecycle.generation !== "string" || lifecycle.generation.length === 0) {
           throw new ProtocolError(
             `${operation} response is missing canonical index generation`,
@@ -237,6 +242,16 @@ export class Client {
 
   inspectQuery(request: SearchRequestT, options?: ExecuteOptions): Promise<InspectQueryResultT> {
     return this.execute("inspectQuery", new InspectQueryRequestT(request), options);
+  }
+
+  /** Validate against canonical semantics and the native backend without applying. */
+  planIndexChange(definition: IndexDefinitionT, options?: ExecuteOptions): Promise<PlanIndexChangeResultT> {
+    return this.execute("planIndexChange", new PlanIndexChangeRequestT(definition), options);
+  }
+
+  /** Apply a single-use plan; success replaces this client's generation/definition. */
+  applyIndexChange(planId: string, options?: ExecuteOptions): Promise<ApplyIndexChangeResultT> {
+    return this.execute("applyIndexChange", new ApplyIndexChangeRequestT(planId), options);
   }
 
   createIndex(definition: IndexDefinitionT, options?: ExecuteOptions): Promise<CreateIndexResultT> {

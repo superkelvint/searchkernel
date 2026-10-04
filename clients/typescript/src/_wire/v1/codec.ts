@@ -20,6 +20,7 @@ import { OpenIndexRequestT } from "./generated/flatbuffers/search-kernel/wire/op
 import { FilterRequest, FilterRequestT } from "./generated/flatbuffers/search-kernel/wire/filter-request.js";
 import type { FilterClauseT as WireFilterClauseT } from "./generated/flatbuffers/search-kernel/wire/filter-clause.js";
 import * as Wire from "./generated/flatbuffers/search-kernel/wire.js";
+import { PlanIndexChangeRequestT, ApplyIndexChangeRequestT } from "../../semantic.js";
 import * as Semantic from "../../semantic.js";
 import { SemanticTable, isSemanticTable, SEMANTIC_ENUM_FIELDS } from "../../semantic.js";
 
@@ -27,10 +28,12 @@ export const PROTOCOL_VERSION = 1;
 export const REQUEST_IDENTIFIER = "SKRQ";
 export const RESPONSE_IDENTIFIER = "SKRS";
 
-export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex" | "deleteIndex" | "listIndexes";
+export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex" | "deleteIndex" | "listIndexes" | "planIndexChange" | "applyIndexChange";
 
 export interface OperationRequestMap {
   listIndexes: Semantic.ListIndexesRequestT;
+  planIndexChange: PlanIndexChangeRequestT;
+  applyIndexChange: ApplyIndexChangeRequestT;
   insert: Semantic.InsertRequestT;
   upsert: Semantic.UpsertRequestT;
   patch: Semantic.PatchRequestT;
@@ -48,6 +51,8 @@ export interface OperationRequestMap {
 
 const requestTypes: Record<Operation, RequestPayload> = {
   listIndexes: RequestPayload.SearchKernel_Wire_ListIndexesRequest,
+  planIndexChange: RequestPayload.SearchKernel_Wire_PlanIndexChangeRequest,
+  applyIndexChange: RequestPayload.SearchKernel_Wire_ApplyIndexChangeRequest,
   insert: RequestPayload.SearchKernel_Wire_InsertRequest,
   upsert: RequestPayload.SearchKernel_Wire_UpsertRequest,
   patch: RequestPayload.SearchKernel_Wire_PatchRequest,
@@ -65,6 +70,8 @@ const requestTypes: Record<Operation, RequestPayload> = {
 
 const responseTypes: Record<Operation, ResponsePayload> = {
   listIndexes: ResponsePayload.SearchKernel_Wire_ListIndexesResult,
+  planIndexChange: ResponsePayload.SearchKernel_Wire_PlanIndexChangeResult,
+  applyIndexChange: ResponsePayload.SearchKernel_Wire_ApplyIndexChangeResult,
   insert: ResponsePayload.SearchKernel_Wire_InsertResult,
   upsert: ResponsePayload.SearchKernel_Wire_UpsertResult,
   patch: ResponsePayload.SearchKernel_Wire_PatchResult,
