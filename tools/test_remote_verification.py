@@ -227,9 +227,14 @@ class RemoteVerificationClientTest(unittest.TestCase):
         self.assertIn('docker volume rm -f "$target_volume"', text)
         self.assertIn('docker volume rm -f "$cargo_registry_volume"', text)
         self.assertIn(
-            'target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id")',
+            'head_sha=$(git -C "$ROOT" rev-parse HEAD)',
             text,
         )
+        self.assertIn(
+            'target_volume=$(ci_runtime_target_volume "$ROOT" "$environment_id" "$head_sha")',
+            text,
+        )
+        self.assertIn('"io.searchkernel.source-head=$head_sha"', text)
         self.assertIn(
             'shared_cargo_registry_volume=$(ci_runtime_shared_download_volume cargo-registry "$environment_id")',
             text,

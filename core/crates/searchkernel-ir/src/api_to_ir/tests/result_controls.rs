@@ -1,6 +1,113 @@
 use super::*;
 
 #[test]
+fn native_summary_unsupported_position_and_predicate_stay_out_of_search_projection() {
+    for (data_type, detail_code) in [
+        (
+            DataTypeIr::Position,
+            "position_search_projection_not_supported",
+        ),
+        (
+            DataTypeIr::Predicate,
+            "predicate_search_projection_not_supported",
+        ),
+    ] {
+        let mut context = context();
+        context.definition.fields[0].capabilities.stored = true;
+        context.definition.fields[1].capabilities.stored = true;
+        context.definition.fields[1].data_type = data_type;
+        let search = resolve_search(&context, match_all_search(Vec::new())).unwrap();
+        assert_eq!(
+            search.projection().fields(),
+            &[FieldName::parse("brand").unwrap()]
+        );
+
+        let mut explicit = match_all_search(Vec::new());
+        explicit.projection = Some(vec!["price".into()]);
+        let error = resolve_search(&context, explicit).unwrap_err();
+        assert_eq!(error.code, ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, detail_code);
+        assert_eq!(
+            error.details[0].path.as_deref(),
+            Some("projection.fields[0]")
+        );
+    }
+}
+
+#[test]
+fn stored_struct_arrays_use_get_and_do_not_break_default_search_projection() {
+    for element in [
+        DataTypeIr::Struct { fields: Vec::new() },
+        DataTypeIr::StructReference {
+            name: "person".into(),
+        },
+    ] {
+        let mut context = context();
+        context.definition.fields[0].capabilities.stored = true;
+        context.definition.fields[1].capabilities.stored = true;
+        context.definition.fields[1].data_type = DataTypeIr::Array(Box::new(element));
+        let search = resolve_search(&context, match_all_search(Vec::new())).unwrap();
+        assert_eq!(
+            search.projection().fields(),
+            &[FieldName::parse("brand").unwrap()]
+        );
+        let bytes = portable_container_control_request(None, None, None);
+        let portable = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        assert_eq!(context.search_to_ir(portable).unwrap(), search);
+        let get = resolve_get(
+            &context,
+            GetInput {
+                id: "doc".into(),
+                projection: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(get.projection().fields().len(), 2);
+        let mut explicit = match_all_search(Vec::new());
+        explicit.projection = Some(vec!["price".into()]);
+        let error = resolve_search(&context, explicit).unwrap_err();
+        assert_eq!(error.code, ErrorCode::Unsupported);
+        assert_eq!(
+            error.details[0].code,
+            "structured_search_projection_not_supported"
+        );
+        assert_eq!(
+            error.details[0].path.as_deref(),
+            Some("projection.fields[0]")
+        );
+        let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+        let query = match_all_source(&mut builder);
+        let field = builder.create_string("price");
+        let fields = builder.create_vector(&[field]);
+        let projection = api::FieldProjection::create(
+            &mut builder,
+            &api::FieldProjectionArgs {
+                fields: Some(fields),
+            },
+        );
+        let presentation = api::PresentationRequest::create(
+            &mut builder,
+            &api::PresentationRequestArgs {
+                fields: Some(projection),
+                ..Default::default()
+            },
+        );
+        let request = api::SearchRequest::create(
+            &mut builder,
+            &api::SearchRequestArgs {
+                query: Some(query),
+                presentation: Some(presentation),
+                ..Default::default()
+            },
+        );
+        builder.finish(request, None);
+        let portable =
+            crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data()).unwrap();
+        assert_eq!(context.search_to_ir(portable).unwrap_err(), error);
+    }
+}
+
+#[test]
 fn presence_sensitive_empty_presentation_controls_do_not_equal_absence() {
     let mut context = context();
     context.definition.fields[0].capabilities.stored = true;

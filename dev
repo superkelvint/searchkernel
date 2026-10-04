@@ -853,6 +853,9 @@ verify_target() {
         client-semantic-parity)
             doctor_repair_python
             doctor_repair_typescript
+            # FlatBuffers consistency does not bootstrap the ignored RPC modules
+            # imported by the public browser/Node client in a clean checkout.
+            "$NPM" run generate:grpc-web --prefix "$ROOT/clients/typescript"
             command -v php >/dev/null 2>&1 || {
                 echo 'error: PHP is required for client semantic parity' >&2
                 return 1

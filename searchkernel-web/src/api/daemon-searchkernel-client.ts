@@ -1,6 +1,8 @@
+import { prepareDocumentMutation, preparedDocumentRequest } from './document-request'
+import { prepareSearch, preparedRequest } from './search-request'
 import {
   Client, GrpcWebTransport, Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
-  DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
+  SearchResults, ResultDecodeError, ValueDecodeError, fromValue, toCanonicalJson, DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
   type IndexDefinitionT, type ClientTransport,
 } from '@searchkernel/client'
 import {
@@ -34,6 +36,7 @@ function metadata(target: string, definition: IndexDefinitionT): Index {
   return {
     id: target,
     definition,
+    profileInputs: Object.fromEntries(definition.rankProfiles.map(profile => [text(profile.name), JSON.stringify(profile.inputs.map(toCanonicalJson), null, 2)])),
     profiles: definition.rankProfiles.map(profile => text(profile.name)),
     summaries: definition.documentSummaries.map(summary => text(summary.name)),
     // Omitted controls reach the semantic resolver unchanged.
@@ -52,9 +55,9 @@ function metadata(target: string, definition: IndexDefinitionT): Index {
 }
 
 const capabilities: Capabilities = {
-  indexes: { read: true, create: true, delete: false },
-  documents: { read: true, write: false, bulk: false },
-  search: { basic: true, sort: false, facets: false, grouping: false },
+  indexes: { read: true, create: false, delete: false },
+  documents: { read: true, write: true, bulk: false },
+  search: { basic: true, sort: true, facets: false, grouping: false },
   analysis: { text: false }, query: { inspect: false },
   schema: { read: true, write: false, changePlan: true },
   ranking: { profiles: true, features: false, write: true },
@@ -65,10 +68,15 @@ const capabilities: Capabilities = {
 export function daemonError(error: unknown): SearchKernelClientError {
   if (error instanceof SearchKernelClientError) return error
   if (error instanceof SearchKernelError) return new SearchKernelClientError(error.message, {
-    code: error.code, retryable: error.retryable, details: dashboardValue(error.details), origin: 'canonical',
+    code: error.code, retryable: error.retryable, details: error.details.map(detail => dashboardValue(toCanonicalJson(detail))), origin: 'canonical',
   })
-  if (error instanceof TransportError) return new SearchKernelClientError(error.message, { code: error.kind === 'aborted' ? 'aborted' : 'transport_error', retryable: error.kind !== 'aborted', origin: 'transport' })
-  if (error instanceof ProtocolError) return new SearchKernelClientError(error.message, { code: 'protocol_error', origin: 'protocol' })
+  if (error instanceof TransportError) {
+    const cause = error.cause && typeof error.cause === 'object' ? error.cause as Record<string, unknown> : {}
+    return new SearchKernelClientError(error.message, { code: error.kind === 'aborted' ? 'aborted' : 'transport_error', retryable: error.kind !== 'aborted', origin: 'transport',
+      status: typeof cause.status === 'number' ? cause.status : undefined,
+      details: typeof cause.code === 'number' ? { transportCode: cause.code } : undefined })
+  }
+  if (error instanceof ProtocolError || error instanceof ResultDecodeError || error instanceof ValueDecodeError) return new SearchKernelClientError(error.message, { code: 'protocol_error', origin: 'protocol' })
   if (error instanceof Error && error.name === 'AbortError') return new SearchKernelClientError(error.message, { code: 'aborted', origin: 'transport' })
   return new SearchKernelClientError(error instanceof Error ? error.message : 'Client request failed', { code: 'client_error', origin: 'client' })
 }
@@ -146,10 +154,11 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
       return { ...metadata(target, index.definition), generation: index.generation }
     }) },
     getDocument(target, id, options) { return call(async () => {
-      const document = await (await opened(target, options)).get(id, undefined, options)
-      if (document === null) return undefined
-      const { _id, ...values } = document
-      return { id: String(_id), fields: fields(values) }
+      const raw = await (await opened(target, options)).client.get(id, undefined, options)
+      if (raw.document === null) return undefined
+      const values = Object.fromEntries(raw.document.fields.map(entry => [text(entry.key), fromValue(entry.value!)]))
+      const canonicalFields = Object.fromEntries(raw.document.fields.map(entry => [text(entry.key), toCanonicalJson(entry.value)]))
+      return { id: text(raw.document.id), fields: fields(values), canonical: JSON.stringify(toCanonicalJson(raw), null, 2), canonicalFields: JSON.stringify(canonicalFields, null, 2) }
     }) },
     browseDocuments(target, request, options) { return call(async () => {
       if (request.cursor !== undefined || request.sort !== undefined) throw new SearchKernelClientError('Browse cursor/sort is unavailable', { code: 'unsupported', origin: 'client' })
@@ -159,14 +168,22 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
       const result = await builder.execute(options)
       return { documents: result.hits.map(hit => ({ id: hit.id, fields: fields(hit.fields) })), total: result.totalHits.toString() }
     }) },
-    search(target, request, options) { return call(async () => {
+    prepareDocumentMutation,
+    executeDocumentMutation(target, prepared, options) { return call(async () => {
       const index = await opened(target, options)
-      const builder = request.query ? index.search(request.query) : index.browse()
-      if (request.limit !== undefined) builder.limit(request.limit)
-      if (request.ranking !== undefined) builder.ranking(request.ranking)
-      if (request.summary !== undefined) builder.summary(request.summary)
-      const result = await builder.execute(options)
+      const raw = await index.client.execute(prepared.operation, preparedDocumentRequest(prepared), options)
+      if (text(raw.id) !== prepared.id) throw new ProtocolError('Mutation response document ID differs from its request')
+      return { operation: prepared.operation, id: text(raw.id), canonicalResponse: JSON.stringify(toCanonicalJson(raw), null, 2), deleted: 'deleted' in raw ? raw.deleted : undefined }
+    }) },
+    prepareSearch,
+    search(target, request, options) { return this.executeSearch(target, prepareSearch(request), options) },
+    executeSearch(target, prepared, options) { return call(async () => {
+      const request = prepared.request
+      const index = await opened(target, options)
+      const raw = await index.client.search(preparedRequest(prepared), options)
+      const result = new SearchResults(raw)
       return {
+        canonicalResponse: JSON.stringify(toCanonicalJson(raw), null, 2), totalRelation: result.totalHitsRelation,
         request, matches: result.totalHits.toString(),
         timingMs: result.timing?.queryTimeSeconds == null ? undefined : `${result.timing.queryTimeSeconds * 1000} ms`,
         hits: result.hits.map((hit, position) => ({ document: { id: hit.id, fields: fields(hit.fields) }, score: hit.score === null ? 'Unavailable' : String(hit.score), rank: position + 1 })),

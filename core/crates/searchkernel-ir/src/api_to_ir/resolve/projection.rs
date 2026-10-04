@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::SearchProjectionSupport;
 
 /// Resolve a field projection using the index schema.  `None` means the
 /// effective stored-field projection; `Some(empty)` remains an explicit empty
@@ -21,7 +22,7 @@ pub(super) fn resolve_get_projection(
 fn resolve_projection_inner(
     context: &IndexContext,
     fields: Option<&[String]>,
-    allow_tensor: bool,
+    document_read: bool,
 ) -> Result<ProjectionIr> {
     let mut output = Vec::new();
     match fields {
@@ -31,12 +32,9 @@ fn resolve_projection_inner(
                 .query_fields()
                 .filter(|field| {
                     field.capabilities().stored()
-                        && (allow_tensor
-                            || !matches!(
-                                field.data_type(),
-                                crate::model::DataTypeIr::Position
-                                    | crate::model::DataTypeIr::Tensor { .. }
-                            ))
+                        && (document_read
+                            || field.data_type().search_projection_support()
+                                == SearchProjectionSupport::Supported)
                 })
                 .map(|field| field.name().clone()),
         ),
@@ -52,14 +50,33 @@ fn resolve_projection_inner(
                         "projection requires a stored field",
                     ));
                 }
-                if !allow_tensor
-                    && matches!(field.data_type(), crate::model::DataTypeIr::Tensor { .. })
-                {
-                    return Err(PortableError::unsupported(
-                        "tensor_search_projection_not_supported",
-                        Some(format!("projection.fields[{index}]")),
-                        "tensor fields are readable through get but are not native summary fields",
-                    ));
+                if !document_read {
+                    let unsupported = match field.data_type().search_projection_support() {
+                        SearchProjectionSupport::Supported => None,
+                        SearchProjectionSupport::Position => Some((
+                            "position_search_projection_not_supported",
+                            "position fields are readable through get but are not native summary fields",
+                        )),
+                        SearchProjectionSupport::Predicate => Some((
+                            "predicate_search_projection_not_supported",
+                            "predicate fields are readable through get but are not native summary fields",
+                        )),
+                        SearchProjectionSupport::Tensor => Some((
+                            "tensor_search_projection_not_supported",
+                            "tensor fields are readable through get but are not native summary fields",
+                        )),
+                        SearchProjectionSupport::Structured => Some((
+                            "structured_search_projection_not_supported",
+                            "arrays of structs are readable through get but are not native summary fields",
+                        )),
+                    };
+                    if let Some((code, message)) = unsupported {
+                        return Err(PortableError::unsupported(
+                            code,
+                            Some(format!("projection.fields[{index}]")),
+                            message,
+                        ));
+                    }
                 }
                 if !seen.insert(field.name().clone()) {
                     return Err(invalid(
