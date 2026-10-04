@@ -20,30 +20,62 @@ pub fn query_diagnostics_to_ir(
         api::DiagnosticIntent::Performance => DiagnosticIntent::Performance,
         api::DiagnosticIntent::DeepEngine => DiagnosticIntent::DeepEngine,
         api::DiagnosticIntent::Experiment => DiagnosticIntent::Experiment,
-        _ => return Err(invalid("intent", "a supported diagnostic intent is required")),
+        _ => {
+            return Err(invalid(
+                "intent",
+                "a supported diagnostic intent is required",
+            ))
+        }
     };
-    let request = context.search_to_ir(input.request()
-        .ok_or_else(|| invalid("request", "canonical search request is required"))?)?;
-    let experiment = input.experiment().map(|value| context.search_to_ir(value)).transpose()?;
+    let request = context.search_to_ir(
+        input
+            .request()
+            .ok_or_else(|| invalid("request", "canonical search request is required"))?,
+    )?;
+    let experiment = input
+        .experiment()
+        .map(|value| context.search_to_ir(value))
+        .transpose()?;
     if (intent == DiagnosticIntent::Experiment) != experiment.is_some() {
-        return Err(invalid("experiment", "an experimental request is required only for Experiment intent"));
+        return Err(invalid(
+            "experiment",
+            "an experimental request is required only for Experiment intent",
+        ));
     }
-    let selected_hits: Vec<String> = input.selected_hits().map(|values|
-        values.iter().map(str::to_owned).collect()).unwrap_or_default();
-    if selected_hits.len() > 2 || selected_hits.iter().any(|id| id.len() > 1024 || id.is_empty()) {
-        return Err(invalid("selected_hits", "select at most two nonempty document IDs, each at most 1024 bytes"));
+    let selected_hits: Vec<String> = input
+        .selected_hits()
+        .map(|values| values.iter().map(str::to_owned).collect())
+        .unwrap_or_default();
+    if selected_hits.len() > 2
+        || selected_hits
+            .iter()
+            .any(|id| id.len() > 1024 || id.is_empty())
+    {
+        return Err(invalid(
+            "selected_hits",
+            "select at most two nonempty document IDs, each at most 1024 bytes",
+        ));
     }
     let expected_document_id = input.expected_document_id().map(str::to_owned);
     if intent == DiagnosticIntent::MissingDocument && expected_document_id.is_none() {
-        return Err(invalid("expected_document_id", "select an expected document"));
+        return Err(invalid(
+            "expected_document_id",
+            "select an expected document",
+        ));
     }
     if let Some(id) = &expected_document_id {
         if id.len() > 1024 || DocumentId::parse(id.clone()).is_err() {
-            return Err(invalid("expected_document_id", "invalid expected document ID"));
+            return Err(invalid(
+                "expected_document_id",
+                "invalid expected document ID",
+            ));
         }
     }
     let source_run_id = input.source_run_id().map(str::to_owned);
-    if source_run_id.as_ref().is_some_and(|id| id.is_empty() || id.len() > 256) {
+    if source_run_id
+        .as_ref()
+        .is_some_and(|id| id.is_empty() || id.len() > 256)
+    {
         return Err(invalid("source_run_id", "invalid source run identity"));
     }
     let mut requested_evidence = Vec::new();
@@ -63,9 +95,16 @@ pub fn query_diagnostics_to_ir(
             api::DiagnosticSection::IteratorTree => DiagnosticSection::IteratorTree,
             api::DiagnosticSection::RawEngine => DiagnosticSection::RawEngine,
             api::DiagnosticSection::Counterfactual => DiagnosticSection::Counterfactual,
-            _ => return Err(invalid("requested_evidence", "unknown diagnostic evidence section")),
+            _ => {
+                return Err(invalid(
+                    "requested_evidence",
+                    "unknown diagnostic evidence section",
+                ))
+            }
         };
-        if !requested_evidence.contains(&section) { requested_evidence.push(section); }
+        if !requested_evidence.contains(&section) {
+            requested_evidence.push(section);
+        }
     }
     let mut limits = DiagnosticLimits::default();
     if let Some(value) = input.limits() {
@@ -73,8 +112,10 @@ pub fn query_diagnostics_to_ir(
             ($name:ident, $max:expr) => {
                 if let Some(value) = value.$name() {
                     if value.value() == 0 || value.value() > $max {
-                        return Err(invalid(concat!("limits.", stringify!($name)),
-                            concat!(stringify!($name), " exceeds diagnostic bounds")));
+                        return Err(invalid(
+                            concat!("limits.", stringify!($name)),
+                            concat!(stringify!($name), " exceeds diagnostic bounds"),
+                        ));
                     }
                     limits.$name = value.value();
                 }
@@ -89,6 +130,15 @@ pub fn query_diagnostics_to_ir(
         limit!(profiler_depth, 16);
         limit!(exact_nn_hits, 1000);
     }
-    Ok(QueryDiagnosticsRequestIr { request, intent, requested_evidence, source_run_id,
-        selected_hits, expected_document_id, experiment, compare_exact: input.compare_exact(), limits })
+    Ok(QueryDiagnosticsRequestIr {
+        request,
+        intent,
+        requested_evidence,
+        source_run_id,
+        selected_hits,
+        expected_document_id,
+        experiment,
+        compare_exact: input.compare_exact(),
+        limits,
+    })
 }

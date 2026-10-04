@@ -1,8 +1,8 @@
 //! FlatBuffers API to owned Search Kernel IR conversion.
 
 pub mod control_plane;
-mod document;
 mod diagnostics;
+mod document;
 pub use diagnostics::query_diagnostics_to_ir;
 mod filter;
 mod grouping;

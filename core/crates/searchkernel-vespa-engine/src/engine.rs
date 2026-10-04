@@ -990,10 +990,16 @@ impl Engine {
         if let Some(controls) = &request.diagnostics {
             let mut error = NativeError::new();
             let status = unsafe {
-                sys::sk_generic_search_request_set_diagnostics(native_request.0.as_ptr(),
-                    controls.trace_level, controls.matching_depth, controls.first_phase_depth,
-                    controls.second_phase_depth, controls.raw_bytes,
-                    error.as_mut_ptr(), error.capacity())
+                sys::sk_generic_search_request_set_diagnostics(
+                    native_request.0.as_ptr(),
+                    controls.trace_level,
+                    controls.matching_depth,
+                    controls.first_phase_depth,
+                    controls.second_phase_depth,
+                    controls.raw_bytes,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
             };
             check(status, &error)?;
         }

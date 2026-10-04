@@ -180,20 +180,48 @@ impl VespaBackend {
         }
         Ok(lock)
     }
-    fn execute_search(&self, request: SearchRequestIr, diagnostics: Option<(&[searchkernel_ir::DiagnosticSection], &searchkernel_ir::DiagnosticLimits)>) -> Result<searchkernel_ir::DiagnosticSearchResult> {
+    fn execute_search(
+        &self,
+        request: SearchRequestIr,
+        diagnostics: Option<(
+            &[searchkernel_ir::DiagnosticSection],
+            &searchkernel_ir::DiagnosticLimits,
+        )>,
+    ) -> Result<searchkernel_ir::DiagnosticSearchResult> {
         let preflight = preflight_search_request(&request)?;
         let groupings = preflight.groupings;
         let mut m_request = preflight.request;
         if let Some((sections, limits)) = diagnostics {
             use searchkernel_ir::DiagnosticSection as Section;
-            let tracing = sections.iter().any(|section| matches!(section,
-                Section::Trace | Section::MatchingProfiler | Section::FirstPhaseProfiler |
-                Section::SecondPhaseProfiler | Section::Blueprint | Section::IteratorTree | Section::RawEngine));
+            let tracing = sections.iter().any(|section| {
+                matches!(
+                    section,
+                    Section::Trace
+                        | Section::MatchingProfiler
+                        | Section::FirstPhaseProfiler
+                        | Section::SecondPhaseProfiler
+                        | Section::Blueprint
+                        | Section::IteratorTree
+                        | Section::RawEngine
+                )
+            });
             m_request.diagnostics = Some(searchkernel_vespa_engine::SearchDiagnosticControls {
                 trace_level: if tracing { limits.trace_depth } else { 0 },
-                matching_depth: if sections.contains(&Section::MatchingProfiler) { limits.profiler_depth } else { 0 },
-                first_phase_depth: if sections.contains(&Section::FirstPhaseProfiler) { limits.profiler_depth } else { 0 },
-                second_phase_depth: if sections.contains(&Section::SecondPhaseProfiler) { limits.profiler_depth } else { 0 },
+                matching_depth: if sections.contains(&Section::MatchingProfiler) {
+                    limits.profiler_depth
+                } else {
+                    0
+                },
+                first_phase_depth: if sections.contains(&Section::FirstPhaseProfiler) {
+                    limits.profiler_depth
+                } else {
+                    0
+                },
+                second_phase_depth: if sections.contains(&Section::SecondPhaseProfiler) {
+                    limits.profiler_depth
+                } else {
+                    0
+                },
                 raw_bytes: limits.raw_bytes,
             });
         }
@@ -321,46 +349,61 @@ impl VespaBackend {
         }
         let errors = portable_errors_from_native_issues(&result.issues);
         let native_diagnostics = result.diagnostics;
-        let timing = native_diagnostics.as_ref().map(|value| searchkernel_ir::SearchTiming {
-            query_time_seconds: Some(value.query_seconds), search_time_seconds: Some(value.matching_seconds),
-            summary_fetch_time_seconds: Some(value.summary_seconds), metadata: Default::default(),
-        });
+        let timing = native_diagnostics
+            .as_ref()
+            .map(|value| searchkernel_ir::SearchTiming {
+                query_time_seconds: Some(value.query_seconds),
+                search_time_seconds: Some(value.matching_seconds),
+                summary_fetch_time_seconds: Some(value.summary_seconds),
+                metadata: Default::default(),
+            });
         let mut raw_engine = Vec::new();
         if let Some(value) = native_diagnostics {
             if !value.trace.is_empty() || value.truncated {
                 raw_engine.push(searchkernel_ir::RawEngineDiagnostics {
-                    engine: "Vespa".into(), version: "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e".into(),
-                    execution_id: String::new(), section: searchkernel_ir::DiagnosticSection::Trace,
-                    status: if value.truncated { searchkernel_ir::DiagnosticStatus::Truncated }
-                        else { searchkernel_ir::DiagnosticStatus::Available },
-                    media_type: if value.truncated { "text/plain" } else { "application/json" }.into(),
+                    engine: "Vespa".into(),
+                    version: "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e".into(),
+                    execution_id: String::new(),
+                    section: searchkernel_ir::DiagnosticSection::Trace,
+                    status: if value.truncated {
+                        searchkernel_ir::DiagnosticStatus::Truncated
+                    } else {
+                        searchkernel_ir::DiagnosticStatus::Available
+                    },
+                    media_type: if value.truncated {
+                        "text/plain"
+                    } else {
+                        "application/json"
+                    }
+                    .into(),
                     payload: value.trace,
                 });
             }
         }
-        Ok(searchkernel_ir::DiagnosticSearchResult { result: SearchResult {
-            root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
-                fields: root_fields,
-                children,
-                ..searchkernel_ir::ResultGroup::root(Vec::new())
-            }),
-            total_hits: searchkernel_ir::TotalHits {
-                value: result.total_hits,
-                relation: match result.total_hits_relation {
-                    VespaTotalHitsRelation::Exact => TotalHitsRelation::Exact,
-                    VespaTotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
-                    VespaTotalHitsRelation::Unknown => TotalHitsRelation::Unknown,
+        Ok(searchkernel_ir::DiagnosticSearchResult {
+            result: SearchResult {
+                root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                    fields: root_fields,
+                    children,
+                    ..searchkernel_ir::ResultGroup::root(Vec::new())
+                }),
+                total_hits: searchkernel_ir::TotalHits {
+                    value: result.total_hits,
+                    relation: match result.total_hits_relation {
+                        VespaTotalHitsRelation::Exact => TotalHitsRelation::Exact,
+                        VespaTotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
+                        VespaTotalHitsRelation::Unknown => TotalHitsRelation::Unknown,
+                    },
                 },
+                coverage: Some(portable_coverage(result.coverage)),
+                timing,
+                errors,
+                trace: None,
+                metadata: std::collections::BTreeMap::new(),
             },
-            coverage: Some(portable_coverage(result.coverage)),
-            timing,
-            errors,
-            trace: None,
-            metadata: std::collections::BTreeMap::new(),
-        }, raw_engine })
+            raw_engine,
+        })
     }
-
-
 }
 
 fn facet_result_node(
@@ -817,12 +860,16 @@ impl Backend for VespaBackend {
     }
 
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult> {
-        self.execute_search(request, None).map(|execution| execution.result)
+        self.execute_search(request, None)
+            .map(|execution| execution.result)
     }
 
-    fn search_diagnostic(&self, request: SearchRequestIr,
-        sections: &[searchkernel_ir::DiagnosticSection], limits: &searchkernel_ir::DiagnosticLimits)
-        -> Result<searchkernel_ir::DiagnosticSearchResult> {
+    fn search_diagnostic(
+        &self,
+        request: SearchRequestIr,
+        sections: &[searchkernel_ir::DiagnosticSection],
+        limits: &searchkernel_ir::DiagnosticLimits,
+    ) -> Result<searchkernel_ir::DiagnosticSearchResult> {
         self.execute_search(request, Some((sections, limits)))
     }
 

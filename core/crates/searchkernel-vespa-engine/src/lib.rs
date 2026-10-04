@@ -38,8 +38,8 @@ pub use search::{
     GroupingExpression, GroupingFilter, GroupingLevel, GroupingLiteral, GroupingOrder,
     GroupingOrderBy, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue,
     HighlightFragment, HighlightResult, HighlightSpan, Hit, MatchFeatureValue, MissingPlacement,
-    QueryInput, SearchCoverage, SearchRequest, SearchResult, SearchDiagnostics, SearchDiagnosticControls, SortField, SortOrder, Source,
-    SummaryRequest, TotalHitsRelation,
+    QueryInput, SearchCoverage, SearchDiagnosticControls, SearchDiagnostics, SearchRequest,
+    SearchResult, SortField, SortOrder, Source, SummaryRequest, TotalHitsRelation,
 };
 pub use tensor::{TensorAddress, TensorBlock, TensorCell, TensorValue};
 

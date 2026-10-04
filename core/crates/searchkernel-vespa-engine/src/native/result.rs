@@ -13,21 +13,40 @@ pub(crate) fn read_generic_search_result(
     let mut query_seconds = 0.0;
     let mut error = NativeError::new();
     let status = unsafe {
-        sys::sk_generic_search_result_diagnostics(result.0.as_ptr(), &mut trace,
-            &mut length, &mut truncated, &mut matching_seconds, &mut summary_seconds,
-            &mut query_seconds, error.as_mut_ptr(), error.capacity())
+        sys::sk_generic_search_result_diagnostics(
+            result.0.as_ptr(),
+            &mut trace,
+            &mut length,
+            &mut truncated,
+            &mut matching_seconds,
+            &mut summary_seconds,
+            &mut query_seconds,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
     };
     check(status, &error)?;
-    let diagnostics = if query_seconds == 0.0 && length == 0 && truncated == 0 { None } else {
+    let diagnostics = if query_seconds == 0.0 && length == 0 && truncated == 0 {
+        None
+    } else {
         // The opaque result owns this bounded buffer. Copy before its Drop.
         if trace.is_null() && length != 0 {
-            return Err(Error::message("native diagnostic trace returned a null buffer"));
+            return Err(Error::message(
+                "native diagnostic trace returned a null buffer",
+            ));
         }
-        let bytes = if length == 0 { &[][..] } else {
+        let bytes = if length == 0 {
+            &[][..]
+        } else {
             unsafe { std::slice::from_raw_parts(trace, length as usize) }
         };
-        Some(crate::search::SearchDiagnostics { trace: String::from_utf8_lossy(bytes).into_owned(),
-            truncated: truncated != 0, matching_seconds, summary_seconds, query_seconds })
+        Some(crate::search::SearchDiagnostics {
+            trace: String::from_utf8_lossy(bytes).into_owned(),
+            truncated: truncated != 0,
+            matching_seconds,
+            summary_seconds,
+            query_seconds,
+        })
     };
     let hit_count = unsafe { sys::sk_generic_search_result_hit_count(result.0.as_ptr()) } as usize;
     let total_hit_count =

@@ -114,9 +114,12 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
             let result = dispatcher.execute_backend(|context, backend| {
                 let request = ir_wire::search_to_ir(context, payload)?;
                 let mut result = backend.search(request.clone())?;
-                dispatcher.remember_source(&request, &mut result,
+                dispatcher.remember_source(
+                    &request,
+                    &mut result,
                     envelope.target().and_then(|target| target.name()),
-                    envelope.target().and_then(|target| target.generation()));
+                    envelope.target().and_then(|target| target.generation()),
+                );
                 Ok(result)
             })?;
             Ok(encode_result(
@@ -174,21 +177,31 @@ pub(super) fn dispatch(dispatcher: &Dispatcher, request: &[u8]) -> Result<Vec<u8
             ))
         }
         wire::RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest => {
-            let payload = envelope.payload_as_search_kernel_wire_query_diagnostics_request()
+            let payload = envelope
+                .payload_as_search_kernel_wire_query_diagnostics_request()
                 .ok_or(DispatchError::InvalidRequest)?;
             let result = dispatcher.execute_backend(|context, backend| {
                 let request = ir_wire::query_diagnostics_to_ir(context, payload)?;
                 let target = envelope.target().and_then(|target| target.name());
                 let generation = envelope.target().and_then(|target| target.generation());
-                let source = dispatcher.source_run(request.source_run_id.as_deref(), target, generation);
-                let execution = dispatcher.execution(&request.request, target, generation,
-                    searchkernel_ir::DiagnosticExecutionKind::DiagnosticRerun);
+                let source =
+                    dispatcher.source_run(request.source_run_id.as_deref(), target, generation);
+                let execution = dispatcher.execution(
+                    &request.request,
+                    target,
+                    generation,
+                    searchkernel_ir::DiagnosticExecutionKind::DiagnosticRerun,
+                );
                 searchkernel_ir::diagnostics::execute(context, backend, request, source, execution)
             })?;
-            Ok(encode_result(result,
+            Ok(encode_result(
+                result,
                 wire::ResponsePayload::SearchKernel_Wire_QueryDiagnosticsResult,
-                |builder, result| ir_wire::query_diagnostics_result_offset(builder, result)
-                    .map(|result| result.as_union_value())))
+                |builder, result| {
+                    ir_wire::query_diagnostics_result_offset(builder, result)
+                        .map(|result| result.as_union_value())
+                },
+            ))
         }
         wire::RequestPayload::NONE => Err(DispatchError::InvalidRequest),
         value => Err(DispatchError::UnsupportedOperation(value.0)),
