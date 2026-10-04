@@ -5,6 +5,88 @@
 #include "highlighting.h"
 #include <vespa/vespalib/data/output.h>
 
+// Pinned Vespa visits properties in hash-map order. Retain the first bounded
+// keys in lexical order without copying arbitrary (possibly tensor) values.
+class DiagnosticPropertyKeys final : public search::fef::IPropertiesVisitor {
+    size_t _limit;
+public:
+    std::set<std::string_view> keys;
+    explicit DiagnosticPropertyKeys(size_t limit) : _limit(limit) {}
+    void visitProperty(const search::fef::Property::Value &key,
+                       const search::fef::Property &) override {
+        keys.insert(key);
+        if (keys.size() > _limit) keys.erase(std::prev(keys.end()));
+    }
+};
+
+bool capture_final_matcher_request(const SearchRequest &request, uint32_t byte_limit) {
+    auto &snapshot = request.trace().getRoot().setObject("final_matcher_request");
+    snapshot.setString("format", "searchkernel.proton-request.v1");
+    snapshot.setString("vespa_commit", SK_PINNED_VESPA_COMMIT);
+    snapshot.setLong("native_abi_version", SK_NATIVE_ABI_VERSION);
+    snapshot.setString("rank_profile", request.ranking);
+    snapshot.setDouble("timeout_ms", std::chrono::duration<double, std::milli>(request.getTimeout()).count());
+    snapshot.setDouble("time_left_ms", std::chrono::duration<double, std::milli>(request.getTimeLeft()).count());
+    snapshot.setLong("offset", request.offset);
+    snapshot.setLong("maxhits", request.maxhits);
+    snapshot.setBool("dump_features", request.dumpFeatures);
+    snapshot.setLong("trace_level", request.trace().getLevel());
+    snapshot.setLong("matching_profile_depth", request.trace().match_profile_depth());
+    snapshot.setLong("first_phase_profile_depth", request.trace().first_phase_profile_depth());
+    snapshot.setLong("second_phase_profile_depth", request.trace().second_phase_profile_depth());
+    snapshot.setLong("grouping_bytes", request.groupSpec.size());
+    snapshot.setLong("location_bytes", request.location.size());
+    snapshot.setLong("session_id_bytes", request.sessionId.size());
+    bool truncated = false;
+    if (request.sortSpec.size() <= 256) snapshot.setString("sort", request.sortSpec);
+    else { snapshot.setString("sort", "[omitted]"); truncated = true; }
+
+    // Inspect the serialized tree actually attached to this request. Terms,
+    // predicate payloads and tensor contents never enter this representation.
+    auto &tree = snapshot.setArray("query_tree");
+    auto iterator = request.getSerializedQueryTree().makeIterator();
+    const size_t node_limit = std::min<size_t>(64, byte_limit / 128);
+    size_t nodes = 0;
+    while (nodes < node_limit && iterator->next()) {
+        auto &node = tree.addObject();
+        node.setLong("item_type", iterator->getType());
+        node.setLong("arity", iterator->getArity());
+        node.setLong("unique_id", iterator->getUniqueId());
+        node.setBool("no_rank", iterator->hasNoRankFlag());
+        node.setBool("no_position_data", iterator->hasNoPositionDataFlag());
+        node.setString("term", "[redacted]");
+        ++nodes;
+    }
+    if (iterator->next()) truncated = true;
+
+    auto &properties = snapshot.setObject("properties");
+    for (const auto &[name, values] : std::array<std::pair<std::string_view, const search::fef::Properties *>, 2>{{
+             {"rank", &request.propertiesMap.rankProperties()},
+             {"feature_overrides", &request.propertiesMap.featureOverrides()}}}) {
+        auto &collection = properties.setObject(name);
+        collection.setLong("key_count", values->numKeys());
+        collection.setLong("value_count", values->numValues());
+        DiagnosticPropertyKeys visitor(std::min<size_t>(32, byte_limit / 128));
+        values->visitProperties(visitor);
+        auto &entries = collection.setArray("entries");
+        for (auto key : visitor.keys) {
+            auto &entry = entries.addObject();
+            if (key.size() <= 128) entry.setString("name", key);
+            else { entry.setString("name", "[omitted]"); truncated = true; }
+            auto value = values->lookup(key);
+            entry.setLong("value_count", value.size());
+            // This adapter-owned scalar is safe; arbitrary user values,
+            // including scalar query features and binary tensors, are private.
+            if (key == "vespa.matching.numthreadspersearch" && value.size() == 1 && value.get() == "1") {
+                entry.setString("value", "1");
+            } else entry.setString("value", "[redacted]");
+        }
+        if (values->numKeys() > visitor.keys.size()) truncated = true;
+    }
+    snapshot.setBool("truncated", truncated);
+    return truncated;
+}
+
 struct DiagnosticOutputFull {};
 
 // Bound JSON encoding before allocation, not after creating a large temporary.
@@ -4249,6 +4331,9 @@ public:
         }
         request.setSerializedQueryTree(query.serialized_query_tree());
         failpoint("search_before_match");
+        // Capture after all lowering mutations. Ordinary searches skip it.
+        const bool request_truncated = options.diagnostic_raw_bytes != 0 &&
+            capture_final_matcher_request(request, options.diagnostic_raw_bytes);
         const auto match_start = std::chrono::steady_clock::now();
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
         const auto match_end = std::chrono::steady_clock::now();
@@ -4257,6 +4342,7 @@ public:
         write_native_trace(request.trace());
         LocalSearchResultState result;
         if (options.diagnostic_raw_bytes != 0) {
+            result.diagnostic_truncated = request_truncated;
             result.diagnostic_matching_seconds = std::chrono::duration<double>(match_end - match_start).count();
             capture_diagnostic_trace(request.trace(), options.diagnostic_raw_bytes, result);
         }

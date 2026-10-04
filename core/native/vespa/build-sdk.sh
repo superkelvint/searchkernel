@@ -259,7 +259,13 @@ CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # These explicit final flags make that property independent of the harvested
 # test target's optimization/debug configuration.
 if [ "$BASE_ONLY" != 1 ]; then
+PINNED_VESPA_COMMIT=$($PYTHON_BIN -c 'import json,sys; print(json.load(open(sys.argv[1]))["vespa_commit"])' "$ROOT/core/native/vespa/manifest.json")
+if [[ ! "$PINNED_VESPA_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Invalid pinned Vespa commit in native manifest" >&2
+    exit 1
+fi
 $CXX $DEFINES $INCLUDES $CXX_FLAGS $EXTRA_CXX_FLAGS $FAILPOINT_DEFINES $COVERAGE_FLAGS \
+    "-DSK_PINNED_VESPA_COMMIT=\"$PINNED_VESPA_COMMIT\"" \
     -Wno-inline -std=gnu++23 -fPIC \
     $OPTIMIZATION_FLAGS -g \
     -fvisibility=hidden \

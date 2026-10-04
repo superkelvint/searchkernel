@@ -1,4 +1,6 @@
 #pragma once
+#include <set>
+#include <vespa/searchlib/query/query_stack_iterator.h>
 
 #include "searchkernel_vespa.h"
 #include <vespa/config-rank-profiles.h>
