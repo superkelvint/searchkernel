@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toCanonicalJson } from '@searchkernel/client'
+import { IndexTargetT, toCanonicalJson } from '@searchkernel/client'
 import { prepareSearch } from '../../api/search-request'
 import { prepareDiagnostics, preparedDiagnosticRequest } from '../../api/diagnostic-request'
 import type { ClientDiagnostics, Index } from '../../api/searchkernel-client'
@@ -7,7 +7,7 @@ import { diagnosticBundle, signalComparison } from './diagnostic-export'
 import { encodeSearchParams } from './search-params'
 import { diagnosticCurl } from '../../api/diagnostic-request'
 
-const index: Index = { id: 'products', generation: 'G1', profiles: [], summaries: [], fields: [], searchDefaults: {} }
+const index: Index = { id: 'products', generation: 'G1', target: new IndexTargetT('products', 'G1'), profiles: [], summaries: [], fields: [], searchDefaults: {} }
 describe('canonical diagnostic construction and export', () => {
   it('keeps query feature values out of default shared URLs and curl rejects credential-bearing endpoints', () => {
     const state = { query: 'orchid', inputs: '{"PRIVATE_FEATURE":42}' }
@@ -27,7 +27,7 @@ describe('canonical diagnostic construction and export', () => {
     const exact = preparedDiagnosticRequest(diagnostic)
     expect(JSON.parse(diagnostic.canonical)).toEqual(toCanonicalJson(exact))
     expect(JSON.parse(diagnostic.canonical).request).toEqual(JSON.parse(query.canonical))
-    expect(diagnostic).toMatchObject({ target: 'products', generation: 'G1' })
+    expect(diagnostic).toMatchObject({ target: { name: 'products', generation: 'G1' } })
     expect(exact.sourceRunId).toBe('source')
     expect(exact.limits?.timeoutMs?.value).toBe(5000n)
     expect(() => preparedDiagnosticRequest({ ...diagnostic })).toThrow('prepared')
@@ -39,6 +39,7 @@ describe('canonical diagnostic construction and export', () => {
     expect(JSON.parse(request.canonical).request).toEqual(JSON.parse(before))
     expect(original.canonical).toBe(before)
     expect(() => prepareDiagnostics({ ...index, generation: undefined }, original, undefined, { intent: 'explain-hit' })).toThrow('Open the index')
+    expect(() => prepareDiagnostics({ ...index, target: new IndexTargetT('products', 'G2') }, original, undefined, { intent: 'explain-hit' })).toThrow('does not match the opened index incarnation')
   })
   it('keeps experimental canonical requests separate from the baseline', () => {
     const original = prepareSearch({ query: 'orchid', ranking: 'baseline' })
