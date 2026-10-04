@@ -1786,6 +1786,9 @@ table SearchRequest {
   // returns Unsupported.
   query_profile:string;
   search_chain:string;
+  // Opt-in bounded retention of execution identity/returned IDs for later
+  // diagnostics. Does not enable trace/profiling or change query execution.
+  diagnostic_source:bool = false;
 }
 
 // -----------------------------------------------------------------------------
@@ -2005,6 +2008,7 @@ table ResolvedSearchRequest {
   properties:[ValueEntry];
   query_profile:string;
   search_chain:string;
+  diagnostic_source:bool = false;
 }
 
 table InspectQueryResult {

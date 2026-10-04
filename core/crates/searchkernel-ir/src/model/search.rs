@@ -25,6 +25,7 @@ pub struct SearchRequestIr {
     pub(crate) timeout: Option<Duration>,
     pub(crate) prefix_policy: PrefixPolicy,
     pub(crate) typo_policy: TypoPolicy,
+    pub(crate) diagnostic_source: bool,
 }
 
 impl SearchRequestIr {
@@ -67,12 +68,15 @@ impl SearchRequestIr {
             timeout: None,
             prefix_policy,
             typo_policy,
+            diagnostic_source: false,
         }
     }
 
     pub fn query(&self) -> &QueryIr {
         &self.query
     }
+
+    pub fn diagnostic_source(&self) -> bool { self.diagnostic_source }
 
     pub fn search_fields(&self) -> &[SearchFieldIr] {
         &self.search_fields

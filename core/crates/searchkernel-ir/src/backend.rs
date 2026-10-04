@@ -11,6 +11,9 @@ use crate::model::{
 /// execute them, but it must not choose Search Kernel defaults or reinterpret
 /// wire representation details.
 pub trait Backend: Send + Sync {
+    /// Public client identity for an already opened remote target. Embedded
+    /// backends have no daemon generation and therefore return None.
+    fn target_identity(&self) -> Option<(&str, &str)> { None }
     fn insert(&self, request: InsertRequestIr) -> Result<InsertResult>;
     fn upsert(&self, request: UpsertRequestIr) -> Result<UpsertResult>;
     fn patch(&self, request: PatchRequestIr) -> Result<PatchResult>;

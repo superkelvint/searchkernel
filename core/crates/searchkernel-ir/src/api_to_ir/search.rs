@@ -11,7 +11,9 @@ impl IndexContext {
         self.search_to_ir(request)
     }
     pub(crate) fn search_to_ir(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
-        resolve_search(self, decode_search_input(self, request)?)
+        let mut resolved = resolve_search(self, decode_search_input(self, request)?)?;
+        resolved.diagnostic_source = request.diagnostic_source();
+        Ok(resolved)
     }
     pub(crate) fn analyze_to_ir(
         &self,

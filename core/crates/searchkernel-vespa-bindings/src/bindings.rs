@@ -1681,6 +1681,20 @@ unsafe extern "C" {
     pub fn sk_generic_search_result_issue_count(result: *const sk_generic_search_result) -> u32;
 }
 unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_decode(
+        data: *const u8,
+        length: u32,
+        type_spec: *mut ::std::os::raw::c_char,
+        type_capacity: u32,
+        out_type_length: *mut u32,
+        cells: *mut f64,
+        cell_capacity: u32,
+        out_cell_count: *mut u32,
+        error: *mut u8,
+        error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_result_diagnostics(
         result: *const sk_generic_search_result,
         out_trace: *mut *const u8,

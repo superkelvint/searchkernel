@@ -592,6 +592,9 @@ fn response_error(envelope: wire::ResponseEnvelope<'_>) -> ir::Result<Option<Por
 }
 
 impl Backend for RemoteBackend {
+    fn target_identity(&self) -> Option<(&str, &str)> {
+        self.target.as_deref().zip(self.generation.as_deref())
+    }
     fn insert(&self, request: ir::InsertRequestIr) -> ir::Result<ir::InsertResult> {
         let payload = self.call(
             wire_ir::encode_insert_request_for_target_generation(
@@ -784,7 +787,30 @@ pub struct RemoteClient {
     lifecycle_locks: Arc<Mutex<HashMap<String, Weak<Mutex<()>>>>>,
 }
 
+/// Owns the response bytes so generated diagnostic views cannot outlive them.
+/// Canonical nested requests and raw engine evidence remain completely intact.
+pub struct DiagnosticResponse { payload: Vec<u8> }
+
+impl DiagnosticResponse {
+    pub fn result(&self) -> Result<wire::QueryDiagnosticsResult<'_>> {
+        let envelope = expected_response(&self.payload, wire::ResponsePayload::SearchKernel_Wire_QueryDiagnosticsResult).map_err(crate::Error::from_ir)?;
+        envelope.payload_as_search_kernel_wire_query_diagnostics_result().ok_or_else(|| crate::Error::from_ir(invalid_remote_response("diagnostic response payload is missing")))
+    }
+}
+
 impl RemoteClient {
+    /// Execute diagnostics through an already opened, generation-bound index.
+    /// There is no reconnect, generation replacement, or automatic retry.
+    pub fn query_diagnostics(&self, index: &Index, request: &ir::QueryDiagnosticsRequestIr) -> Result<DiagnosticResponse> {
+        index.with_backend(|backend| {
+            let (target, generation) = backend.target_identity().ok_or_else(|| crate::Error::from_ir(PortableError::failed_precondition("remote_index_required", None::<String>, "open a daemon index before requesting remote diagnostics")))?;
+            let bytes = wire_ir::encode_query_diagnostics_request_for_target_generation(request, target, generation);
+            let response = self.transport.call(bytes, false).map_err(crate::Error::from_ir)?;
+            let response = DiagnosticResponse { payload: response.payload };
+            response.result()?;
+            Ok(response)
+        })
+    }
     /// Connect to `searchkerneld` without selecting an index.
     ///
     /// Plain `host:port` values use insecure gRPC over TCP. `http://`
