@@ -10,9 +10,7 @@ use searchkernel_protocol::{
     wire::v1 as api,
 };
 use searchkernel_testkit::RecordingBackend;
-use searchkerneld::search_endpoints::{
-    PublicSearchConfig, PublicSearchError, PublicSearchRequest,
-};
+use searchkerneld::search_endpoints::{PublicSearchConfig, PublicSearchError, PublicSearchRequest};
 
 fn config() -> PublicSearchConfig {
     serde_json::from_str(
@@ -51,7 +49,10 @@ fn request(query: &str, limit: u32, offset: u32) -> PublicSearchRequest {
 fn decode_search(bytes: &[u8]) -> api::SearchRequest<'_> {
     let envelope = wire::root_as_request_envelope(bytes).expect("valid canonical request envelope");
     assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
-    assert_eq!(envelope.target().and_then(|target| target.name()), Some("docs"));
+    assert_eq!(
+        envelope.target().and_then(|target| target.name()),
+        Some("docs")
+    );
     assert_eq!(
         envelope.payload_type(),
         wire::RequestPayload::SearchKernel_Wire_SearchRequest
