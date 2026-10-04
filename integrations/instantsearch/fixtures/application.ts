@@ -19,7 +19,7 @@ search.addWidgets([
   menu({container:'#category',attribute:'category'}),
   numericMenu({container:'#numeric',attribute:'price',items:[{label:'All prices'},{label:'Up to 100',end:100},{label:'Above 100',start:101}]}),
   sortBy({container:'#sort',items:[{label:'Relevance',value:'products'},{label:'Price ascending',value:'price_asc'},
-    {label:'Price descending',value:'price_desc'},{label:'Intentional unknown index',value:'missing'}]}),
+    {label:'Price descending',value:'price_desc'},{label:'Intentional canonical sort error',value:'invalid_sort'},{label:'Intentional unknown index',value:'missing'}]}),
   stats({container:'#stats'}),clearRefinements({container:'#clear'}),currentRefinements({container:'#current'}),
 ]);
 search.on('render',() => {

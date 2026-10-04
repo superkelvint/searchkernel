@@ -131,7 +131,9 @@ function translate(request: InstantSearchRequest): EndpointRequest {
   const snippets = params.attributesToSnippet === undefined ? [] : strings(params.attributesToSnippet);
   // Juniper owns excerpt selection. Algolia word-count directives cannot be
   // represented by the canonical teaser request and must not be approximated.
-  if (snippets.some(field => field.includes(":"))) fail("unsupported");
+  if (snippets.some(field => field.includes(":") || field.includes("."))) fail("unsupported");
+  const highlights = params.attributesToHighlight === undefined ? undefined : strings(params.attributesToHighlight);
+  if (highlights?.some(field => field.includes("."))) fail("unsupported");
   const facetLimit = integer(params.maxValuesPerFacet, 100, 100);
   if (facetLimit === 0) fail();
   return {
@@ -140,7 +142,7 @@ function translate(request: InstantSearchRequest): EndpointRequest {
     facetLimit,
     filters: [...filters(params.facetFilters, facetFilter), ...filters(params.numericFilters, numericFilter)],
     fields: params.attributesToRetrieve === undefined ? undefined : strings(params.attributesToRetrieve),
-    highlights: params.attributesToHighlight === undefined ? undefined : strings(params.attributesToHighlight),
+    highlights,
     snippets,
   };
 }
@@ -150,6 +152,7 @@ function highlighted(fragments: Fragment[]) {
   let matched = false;
   const matchedWords = new Set<string>();
   const value = fragments.map(fragment => {
+    if (!fragment || typeof fragment.text !== "string" || !Array.isArray(fragment.matches)) fail("invalid_response");
     const bytes = new TextEncoder().encode(fragment.text);
     const decoder = new TextDecoder("utf-8", { fatal: true });
     let offset = 0;

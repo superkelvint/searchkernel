@@ -74,6 +74,8 @@ try {
   assert.equal(await page.locator('#hits article').count(),0);
   await page.locator('#searchbox input').fill('wireless'); await state({count:18});
   await page.locator('#searchbox input').fill(''); await state({count:24});
+  await page.locator('#sort select').selectOption('invalid_sort');
+  await page.waitForFunction(()=>document.querySelector('#error').textContent==='invalid_request: Invalid search request');
   await page.locator('#sort select').selectOption('missing');
   await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('unknown_index: Unknown search index'));
   assert.deepEqual(pageErrors,[]);

@@ -129,7 +129,7 @@ impl PublicSearchConfig {
                 || endpoint
                     .highlights
                     .iter()
-                    .any(|f| !endpoint.fields.contains(f))
+                    .any(|f| !endpoint.fields.contains(f) || f.contains('.'))
             {
                 return Err(PublicSearchError::InvalidRequest);
             }

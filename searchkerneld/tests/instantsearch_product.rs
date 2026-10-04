@@ -131,6 +131,12 @@ async fn real_pinned_consumer_uses_public_endpoint_and_vespa() {
             endpoints.insert("price_desc".into(), descending);
         }
     }
+    let mut invalid_sort = endpoints["products"].clone();
+    invalid_sort.sort = vec![PublicSort {
+        field: "missing_sort_field".into(),
+        descending: false,
+    }];
+    endpoints.insert("invalid_sort".into(), invalid_sort);
     let mut stale = endpoints["products"].clone();
     stale.generation = "obsolete-generation".into();
     endpoints.insert("stale".into(), stale);

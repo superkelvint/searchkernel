@@ -29,9 +29,9 @@ describe('bounded representation', () => {
     expect(filters.slice(1,5)).toEqual([{field:'category',op:'ne',value:'home'},{field:'brand',op:'eq',value:'-literal'},
       {field:'price',op:'gte',value:10},{field:'price',op:'lt',value:20}]);
   });
-  it.each(['filters','distinct','typoTolerance','aroundLatLng','attributesToSnippet'])('rejects unsupported %s', async key => {
+  it.each(['filters','distinct','typoTolerance','aroundLatLng','attributesToSnippet','attributesToHighlight'])('rejects unsupported %s', async key => {
     const { client, observed } = setup();
-    await expect(client.search([{indexName:'one',params:{[key]: key === 'attributesToSnippet' ? ['title:5'] : true}}]))
+    await expect(client.search([{indexName:'one',params:{[key]: key === 'attributesToSnippet' ? ['title:5'] : key === 'attributesToHighlight' ? ['address.street'] : true}}]))
       .rejects.toMatchObject({code:'unsupported',requestIndex:0});
     expect(observed).toHaveLength(0);
   });
@@ -105,6 +105,14 @@ describe('bounded representation', () => {
     }]})) as typeof fetch});
     const {results} = await client.search([{indexName:'one',params:{attributesToSnippet:['*']}}]);
     expect(results[0].hits[0]._snippetResult.title).toEqual({value:'value',matchLevel:'none',matchedWords:[]});
+  });
+
+  it('rejects non-string fragment text instead of coercing malformed responses', async () => {
+    const client = createSearchKernelInstantSearchClient({endpoint:'http://localhost/search',fetch:(async()=>Response.json({results:[{
+      endpoint:'one',query:'',totalHits:1,exact:true,processingTimeMs:0,facets:{},exhaustiveFacetsCount:true,
+      hits:[{id:'doc',fields:{},highlights:{title:[{text:null,matches:[]}]}}],
+    }]})) as typeof fetch});
+    await expect(client.search([{indexName:'one'}])).rejects.toMatchObject({code:'invalid_response'});
   });
 
 });

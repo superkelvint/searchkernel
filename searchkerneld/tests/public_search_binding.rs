@@ -64,3 +64,15 @@ fn malformed_and_unbounded_public_shapes_fail_before_dispatch() {
     );
     assert!(serde_json::from_str::<PublicSearchRequest>(r#"{"endpoint":"products","query":"a","limit":1,"offset":0,"facets":[],"facetLimit":10,"filters":[],"snippets":[],"properties":{}}"#).is_err());
 }
+
+#[test]
+fn nested_highlight_configuration_is_explicitly_outside_the_profile() {
+    let mut config = config();
+    let endpoint = config.endpoints.get_mut("products").unwrap();
+    endpoint.fields.push("address.street".into());
+    endpoint.highlights.push("address.street".into());
+    assert_eq!(
+        config.validate().unwrap_err(),
+        PublicSearchError::InvalidRequest
+    );
+}

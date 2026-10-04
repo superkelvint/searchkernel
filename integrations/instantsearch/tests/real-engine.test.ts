@@ -108,6 +108,7 @@ it('actual pinned widgets search, refine, paginate, browse, sort and render thro
     expect(await malformed.json()).toMatchObject({error:{code:'invalid_request'}});
     const isolated = await fetch(endpoint!.replace('/search','/v1/execute'),{method:'POST',body:'{}'});
     expect(isolated.ok).toBe(false);
+    await expect(client.search([{indexName:'invalid_sort'}])).rejects.toMatchObject({code:'invalid_request',requestIndex:0});
     await expect(client.search([{indexName:'stale'}])).rejects.toMatchObject({code:'stale_target',requestIndex:0});
     await expect(client.search([{indexName:'products',params:{attributesToSnippet:['missing']}}])).rejects.toMatchObject({code:'unsupported'});
     const mixedFailure = await client.search([{indexName:'products'}, {indexName:'missing'}]).catch(error=>error);
