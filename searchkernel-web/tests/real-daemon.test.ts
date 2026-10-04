@@ -22,6 +22,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
   tensor.attribute = fromCanonicalJson('AttributeConfig', { enabled: { value: true }, distance_metric: 'Euclidean' }) as typeof tensor.attribute
   tensor.index = fromCanonicalJson('IndexConfig', { enabled: { value: true }, hnsw: {} }) as typeof tensor.index
   const definition = new IndexDefinitionT('debugger_schema', [new Text({ stored: true, searchable: true }).definition('title'), new Integer({ stored: true, attribute: true }).definition('quantity'), tensor])
+  definition.defaultSearchFields = fromCanonicalJson('SearchFieldSelection', { fields: [{ field: 'title' }] }) as typeof definition.defaultSearchFields
   definition.rankProfiles = [
     new RankProfile('plain').firstPhase('attribute(quantity)').definition(),
     new RankProfile('signals').firstPhase('bm25(title) + query(boost)').secondPhase('attribute(quantity)').rerankCount(10).matchFeature('bm25(title)').matchFeature('attribute(quantity)').definition(),

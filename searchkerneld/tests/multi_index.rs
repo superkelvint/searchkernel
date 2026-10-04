@@ -49,6 +49,9 @@ impl TempDir {
 
 impl Drop for TempDir {
     fn drop(&mut self) {
+        // Preserve failed-test storage until still-running native flush tasks drain.
+        // Removing it during unwinding can abort Vespa and mask the assertion.
+        if std::thread::panicking() { return; }
         let _ = fs::remove_dir_all(&self.0);
     }
 }

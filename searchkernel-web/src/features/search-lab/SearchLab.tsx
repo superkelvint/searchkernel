@@ -1,6 +1,6 @@
 import { CopyButton } from '../../components/Workbench'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams, useLocation } from 'react-router-dom'
+import { useSearchParams, useLocation, useNavigationType } from 'react-router-dom'
 import { type ClientSearchRequest, type ClientSearchResponse, type PreparedSearchRequest, type ClientDiagnostics, type DiagnosticIntent, normalizeClientError } from '../../api/searchkernel-client'
 import { typedTerm, typedQueryReference } from '../../api/search-request'
 import { useSearchKernelClient, useCapabilities } from '../../app/client-context'
@@ -21,6 +21,14 @@ export function SearchLab() {
   const privateInputs = typeof location.state?.searchLabInputs === 'string' ? location.state.searchLabInputs : undefined
   const state = useMemo(() => privateInputs === undefined ? restored.state : { ...restored.state, inputs: privateInputs }, [restored.state, privateInputs])
   const shareInputs = restored.state.inputs !== undefined
+  const navigationType = useNavigationType()
+  // A pending URL write is a transaction, not an independent form model. Rapid
+  // edits compose against its latest value until the router commits it. POP
+  // navigation always restores the URL/history entry as the authority.
+  const pendingWrite = useRef<{ state: ClientSearchRequest; signature: string; locationKey: string; includeInputs: boolean } | undefined>(undefined)
+  const signature = JSON.stringify([key, privateInputs])
+  if (pendingWrite.current && (pendingWrite.current.signature === signature || (navigationType === 'POP' && pendingWrite.current.locationKey !== location.key))) pendingWrite.current = undefined
+
   const prepared = useMemo(() => {
     try { return { value: client.prepareSearch(state) } }
     catch (error) { return { error: normalizeClientError(error) } }
@@ -64,13 +72,20 @@ export function SearchLab() {
     // configuration without executing. StrictMode cleanup cancels its observer;
     // the next setup executes with a fresh signal.
   }, [client, index.id, index.generation])
-  const writeState = (value: ClientSearchRequest, includeInputs = shareInputs) => {
+  const writeState = (value: ClientSearchRequest, includeInputs = pendingWrite.current?.includeInputs ?? shareInputs) => {
     const next = encodeSearchParams(value, { includeInputs })
     const history = !includeInputs && value.inputs !== undefined ? { searchLabInputs: value.inputs } : null
-    if (next.toString() !== key || history?.searchLabInputs !== privateInputs) setParams(next, { state: history })
+    if (next.toString() !== key || history?.searchLabInputs !== privateInputs) {
+      pendingWrite.current = { state: value, signature: JSON.stringify([next.toString(), history?.searchLabInputs]), locationKey: location.key, includeInputs }
+      setParams(next, { state: history })
+    }
   }
-  const update = (patch: Partial<ClientSearchRequest>) => writeState(updateSearchState(state, patch))
-  const run = () => { if (!loading && !restored.error && prepared.value) void execute(prepared.value) }
+  const update = (patch: Partial<ClientSearchRequest>) => writeState(updateSearchState(pendingWrite.current?.state ?? state, patch))
+  const run = () => {
+    if (loading || restored.error) return
+    try { void execute(client.prepareSearch(pendingWrite.current?.state ?? state)) }
+    catch (failure) { setError(normalizeClientError(failure)) }
+  }
   useEffect(() => {
     const listener = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); run() } }
     addEventListener('keydown', listener); return () => removeEventListener('keydown', listener)
@@ -102,7 +117,7 @@ export function SearchLab() {
       <label>Limit<input aria-label="Limit" type="number" className="input" placeholder="Server default" value={state.limit ?? ''} onChange={e => update({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
       <label>Offset<input aria-label="Offset" type="number" className="input" placeholder="Server default" value={state.offset ?? ''} onChange={e => update({ offset: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
       <label className="md:col-span-2">Query inputs<textarea aria-label="Query inputs" className="input min-h-24 font-mono text-xs" value={state.inputs ?? ''} placeholder='{"boost": 2}' onChange={e => update({ inputs: e.target.value || undefined })} /><p className="mt-2 text-xs text-slate-500">Literal inputs: numeric scalars and dense tensors execute in this daemon. JSON object keyed by input name. Scalar/container values retain their types; int64, uint64 and tensors can use canonical Value JSON. Expression inputs require a container-aware backend and are unavailable here; other unsupported literal types retain canonical errors.</p>{state.ranking && index.profileInputs?.[state.ranking] && <details><summary className="text-sm">Declared profile inputs</summary><pre className="overflow-auto text-xs">{index.profileInputs[state.ranking]}</pre></details>}</label>
-      <label className="md:col-span-2"><input type="checkbox" aria-label="Include query inputs in shareable URL" checked={shareInputs} onChange={e => writeState(state, e.target.checked)}/> Include query inputs in shareable URL (may contain sensitive values).<p className="text-xs">By default, query inputs remain in this browser history entry and survive reload/back/forward. Copied URLs omit them; explicitly opt in to reproduce those values in another session.</p></label>
+      <label className="md:col-span-2"><input type="checkbox" aria-label="Include query inputs in shareable URL" checked={shareInputs} onChange={e => writeState(pendingWrite.current?.state ?? state, e.target.checked)}/> Include query inputs in shareable URL (may contain sensitive values).<p className="text-xs">By default, query inputs remain in this browser history entry and survive reload/back/forward. Copied URLs omit them; explicitly opt in to reproduce those values in another session.</p></label>
     </div></details>
     {visibleError && <div role="alert" className="surface mt-4 border-red-200 p-4 text-red-800"><strong>{visibleError.origin ?? 'client'} · {visibleError.code}</strong><p>{visibleError.message}</p><details><summary>Structured error</summary><pre className="overflow-auto text-xs">{errorJson}</pre></details></div>}
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
