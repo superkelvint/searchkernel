@@ -484,6 +484,7 @@ pub fn execute(
                     value: 0,
                     relation: TotalHitsRelation::Unknown,
                 }),
+                evidence: Vec::new(),
                 raw_engine: Vec::new(),
                 observed_sections: Vec::new(),
             },
@@ -649,6 +650,11 @@ pub fn execute(
         .values
         .insert("retrieval_candidate_count".into(), Value::Null);
     let mut evidence_items = vec![effective, retrieval, ranking, timing];
+    let mut acquired_evidence = acquired.evidence.clone();
+    for item in &mut acquired_evidence {
+        item.execution_id = execution.id.clone();
+    }
+    evidence_items.append(&mut acquired_evidence);
     if timed_out {
         for item in &mut evidence_items {
             if item.section != DiagnosticSection::Query {
