@@ -1851,11 +1851,29 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
 
     let a = client.open_index("rust-a").expect("open A after restart");
     let b = client.open_index("rust-b").expect("open B after restart");
-    let diagnostic = a.prepare_diagnostics(&a.search("keyboard"), searchkernel::DiagnosticIntent::ExplainHit).expect("prepare canonical diagnostics");
-    let response = client.query_diagnostics(&a, &diagnostic).expect("Rust remote diagnostic operation");
-    let result = response.result().expect("owned canonical diagnostic response");
-    assert_eq!(result.execution().unwrap().target().unwrap().name(), Some("rust-a"));
-    assert!(result.execution().unwrap().target().unwrap().generation().is_some());
+    let diagnostic = a
+        .prepare_diagnostics(
+            &a.search("keyboard"),
+            searchkernel::DiagnosticIntent::ExplainHit,
+        )
+        .expect("prepare canonical diagnostics");
+    let response = client
+        .query_diagnostics(&a, &diagnostic)
+        .expect("Rust remote diagnostic operation");
+    let result = response
+        .result()
+        .expect("owned canonical diagnostic response");
+    assert_eq!(
+        result.execution().unwrap().target().unwrap().name(),
+        Some("rust-a")
+    );
+    assert!(result
+        .execution()
+        .unwrap()
+        .target()
+        .unwrap()
+        .generation()
+        .is_some());
     assert!(result.hits().unwrap().len() > 0);
     assert_eq!(
         a.get::<RemoteLifecycleDocument>("a-doc").expect("get A"),
@@ -1946,10 +1964,20 @@ async fn rust_remote_client_targets_independent_indexes_across_restart_and_delet
         stale_error.details()[0].code,
         STALE_INDEX_HANDLE_DETAIL_CODE
     );
-    let diagnostic = stale_a.prepare_diagnostics(&stale_a.search("keyboard"), searchkernel::DiagnosticIntent::ExplainHit).expect("prepare stale diagnostics");
-    let stale_diagnostic = client.query_diagnostics(&stale_a, &diagnostic).expect_err("diagnostics must reject the old incarnation");
+    let diagnostic = stale_a
+        .prepare_diagnostics(
+            &stale_a.search("keyboard"),
+            searchkernel::DiagnosticIntent::ExplainHit,
+        )
+        .expect("prepare stale diagnostics");
+    let stale_diagnostic = client
+        .query_diagnostics(&stale_a, &diagnostic)
+        .expect_err("diagnostics must reject the old incarnation");
     assert_eq!(stale_diagnostic.code(), RustErrorCode::FailedPrecondition);
-    assert_eq!(stale_diagnostic.details()[0].code, STALE_INDEX_HANDLE_DETAIL_CODE);
+    assert_eq!(
+        stale_diagnostic.details()[0].code,
+        STALE_INDEX_HANDLE_DETAIL_CODE
+    );
     stale_a.close().expect("close stale A handle");
     replacement_a.close().expect("close replacement A");
     other_client

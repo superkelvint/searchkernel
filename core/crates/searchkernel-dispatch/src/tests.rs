@@ -255,13 +255,53 @@ fn diagnostic_input(
 
 struct EmptyDiagnosticBackend;
 impl searchkernel_ir::Backend for EmptyDiagnosticBackend {
-    fn insert(&self, _: searchkernel_ir::InsertRequestIr) -> searchkernel_ir::Result<searchkernel_ir::InsertResult> { panic!("diagnostics must not mutate") }
-    fn upsert(&self, _: searchkernel_ir::UpsertRequestIr) -> searchkernel_ir::Result<searchkernel_ir::UpsertResult> { panic!("diagnostics must not mutate") }
-    fn patch(&self, _: searchkernel_ir::PatchRequestIr) -> searchkernel_ir::Result<searchkernel_ir::PatchResult> { panic!("diagnostics must not mutate") }
-    fn delete(&self, _: searchkernel_ir::DeleteRequestIr) -> searchkernel_ir::Result<searchkernel_ir::DeleteResult> { panic!("diagnostics must not mutate") }
-    fn analyze(&self, _: searchkernel_ir::AnalyzeRequestIr) -> searchkernel_ir::Result<searchkernel_ir::AnalyzeResult> { panic!("not requested") }
-    fn get(&self, _: searchkernel_ir::GetRequestIr) -> searchkernel_ir::Result<searchkernel_ir::GetResult> { Ok(searchkernel_ir::GetResult { document: None }) }
-    fn search(&self, _: searchkernel_ir::SearchRequestIr) -> searchkernel_ir::Result<searchkernel_ir::SearchResult> { Ok(searchkernel_ir::SearchResult::empty(searchkernel_ir::TotalHits { value: 0, relation: searchkernel_ir::TotalHitsRelation::Exact })) }
+    fn insert(
+        &self,
+        _: searchkernel_ir::InsertRequestIr,
+    ) -> searchkernel_ir::Result<searchkernel_ir::InsertResult> {
+        panic!("diagnostics must not mutate")
+    }
+    fn upsert(
+        &self,
+        _: searchkernel_ir::UpsertRequestIr,
+    ) -> searchkernel_ir::Result<searchkernel_ir::UpsertResult> {
+        panic!("diagnostics must not mutate")
+    }
+    fn patch(
+        &self,
+        _: searchkernel_ir::PatchRequestIr,
+    ) -> searchkernel_ir::Result<searchkernel_ir::PatchResult> {
+        panic!("diagnostics must not mutate")
+    }
+    fn delete(
+        &self,
+        _: searchkernel_ir::DeleteRequestIr,
+    ) -> searchkernel_ir::Result<searchkernel_ir::DeleteResult> {
+        panic!("diagnostics must not mutate")
+    }
+    fn analyze(
+        &self,
+        _: searchkernel_ir::AnalyzeRequestIr,
+    ) -> searchkernel_ir::Result<searchkernel_ir::AnalyzeResult> {
+        panic!("not requested")
+    }
+    fn get(
+        &self,
+        _: searchkernel_ir::GetRequestIr,
+    ) -> searchkernel_ir::Result<searchkernel_ir::GetResult> {
+        Ok(searchkernel_ir::GetResult { document: None })
+    }
+    fn search(
+        &self,
+        _: searchkernel_ir::SearchRequestIr,
+    ) -> searchkernel_ir::Result<searchkernel_ir::SearchResult> {
+        Ok(searchkernel_ir::SearchResult::empty(
+            searchkernel_ir::TotalHits {
+                value: 0,
+                relation: searchkernel_ir::TotalHitsRelation::Exact,
+            },
+        ))
+    }
 }
 
 #[test]
@@ -376,24 +416,72 @@ fn diagnostic_identity_rejects_foreign_incarnations_and_invalid_budgets() {
 fn provenance_is_opt_in_and_original_and_rerun_have_separate_identities() {
     let dispatcher = Dispatcher::from_backend(context(), Arc::new(EmptyDiagnosticBackend));
     let mut input = diagnostic_input(searchkernel_ir::DiagnosticIntent::ExplainHit);
-    let ordinary = searchkernel_ir::wire::v1::encode_search_request_for_target_generation(&input.request, Some("catalog"), Some("G1")).unwrap();
+    let ordinary = searchkernel_ir::wire::v1::encode_search_request_for_target_generation(
+        &input.request,
+        Some("catalog"),
+        Some("G1"),
+    )
+    .unwrap();
     let bytes = dispatcher.dispatch(&ordinary).unwrap();
     let envelope = root::<wire::ResponseEnvelope<'_>>(&bytes).unwrap();
-    assert!(envelope.payload_as_search_kernel_wire_search_result().unwrap().metadata().is_none());
+    assert!(envelope
+        .payload_as_search_kernel_wire_search_result()
+        .unwrap()
+        .metadata()
+        .is_none());
     input.request = input.request.with_diagnostic_source(true);
-    let ordinary = searchkernel_ir::wire::v1::encode_search_request_for_target_generation(&input.request, Some("catalog"), Some("G1")).unwrap();
+    let ordinary = searchkernel_ir::wire::v1::encode_search_request_for_target_generation(
+        &input.request,
+        Some("catalog"),
+        Some("G1"),
+    )
+    .unwrap();
     let bytes = dispatcher.dispatch(&ordinary).unwrap();
     let envelope = root::<wire::ResponseEnvelope<'_>>(&bytes).unwrap();
-    let metadata = envelope.payload_as_search_kernel_wire_search_result().unwrap().metadata().unwrap();
-    let value = metadata.iter().find(|entry| entry.key() == searchkernel_ir::diagnostics::SOURCE_RUN_METADATA_KEY).unwrap().value().unwrap();
-    input.source_run_id = Some(value.kind_as_string_value().unwrap().value().unwrap().into());
-    let request = searchkernel_ir::wire::v1::encode_query_diagnostics_request_for_target_generation(&input, "catalog", "G1");
+    let metadata = envelope
+        .payload_as_search_kernel_wire_search_result()
+        .unwrap()
+        .metadata()
+        .unwrap();
+    let value = metadata
+        .iter()
+        .find(|entry| entry.key() == searchkernel_ir::diagnostics::SOURCE_RUN_METADATA_KEY)
+        .unwrap()
+        .value()
+        .unwrap();
+    input.source_run_id = Some(
+        value
+            .kind_as_string_value()
+            .unwrap()
+            .value()
+            .unwrap()
+            .into(),
+    );
+    let request = searchkernel_ir::wire::v1::encode_query_diagnostics_request_for_target_generation(
+        &input, "catalog", "G1",
+    );
     let bytes = dispatcher.dispatch(&request).unwrap();
     let envelope = root::<wire::ResponseEnvelope<'_>>(&bytes).unwrap();
-    let response = envelope.payload_as_search_kernel_wire_query_diagnostics_result().unwrap();
-    assert_eq!(response.source_run().unwrap().kind(), api::DiagnosticExecutionKind::Original);
-    assert_ne!(response.source_run().unwrap().id(), response.execution().unwrap().id());
-    assert_eq!(response.comparison().unwrap().results_changed().unwrap().value(), false);
+    let response = envelope
+        .payload_as_search_kernel_wire_query_diagnostics_result()
+        .unwrap();
+    assert_eq!(
+        response.source_run().unwrap().kind(),
+        api::DiagnosticExecutionKind::Original
+    );
+    assert_ne!(
+        response.source_run().unwrap().id(),
+        response.execution().unwrap().id()
+    );
+    assert_eq!(
+        response
+            .comparison()
+            .unwrap()
+            .results_changed()
+            .unwrap()
+            .value(),
+        false
+    );
 }
 
 #[test]
