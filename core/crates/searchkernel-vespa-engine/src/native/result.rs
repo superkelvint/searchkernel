@@ -26,7 +26,14 @@ pub(crate) fn read_generic_search_result(
         )
     };
     check(status, &error)?;
-    if truncated & !3 != 0 || length > 262_144 || [matching_seconds, summary_seconds, query_seconds].iter().any(|value| !value.is_finite() || *value < 0.0) { return Err(Error::message("native diagnostic metadata is invalid")); }
+    if truncated & !3 != 0
+        || length > 262_144
+        || [matching_seconds, summary_seconds, query_seconds]
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+    {
+        return Err(Error::message("native diagnostic metadata is invalid"));
+    }
     let diagnostics = if query_seconds == 0.0 && length == 0 && truncated == 0 {
         None
     } else {
@@ -42,7 +49,15 @@ pub(crate) fn read_generic_search_result(
             unsafe { std::slice::from_raw_parts(trace, length as usize) }
         };
         Some(crate::search::SearchDiagnostics {
-            trace: match std::str::from_utf8(bytes) { Ok(value) => value.to_owned(), Err(error) if truncated & 1 != 0 => std::str::from_utf8(&bytes[..error.valid_up_to()]).map_err(|_| Error::message("invalid truncated trace"))?.to_owned(), Err(_) => return Err(Error::message("native trace is not UTF-8")) },
+            trace: match std::str::from_utf8(bytes) {
+                Ok(value) => value.to_owned(),
+                Err(error) if truncated & 1 != 0 => {
+                    std::str::from_utf8(&bytes[..error.valid_up_to()])
+                        .map_err(|_| Error::message("invalid truncated trace"))?
+                        .to_owned()
+                }
+                Err(_) => return Err(Error::message("native trace is not UTF-8")),
+            },
             truncated: truncated & 1 != 0,
             features_truncated: truncated & 2 != 0,
             matching_seconds,

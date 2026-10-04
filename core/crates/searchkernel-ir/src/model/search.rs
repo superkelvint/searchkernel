@@ -80,7 +80,10 @@ impl SearchRequestIr {
         self.diagnostic_source
     }
 
-    pub fn with_diagnostic_source(mut self, retain: bool) -> Self { self.diagnostic_source = retain; self }
+    pub fn with_diagnostic_source(mut self, retain: bool) -> Self {
+        self.diagnostic_source = retain;
+        self
+    }
 
     pub fn search_fields(&self) -> &[SearchFieldIr] {
         &self.search_fields

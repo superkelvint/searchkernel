@@ -36,8 +36,15 @@ pub fn query_diagnostics_to_ir(
         .experiment()
         .map(|value| context.search_to_ir(value))
         .transpose()?;
-    if crate::wire::v1::search_request_ir_to_api(&request).len() > 262_144 || experiment.as_ref().is_some_and(|request| crate::wire::v1::search_request_ir_to_api(request).len() > 262_144) {
-        return Err(invalid("request", "canonical diagnostic requests must not exceed 262144 encoded bytes"));
+    if crate::wire::v1::search_request_ir_to_api(&request).len() > 262_144
+        || experiment.as_ref().is_some_and(|request| {
+            crate::wire::v1::search_request_ir_to_api(request).len() > 262_144
+        })
+    {
+        return Err(invalid(
+            "request",
+            "canonical diagnostic requests must not exceed 262144 encoded bytes",
+        ));
     }
     if (intent == DiagnosticIntent::Experiment) != experiment.is_some() {
         return Err(invalid(
@@ -120,7 +127,9 @@ pub fn query_diagnostics_to_ir(
         use DiagnosticSection::*;
         requested_evidence = match intent {
             DiagnosticIntent::ExplainHit => vec![Query, Ranking, MatchedTerms],
-            DiagnosticIntent::ZeroResults | DiagnosticIntent::MissingDocument => vec![Query, Retrieval],
+            DiagnosticIntent::ZeroResults | DiagnosticIntent::MissingDocument => {
+                vec![Query, Retrieval]
+            }
             DiagnosticIntent::RankingComparison => vec![Ranking],
             DiagnosticIntent::Overmatching => vec![Query, Retrieval, MatchedTerms],
             DiagnosticIntent::QueryInterpretation => vec![Query],
