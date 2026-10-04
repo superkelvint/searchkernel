@@ -62,6 +62,10 @@ it('actual pinned widgets search, refine, paginate, browse, sort and render thro
     expect(document.querySelector('#hits')!.innerHTML).toContain('&lt;angle&gt;');
     expect(document.querySelector('#hits angle')).toBeNull();
     expect(document.querySelector('#hits p mark')).not.toBeNull();
+    const helperCoverage = new Set(['Highlight','Snippet']);
+    for (const [name, helper] of Object.entries(compatibility.helpers)) {
+      if (helper.status !== 'unsupported') expect(helperCoverage.has(name),`helper acceptance missing: ${name}`).toBe(true);
+    }
     const description = search.helper!.lastResults!.hits[0]._snippetResult!.description.value;
     expect(description.length).toBeLessThan(1000);
     const change = async (state: Record<string,unknown>, test: () => boolean) => {

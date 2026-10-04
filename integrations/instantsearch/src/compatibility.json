@@ -21,7 +21,7 @@
   "methods": {
     "search": {
       "batchLimit": 16,
-      "failure": "Reject the whole batch; requestIndex identifies the earliest failing request in input order"
+      "failure": "Validate the whole batch before dispatch; reject on the first validation failure, otherwise the first execution failure in input order"
     },
     "addAlgoliaAgent": {
       "behavior": "Accepted identification hint; no analytics or semantic effect"

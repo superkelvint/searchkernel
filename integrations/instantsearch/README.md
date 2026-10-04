@@ -34,7 +34,7 @@ search.addWidgets([
 search.start();
 ```
 
-`search(requests)` sends one bounded POST and returns results in input order. Each request has its own index, query, refinements, pagination, and projection. Maximum batch size is 16. Validation failure rejects before sending; server failure rejects the whole batch with the earliest failing `requestIndex`. There are no response caches or mutable current-index slots. Overlapping calls have separate buffers and deadlines. The pinned consumer owns UI request ordering; aborting HTTP does not claim to cancel native work.
+`search(requests)` sends one bounded POST and returns results in input order. Each request has its own index, query, refinements, pagination, and projection. Maximum batch size is 16. Validation failure rejects before sending; the endpoint validates the whole batch before dispatch, then rejects on the first execution failure in input order; `requestIndex` identifies the failure. There are no response caches or mutable current-index slots. Overlapping calls have separate buffers and deadlines. The pinned consumer owns UI request ordering; aborting HTTP does not claim to cancel native work.
 
 ## Public listener
 

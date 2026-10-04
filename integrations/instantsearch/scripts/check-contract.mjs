@@ -23,7 +23,7 @@ for (const group of upstream.matchAll(/export \{ ([\w, ]+) \};/g)) {
   names.push(...group[1].split(',').map(name=>name.trim()));
 }
 assert.deepEqual(Object.keys(contract.widgets).sort(), [...new Set(names)].sort(), 'upstream widget inventory drift');
-for (const [name, widget] of Object.entries(contract.widgets)) {
+for (const [name, widget] of Object.entries({...contract.widgets,...contract.helpers})) {
   assert.ok(['supported', 'constrained', 'unsupported'].includes(widget.status), `invalid status: ${name}`);
   if (widget.status !== 'unsupported') assert.ok(widget.acceptance?.length, `missing acceptance: ${name}`);
 }
