@@ -30,7 +30,7 @@ it('actual pinned widgets search, refine, paginate, browse, sort and render thro
   const exercised = new Set<string>();
   function covered(...names: string[]) { names.forEach(name => exercised.add(name)); }
   search.addWidgets([
-    configure({hitsPerPage:6,analytics:false,attributesToHighlight:['title'],attributesToSnippet:['description']}),
+    configure({hitsPerPage:6,analytics:false,facets:['*'],attributesToHighlight:['title'],attributesToSnippet:['description']}),
     searchBox({container:'#searchbox'}),
     hits({container:'#hits',templates:{item:(hit, {html,components}) => html`<div data-id="${hit.objectID}">
       <span>${components.Highlight({attribute:'title',hit})}</span><p>${components.Snippet({attribute:'description',hit})}</p></div>`}}),
