@@ -707,43 +707,116 @@ async fn grpc_and_http_json_share_one_registry() {
 async fn diagnostics_are_generation_bound_and_transport_independent() {
     let temp = TempDir::new("diagnostic-transports");
     let registry = Arc::new(IndexRegistry::new(&temp.0).expect("registry"));
-    let server = start_multi(ServerConfig::new("127.0.0.1:0".parse().unwrap()).with_web_listen_addr("127.0.0.1:0".parse().unwrap()), registry.clone()).await.unwrap();
-    let mut grpc = rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{}", server.tcp_addr().unwrap())).await.unwrap();
+    let server = start_multi(
+        ServerConfig::new("127.0.0.1:0".parse().unwrap())
+            .with_web_listen_addr("127.0.0.1:0".parse().unwrap()),
+        registry.clone(),
+    )
+    .await
+    .unwrap();
+    let mut grpc = rpc::search_kernel_client::SearchKernelClient::connect(format!(
+        "http://{}",
+        server.tcp_addr().unwrap()
+    ))
+    .await
+    .unwrap();
     let http_address = server.web_tcp_addr().unwrap();
     let created = execute_http_json(http_address, &create_request("diagnostics", "title")).await;
-    let generation = response(&created).payload_as_search_kernel_wire_create_index_result().unwrap().generation().unwrap().to_owned();
-    execute_http_json(http_address, &upsert_request("diagnostics", "d", "title", "orchid")).await;
-    let search: serde_json::Value = serde_json::from_slice(&request_flatbuffer_to_json(&search_request("diagnostics", "orchid")).unwrap()).unwrap();
-    let make_request = |target: serde_json::Value| request_json_to_flatbuffer(&serde_json::to_vec(&serde_json::json!({
+    let generation = response(&created)
+        .payload_as_search_kernel_wire_create_index_result()
+        .unwrap()
+        .generation()
+        .unwrap()
+        .to_owned();
+    execute_http_json(
+        http_address,
+        &upsert_request("diagnostics", "d", "title", "orchid"),
+    )
+    .await;
+    let search: serde_json::Value = serde_json::from_slice(
+        &request_flatbuffer_to_json(&search_request("diagnostics", "orchid")).unwrap(),
+    )
+    .unwrap();
+    let make_request = |target: serde_json::Value| {
+        request_json_to_flatbuffer(&serde_json::to_vec(&serde_json::json!({
         "protocol_version": PROTOCOL_VERSION, "target": target,
         "payload_type": "SearchKernel_Wire_QueryDiagnosticsRequest",
         "payload": { "request": search["payload"], "intent": "ExplainHit", "requested_evidence": ["Ranking", "Counterfactual"] }
-    })).unwrap()).unwrap();
+    })).unwrap()).unwrap()
+    };
     let valid = make_request(serde_json::json!({"name": "diagnostics", "generation": generation}));
-    for bytes in [grpc.execute(Request::new(rpc::FlatBufferFrame { payload: valid.clone() })).await.unwrap().into_inner().payload,
-        execute_http_json(http_address, &valid).await] {
-        let result = response(&bytes).payload_as_search_kernel_wire_query_diagnostics_result().unwrap();
-        assert_eq!(result.execution().unwrap().target().unwrap().generation(), Some(generation.as_str()));
+    for bytes in [
+        grpc.execute(Request::new(rpc::FlatBufferFrame {
+            payload: valid.clone(),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .payload,
+        execute_http_json(http_address, &valid).await,
+    ] {
+        let result = response(&bytes)
+            .payload_as_search_kernel_wire_query_diagnostics_result()
+            .unwrap();
+        assert_eq!(
+            result.execution().unwrap().target().unwrap().generation(),
+            Some(generation.as_str())
+        );
         assert_eq!(result.hits().unwrap().get(0).id(), Some("d"));
-        assert!(result.evidence().unwrap().iter().any(|item| item.section() == api::DiagnosticSection::Counterfactual && item.status() == api::DiagnosticStatus::Unsupported));
+        assert!(result.evidence().unwrap().iter().any(|item| item.section()
+            == api::DiagnosticSection::Counterfactual
+            && item.status() == api::DiagnosticStatus::Unsupported));
     }
-    for (target, detail) in [(serde_json::Value::Null, MISSING_INDEX_TARGET_DETAIL_CODE),
-        (serde_json::json!({"name":"diagnostics"}), "missing_diagnostic_generation")] {
+    for (target, detail) in [
+        (serde_json::Value::Null, MISSING_INDEX_TARGET_DETAIL_CODE),
+        (
+            serde_json::json!({"name":"diagnostics"}),
+            "missing_diagnostic_generation",
+        ),
+    ] {
         let invalid = make_request(target);
-        let native = grpc.execute(Request::new(rpc::FlatBufferFrame { payload: invalid.clone() })).await.unwrap().into_inner().payload;
+        let native = grpc
+            .execute(Request::new(rpc::FlatBufferFrame {
+                payload: invalid.clone(),
+            }))
+            .await
+            .unwrap()
+            .into_inner()
+            .payload;
         let http = execute_http_json(http_address, &invalid).await;
-        assert_eq!(portable_error_semantics(&native), portable_error_semantics(&http));
-        let error = response(&http).payload_as_search_kernel_wire_error().unwrap();
+        assert_eq!(
+            portable_error_semantics(&native),
+            portable_error_semantics(&http)
+        );
+        let error = response(&http)
+            .payload_as_search_kernel_wire_error()
+            .unwrap();
         assert_eq!(error.code(), api::ErrorCode::InvalidArgument);
         assert_eq!(error.details().unwrap().get(0).code(), Some(detail));
     }
     execute_http_json(http_address, &delete_index_request("diagnostics")).await;
     execute_http_json(http_address, &create_request("diagnostics", "title")).await;
-    let stale_grpc = grpc.execute(Request::new(rpc::FlatBufferFrame { payload: valid.clone() })).await.unwrap().into_inner().payload;
+    let stale_grpc = grpc
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: valid.clone(),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .payload;
     let stale_http = execute_http_json(http_address, &valid).await;
-    assert_eq!(portable_error_semantics(&stale_grpc), portable_error_semantics(&stale_http));
-    assert_portable_error(&stale_http, api::ErrorCode::FailedPrecondition, STALE_INDEX_HANDLE_DETAIL_CODE, Some("target"));
-    server.shutdown().await.unwrap(); registry.close_all().unwrap();
+    assert_eq!(
+        portable_error_semantics(&stale_grpc),
+        portable_error_semantics(&stale_http)
+    );
+    assert_portable_error(
+        &stale_http,
+        api::ErrorCode::FailedPrecondition,
+        STALE_INDEX_HANDLE_DETAIL_CODE,
+        Some("target"),
+    );
+    server.shutdown().await.unwrap();
+    registry.close_all().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

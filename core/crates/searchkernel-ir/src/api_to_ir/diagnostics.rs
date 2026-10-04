@@ -8,9 +8,14 @@ fn invalid(path: &str, message: &str) -> PortableError {
 /// Diagnostics never resolve a logical target to an unbound incarnation.
 pub fn validate_diagnostic_identity(target: Option<&str>, generation: Option<&str>) -> Result<()> {
     let target = target.ok_or_else(crate::api_to_ir::control_plane::missing_target_error)?;
-    crate::validate_index_target(target).map_err(crate::api_to_ir::control_plane::invalid_target_error)?;
+    crate::validate_index_target(target)
+        .map_err(crate::api_to_ir::control_plane::invalid_target_error)?;
     if generation.is_none_or(str::is_empty) {
-        return Err(PortableError::invalid("missing_diagnostic_generation", Some("target.generation"), "Open the logical index and bind diagnostics to its returned generation"));
+        return Err(PortableError::invalid(
+            "missing_diagnostic_generation",
+            Some("target.generation"),
+            "Open the logical index and bind diagnostics to its returned generation",
+        ));
     }
     Ok(())
 }

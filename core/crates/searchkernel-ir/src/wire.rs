@@ -131,8 +131,9 @@ pub mod v1 {
     pub use crate::api_to_ir::{
         analyze_result_from_api, analyzer_to_ir, delete_result_from_api, field_to_ir,
         get_result_from_api, index_definition_to_ir, insert_result_from_api, patch_result_from_api,
-        portable_error_from_api, query_diagnostics_to_ir, validate_diagnostic_identity, search_result_from_api,
-        update_result_from_api, upsert_result_from_api, WriteRequestRef,
+        portable_error_from_api, query_diagnostics_to_ir, search_result_from_api,
+        update_result_from_api, upsert_result_from_api, validate_diagnostic_identity,
+        WriteRequestRef,
     };
     pub use crate::ir_to_api::*;
 
@@ -276,8 +277,16 @@ pub mod v1 {
                 })
             }
             wire::RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest => {
-                validate_diagnostic_identity(Some(&target), target_view.generation()).map_err(|error| ControlPlaneDecodeError::Semantic { version: WireVersion::V1, error })?;
-                Ok(ControlPlaneRequest::Route { target, expected_generation: target_view.generation().map(ToOwned::to_owned) })
+                validate_diagnostic_identity(Some(&target), target_view.generation()).map_err(
+                    |error| ControlPlaneDecodeError::Semantic {
+                        version: WireVersion::V1,
+                        error,
+                    },
+                )?;
+                Ok(ControlPlaneRequest::Route {
+                    target,
+                    expected_generation: target_view.generation().map(ToOwned::to_owned),
+                })
             }
             wire::RequestPayload::NONE => Err(ControlPlaneDecodeError::InvalidRequest),
             _ => Ok(ControlPlaneRequest::Route {
