@@ -5870,7 +5870,7 @@ extern "C" int32_t sk_diagnostic_tensor_decode(
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out_type_length) *out_type_length = 0;
     if (out_cell_count) *out_cell_count = 0;
-    return guarded(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         if (!data || !type_spec || !cells || !out_type_length || !out_cell_count ||
             length == 0 || length > 262144 || cell_capacity == 0 || cell_capacity > 4096) {
             throw std::invalid_argument("diagnostic tensor arguments exceed bounds");
@@ -5906,7 +5906,7 @@ extern "C" int32_t sk_generic_search_result_diagnostics(
     }
     *out_trace = reinterpret_cast<const uint8_t *>(result->diagnostic_trace.data());
     *out_length = static_cast<uint32_t>(result->diagnostic_trace.size());
-    *out_truncated = result->diagnostic_truncated ? 1U : 0U;
+    *out_truncated = (result->diagnostic_truncated ? 1U : 0U) | (result->diagnostic_features_truncated ? 2U : 0U);
     *out_matching_seconds = result->diagnostic_matching_seconds;
     *out_summary_seconds = result->diagnostic_summary_seconds;
     *out_query_seconds = result->diagnostic_query_seconds;
@@ -12057,7 +12057,27 @@ public:
         if (features.values.size() != features.names.size() * reply->hits.size()) {
             throw std::runtime_error("native match-feature matrix shape mismatch");
         }
-        result.match_feature_names = features.names;
+        std::vector<size_t> feature_columns;
+        size_t feature_bytes_remaining = options.diagnostic_raw_bytes;
+        for (size_t column = 0; column < features.names.size(); ++column) {
+            size_t bytes = 0;
+            bool fits = true;
+            if (options.diagnostic_raw_bytes != 0) {
+                for (size_t row = 0; row < reply->hits.size(); ++row) {
+                    const auto &value = features.values[row * features.names.size() + column];
+                    if (value.is_data()) {
+                        const auto data = value.as_data();
+                        if (data.size > feature_bytes_remaining - bytes) { fits = false; break; }
+                        bytes += data.size;
+                    }
+                }
+            }
+            if (fits) {
+                result.match_feature_names.push_back(features.names[column]);
+                feature_columns.push_back(column);
+                if (options.diagnostic_raw_bytes != 0) feature_bytes_remaining -= bytes;
+            } else { result.diagnostic_features_truncated = true; }
+        }
         std::vector<size_t> live_hit_rows;
         live_hit_rows.reserve(reply->hits.size());
         result.hits.reserve(reply->hits.size());
@@ -12076,8 +12096,8 @@ public:
         // never use the original reply row as the result accessor row.
         result.match_feature_values.reserve(result.match_feature_names.size() * live_hit_rows.size());
         for (const size_t row : live_hit_rows) {
-            for (size_t feature = 0; feature < result.match_feature_names.size(); ++feature) {
-                const auto &value = features.values[row * result.match_feature_names.size() + feature];
+            for (const size_t feature : feature_columns) {
+                const auto &value = features.values[row * features.names.size() + feature];
                 result.match_feature_values.push_back({value});
             }
         }
@@ -14788,7 +14808,8 @@ SK_API uint32_t sk_generic_search_result_issue_count(
     const sk_generic_search_result *result) SK_NOEXCEPT;
 /* Borrowed bytes remain valid until result destruction. The caller copies
    them before releasing the opaque result. Truncated payloads are prefixes,
-   not complete JSON; timings are measured seconds from this execution. */
+   not complete JSON; timings are measured seconds from this execution.
+   out_truncated is a mask: 1=trace prefix, 2=omitted oversized DATA columns. */
 /* Caller-owned output buffers; independent calls retain no pointers. Decoding
    is above the unchanged raw DOUBLE/DATA feature ABI, using Vespa's codec. */
 SK_API int32_t sk_diagnostic_tensor_decode(
@@ -15818,6 +15839,7 @@ struct LocalHitState {
 struct LocalSearchResultState {
     std::string diagnostic_trace;
     bool diagnostic_truncated = false;
+    bool diagnostic_features_truncated = false;
     double diagnostic_matching_seconds = 0.0;
     double diagnostic_summary_seconds = 0.0;
     double diagnostic_query_seconds = 0.0;
