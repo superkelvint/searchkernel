@@ -4,6 +4,7 @@ import type { ClientDiagnostics, ClientSearchResponse, DiagnosticOptions, Index,
 import { normalizeClientError } from '../../api/searchkernel-client'
 import { CanonicalInspector, CopyButton, ErrorNotice } from '../../components/Workbench'
 import { diagnosticBundle, signalComparison } from './diagnostic-export'
+import { diagnosticTarget } from '../../api/diagnostic-request'
 import { ReopenIndex } from '../configuration/ChangeWorkflow'
 
 function parseEnginePayload(payload: string): unknown {
@@ -77,7 +78,7 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
     const current = ++sequence.current, controller = new AbortController()
     abort.current = controller; setLoading('Searching for the expected document…'); setError(undefined)
     try {
-      const next = await client.executeSearch(index.id, client.prepareSearch({ query: lookup, limit: 10 }), { signal: controller.signal })
+      const next = await client.executeSearch(diagnosticTarget(index), client.prepareSearch({ query: lookup, limit: 10 }), { signal: controller.signal })
       if (current === sequence.current && scope === currentScope.current && !controller.signal.aborted) setCandidates(next)
     } catch (failure) { if (current === sequence.current) setError(failure) }
     finally { if (current === sequence.current) setLoading('') }
