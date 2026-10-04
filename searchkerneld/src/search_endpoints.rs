@@ -2,18 +2,16 @@
 //!
 //! # Status
 //!
-//! The first two implementation slices are present here: a typed endpoint
-//! policy/request model, strict named-route GET decoding, and canonical
-//! request-envelope encoding for text and match-all search. Public listener
-//! wiring, public JSON response projection, batching, and richer controls remain
-//! future slices.
+//! This module is the single daemon-side authority for bounded public search.
+//! It owns endpoint exposure policy, hostile-input validation, public listener
+//! serving, batching, canonical request binding, response projection, and the
+//! public concurrency boundary. All execution still converges on the canonical
+//! Search Kernel protocol, registry/dispatcher, IR, and backend.
 //!
-//! InstantSearch.js compatibility is nevertheless a hard acceptance requirement
-//! for this request-binding surface. The first compatibility profile accepts the
-//! core SearchClient vocabulary directly: `query`, `hitsPerPage`, and
-//! zero-based `page`. These are exposure-policy aliases only; they lower to the
-//! same canonical Search Kernel query/limit/offset fields and do not introduce
-//! Algolia search semantics.
+//! InstantSearch.js compatibility is an integration consumer of this surface,
+//! not a second daemon-side implementation. The adapter may translate the
+//! pinned InstantSearch contract into this public request model, but search
+//! meaning remains canonical below the boundary.
 //!
 //! Search Endpoints are intended to let `searchkerneld` serve deliberately
 //! narrow, user-facing search APIs such as:
@@ -1572,7 +1570,7 @@ fn encode_search_request(
 // hardened concurrency ownership together prevents a second daemon-side
 // semantic authority from drifting away from Search Endpoints.
 //
-pub mod instantsearch_public {
+mod public_api {
     //! Bounded public search representation. Execution always uses canonical frames.
     use searchkernel_protocol::json::request_json_to_flatbuffer;
     use serde::{Deserialize, Serialize};
@@ -2336,4 +2334,4 @@ pub mod instantsearch_public {
     pub use serving::{start_public_search, PublicSearchServer};
 }
 
-pub use instantsearch_public::*;
+pub use public_api::*;
