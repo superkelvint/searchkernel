@@ -26,9 +26,15 @@ void highlighting_decoder_unit() {
     assert((*clipped_annotation)[0].matches.size() == 1);
     assert((*clipped_annotation)[0].matches[0].start_byte == 7);
     assert((*clipped_annotation)[0].matches[0].end_byte == 14);
+    const auto clipped_surface = searchkernel::native_highlighting::decode("before \xEF\xBF\xB9trailing\x1e");
+    assert(clipped_surface && clipped_surface->at(0).text == "before trailing");
+    const auto clipped_prefix = searchkernel::native_highlighting::decode("\x1e" "an\xEF\xBF\xBB intro \x1f" "headphones\x1f");
+    assert(clipped_prefix && clipped_prefix->at(0).text == " intro headphones");
+    assert(clipped_prefix->at(0).matches.at(0).start_byte == 7);
+    assert(clipped_prefix->at(0).matches.at(0).end_byte == 17);
     for (const auto malformed : {
              "\xEF\xBF\xB9Long\xEF\xBF\xBAlong",
-             "\xEF\xBF\xB9Long\x1e",
+             "\xEF\xBF\xB9Long",
              "\x1f\xEF\xBF\xB9Long\xEF\xBF\xBAlong\x1e"}) {
         bool rejected = false;
         try { (void)searchkernel::native_highlighting::decode(malformed); }
