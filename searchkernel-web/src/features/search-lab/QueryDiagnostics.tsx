@@ -30,7 +30,7 @@ const problems: { label: string; intent: DiagnosticOptions['intent'] }[] = [
 export function QueryDiagnostics({ client, index, baseline, response, selected, initialIntent, onClose, onEvidence }:
   { client: SearchKernelClient; index: Index; baseline: PreparedSearchRequest; response: ClientSearchResponse;
     selected: string[]; initialIntent: DiagnosticOptions['intent']; onClose: () => void; onEvidence: (value: ClientDiagnostics) => void }) {
-  const [tab, setTab] = useState<'Explain' | 'Investigate' | 'Inspect'>(initialIntent === 'explain-hit' ? 'Explain' : 'Investigate')
+  const [tab, setTab] = useState<'Explain' | 'Investigate' | 'Inspect'>(initialIntent === 'explain-hit' || initialIntent === 'ranking-comparison' ? 'Explain' : 'Investigate')
   const [intent, setIntent] = useState(initialIntent)
   const [result, setResult] = useState<ClientDiagnostics>()
   const [prepared, setPrepared] = useState<PreparedDiagnostics>()
@@ -68,6 +68,7 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
     } finally { if (current === sequence.current && scope === currentScope.current) setLoading('') }
   }
   useEffect(() => {
+    if (initialIntent === 'ranking-comparison') setTab('Explain')
     if (initialIntent !== 'missing-document') void collect({ intent: selected.length === 2 ? 'ranking-comparison' : initialIntent, selectedHits: selected })
     return () => { ++sequence.current; abort.current?.abort() }
   }, [scope, selectedKey, initialIntent])
