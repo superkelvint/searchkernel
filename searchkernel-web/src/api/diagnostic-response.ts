@@ -4,11 +4,15 @@ import type { ClientDiagnostics, DiagnosticExecution, FieldValue } from './searc
 
 /** Presentation conversion only; all findings and availability are backend-owned. */
 export function diagnosticResponse(raw: QueryDiagnosticsResultT, display: (value: unknown) => FieldValue): ClientDiagnostics {
+  const identity = (value: unknown, name: string): string => {
+    if (typeof value !== 'string' || value.length === 0) throw new TypeError(`Diagnostic response is missing ${name}`)
+    return value
+  }
   const execution = (value: NonNullable<typeof raw.execution>): DiagnosticExecution => ({
-    id: String(value.id), kind: DiagnosticExecutionKind[value.kind], complete: value.complete,
+    id: identity(value.id, 'execution ID'), kind: DiagnosticExecutionKind[value.kind], complete: value.complete,
     target: value.target?.name ? String(value.target.name) : undefined,
     generation: value.target?.generation ? String(value.target.generation) : undefined,
-    requestHash: String(value.requestHash),
+    requestHash: identity(value.requestHash, 'request hash'),
   })
   if (!raw.execution) throw new TypeError('Diagnostic response is missing execution identity')
   const json = (value: unknown) => JSON.stringify(toCanonicalJson(value), null, 2)
