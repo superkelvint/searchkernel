@@ -36,10 +36,10 @@ fn filter_membership_preserves_the_same_native_in_node_as_typed_queries() {
             FieldCapabilities::new(false, false, true, false, false),
         );
         if kind == PrimitiveDataTypeIr::String {
-            member.matching = Some(MatchingConfigIr {
+            member.set_matching_config(Some(MatchingConfigIr {
                 mode: MatchingModeIr::Exact,
                 options: BTreeMap::new(),
-            });
+            }));
         }
         let definition = IndexDefinitionIr::new(None, vec![member], Vec::new()).unwrap();
         let structured = FilterIr::In {
