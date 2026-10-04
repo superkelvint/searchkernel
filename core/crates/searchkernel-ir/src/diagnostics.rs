@@ -252,10 +252,7 @@ fn filter_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> 
                 1 => remaining.into_iter().next(),
                 _ => Some(FilterIr::And(remaining)),
             };
-            (
-                format!("Removing {}", friendly_filter(clause)),
-                variant,
-            )
+            (format!("Removing {}", friendly_filter(clause)), variant)
         })
         .collect()
 }
@@ -263,15 +260,43 @@ fn filter_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> 
 fn friendly_filter(filter: &FilterIr) -> String {
     match filter {
         FilterIr::Comparison(comparison) => {
-            let operator = match comparison.op { ComparisonOp::Eq => "=", ComparisonOp::Ne => "!=", ComparisonOp::Lt => "<", ComparisonOp::Lte => "<=", ComparisonOp::Gt => ">", ComparisonOp::Gte => ">=" };
-            let value = match &comparison.value { ScalarValueIr::Bool(value) => value.to_string(), ScalarValueIr::Int64(value) => value.to_string(), ScalarValueIr::Float64(value) => value.to_string(), ScalarValueIr::String(value) => format!("{value:?}") };
+            let operator = match comparison.op {
+                ComparisonOp::Eq => "=",
+                ComparisonOp::Ne => "!=",
+                ComparisonOp::Lt => "<",
+                ComparisonOp::Lte => "<=",
+                ComparisonOp::Gt => ">",
+                ComparisonOp::Gte => ">=",
+            };
+            let value = match &comparison.value {
+                ScalarValueIr::Bool(value) => value.to_string(),
+                ScalarValueIr::Int64(value) => value.to_string(),
+                ScalarValueIr::Float64(value) => value.to_string(),
+                ScalarValueIr::String(value) => format!("{value:?}"),
+            };
             format!("{} {operator} {value}", comparison.field.as_str())
         }
         FilterIr::Exists { field } => format!("{} exists", field.as_str()),
-        FilterIr::In { field, .. } => format!("the explicit membership filter on {}", field.as_str()),
+        FilterIr::In { field, .. } => {
+            format!("the explicit membership filter on {}", field.as_str())
+        }
         FilterIr::Range(range) => format!("the explicit range on {}", range.field.as_str()),
-        FilterIr::And(children) => format!("({})", children.iter().map(friendly_filter).collect::<Vec<_>>().join(" AND ")),
-        FilterIr::Or(children) => format!("({})", children.iter().map(friendly_filter).collect::<Vec<_>>().join(" OR ")),
+        FilterIr::And(children) => format!(
+            "({})",
+            children
+                .iter()
+                .map(friendly_filter)
+                .collect::<Vec<_>>()
+                .join(" AND ")
+        ),
+        FilterIr::Or(children) => format!(
+            "({})",
+            children
+                .iter()
+                .map(friendly_filter)
+                .collect::<Vec<_>>()
+                .join(" OR ")
+        ),
         FilterIr::Not(child) => format!("NOT ({})", friendly_filter(child)),
     }
 }
@@ -489,23 +514,73 @@ pub fn execute(
             "Canonical vector request configuration. Approximate is a requested mode, not proof of exhaustive matching or of the engine's actual retrieval algorithm. Candidate counts are unavailable.");
         vector.provenance = DiagnosticProvenance::Profile;
         if let QueryIr::Typed(expression) = request.query() {
-            if let QueryExprKindIr::NearestNeighbor { document_field, query_tensor } = &expression.kind {
-                vector.values.insert("tensor_field".into(), Value::String(document_field.path.as_str().into()));
-                vector.values.insert("query_tensor_name".into(), Value::String(query_tensor.clone()));
-                if let Some(QueryInputIr::Literal(RequestValueIr::Tensor(tensor))) = request.inputs().get(query_tensor) {
-                    vector.values.insert("query_tensor_type".into(), Value::String(tensor.type_spec.clone()));
+            if let QueryExprKindIr::NearestNeighbor {
+                document_field,
+                query_tensor,
+            } = &expression.kind
+            {
+                vector.values.insert(
+                    "tensor_field".into(),
+                    Value::String(document_field.path.as_str().into()),
+                );
+                vector.values.insert(
+                    "query_tensor_name".into(),
+                    Value::String(query_tensor.clone()),
+                );
+                if let Some(QueryInputIr::Literal(RequestValueIr::Tensor(tensor))) =
+                    request.inputs().get(query_tensor)
+                {
+                    vector.values.insert(
+                        "query_tensor_type".into(),
+                        Value::String(tensor.type_spec.clone()),
+                    );
                 }
-                for (key, default) in [("approximate", Value::Bool(true)), ("targetNumHits", Value::UInt64(100)), ("exploreAdditionalHits", Value::UInt64(0))] {
-                    let configured = expression.annotations.get(key).or_else(|| if key == "targetNumHits" { expression.annotations.get("totalTargetHits") } else { None });
-                    let value = match configured { Some(RequestValueIr::Bool(v)) => Value::Bool(*v), Some(RequestValueIr::Int64(v)) => Value::Int64(*v), Some(RequestValueIr::UInt64(v)) => Value::UInt64(*v), _ => default };
+                for (key, default) in [
+                    ("approximate", Value::Bool(true)),
+                    ("targetNumHits", Value::UInt64(100)),
+                    ("exploreAdditionalHits", Value::UInt64(0)),
+                ] {
+                    let configured = expression.annotations.get(key).or_else(|| {
+                        if key == "targetNumHits" {
+                            expression.annotations.get("totalTargetHits")
+                        } else {
+                            None
+                        }
+                    });
+                    let value = match configured {
+                        Some(RequestValueIr::Bool(v)) => Value::Bool(*v),
+                        Some(RequestValueIr::Int64(v)) => Value::Int64(*v),
+                        Some(RequestValueIr::UInt64(v)) => Value::UInt64(*v),
+                        _ => default,
+                    };
                     vector.values.insert(key.into(), value);
                 }
-                if let Some(field) = context.definition().fields().iter().find(|field| field.name.as_str() == document_field.path.as_str()) {
-                    vector.values.insert("distance_metric".into(), field.attribute.as_ref().map(|attribute| Value::String(format!("{:?}", attribute.distance_metric))).unwrap_or(Value::Null));
+                if let Some(field) = context
+                    .definition()
+                    .fields()
+                    .iter()
+                    .find(|field| field.name.as_str() == document_field.path.as_str())
+                {
+                    vector.values.insert(
+                        "distance_metric".into(),
+                        field
+                            .attribute
+                            .as_ref()
+                            .map(|attribute| {
+                                Value::String(format!("{:?}", attribute.distance_metric))
+                            })
+                            .unwrap_or(Value::Null),
+                    );
                 }
-                vector.values.insert("observed_candidate_count".into(), Value::Null);
-            } else { vector.status = DiagnosticStatus::UnavailableForQuery; }
-        } else { vector.status = DiagnosticStatus::UnavailableForQuery; }
+                vector
+                    .values
+                    .insert("observed_candidate_count".into(), Value::Null);
+            } else {
+                vector.status = DiagnosticStatus::UnavailableForQuery;
+            }
+        } else {
+            vector.status = DiagnosticStatus::UnavailableForQuery;
+        }
         evidence_items.push(vector);
     }
     let mut findings = Vec::new();
