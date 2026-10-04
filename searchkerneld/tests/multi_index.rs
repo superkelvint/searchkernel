@@ -302,6 +302,43 @@ fn search_request(target_name: &str, text: &str) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+fn diagnostic_request(target_name: Option<&str>, generation: Option<&str>, text: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let text = builder.create_string(text);
+    let query = api::SearchKernelTextQuery::create(
+        &mut builder,
+        &api::SearchKernelTextQueryArgs { text: Some(text) },
+    );
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(query.as_union_value()),
+        },
+    );
+    let payload = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    let sections = builder.create_vector(&[api::DiagnosticSection::Ranking, api::DiagnosticSection::Counterfactual]);
+    let payload = api::QueryDiagnosticsRequest::create(&mut builder, &api::QueryDiagnosticsRequestArgs { request: Some(payload), intent: api::DiagnosticIntent::ExplainHit, requested_evidence: Some(sections), ..Default::default() });
+    let target = target_name.map(|name| target_with_generation(&mut builder, name, generation));
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            target,
+            payload_type: wire::RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest,
+            payload: Some(payload.as_union_value()),
+        },
+    );
+    wire::finish_request_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
 async fn execute_http_json_raw(
     address: std::net::SocketAddr,
     json: impl Into<Bytes>,
@@ -738,18 +775,7 @@ async fn diagnostics_are_generation_bound_and_transport_independent() {
         &upsert_request("diagnostics", "d", "title", "orchid"),
     )
     .await;
-    let search: serde_json::Value = serde_json::from_slice(
-        &request_flatbuffer_to_json(&search_request("diagnostics", "orchid")).unwrap(),
-    )
-    .unwrap();
-    let make_request = |target: serde_json::Value| {
-        request_json_to_flatbuffer(&serde_json::to_vec(&serde_json::json!({
-        "protocol_version": PROTOCOL_VERSION, "target": target,
-        "payload_type": "SearchKernel_Wire_QueryDiagnosticsRequest",
-        "payload": { "request": search["payload"], "intent": "ExplainHit", "requested_evidence": ["Ranking", "Counterfactual"] }
-    })).unwrap()).unwrap()
-    };
-    let valid = make_request(serde_json::json!({"name": "diagnostics", "generation": generation}));
+    let valid = diagnostic_request(Some("diagnostics"), Some(&generation), "orchid");
     for bytes in [
         grpc.execute(Request::new(rpc::FlatBufferFrame {
             payload: valid.clone(),
@@ -773,13 +799,13 @@ async fn diagnostics_are_generation_bound_and_transport_independent() {
             && item.status() == api::DiagnosticStatus::Unsupported));
     }
     for (target, detail) in [
-        (serde_json::Value::Null, MISSING_INDEX_TARGET_DETAIL_CODE),
+        (None, MISSING_INDEX_TARGET_DETAIL_CODE),
         (
-            serde_json::json!({"name":"diagnostics"}),
+            Some("diagnostics"),
             "missing_diagnostic_generation",
         ),
     ] {
-        let invalid = make_request(target);
+        let invalid = diagnostic_request(target, None, "orchid");
         let native = grpc
             .execute(Request::new(rpc::FlatBufferFrame {
                 payload: invalid.clone(),
