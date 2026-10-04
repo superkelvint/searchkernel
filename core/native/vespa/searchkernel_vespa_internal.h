@@ -5,6 +5,8 @@
 #include <vespa/searchcore/proton/matching/matcher.h>
 #include <vespa/searchcore/proton/matching/match_tools.h>
 #include <vespa/searchlib/fef/ranking_assets_repo.h>
+#include <vespa/searchlib/fef/matchdata.h>
+#include <vespa/searchlib/fef/itermdata.h>
 #include <vespa/eval/eval/value_cache/constant_tensor_loader.h>
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
 #include "searchkernel_vespa_test.h"
@@ -128,6 +130,8 @@
 #include <vespa/searchlib/common/serialized_query_tree.h>
 #include <vespa/searchlib/query/numeric_range_spec.h>
 #include <vespa/searchlib/query/tree/querybuilder.h>
+#include <vespa/searchlib/queryeval/matching_phase.h>
+#include <vespa/searchlib/queryeval/searchiterator.h>
 #include <vespa/searchlib/query/tree/location.h>
 #include <vespa/searchlib/query/tree/point.h>
 #include <vespa/searchlib/query/tree/rectangle.h>
