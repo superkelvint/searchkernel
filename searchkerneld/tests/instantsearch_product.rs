@@ -145,7 +145,7 @@ async fn real_pinned_consumer_uses_public_endpoint_and_vespa() {
         allowed_origins: vec![],
         behind_rate_limited_proxy: true,
     };
-    let preflight: searchkerneld::public_search::PublicSearchRequest = serde_json::from_str(r#"{"endpoint":"products","query":"","limit":6,"offset":0,"facets":["brand","category"],"facetLimit":100,"filters":[],"highlights":["title"],"snippets":["description"]}"#).unwrap();
+    let preflight: searchkerneld::search_endpoints::PublicSearchRequest = serde_json::from_str(r#"{"endpoint":"products","query":"","limit":6,"offset":0,"facets":["brand","category"],"facetLimit":100,"filters":[],"highlights":["title"],"snippets":["description"]}"#).unwrap();
     let frame = config
         .bind(&preflight)
         .expect("preflight binds canonically");
@@ -166,7 +166,7 @@ async fn real_pinned_consumer_uses_public_endpoint_and_vespa() {
         ("products", "speaker", 0, 0),
         ("products", "wireless headphones", 20, 0),
     ] {
-        let request = searchkerneld::public_search::PublicSearchRequest {
+        let request = searchkerneld::search_endpoints::PublicSearchRequest {
             endpoint: name.into(),
             query: query.into(),
             limit,
@@ -179,7 +179,7 @@ async fn real_pinned_consumer_uses_public_endpoint_and_vespa() {
             snippets: vec![],
         };
         let bytes = registry.dispatch(&config.bind(&request).unwrap()).unwrap();
-        let projection = searchkerneld::public_search::project_response(
+        let projection = searchkerneld::search_endpoints::project_response(
             &bytes,
             &request,
             &config.endpoints[name],
