@@ -65,7 +65,7 @@ export type DiagnosticOptions = {
   expectedDocumentId?: string; experiment?: PreparedSearchRequest; compareExact?: boolean
   timeoutMs?: number; traceDepth?: number; profilerDepth?: number
 }
-export type PreparedDiagnostics = { readonly target: string; readonly generation: string; readonly canonical: string }
+export type PreparedDiagnostics = { readonly target: IndexTargetT; readonly canonical: string }
 export type DiagnosticExecution = { id: string; kind: string; target?: string; generation?: string; complete: boolean; requestHash: string }
 export type ClientDiagnostics = {
   execution: DiagnosticExecution; sourceRun?: DiagnosticExecution; canonicalResponse: string
