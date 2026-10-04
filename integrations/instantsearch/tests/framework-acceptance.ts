@@ -104,6 +104,7 @@ export async function qualifyFramework(
     else document.querySelectorAll<HTMLInputElement>('#numeric input')[1].click();
     await until(()=>driver.results()?.nbHits===10);
     await state({numericMenu:{price:'0:100'},sortBy:'price_asc'}, () => driver.results()?.nbHits === 10 && driver.results()?.hits[0]?.price===10);
+    expect(document.querySelector('#stats .ais-Stats-text')!.textContent).toMatch(/^10 results/);
     cover('numericMenu','sortBy');
     await state({sortBy:'price_desc'}, () => driver.results()?.hits[0]?.price === 240);
     expect(driver.results().hits[0]._snippetResult?.description).toBeUndefined();
@@ -117,6 +118,7 @@ export async function qualifyFramework(
     await until(()=>responses.length>beforeReset && driver.results()?.nbHits===24);
     await state({query:'no-such-product'}, () => driver.results()?.nbHits===0);
     expect(document.querySelectorAll('#hits .ais-Hits-item')).toHaveLength(0);
+    expect(document.querySelector('#stats .ais-Stats-text')!.textContent).toMatch(/^No results/);
     await state({query:'wireless headphones'}, () => driver.results()?.nbHits===18);
     expect(document.querySelectorAll('#hits span mark').length).toBeGreaterThanOrEqual(2);
     await state({},()=>driver.results()?.nbHits===24);
