@@ -24,9 +24,18 @@ const sections = {
 }
 const owned = new WeakMap<PreparedDiagnostics, QueryDiagnosticsRequestT>()
 
+/** W5 never resolves a logical name after the selected incarnation is known. */
+export function diagnosticTarget(index: Index): NonNullable<Index['target']> {
+  if (!index.generation || !index.target) throw new SearchKernelClientError('Open the index before collecting diagnostics.', { code: 'index_not_open', origin: 'client' })
+  if (String(index.target.name) !== index.id || String(index.target.generation) !== index.generation) throw new SearchKernelClientError(
+    'The selected diagnostic target does not match the opened index incarnation.',
+    { code: 'stale_index_handle', origin: 'client', retryable: false })
+  return index.target
+}
+
 /** Maps product controls to canonical controls; no engine query manipulation. */
 export function prepareDiagnostics(index: Index, search: PreparedSearchRequest, sourceRunId: string | undefined, options: DiagnosticOptions): PreparedDiagnostics {
-  if (!index.generation) throw new SearchKernelClientError('Open the index before collecting diagnostics.', { code: 'index_not_open', origin: 'client' })
+  const target = diagnosticTarget(index)
   const limits = new DiagnosticLimitsT()
   // SDK optional scalar helpers preserve presence; validation stays in the IR.
   if (options.timeoutMs !== undefined) limits.timeoutMs = new OptionalUInt64T(BigInt(options.timeoutMs))
@@ -36,7 +45,7 @@ export function prepareDiagnostics(index: Index, search: PreparedSearchRequest, 
     options.sections?.map(section => sections[section]) ?? [], sourceRunId ?? null,
     options.selectedHits ?? [], options.expectedDocumentId ?? null,
     options.experiment ? preparedRequest(options.experiment) : null, options.compareExact ?? false, limits)
-  const result = Object.freeze({ target: index.id, generation: index.generation, canonical: JSON.stringify(toCanonicalJson(request), null, 2) })
+  const result = Object.freeze({ target, canonical: JSON.stringify(toCanonicalJson(request), null, 2) })
   owned.set(result, request)
   return result
 }
@@ -47,5 +56,5 @@ export function preparedDiagnosticRequest(value: PreparedDiagnostics): QueryDiag
 }
 
 export function diagnosticCurl(value: PreparedDiagnostics, endpoint: string): string {
-  return diagnosticsCurl(endpoint, value.target, value.generation, preparedDiagnosticRequest(value))
+  return diagnosticsCurl(endpoint, String(value.target.name), String(value.target.generation), preparedDiagnosticRequest(value))
 }
