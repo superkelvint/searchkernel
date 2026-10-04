@@ -3,25 +3,64 @@ use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagnosticIntent {
-    ExplainHit, ZeroResults, MissingDocument, RankingComparison, Overmatching,
-    QueryInterpretation, VectorRetrieval, Performance, DeepEngine, Experiment,
+    ExplainHit,
+    ZeroResults,
+    MissingDocument,
+    RankingComparison,
+    Overmatching,
+    QueryInterpretation,
+    VectorRetrieval,
+    Performance,
+    DeepEngine,
+    Experiment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DiagnosticSection {
-    Query, Retrieval, Ranking, Timing, MatchedTerms, Vectors, Trace,
-    MatchingProfiler, FirstPhaseProfiler, SecondPhaseProfiler, Blueprint,
-    IteratorTree, RawEngine, Counterfactual,
+    Query,
+    Retrieval,
+    Ranking,
+    Timing,
+    MatchedTerms,
+    Vectors,
+    Trace,
+    MatchingProfiler,
+    FirstPhaseProfiler,
+    SecondPhaseProfiler,
+    Blueprint,
+    IteratorTree,
+    RawEngine,
+    Counterfactual,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DiagnosticStatus { Available, Unsupported, TimedOut, Truncated, UnavailableForQuery, Failed }
+pub enum DiagnosticStatus {
+    Available,
+    Unsupported,
+    TimedOut,
+    Truncated,
+    UnavailableForQuery,
+    Failed,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DiagnosticProvenance { Profile, Engine, Calculated }
+pub enum DiagnosticProvenance {
+    Profile,
+    Engine,
+    Calculated,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DiagnosticExecutionKind { Original, DiagnosticRerun, Experiment, Counterfactual }
+pub enum DiagnosticExecutionKind {
+    Original,
+    DiagnosticRerun,
+    Experiment,
+    Counterfactual,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DiagnosticObservation { Unavailable, ObservedYes, ObservedNo }
+pub enum DiagnosticObservation {
+    Unavailable,
+    ObservedYes,
+    ObservedNo,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiagnosticLimits {
@@ -37,9 +76,16 @@ pub struct DiagnosticLimits {
 
 impl Default for DiagnosticLimits {
     fn default() -> Self {
-        Self { timeout_ms: 5_000, variant_count: 8, feature_hit_count: 20,
-            tensor_cells: 256, raw_bytes: 65_536, trace_depth: 3,
-            profiler_depth: 4, exact_nn_hits: 100 }
+        Self {
+            timeout_ms: 5_000,
+            variant_count: 8,
+            feature_hit_count: 20,
+            tensor_cells: 256,
+            raw_bytes: 65_536,
+            trace_depth: 3,
+            profiler_depth: 4,
+            exact_nn_hits: 100,
+        }
     }
 }
 

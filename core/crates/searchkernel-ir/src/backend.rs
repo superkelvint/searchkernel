@@ -31,10 +31,11 @@ pub trait Backend: Send + Sync {
         _sections: &[crate::DiagnosticSection],
         _limits: &crate::DiagnosticLimits,
     ) -> Result<crate::DiagnosticSearchResult> {
-        self.search(request).map(|result| crate::DiagnosticSearchResult {
-            result,
-            raw_engine: Vec::new(),
-        })
+        self.search(request)
+            .map(|result| crate::DiagnosticSearchResult {
+                result,
+                raw_engine: Vec::new(),
+            })
     }
     fn analyze(&self, request: AnalyzeRequestIr) -> Result<AnalyzeResult>;
 
