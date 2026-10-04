@@ -793,6 +793,12 @@ pub struct DiagnosticResponse {
     payload: Vec<u8>,
 }
 
+impl std::fmt::Debug for DiagnosticResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("DiagnosticResponse").field("encoded_bytes", &self.payload.len()).finish_non_exhaustive()
+    }
+}
+
 impl DiagnosticResponse {
     pub fn result(&self) -> Result<wire::QueryDiagnosticsResult<'_>> {
         let envelope = expected_response(
