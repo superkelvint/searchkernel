@@ -473,14 +473,13 @@ fn provenance_is_opt_in_and_original_and_rerun_have_separate_identities() {
         response.source_run().unwrap().id(),
         response.execution().unwrap().id()
     );
-    assert_eq!(
-        response
+    assert!(
+        !response
             .comparison()
             .unwrap()
             .results_changed()
             .unwrap()
-            .value(),
-        false
+            .value()
     );
 }
 
