@@ -35,6 +35,7 @@ pub fn compare_runs(
     baseline: &DiagnosticSourceRun,
     execution: &DiagnosticExecution,
     result: &SearchResult,
+    rerun_offset: u32,
 ) -> DiagnosticComparison {
     let baseline_hits = returned_hits(&baseline.result.root);
     let rerun_hits = returned_hits(&result.root);
@@ -46,7 +47,7 @@ pub fn compare_runs(
     let new: BTreeMap<_, _> = rerun_hits
         .iter()
         .enumerate()
-        .map(|(i, hit)| (hit.id.clone(), i as u32 + 1))
+        .map(|(i, hit)| (hit.id.clone(), i as u32 + 1 + rerun_offset))
         .collect();
     let ids: BTreeSet<_> = old.keys().chain(new.keys()).cloned().collect();
     DiagnosticComparison {
@@ -238,7 +239,7 @@ fn filter_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> 
     clauses
         .iter()
         .enumerate()
-        .map(|(index, _)| {
+        .map(|(index, clause)| {
             let mut variant = request.clone();
             let remaining: Vec<_> = clauses
                 .iter()
@@ -252,11 +253,31 @@ fn filter_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> 
                 _ => Some(FilterIr::And(remaining)),
             };
             (
-                format!("Remove explicit filter clause {}", index + 1),
+                format!("Remove explicit filter clause {} ({clause:?})", index + 1),
                 variant,
             )
         })
         .collect()
+}
+
+/// Only an isolated canonical NN operator has a supported exact comparison.
+/// We do not rewrite opaque YQL or arbitrary non-monotonic hybrid trees.
+fn exact_variant(request: &SearchRequestIr, limits: &DiagnosticLimits) -> Option<SearchRequestIr> {
+    let QueryIr::Typed(expression) = request.query() else { return None };
+    if !matches!(expression.kind, QueryExprKindIr::NearestNeighbor { .. }) { return None; }
+    let target_hits = expression.annotations.get("targetNumHits")
+        .or_else(|| expression.annotations.get("totalTargetHits"));
+    let count = match target_hits {
+        Some(RequestValueIr::Int64(value)) => u32::try_from(*value).ok()?,
+        Some(RequestValueIr::UInt64(value)) => u32::try_from(*value).ok()?,
+        None => 100,
+        _ => return None,
+    };
+    if count > limits.exact_nn_hits || request.limit() > limits.exact_nn_hits { return None; }
+    let mut variant = request.clone();
+    let QueryIr::Typed(expression) = &mut variant.query else { return None };
+    expression.annotations.insert("approximate".into(), RequestValueIr::Bool(false));
+    Some(variant)
 }
 
 fn bounded_request(
@@ -311,7 +332,7 @@ pub fn execute(
     execution.complete = execution_complete(&acquired.result);
     let comparison = source
         .as_ref()
-        .map(|source| compare_runs(source, &execution, &acquired.result));
+        .map(|source| compare_runs(source, &execution, &acquired.result, request.offset()));
     let mut warnings = Vec::new();
     if input.source_run_id.is_some() && source.is_none() {
         warnings.push("Original execution evidence has expired or was too large to retain. This evidence comes from a diagnostic rerun.".into());
@@ -536,8 +557,10 @@ pub fn execute(
                     if !execution_complete(&result) {
                         item.status = DiagnosticStatus::TimedOut;
                         execution.complete = false;
-                    } else if (acquired.result.total_hits.value == 0 && result.total_hits.value > 0)
-                        || expected_returned
+                    } else if execution_complete(&acquired.result)
+                        && ((acquired.result.total_hits.value == 0 && result.total_hits.value > 0)
+                        || (expected_returned && input.expected_document_id.as_ref().is_some_and(|id|
+                            !returned_hits(&acquired.result.root).iter().any(|hit| &hit.id == id))))
                     {
                         findings.push(DiagnosticFinding {
                             code: "filter_variant_sufficient".into(),
@@ -553,6 +576,7 @@ pub fn execute(
                         });
                     }
                     strip_document_bodies(&mut result.root);
+                    strip_features(&mut result.root);
                     item.result = Some(result);
                     evidence_items.push(item);
                 }
@@ -575,6 +599,46 @@ pub fn execute(
             }
         }
     }
+    if input.compare_exact {
+        let mut item = evidence("exact-comparison", DiagnosticSection::Vectors, &execution,
+            "Exact diagnostic comparison uses the same canonical NN query, filters, ranking and target-hit budget; only approximate=false changes. Overlap describes these returned sets, not corpus recall.");
+        if let Some(variant) = exact_variant(&input.request, &input.limits) {
+            match bounded_request(&variant, &input.limits, deadline).and_then(|variant| {
+                item.canonical_request = Some(variant.clone());
+                backend.search_diagnostic(variant, &[], &input.limits)
+            }) {
+                Ok(mut exact) => {
+                    let mut exact_execution = execution.clone();
+                    exact_execution.id = format!("{}/exact", execution.id);
+                    exact_execution.request_hash = request_hash(item.canonical_request.as_ref().unwrap_or(&request));
+                    exact_execution.complete = execution_complete(&exact.result);
+                    item.execution_id = exact_execution.id.clone();
+                    if execution.complete && exact_execution.complete {
+                        let baseline = DiagnosticSourceRun { execution: execution.clone(), request: request.clone(), result: acquired.result.clone() };
+                        let comparison = compare_runs(&baseline, &exact_execution, &exact.result, request.offset());
+                        item.provenance = DiagnosticProvenance::Calculated;
+                        item.values.insert("overlap_count".into(), Value::UInt64(comparison.overlap_count.into()));
+                        item.values.insert("comparison_count".into(), Value::UInt64(comparison.comparison_count.into()));
+                        item.values.insert("entering".into(), Value::List(comparison.entering.iter().cloned().map(Value::String).collect()));
+                        item.values.insert("leaving".into(), Value::List(comparison.leaving.iter().cloned().map(Value::String).collect()));
+                        item.values.insert("rank_movements".into(), Value::List(comparison.movements.iter().map(|movement| Value::Object(BTreeMap::from([
+                            ("id".into(), Value::String(movement.id.clone())),
+                            ("baseline_position".into(), movement.baseline_position.map(|v| Value::UInt64(v.into())).unwrap_or(Value::Null)),
+                            ("exact_position".into(), movement.rerun_position.map(|v| Value::UInt64(v.into())).unwrap_or(Value::Null)),
+                        ]))).collect()));
+                        findings.push(DiagnosticFinding { code: "exact_retrieval_comparison".into(), message: format!("Exact retrieval produced {} returned documents absent from the diagnostic baseline; overlap was {} of {} returned documents.", comparison.entering.len(), comparison.overlap_count, comparison.comparison_count), evidence_ids: vec![item.id.clone(), "retrieval".into()] });
+                    } else { item.status = DiagnosticStatus::TimedOut; execution.complete = false; }
+                    strip_document_bodies(&mut exact.result.root); strip_features(&mut exact.result.root);
+                    item.result = Some(exact.result);
+                }
+                Err(error) => { item.message = error.message; item.status = if error.code == crate::ErrorCode::DeadlineExceeded { DiagnosticStatus::TimedOut } else { DiagnosticStatus::Failed }; execution.complete = false; }
+            }
+        } else {
+            item.status = DiagnosticStatus::UnavailableForQuery;
+            item.message = "Exact comparison requires an isolated canonical nearest-neighbor query within the exact-NN hit budget. Opaque YQL and arbitrary hybrid trees are not rewritten.".into();
+        }
+        evidence_items.push(item);
+    }
     let mut raw_engine = acquired.raw_engine;
     for item in &mut raw_engine {
         item.execution_id = execution.id.clone();
@@ -596,7 +660,11 @@ pub fn execute(
         );
         item.status = raw
             .map(|item| item.status)
-            .unwrap_or(DiagnosticStatus::Unsupported);
+            .unwrap_or_else(|| if acquired.observed_sections.contains(section) { DiagnosticStatus::Available } else { DiagnosticStatus::Unsupported });
+        if acquired.observed_sections.contains(section) {
+            item.message = "Observed in this engine execution. Inspect its versioned raw trace for the complete tree; raw keys are unstable.".into();
+            item.values.insert("raw_evidence_section".into(), Value::String("Trace".into()));
+        }
         evidence_items.push(item);
     }
     Ok(QueryDiagnosticsResult {
@@ -610,6 +678,13 @@ pub fn execute(
         raw_engine,
         warnings,
     })
+}
+
+fn strip_features(node: &mut ResultNode) {
+    match node {
+        ResultNode::Hit(hit) => { hit.match_features.clear(); hit.summary_features.clear(); hit.rank_features.clear(); }
+        ResultNode::Group(group) => for child in &mut group.children { strip_features(child); },
+    }
 }
 
 /// Source snapshots and diagnostic samples never retain document bodies.

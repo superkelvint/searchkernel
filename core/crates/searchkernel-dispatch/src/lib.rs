@@ -61,10 +61,11 @@ impl Dispatcher {
 
     /// Closes the underlying execution target after active operations drain.
     pub fn close(&self) -> searchkernel_ir::Result<()> {
+        let result = self.session.close();
         if let Ok(mut sources) = self.source_runs.lock() {
             sources.clear();
         }
-        self.session.close()
+        result
     }
 
     fn execution(
@@ -122,9 +123,8 @@ impl Dispatcher {
                 ResultNode::Hit(Hit {
                     id: hit.id.clone(),
                     score: hit.score,
-                    match_features: hit.match_features.clone(),
-                    summary_features: hit.summary_features.clone(),
-                    rank_features: hit.rank_features.clone(),
+                    // Original identity/overlap requires no feature retention.
+                    // Named feature acquisition is explicitly a diagnostic rerun.
                     ..Hit::default()
                 })
             })

@@ -5,6 +5,10 @@ import { normalizeClientError } from '../../api/searchkernel-client'
 import { CanonicalInspector, CopyButton, ErrorNotice } from '../../components/Workbench'
 import { diagnosticBundle, signalComparison } from './diagnostic-export'
 
+function parseEnginePayload(payload: string): unknown {
+  try { return JSON.parse(payload) } catch { return payload }
+}
+
 function EvidenceTree({ value, name = 'Root' }: { value: unknown; name?: string }) {
   if (value === null || typeof value !== 'object') return <p><strong>{name}:</strong> {JSON.stringify(value)}</p>
   const entries = Object.entries(value)
@@ -28,6 +32,7 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
   const [intent, setIntent] = useState(initialIntent)
   const [result, setResult] = useState<ClientDiagnostics>()
   const [prepared, setPrepared] = useState<PreparedDiagnostics>()
+  const [completedRequest, setCompletedRequest] = useState<PreparedDiagnostics>()
   const [error, setError] = useState<unknown>()
   const [loading, setLoading] = useState('')
   const [lookup, setLookup] = useState('')
@@ -36,6 +41,7 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
   const [profile, setProfile] = useState(baseline.request.ranking ?? '')
   const [inputs, setInputs] = useState(baseline.request.inputs ?? '')
   const [include, setInclude] = useState({ query: false, values: false, raw: false })
+  const [httpEndpoint, setHttpEndpoint] = useState('')
   const sequence = useRef(0), abort = useRef<AbortController | null>(null)
   const scope = JSON.stringify([index.id, index.generation, response.sourceRunId, baseline.canonical])
   const currentScope = useRef(scope)
@@ -54,7 +60,7 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
       const next = await client.executeDiagnostics(request, { signal: controller.signal })
       if (current !== sequence.current || scope !== currentScope.current || controller.signal.aborted) return
       if (next.execution.target !== index.id || next.execution.generation !== index.generation) throw new Error('Diagnostic evidence identity differs from the opened index')
-      setResult(next); onEvidence(next)
+      setResult(next); setCompletedRequest(request); onEvidence(next)
     } catch (failure) {
       if (current === sequence.current && scope === currentScope.current) setError(normalizeClientError(failure))
     } finally { if (current === sequence.current && scope === currentScope.current) setLoading('') }
@@ -62,7 +68,7 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
   useEffect(() => {
     if (initialIntent !== 'missing-document') void collect({ intent: selected.length === 2 ? 'ranking-comparison' : initialIntent, selectedHits: selected })
     return () => { ++sequence.current; abort.current?.abort() }
-  }, [scope, selectedKey])
+  }, [scope, selectedKey, initialIntent])
   async function findExpected() {
     abort.current?.abort()
     const current = ++sequence.current, controller = new AbortController()
@@ -77,6 +83,10 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
   const ranking = result?.evidence.find(value => value.section === 'Ranking')
   const a = result?.hits.find(hit => hit.id === selected[0]), b = result?.hits.find(hit => hit.id === selected[1])
   const signals = new Set([...(a?.signals.map(value => value.name) ?? []), ...(b?.signals.map(value => value.name) ?? [])])
+  let curl = '', curlError = ''
+  if (completedRequest && httpEndpoint && client.diagnosticsCurl) {
+    try { curl = client.diagnosticsCurl(completedRequest, httpEndpoint) } catch (error) { curlError = error instanceof Error ? error.message : 'Invalid HTTP endpoint' }
+  }
   return <aside className="surface min-w-0 p-4" aria-label="Search evidence">
     <div className="flex items-center justify-between"><h2 className="font-semibold">Search evidence</h2><button className="soft-button" onClick={onClose}>Close evidence</button></div>
     <div className="my-3 flex gap-2" role="tablist" aria-label="Diagnostic workflow">{(['Explain', 'Investigate', 'Inspect'] as const).map(name => <button className="soft-button" key={name} role="tab" aria-selected={tab === name} onClick={() => setTab(name)}>{name}</button>)}</div>
@@ -99,9 +109,11 @@ export function QueryDiagnostics({ client, index, baseline, response, selected, 
       {intent === 'performance' && <div className="my-3"><p>Profilers measure a diagnostic rerun. Matching searches for candidates; first phase scores them; second phase rescores selected candidates.</p>{(['matching-profiler', 'first-phase-profiler', 'second-phase-profiler', 'trace'] as const).map(section => <button key={section} className="soft-button m-1" disabled={!!loading} onClick={() => void collect({ intent: 'performance', sections: [section] })}>Collect {section.replaceAll('-', ' ')}</button>)}</div>}
       <details className="mt-4"><summary>Query-local experiment</summary><p className="text-sm">Changes apply only to an experimental query. Persisted profiles and documents are unchanged.</p><label>Experimental ranking profile<input aria-label="Experimental ranking profile" className="input" value={profile} onChange={e => setProfile(e.target.value)} list="rank-profiles"/></label><label>Experimental query inputs<textarea aria-label="Experimental query inputs" className="input font-mono text-xs" value={inputs} onChange={e => setInputs(e.target.value)}/></label><button className="soft-button mt-2" disabled={!!loading} onClick={() => { try { const experiment = client.prepareSearch({ ...baseline.request, ranking: profile || undefined, inputs: inputs || undefined }); void collect({ intent: 'experiment', experiment }) } catch (error) { setError(error) } }}>Run experiment</button><button className="soft-button m-2" onClick={onClose}>Return to original run</button></details>
     </div>}
-    {tab === 'Inspect' && <div><p className="text-xs">Query processing → Retrieval/matching → Ranking → Fill/summary. Only explicitly configured/observed evidence is shown.</p>{result?.evidence.map(item => <details key={item.id} className="my-3 rounded border p-3"><summary>{item.section} · {item.status} · {item.provenance}</summary><p>{item.message}</p><p className="text-xs">Evidence {item.id} · execution {item.executionId}</p><EvidenceTree value={item.values}/>{item.canonicalRequest && <CanonicalInspector label={`${item.id} normalized request`} text={item.canonicalRequest}/ >}</details>)}<button className="soft-button mt-2" disabled={!!loading} onClick={() => void collect({ intent: 'deep-engine', sections: ['trace', 'blueprint', 'iterator-tree', 'raw-engine'] })}>Inspect Vespa internals</button><p className="mt-2 text-xs">Blueprint: an engine execution plan. Iterator tree: the matching cursors used to traverse candidates. Profiler: measured execution work, collected only on request.</p>{result?.rawEngine.map((item, i) => <details key={i} className="mt-3 border p-3"><summary>{item.engine} internals · {item.section} · {item.status}</summary><p className="text-xs">Engine-specific unstable evidence · version {item.version} · execution {item.executionId}</p>{item.mediaType === 'application/json' ? <EvidenceTree value={JSON.parse(item.payload)}/> : <pre className="overflow-auto text-xs">{item.payload}</pre>}<CanonicalInspector label="Raw engine payload" text={item.payload}/></details>)}</div>}
+    {tab === 'Inspect' && <div><p className="text-xs">Query processing → Retrieval/matching → Ranking → Fill/summary. Only explicitly configured/observed evidence is shown.</p>{result?.evidence.map(item => <details key={item.id} className="my-3 rounded border p-3"><summary>{item.section} · {item.status} · {item.provenance}</summary><p>{item.message}</p><p className="text-xs">Evidence {item.id} · execution {item.executionId}</p><EvidenceTree value={item.values}/>{item.canonicalRequest && <CanonicalInspector label={`${item.id} normalized request`} text={item.canonicalRequest}/ >}</details>)}<button className="soft-button mt-2" disabled={!!loading} onClick={() => void collect({ intent: 'deep-engine', sections: ['trace', 'blueprint', 'iterator-tree', 'raw-engine'] })}>Inspect Vespa internals</button><p className="mt-2 text-xs">Blueprint: an engine execution plan. Iterator tree: the matching cursors used to traverse candidates. Profiler: measured execution work, collected only on request.</p>{result?.rawEngine.map((item, i) => <details key={i} className="mt-3 border p-3"><summary>{item.engine} internals · {item.section} · {item.status}</summary><p className="text-xs">Engine-specific unstable evidence · version {item.version} · execution {item.executionId}</p>{item.mediaType === 'application/json' ? <EvidenceTree value={parseEnginePayload(item.payload)}/> : <pre className="overflow-auto text-xs">{item.payload}</pre>}<CanonicalInspector label="Raw engine payload" text={item.payload}/></details>)}</div>}
     {prepared && <CanonicalInspector label="Diagnostic request" text={prepared.canonical}/ >}
     {result && <CanonicalInspector label="Diagnostic response" text={result.canonicalResponse}/ >}
-    {result && prepared && <details className="mt-4"><summary>Share / export diagnostic bundle</summary><p>Defaults exclude query/input values, document/feature values and raw engine payloads. Including these may disclose sensitive information.</p>{(['query', 'values', 'raw'] as const).map(key => <label className="block" key={key}><input type="checkbox" checked={include[key]} onChange={e => setInclude({ ...include, [key]: e.target.checked })}/> Include {key === 'query' ? 'query and query-input values' : key === 'values' ? 'document IDs and feature/document values' : 'raw engine evidence (may include query or document values)'}</label>)}<CopyButton label="Copy diagnostic bundle" text={diagnosticBundle(result, prepared, include)}/></details>}
+    {completedRequest && client.diagnosticsCurl && <details className="mt-4"><summary>Copy as curl</summary><p>This explicitly includes query/input values. It uses the public HTTP daemon listener, which may differ from the browser listener. Credentials and auth headers are excluded.</p><label>Public HTTP daemon endpoint<input className="input" aria-label="Public HTTP daemon endpoint" value={httpEndpoint} placeholder="http://localhost:8080" onChange={e => setHttpEndpoint(e.target.value)}/></label>{curlError && <p role="alert">{curlError}</p>}{curl && <CopyButton label="Copy as curl" text={curl}/>}</details>}
+    {completedRequest && completedRequest !== prepared && <CanonicalInspector label="Completed diagnostic request" text={completedRequest.canonical}/ >}
+    {result && completedRequest && <details className="mt-4"><summary>Share / export diagnostic bundle</summary><p>Defaults exclude query/input values, document/feature values and raw engine payloads. Including these may disclose sensitive information.</p>{(['query', 'values', 'raw'] as const).map(key => <label className="block" key={key}><input type="checkbox" checked={include[key]} onChange={e => setInclude({ ...include, [key]: e.target.checked })}/> Include {key === 'query' ? 'query and query-input values' : key === 'values' ? 'document IDs and feature/document values' : 'raw engine evidence (may include query or document values)'}</label>)}<CopyButton label="Copy diagnostic bundle" text={diagnosticBundle(result, completedRequest, include)}/></details>}
   </aside>
 }

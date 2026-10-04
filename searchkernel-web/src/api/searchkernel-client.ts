@@ -141,6 +141,7 @@ export function normalizeClientError(error: unknown): SearchKernelClientError {
 export interface SearchKernelClient {
   prepareDiagnostics?(index: Index, request: PreparedSearchRequest, sourceRunId: string | undefined, options: DiagnosticOptions): PreparedDiagnostics
   executeDiagnostics?(request: PreparedDiagnostics, options?: RequestOptions): Promise<ClientDiagnostics>
+  diagnosticsCurl?(request: PreparedDiagnostics, publicHttpEndpoint: string): string
   planIndexChange?(indexId: string, definition: IndexDefinitionT, options?: RequestOptions): Promise<ConfigurationPlan>
   applyIndexChange?(indexId: string, planId: string, options?: RequestOptions): Promise<Index>
   reopenIndex?(indexId: string, options?: RequestOptions): Promise<Index>

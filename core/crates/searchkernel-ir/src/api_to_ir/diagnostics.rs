@@ -42,6 +42,9 @@ pub fn query_diagnostics_to_ir(
             "an experimental request is required only for Experiment intent",
         ));
     }
+    if input.compare_exact() && intent != DiagnosticIntent::VectorRetrieval {
+        return Err(invalid("compare_exact", "exact comparison requires VectorRetrieval intent"));
+    }
     let selected_hits: Vec<String> = input
         .selected_hits()
         .map(|values| values.iter().map(str::to_owned).collect())

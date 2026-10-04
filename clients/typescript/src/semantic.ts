@@ -671,7 +671,8 @@ export class ListIndexesRequestT extends SemanticTable {
 export class ListIndexesResultT extends SemanticTable {
   declare targets: (string)[];
   declare configuration: ConfigurationCapabilitiesT|null;
-  constructor(targets: (string)[] = [], configuration: ConfigurationCapabilitiesT|null = null) { super('ListIndexesResult', ['targets', 'configuration'], [targets, configuration], [[], null]); }
+  declare queryDiagnostics: boolean;
+  constructor(targets: (string)[] = [], configuration: ConfigurationCapabilitiesT|null = null, queryDiagnostics: boolean = false) { super('ListIndexesResult', ['targets', 'configuration', 'queryDiagnostics'], [targets, configuration, queryDiagnostics], [[], null, false]); }
 }
 export class LiteralConstantSourceT extends SemanticTable {
   declare value: ValueT|null;
@@ -3998,6 +3999,12 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "name": "configuration",
       "type": "ConfigurationCapabilitiesT|null",
       "scalar": "Obj",
+      "unsigned": false
+    },
+    "queryDiagnostics": {
+      "name": "query_diagnostics",
+      "type": "boolean",
+      "scalar": "Bool",
       "unsigned": false
     }
   },

@@ -234,6 +234,59 @@ fn expected_search_operation() -> OperationIr {
         .expect("canonical search request must reach the backend")
 }
 
+fn diagnostic_input(intent: searchkernel_ir::DiagnosticIntent) -> searchkernel_ir::QueryDiagnosticsRequestIr {
+    let OperationIr::Search(request) = expected_search_operation() else { panic!("search fixture") };
+    searchkernel_ir::QueryDiagnosticsRequestIr { request, intent, requested_evidence: vec![searchkernel_ir::DiagnosticSection::Counterfactual], source_run_id: None, selected_hits: vec![], expected_document_id: None, experiment: None, compare_exact: false, limits: Default::default() }
+}
+
+#[test]
+fn diagnostic_intents_cross_the_canonical_dispatcher_and_keep_unsupported_sections_partial() {
+    use searchkernel_ir::DiagnosticIntent::*;
+    for intent in [ExplainHit, ZeroResults, MissingDocument, RankingComparison, Overmatching, QueryInterpretation, VectorRetrieval, Performance, DeepEngine, Experiment] {
+        let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
+        let mut input = diagnostic_input(intent);
+        if intent == MissingDocument { input.expected_document_id = Some("expected".into()); }
+        if intent == Experiment { input.experiment = Some(input.request.clone()); }
+        let request = searchkernel_ir::wire::v1::encode_query_diagnostics_request_for_target_generation(&input, "catalog", "G1");
+        let bytes = dispatcher.dispatch(&request).unwrap();
+        let response = root::<wire::ResponseEnvelope<'_>>(&bytes).unwrap();
+        assert_eq!(response.payload_type(), wire::ResponsePayload::SearchKernel_Wire_QueryDiagnosticsResult, "{intent:?}: {response:?}");
+        let result = response.payload_as_search_kernel_wire_query_diagnostics_result().unwrap();
+        let execution = result.execution().unwrap();
+        assert_eq!(execution.target().unwrap().name(), Some("catalog"));
+        assert_eq!(execution.target().unwrap().generation(), Some("G1"));
+        assert_eq!(execution.kind(), if intent == Experiment { api::DiagnosticExecutionKind::Experiment } else { api::DiagnosticExecutionKind::DiagnosticRerun });
+        assert!(result.evidence().unwrap().iter().any(|item| item.section() == api::DiagnosticSection::Counterfactual && item.status() == api::DiagnosticStatus::Unsupported));
+        let ranking = result.evidence().unwrap().iter().find(|item| item.section() == api::DiagnosticSection::Ranking).unwrap();
+        assert!(ranking.message().unwrap().contains("not configured"));
+        if intent == MissingDocument {
+            let stages = result.expected_document().unwrap().stages().unwrap();
+            assert_eq!(stages.get(0).observation(), api::DiagnosticObservation::ObservedNo);
+            assert_eq!(stages.get(1).observation(), api::DiagnosticObservation::Unavailable);
+            assert_eq!(stages.get(5).observation(), api::DiagnosticObservation::ObservedNo);
+        }
+    }
+}
+
+#[test]
+fn diagnostic_identity_rejects_foreign_incarnations_and_invalid_budgets() {
+    let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
+    let mut input = diagnostic_input(searchkernel_ir::DiagnosticIntent::ExplainHit);
+    input.source_run_id = Some("foreign-generation-run".into());
+    let request = searchkernel_ir::wire::v1::encode_query_diagnostics_request_for_target_generation(&input, "catalog", "G2");
+    let bytes = dispatcher.dispatch(&request).unwrap();
+    let response = root::<wire::ResponseEnvelope<'_>>(&bytes).unwrap();
+    let error = response.payload_as_search_kernel_wire_error().unwrap();
+    assert_eq!(error.code(), api::ErrorCode::FailedPrecondition);
+    assert_eq!(error.details().unwrap().get(0).code(), Some("diagnostic_source_incarnation_mismatch"));
+    input.source_run_id = None;
+    input.limits.raw_bytes = 262145;
+    let request = searchkernel_ir::wire::v1::encode_query_diagnostics_request_for_target_generation(&input, "catalog", "G1");
+    let bytes = dispatcher.dispatch(&request).unwrap();
+    let response = root::<wire::ResponseEnvelope<'_>>(&bytes).unwrap();
+    assert_eq!(response.payload_as_search_kernel_wire_error().unwrap().code(), api::ErrorCode::InvalidArgument);
+}
+
 #[test]
 fn targetless_embedded_request_remains_valid_without_daemon_routing() {
     let request = canonical_search_request();

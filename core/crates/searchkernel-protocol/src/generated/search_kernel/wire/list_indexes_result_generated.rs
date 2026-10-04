@@ -22,6 +22,7 @@ impl<'a> ::flatbuffers::Follow<'a> for ListIndexesResult<'a> {
 impl<'a> ListIndexesResult<'a> {
     pub const VT_TARGETS: ::flatbuffers::VOffsetT = 4;
     pub const VT_CONFIGURATION: ::flatbuffers::VOffsetT = 6;
+    pub const VT_QUERY_DIAGNOSTICS: ::flatbuffers::VOffsetT = 8;
 
     #[inline]
     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -44,6 +45,7 @@ impl<'a> ListIndexesResult<'a> {
         if let Some(x) = args.targets {
             builder.add_targets(x);
         }
+        builder.add_query_diagnostics(args.query_diagnostics);
         builder.finish()
     }
 
@@ -73,6 +75,17 @@ impl<'a> ListIndexesResult<'a> {
                 )
         }
     }
+    #[inline]
+    pub fn query_diagnostics(&self) -> bool {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<bool>(ListIndexesResult::VT_QUERY_DIAGNOSTICS, Some(false))
+                .unwrap()
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for ListIndexesResult<'_> {
@@ -90,6 +103,7 @@ impl ::flatbuffers::Verifiable for ListIndexesResult<'_> {
                 Self::VT_CONFIGURATION,
                 false,
             )?
+            .visit_field::<bool>("query_diagnostics", Self::VT_QUERY_DIAGNOSTICS, false)?
             .finish();
         Ok(())
     }
@@ -101,6 +115,7 @@ pub struct ListIndexesResultArgs<'a> {
         >,
     >,
     pub configuration: Option<::flatbuffers::WIPOffset<ConfigurationCapabilities<'a>>>,
+    pub query_diagnostics: bool,
 }
 impl<'a> Default for ListIndexesResultArgs<'a> {
     #[inline]
@@ -108,6 +123,7 @@ impl<'a> Default for ListIndexesResultArgs<'a> {
         ListIndexesResultArgs {
             targets: None,
             configuration: None,
+            query_diagnostics: false,
         }
     }
 }
@@ -141,6 +157,14 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ListIndexesResultBuilder<'a, 
             );
     }
     #[inline]
+    pub fn add_query_diagnostics(&mut self, query_diagnostics: bool) {
+        self.fbb_.push_slot::<bool>(
+            ListIndexesResult::VT_QUERY_DIAGNOSTICS,
+            query_diagnostics,
+            false,
+        );
+    }
+    #[inline]
     pub fn new(
         _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
     ) -> ListIndexesResultBuilder<'a, 'b, A> {
@@ -162,6 +186,7 @@ impl ::core::fmt::Debug for ListIndexesResult<'_> {
         let mut ds = f.debug_struct("ListIndexesResult");
         ds.field("targets", &self.targets());
         ds.field("configuration", &self.configuration());
+        ds.field("query_diagnostics", &self.query_diagnostics());
         ds.finish()
     }
 }

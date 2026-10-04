@@ -61,8 +61,15 @@ class ListIndexesResult(object):
             return obj
         return None
 
+    # ListIndexesResult
+    def QueryDiagnostics(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
+        if o != 0:
+            return bool(self._tab.Get(flatbuffers.number_types.BoolFlags, o + self._tab.Pos))
+        return False
+
 def ListIndexesResultStart(builder: flatbuffers.Builder):
-    builder.StartObject(2)
+    builder.StartObject(3)
 
 def Start(builder: flatbuffers.Builder):
     ListIndexesResultStart(builder)
@@ -85,6 +92,12 @@ def ListIndexesResultAddConfiguration(builder: flatbuffers.Builder, configuratio
 def AddConfiguration(builder: flatbuffers.Builder, configuration: int):
     ListIndexesResultAddConfiguration(builder, configuration)
 
+def ListIndexesResultAddQueryDiagnostics(builder: flatbuffers.Builder, queryDiagnostics: bool):
+    builder.PrependBoolSlot(2, queryDiagnostics, 0)
+
+def AddQueryDiagnostics(builder: flatbuffers.Builder, queryDiagnostics: bool):
+    ListIndexesResultAddQueryDiagnostics(builder, queryDiagnostics)
+
 def ListIndexesResultEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
@@ -104,9 +117,11 @@ class ListIndexesResultT(object):
         self,
         targets = None,
         configuration = None,
+        queryDiagnostics = False,
     ):
         self.targets = targets  # type: Optional[List[Optional[str]]]
         self.configuration = configuration  # type: Optional[SearchKernel.Wire.ConfigurationCapabilities.ConfigurationCapabilitiesT]
+        self.queryDiagnostics = queryDiagnostics  # type: bool
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -135,6 +150,7 @@ class ListIndexesResultT(object):
                 self.targets.append(listIndexesResult.Targets(i))
         if listIndexesResult.Configuration() is not None:
             self.configuration = SearchKernel.Wire.ConfigurationCapabilities.ConfigurationCapabilitiesT.InitFromObj(listIndexesResult.Configuration())
+        self.queryDiagnostics = listIndexesResult.QueryDiagnostics()
 
     # ListIndexesResultT
     def Pack(self, builder):
@@ -153,5 +169,6 @@ class ListIndexesResultT(object):
             ListIndexesResultAddTargets(builder, targets)
         if self.configuration is not None:
             ListIndexesResultAddConfiguration(builder, configuration)
+        ListIndexesResultAddQueryDiagnostics(builder, self.queryDiagnostics)
         listIndexesResult = ListIndexesResultEnd(builder)
         return listIndexesResult

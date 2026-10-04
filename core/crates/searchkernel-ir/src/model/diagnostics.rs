@@ -82,7 +82,7 @@ impl Default for DiagnosticLimits {
             feature_hit_count: 20,
             tensor_cells: 256,
             raw_bytes: 65_536,
-            trace_depth: 3,
+            trace_depth: 9,
             profiler_depth: 4,
             exact_nn_hits: 100,
         }
@@ -210,6 +210,9 @@ pub struct QueryDiagnosticsResult {
 pub struct DiagnosticSearchResult {
     pub result: SearchResult,
     pub raw_engine: Vec<RawEngineDiagnostics>,
+    /// Sections actually observed by the engine adapter, backed by its raw
+    /// execution payload. Raw field names remain private to that adapter.
+    pub observed_sections: Vec<DiagnosticSection>,
 }
 
 /// A bounded, server-held snapshot; clients cannot manufacture original evidence.

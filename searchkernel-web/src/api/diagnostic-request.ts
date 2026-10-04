@@ -2,6 +2,7 @@ import {
   DiagnosticIntent as Intent, DiagnosticSection as Section, DiagnosticLimitsT,
   QueryDiagnosticsRequestT, toCanonicalJson,
   OptionalUInt32T, OptionalUInt64T,
+  diagnosticsCurl,
 } from '@searchkernel/client'
 import type { DiagnosticOptions, Index, PreparedDiagnostics, PreparedSearchRequest } from './searchkernel-client'
 import { SearchKernelClientError } from './searchkernel-client'
@@ -43,4 +44,8 @@ export function preparedDiagnosticRequest(value: PreparedDiagnostics): QueryDiag
   const request = owned.get(value)
   if (!request) throw new TypeError('Diagnostics must be prepared by the Search Kernel adapter')
   return request
+}
+
+export function diagnosticCurl(value: PreparedDiagnostics, endpoint: string): string {
+  return diagnosticsCurl(endpoint, value.target, value.generation, preparedDiagnosticRequest(value))
 }

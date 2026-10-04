@@ -1,6 +1,6 @@
 import { prepareDocumentMutation, preparedDocumentRequest } from './document-request'
 import { prepareSearch, preparedRequest } from './search-request'
-import { prepareDiagnostics, preparedDiagnosticRequest } from './diagnostic-request'
+import { prepareDiagnostics, preparedDiagnosticRequest, diagnosticCurl } from './diagnostic-request'
 import { diagnosticResponse } from './diagnostic-response'
 import {
   Client, GrpcWebTransport, Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
@@ -115,6 +115,7 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
   }
   return {
     prepareDiagnostics,
+    diagnosticsCurl: diagnosticCurl,
     executeDiagnostics(prepared, options) { return call(async () => {
       const index = await opened(prepared.target, options)
       if (index.generation !== prepared.generation) throw new SearchKernelClientError(
