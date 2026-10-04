@@ -2293,6 +2293,7 @@ case "$BUILD" in
     *) BUILD=$ROOT/$BUILD ;;
 esac
 CXX=${CXX:-c++}
+PYTHON_BIN=$(bash "$ROOT/tools/resolve-python.sh")
 ENABLE_FAILPOINTS=${SK_NATIVE_ENABLE_FAILPOINTS:-0}
 ENABLE_COVERAGE=${SK_NATIVE_COVERAGE:-0}
 EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
@@ -2420,40 +2421,32 @@ if ! find "$VESPA_LIBRARY_ROOT" -name 'libvespa*.so*' -print -quit 2>/dev/null |
     echo "run './dev native-sdk ensure' from a clone with the pinned Vespa prerequisite or provide VESPA_LIBRARY_ROOT" >&2
     exit 1
 fi
+has_llvm_runtime() {
+    [ -f "$1/libLLVM.so.21.1" ] || [ -f "$1/libLLVM-21.so" ]
+}
 if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
-    if [ "$ADAPTER_ONLY" = 1 ] && [ -f "$BASE_SDK/lib/libLLVM.so.21.1" ]; then
+    if [ "$ADAPTER_ONLY" = 1 ] && has_llvm_runtime "$BASE_SDK/lib"; then
         VESPA_EXTRA_LIB_DIR=$BASE_SDK/lib
-    elif [ -f "$SDK_PACKAGE/lib/libLLVM.so.21.1" ]; then
-        VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
-    elif [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
+    elif [ "$BASE_ONLY" = 1 ] && has_llvm_runtime "$DEPS_LIB_DIR"; then
+        VESPA_EXTRA_LIB_DIR=$DEPS_LIB_DIR
+    elif [ "$BASE_ONLY" = 1 ] && has_llvm_runtime "$VESPA_DEPS/../../usr/lib64"; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
-    elif [ -n "$VESPA_WORKTREE_ROOT" ] && [ -f "$VESPA_WORKTREE_ROOT/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
-        VESPA_EXTRA_LIB_DIR=$VESPA_WORKTREE_ROOT/core/native/sdk/linux-x86_64/lib
-    elif [ -f "$ROOT/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
-        VESPA_EXTRA_LIB_DIR=$ROOT/core/native/sdk/linux-x86_64/lib
+    elif [ "$BASE_ONLY" != 1 ] && has_llvm_runtime "$SDK_PACKAGE/lib"; then
+        VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
+    elif has_llvm_runtime "$VESPA_DEPS/../../usr/lib64"; then
+        VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
     else
-        WORKTREE_EXTRA_LIB=$(git -C "$ROOT" worktree list --porcelain 2>/dev/null |
-            sed -n 's/^worktree //p' |
-            while IFS= read -r WORKTREE; do
-                if [ -f "$WORKTREE/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
-                    printf '%s\n' "$WORKTREE/core/native/sdk/linux-x86_64/lib"
-                    break
-                fi
-            done)
-        if [ -n "$WORKTREE_EXTRA_LIB" ]; then
-            VESPA_EXTRA_LIB_DIR=$WORKTREE_EXTRA_LIB
-            echo "using native runtime libraries from worktree: $VESPA_EXTRA_LIB_DIR" >&2
-        elif [ -f "$ROOT/target/native-sdk-package/lib/libLLVM.so.21.1" ]; then
-            VESPA_EXTRA_LIB_DIR=$ROOT/target/native-sdk-package/lib
-        else
-            VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
-        fi
+        VESPA_EXTRA_LIB_DIR=$DEPS_LIB_DIR
     fi
 fi
-if [ ! -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
+if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
+    VESPA_EXTRA_LLVM=$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1
+elif [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM-21.so" ]; then
+    VESPA_EXTRA_LLVM=$VESPA_EXTRA_LIB_DIR/libLLVM-21.so
+else
     echo "LLVM 21 runtime was not found for the Vespa SDK link" >&2
     echo "looked in: $VESPA_EXTRA_LIB_DIR" >&2
-    echo "set VESPA_EXTRA_LIB_DIR to the directory containing libLLVM.so.21.1" >&2
+    echo "expected libLLVM-21.so or libLLVM.so.21.1" >&2
     exit 1
 fi
 EXTRA_LINK_FLAGS=${SK_NATIVE_EXTRA_LINK_FLAGS:-$EXTRA_CXX_FLAGS}
@@ -2528,7 +2521,7 @@ else
 fi
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed \
     "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'$ADAPTER_RPATH'|g")
-LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1#")
+LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LLVM#")
 MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa.map
 if [ "$ENABLE_FAILPOINTS" = 1 ]; then
     MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa_test.map
@@ -2601,7 +2594,7 @@ fi
 # point its RPATH at that shared base. Do not copy or mutate the Vespa base.
 if [ "$ADAPTER_ONLY" = 1 ]; then
     if [ "${SK_NATIVE_SKIP_ABI_AUTHORITIES:-0}" != 1 ]; then
-        python3 "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
+        $PYTHON_BIN "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
     fi
     if command -v patchelf >/dev/null 2>&1; then
         patchelf --force-rpath --set-rpath "$BASE_SDK/lib" "$SDK/lib/libsearchkernel_vespa.so.2"
@@ -2614,7 +2607,7 @@ if [ "$ADAPTER_ONLY" = 1 ]; then
     fi
     cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
     cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
-    python3 - "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
+    $PYTHON_BIN - "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
 import sys
 
@@ -2673,13 +2666,13 @@ if [ "$BASE_ONLY" != 1 ]; then
         echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
         exit 1
     fi
-    python3 "$ROOT/tools/native-build-fingerprint.py" \
+    $PYTHON_BIN "$ROOT/tools/native-build-fingerprint.py" \
         --root "$ROOT" \
         --vespa-root "$VESPA_ROOT" \
         --target "$NATIVE_TARGET" \
         --scope full \
         --output "$SDK/native-build-fingerprint-v2.txt"
-    python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
+    $PYTHON_BIN - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
 import re
 import sys
@@ -2709,7 +2702,7 @@ with open(path, "w", encoding="utf-8") as stream:
 PY
     cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 else
-    python3 - "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json" <<'PY'
+    $PYTHON_BIN - "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json" <<'PY'
 import json
 import sys
 
@@ -2735,7 +2728,22 @@ fi
 # Copy each resolved payload once, then recreate linker and SONAME aliases as
 # relative links inside SDK/lib. This keeps the package self-contained without
 # duplicating large shared objects for every alias.
-if [ "$VESPA_LIBRARY_ROOT" = "$VESPA_ROOT" ]; then
+if [ "$BASE_ONLY" = 1 ]; then
+    LINKER_ALIASES=()
+    if [ -f "$VESPA_EXTRA_LLVM" ]; then
+        LINKER_ALIASES+=(--linker-alias "LLVM-21=$VESPA_EXTRA_LLVM")
+    fi
+    if [ -n "$CONFIGURED_DEPS" ]; then
+        LINKER_ALIASES+=(--producer-root "$CONFIGURED_DEPS=$VESPA_DEPS")
+    fi
+    LINKER_ALIASES+=(--producer-root "/work/vespa=$VESPA_ROOT")
+    LINKER_ALIASES+=(--source-root "vespa-build=$VESPA_ROOT")
+    LINKER_ALIASES+=(--source-root "vespa-deps=$VESPA_DEPS")
+    LINKER_ALIASES+=(--source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR")
+    LINKER_ALIASES+=(--source-root "system=/usr")
+    "$PYTHON_BIN" "$ROOT/tools/copy-native-base-link-shared-libraries.py" \
+        "$LINK_FILE" "$SDK/lib" --cxx "$CXX" "${LINKER_ALIASES[@]}"
+elif [ "$VESPA_LIBRARY_ROOT" = "$VESPA_ROOT" ]; then
     find "$VESPA_ROOT" -name '*.so*' \
         -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 else
@@ -2745,41 +2753,62 @@ else
     find "$VESPA_LIBRARY_ROOT" -maxdepth 1 -name 'libvespa*.so*' \
         -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
 fi
-find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
-    ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
-    -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
-if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
-    if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
-         "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
-        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" \
-            "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1"
+# Do not mirror the dependency installation by filename for a Vespa base.
+# Runtime DSOs are added below by the ELF resolver only when a pinned Vespa DSO
+# actually loads them; this avoids shadowing a compatible producer choice with
+# an unrelated same-name file from lib64. The legacy full development SDK
+# keeps its existing convenience copy behavior.
+if [ "$BASE_ONLY" != 1 ]; then
+    find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
+        ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
+        -exec sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" {} +
+fi
+if [ "$BASE_ONLY" != 1 ]; then
+    # Full development SDKs retain their historical convenience behavior.
+    # Native-base construction leaves every non-system runtime dependency,
+    # including libffi, to the generic DT_NEEDED resolver below.
+    if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
+        AWS_LIB_DIR=$VESPA_AWS_LIB_DIR
+    elif [ -f "$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6" ]; then
+        AWS_LIB_DIR=$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist
+    elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
+        AWS_LIB_DIR=$DEPS_LIB_DIR
+    elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
+        AWS_LIB_DIR=$SDK_PACKAGE/lib
+    else
+        AWS_LIB_DIR=$ROOT/target/native-sdk-package/lib
+    fi
+    if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
+        if [ "$(readlink -f "$AWS_LIB_DIR/libffi.so.6")" != \
+             "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
+            sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$AWS_LIB_DIR/libffi.so.6"
+        fi
+    elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
+        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$SDK_PACKAGE/lib/libffi.so.6"
+    elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
+        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$DEPS_LIB_DIR/libffi.so.6"
+    else
+        echo "libffi.so.6 required by the bundled LLVM runtime was not found" >&2
+        exit 1
     fi
 fi
-if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
-    AWS_LIB_DIR=$VESPA_AWS_LIB_DIR
-elif [ -f "$VESPA_EXTRA_LIB_DIR/libffi.so.6" ]; then
-    AWS_LIB_DIR=$VESPA_EXTRA_LIB_DIR
-elif [ -f "$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6" ]; then
-    AWS_LIB_DIR=$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist
-else
-    AWS_LIB_DIR=$ROOT/target/native-sdk-package/lib
+
+# A base object must be self-contained before it is admitted to the immutable
+# native cache. Runtime sources are restricted to explicitly named producer
+# roots so transitive symlinks cannot pull in another local SDK.
+if [ "$BASE_ONLY" = 1 ]; then
+    RUNTIME_SEARCH_ARGS=(--search-dir "$DEPS_LIB_DIR" --search-dir "$VESPA_EXTRA_LIB_DIR")
+    "$PYTHON_BIN" "$ROOT/tools/bundle-native-runtime-closure.py" \
+        "$SDK/lib" \
+        "${RUNTIME_SEARCH_ARGS[@]}" \
+        --source-root "vespa-build=$VESPA_ROOT" \
+        --source-root "vespa-deps=$VESPA_DEPS" \
+        --source-root "vespa-extra=$VESPA_EXTRA_LIB_DIR" \
+        --source-root "system=/usr" \
+        --source-root "system-lib=/lib" \
+        --source-root "system-lib64=/lib64"
 fi
-if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
-    if [ "$(readlink -f "$AWS_LIB_DIR/libffi.so.6")" != "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
-        sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$AWS_LIB_DIR/libffi.so.6"
-    fi
-elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
-    # LLVM in the pinned Vespa environment carries a libffi.so.6 dependency.
-    # Preserve it when rebuilding an existing SDK even if the AWS CLI bundle
-    # is not installed in this host environment.
-    sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$SDK_PACKAGE/lib/libffi.so.6"
-elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
-    sh "$ROOT/tools/copy-shared-library-into-sdk.sh" "$SDK/lib" "$DEPS_LIB_DIR/libffi.so.6"
-else
-    echo "libffi.so.6 required by the bundled LLVM runtime was not found" >&2
-    echo "set VESPA_AWS_LIB_DIR or provide libffi.so.6 in $DEPS_LIB_DIR" >&2
-    exit 1
-fi
+
 
 # Shared-library aliases are allowed only when they are simple relative names
 # resolving to regular files inside this SDK. Never publish producer absolute
@@ -2821,7 +2850,7 @@ elif [ "$BASE_ONLY" != 1 ] && [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; th
     SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-vespa-bindings.sh"
 fi
 if [ "$BASE_ONLY" != 1 ]; then
-    python3 "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
+    $PYTHON_BIN "$ROOT/tools/check-native-abi-authorities.py" --root "$ROOT"
 fi
 
 # The upstream build tree also contains unit-test support libraries. Keep
@@ -6371,7 +6400,15 @@ extern "C" int32_t sk_query_add_in_strings(
                          "in query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        validate_query_field(*query, SK_QUERY_FIELD_STRING, field);
+        // InTerm supports membership in both scalar and multi-valued string
+        // attributes. Keep the scalar-string guard for other query operators.
+        validate_query_field(*query, SK_QUERY_FIELD_ATTRIBUTE, field);
+        const auto metadata = std::find_if(
+            query->fields.begin(), query->fields.end(),
+            [field](const auto &candidate) { return candidate.name == field; });
+        if (metadata->type != "string" && metadata->type != "array<string>") {
+            throw std::invalid_argument("in query requires a string attribute field");
+        }
         if (value_count == 0 || value_count > MAX_TEXT_TERMS || !value_lengths ||
             (!value_bytes && value_bytes_length != 0)) {
             throw std::invalid_argument("in query string values are invalid");
@@ -8377,6 +8414,35 @@ class EmbeddedEngine {
         return identity;
     }
 
+    // Rank configuration affects query execution, not persisted document/index
+    // layout. Preserve the v2 marker format and compare every storage-relevant
+    // byte; parse length-framed blocks so expression text cannot spoof a section.
+    static std::optional<std::string> storage_identity(const std::string &identity) {
+        if (!identity.starts_with("version=2\ndocument_type=")) return std::nullopt;
+        const auto first_file = identity.find("file=indexschema.cfg\nlength=");
+        if (first_file == std::string::npos) return std::nullopt;
+        std::string result = identity.substr(0, first_file);
+        size_t cursor = first_file;
+        for (const char *name : {"indexschema.cfg", "attributes.cfg", "summary.cfg",
+                                 "rank-profiles.cfg", "juniperrc.cfg"}) {
+            const auto prefix = "file=" + std::string(name) + "\nlength=";
+            if (identity.compare(cursor, prefix.size(), prefix) != 0) return std::nullopt;
+            const auto start = cursor;
+            cursor += prefix.size();
+            const auto newline = identity.find('\n', cursor);
+            if (newline == std::string::npos) return std::nullopt;
+            size_t length = 0;
+            const auto parsed = std::from_chars(identity.data() + cursor, identity.data() + newline, length);
+            if (parsed.ec != std::errc() || parsed.ptr != identity.data() + newline) return std::nullopt;
+            cursor = newline + 1;
+            if (length >= identity.size() - cursor || identity[cursor + length] != '\n') return std::nullopt;
+            cursor += length + 1;
+            if (std::string_view(name) != "rank-profiles.cfg") result.append(identity, start, cursor - start);
+        }
+        if (cursor != identity.size()) return std::nullopt;
+        return result;
+    }
+
     static std::string validate_or_persist_schema_identity(
         const std::string &data_dir, const std::string &config_dir,
         const SchemaManifest &manifest, bool had_existing_state) {
@@ -8390,7 +8456,9 @@ class EmbeddedEngine {
                 throw std::invalid_argument("index schema identity is not a regular file");
             }
             const auto actual = read_identity_file(path);
-            if (actual != expected) {
+            const auto actual_storage = storage_identity(actual);
+            const auto expected_storage = storage_identity(expected);
+            if (actual != expected && (!actual_storage || !expected_storage || *actual_storage != *expected_storage)) {
                 throw std::invalid_argument(
                     "index data was created with a different generated schema");
             }
@@ -10267,58 +10335,77 @@ class EmbeddedEngine {
     // remains untouched and continues to be the schema-identity input.
     static std::filesystem::path make_runtime_config_directory(
         const SchemaManifest &manifest, const std::filesystem::path &config_dir) {
+        constexpr std::array<std::string_view, 4> optional_config_names = {
+            "imported-fields.cfg",
+            "onnx-models.cfg",
+            "ranking-constants.cfg",
+            "ranking-expressions.cfg",
+        };
+        const bool needs_optional_config_placeholders = std::any_of(
+            optional_config_names.begin(), optional_config_names.end(),
+            [&](std::string_view name) {
+                return !std::filesystem::is_regular_file(config_dir / std::string(name));
+            });
+
+        bool rewrite_indexschema = false;
+        std::string indexschema_contents;
+        constexpr std::string_view old_interleaved_value = "interleavedfeatures false";
+
         const bool has_indexed_field = std::any_of(
             manifest.fields.begin(), manifest.fields.end(),
             [](const auto &field) { return field.index; });
-        if (!has_indexed_field) {
-            return {};
+        if (has_indexed_field) {
+            // The generated fallback BM25 profile needs interleaved features for
+            // the local Vespa index implementation. Explicit rank profiles are
+            // authoritative, however: changing their index settings here changes
+            // the semantics of the caller's Vespa expressions and breaks direct
+            // profile parity. Only normalize the compiler-generated fallback.
+            const auto rank_profiles = read_config(config_dir / "rank-profiles.cfg");
+            const auto profile_count = config_section_count(rank_profiles, "rankprofile");
+            const auto fallback_property_count =
+                profile_count >= 2
+                    ? config_section_count(rank_profiles, "rankprofile[1].fef.property")
+                    : 0;
+            const bool generated_direct_bm25_fallback =
+                profile_count == 2 &&
+                config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
+                fallback_property_count == 1 &&
+                config_value(rank_profiles, "rankprofile[1].fef.property[0].name") ==
+                    "vespa.rank.firstphase" &&
+                config_value(rank_profiles, "rankprofile[1].fef.property[0].value").starts_with(
+                    "bm25(");
+            const bool generated_script_bm25_fallback =
+                profile_count == 2 &&
+                config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
+                fallback_property_count == 2 &&
+                config_value(rank_profiles, "rankprofile[1].fef.property[1].name") ==
+                    "rankingExpression(bm25).rankingScript";
+            const bool uses_only_generated_fallback =
+                generated_direct_bm25_fallback || generated_script_bm25_fallback;
+
+            if (uses_only_generated_fallback) {
+                const auto indexschema = config_dir / "indexschema.cfg";
+                std::ifstream input(indexschema, std::ios::binary);
+                if (!input) {
+                    throw std::runtime_error("could not read generated configuration: " +
+                                             indexschema.string());
+                }
+                indexschema_contents.assign(std::istreambuf_iterator<char>(input),
+                                            std::istreambuf_iterator<char>());
+                if (!input.good() && !input.eof()) {
+                    throw std::runtime_error("could not read generated configuration: " +
+                                             indexschema.string());
+                }
+                rewrite_indexschema =
+                    indexschema_contents.find(old_interleaved_value) != std::string::npos;
+            }
         }
 
-        // The generated fallback BM25 profile needs interleaved features for
-        // the local Vespa index implementation. Explicit rank profiles are
-        // authoritative, however: changing their index settings here changes
-        // the semantics of the caller's Vespa expressions and breaks direct
-        // profile parity. Only normalize the compiler-generated fallback.
-        const auto rank_profiles = read_config(config_dir / "rank-profiles.cfg");
-        const auto profile_count = config_section_count(rank_profiles, "rankprofile");
-        const auto fallback_property_count =
-            profile_count >= 2
-                ? config_section_count(rank_profiles, "rankprofile[1].fef.property")
-                : 0;
-        const bool generated_direct_bm25_fallback =
-            profile_count == 2 &&
-            config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
-            fallback_property_count == 1 &&
-            config_value(rank_profiles, "rankprofile[1].fef.property[0].name") ==
-                "vespa.rank.firstphase" &&
-            config_value(rank_profiles, "rankprofile[1].fef.property[0].value").starts_with(
-                "bm25(");
-        const bool generated_script_bm25_fallback =
-            profile_count == 2 &&
-            config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
-            fallback_property_count == 2 &&
-            config_value(rank_profiles, "rankprofile[1].fef.property[1].name") ==
-                "rankingExpression(bm25).rankingScript";
-        const bool uses_only_generated_fallback =
-            generated_direct_bm25_fallback || generated_script_bm25_fallback;
-        if (!uses_only_generated_fallback) {
-            return {};
-        }
-
-        const auto indexschema = config_dir / "indexschema.cfg";
-        std::ifstream input(indexschema, std::ios::binary);
-        if (!input) {
-            throw std::runtime_error("could not read generated configuration: " +
-                                     indexschema.string());
-        }
-        const std::string contents((std::istreambuf_iterator<char>(input)),
-                                   std::istreambuf_iterator<char>());
-        if (!input.good() && !input.eof()) {
-            throw std::runtime_error("could not read generated configuration: " +
-                                     indexschema.string());
-        }
-        constexpr std::string_view old_value = "interleavedfeatures false";
-        if (contents.find(old_value) == std::string::npos) {
+        // Vespa's directory config source requests these optional files even when
+        // the corresponding feature is unused. Complete the private runtime view
+        // here instead of requiring every Search Kernel config producer or fixture
+        // to carry empty placeholder files.
+        if (!needs_optional_config_placeholders && !rewrite_indexschema) {
             return {};
         }
 
@@ -10337,8 +10424,16 @@ class EmbeddedEngine {
                     throw std::runtime_error("could not inspect generated configuration: " +
                                              filesystem_error.message());
                 }
-                if (!entry->is_regular_file(filesystem_error) || filesystem_error) {
-                    throw std::invalid_argument("generated configuration contains a non-file entry");
+                const bool is_regular_file = entry->is_regular_file(filesystem_error);
+                if (filesystem_error) {
+                    throw std::runtime_error(
+                        "could not inspect generated configuration entry '" +
+                        entry->path().string() + "': " + filesystem_error.message());
+                }
+                if (!is_regular_file) {
+                    throw std::invalid_argument(
+                        "generated configuration contains a non-file entry: " +
+                        entry->path().string());
                 }
                 std::filesystem::copy_file(entry->path(), runtime_dir / entry->path().filename(),
                                            std::filesystem::copy_options::none, filesystem_error);
@@ -10348,22 +10443,41 @@ class EmbeddedEngine {
                 }
             }
 
-            std::string runtime_indexschema = contents;
-            size_t position = 0;
-            constexpr std::string_view new_value = "interleavedfeatures true";
-            while ((position = runtime_indexschema.find(old_value, position)) !=
-                   std::string::npos) {
-                runtime_indexschema.replace(position, old_value.size(), new_value);
-                position += new_value.size();
+            for (const auto name : optional_config_names) {
+                const auto placeholder = runtime_dir / std::string(name);
+                if (std::filesystem::is_regular_file(placeholder)) {
+                    continue;
+                }
+                std::ofstream output(placeholder, std::ios::binary | std::ios::trunc);
+                if (!output) {
+                    throw std::runtime_error("could not write runtime Vespa config placeholder: " +
+                                             placeholder.string());
+                }
+                output.close();
+                if (!output) {
+                    throw std::runtime_error("could not write runtime Vespa config placeholder: " +
+                                             placeholder.string());
+                }
             }
-            std::ofstream output(runtime_dir / "indexschema.cfg",
-                                 std::ios::binary | std::ios::trunc);
-            if (!output) {
-                throw std::runtime_error("could not write runtime Vespa configuration");
-            }
-            output << runtime_indexschema;
-            if (!output) {
-                throw std::runtime_error("could not write runtime Vespa configuration");
+
+            if (rewrite_indexschema) {
+                std::string runtime_indexschema = indexschema_contents;
+                size_t position = 0;
+                constexpr std::string_view new_value = "interleavedfeatures true";
+                while ((position = runtime_indexschema.find(old_interleaved_value, position)) !=
+                       std::string::npos) {
+                    runtime_indexschema.replace(position, old_interleaved_value.size(), new_value);
+                    position += new_value.size();
+                }
+                std::ofstream output(runtime_dir / "indexschema.cfg",
+                                     std::ios::binary | std::ios::trunc);
+                if (!output) {
+                    throw std::runtime_error("could not write runtime Vespa configuration");
+                }
+                output << runtime_indexschema;
+                if (!output) {
+                    throw std::runtime_error("could not write runtime Vespa configuration");
+                }
             }
         } catch (...) {
             std::filesystem::remove_all(runtime_dir, filesystem_error);
@@ -10808,6 +10922,21 @@ public:
             bucket_spaces, tune, _hw_info);
         config.forwardConfig(bootstrap);
         config.nextGeneration(_shared_service.transport(), 0ms);
+
+        // DocumentDB builds its matchers on a worker where an invalid expression
+        // can escape as a fatal exception. Compile the exact same Vespa matcher
+        // synchronously first so malformed administration input becomes an ABI
+        // error and cannot terminate the daemon.
+        const auto snapshot = config.getConfig();
+        vespalib::eval::ConstantTensorLoader constant_factory(vespalib::eval::FastValueBuilderFactory::get());
+        search::fef::RankingAssetsRepo ranking_assets(constant_factory,
+            snapshot->getRankingConstantsSP(), snapshot->getRankingExpressionsSP(), snapshot->getOnnxModelsSP());
+        for (const auto &profile : snapshot->getRankProfilesConfig().rankprofile) {
+            search::fef::Properties properties;
+            for (const auto &property : profile.fef.property) properties.add(property.name, property.value);
+            proton::matching::Matcher preflight(*snapshot->getSchemaSP(), std::move(properties),
+                _shared_service.nowRef(), _query_limiter, ranking_assets, -1);
+        }
 
         proton::ConfigStore::UP config_store;
         if (std::filesystem::exists(std::filesystem::path(config_dir) / "proton.cfg")) {
@@ -13690,6 +13819,7 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
     Fragment fragment;
     bool highlighted = false;
     uint32_t highlight_start = 0;
+    bool continued_start = false;
     const auto flush_fragment = [&]() {
         if (!fragment.text.empty() || !fragment.matches.empty()) {
             fragments.push_back(std::move(fragment));
@@ -13697,6 +13827,24 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
         }
     };
     for (size_t index = 0; index < teaser.size();) {
+        if (continued_start) {
+            continued_start = false;
+            const auto terminator = teaser.find(annotation_terminator, index);
+            const auto anchor = teaser.find(annotation_anchor, index);
+            const auto separator = teaser.find(annotation_separator, index);
+            const auto boundary = teaser.find_first_of("\x1e\x1f", index);
+            // SummaryDesc can begin a continued excerpt inside an annotation.
+            // Preserve surface text before a remaining separator, and discard
+            // clipped metadata through the terminator before any delimiter.
+            if (terminator != std::string_view::npos && terminator < anchor &&
+                terminator < boundary) {
+                if (separator < terminator) {
+                    fragment.text.append(teaser.substr(index, separator - index));
+                }
+                index = terminator + annotation_terminator.size();
+                continue;
+            }
+        }
         if (teaser[index] == '\x1f') {
             if (!highlighted) {
                 highlighted = true;
@@ -13711,18 +13859,40 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
                 throw std::runtime_error("Vespa teaser continuation interrupts highlight markup");
             }
             flush_fragment();
+            continued_start = true;
             ++index;
         } else if (teaser.substr(index, annotation_anchor.size()) == annotation_anchor) {
             const auto separator = teaser.find(annotation_separator, index + annotation_anchor.size());
+            const auto continuation = teaser.find('\x1e', index + annotation_anchor.size());
             const auto terminator = separator == std::string_view::npos
                                         ? std::string_view::npos
                                         : teaser.find(annotation_terminator, separator + annotation_separator.size());
-            if (separator == std::string_view::npos || terminator == std::string_view::npos) {
+            // Pinned Juniper SummaryDesc::get_summary can end an excerpt in
+            // annotation metadata and append its continuation delimiter before
+            // the terminator. Preserve the complete surface form before the
+            // separator; discard only that clipped metadata. Without the
+            // backend continuation boundary a missing terminator is malformed.
+            const bool clipped_metadata = continuation != std::string_view::npos &&
+                                          (terminator == std::string_view::npos || continuation < terminator);
+            // A continued excerpt may also end before the annotation's
+            // separator. These backend-selected bytes are surface text;
+            // preserve them without manufacturing a highlight or completion.
+            if (continuation != std::string_view::npos &&
+                (separator == std::string_view::npos || continuation < separator)) {
+                if (highlighted) throw std::runtime_error("Vespa teaser contains malformed interlinear annotation");
+                fragment.text.append(teaser.substr(index + annotation_anchor.size(),
+                                                   continuation - index - annotation_anchor.size()));
+                index = continuation;
+                continue;
+            }
+            if (separator == std::string_view::npos ||
+                (clipped_metadata && highlighted) ||
+                (terminator == std::string_view::npos && !clipped_metadata)) {
                 throw std::runtime_error("Vespa teaser contains malformed interlinear annotation");
             }
             fragment.text.append(teaser.substr(index + annotation_anchor.size(),
                                                separator - index - annotation_anchor.size()));
-            index = terminator + annotation_terminator.size();
+            index = clipped_metadata ? continuation : terminator + annotation_terminator.size();
         } else {
             fragment.text.push_back(teaser[index++]);
         }
@@ -14950,6 +15120,10 @@ SK_API void sk_generic_grouping_result_destroy(sk_generic_grouping_result *resul
     ("core/native/vespa/searchkernel_vespa_internal.h", br########"#pragma once
 
 #include "searchkernel_vespa.h"
+#include <vespa/config-rank-profiles.h>
+#include <vespa/searchcore/proton/matching/matcher.h>
+#include <vespa/searchlib/fef/ranking_assets_repo.h>
+#include <vespa/eval/eval/value_cache/constant_tensor_loader.h>
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
 #include "searchkernel_vespa_test.h"
 #endif
@@ -16098,11 +16272,9 @@ attribute[0].name "attr1"
 attribute[0].datatype INT32
 attribute[0].collectiontype SINGLE
 "########),
-    ("core/native/vespa/embedded_crud_cfg/imported-fields.cfg", br########""########),
     ("core/native/vespa/embedded_crud_cfg/indexschema.cfg", br########"indexfield[0]
 "########),
     ("core/native/vespa/embedded_crud_cfg/juniperrc.cfg", br########""########),
-    ("core/native/vespa/embedded_crud_cfg/onnx-models.cfg", br########""########),
     ("core/native/vespa/embedded_crud_cfg/proton.cfg", br########"documentdb[1]
 documentdb[0].inputdoctypename "typea"
 documentdb[0].document_id_attribute true
@@ -16110,8 +16282,6 @@ documentdb[0].document_id_attribute true
     ("core/native/vespa/embedded_crud_cfg/rank-profiles.cfg", br########"rankprofile[1]
 rankprofile[0].name "default"
 "########),
-    ("core/native/vespa/embedded_crud_cfg/ranking-constants.cfg", br########""########),
-    ("core/native/vespa/embedded_crud_cfg/ranking-expressions.cfg", br########""########),
     ("core/native/vespa/embedded_crud_cfg/searchkernel-schema.json", br########"{"version":1,"document_type":"typea","fields":[{"name":"attr1","type":"integer","index":false,"attribute":true,"summary":false}]}
 "########),
     ("core/native/vespa/embedded_crud_cfg/summary.cfg", br########"defaultsummaryid 1
