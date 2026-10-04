@@ -348,7 +348,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 552
+              "line": 607
             },
             {
               "capability": "query.phrase",
@@ -472,7 +472,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 553
+              "line": 608
             },
             {
               "capability": "query.proximity",
@@ -690,7 +690,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 554
+              "line": 609
             }
           ],
           "overrides": []
@@ -1083,7 +1083,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 555
+              "line": 610
             }
           ],
           "overrides": []
@@ -1360,7 +1360,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 354
+              "line": 409
             },
             {
               "capability": "search.sorting",
@@ -1488,7 +1488,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 355
+              "line": 410
             },
             {
               "capability": "search.pagination",
@@ -1656,7 +1656,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 356
+              "line": 411
             },
             {
               "capability": "result.docsum_field_projection",
@@ -1881,7 +1881,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 357
+              "line": 412
             },
             {
               "capability": "result.highlighting",
@@ -2408,7 +2408,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 60
+              "line": 115
             },
             {
               "capability": "update.document_crud",
@@ -2502,7 +2502,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 220
+              "line": 275
             },
             {
               "capability": "update.arithmetic",
@@ -2512,7 +2512,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 220
+              "line": 275
             }
           ],
           "overrides": []
@@ -2586,7 +2586,7 @@
               "kind": "e2e",
               "strength": "runtime",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 221
+              "line": 276
             },
             {
               "capability": "update.create_if_nonexistent",
@@ -2596,7 +2596,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "core/crates/searchkernel/tests/native_e2e.rs",
-              "line": 221
+              "line": 276
             }
           ],
           "overrides": []
