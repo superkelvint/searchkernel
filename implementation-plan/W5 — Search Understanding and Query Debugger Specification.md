@@ -1,177 +1,662 @@
 # W5 — Search Understanding and Query Debugger Specification
 
-**Status:** Proposed implementation specification  
+**Status:** Proposed UX and product specification  
 **Product:** Searchkernel Web  
 **Milestone:** W5, immediately after W4 index operations and diagnostics  
 **Primary UI reference:** Algolia-style progressive disclosure  
 **Engine depth:** Vespa query, retrieval, ranking, and profiling diagnostics  
-**Architecture rule:** Search Kernel owns semantics; the frontend presents and navigates evidence
+**Companion contract:** `W5 — Query Diagnostics Backend Contract.md`
 
 ---
 
 # 1. Purpose
 
-W5 turns Searchkernel Web from a search workbench into a search debugger.
+W5 turns Searchkernel Web from a search workbench into a search debugger without
+turning ordinary search into a Vespa console.
 
-The product goal is not to expose every Vespa diagnostic control in the default UI. The goal is to let a user move progressively from:
+The product must work for two very different users:
 
-> “Why does this result look wrong?”
+1. a developer who knows that a result looks wrong but does not know Vespa's
+   execution model;
+2. a search/Vespa engineer who needs the exact query tree, candidate-generation
+   behavior, ranking features, execution plan, iterator tree, and profiler data.
 
-to:
+The product principle is:
 
-> “Show me the exact query tree, candidate-generation behavior, ranking features,
-> execution blueprint, iterator tree, and profiling output.”
+> **Start with the user's question. Reveal engine complexity only when it helps
+> answer that question. Every friendly explanation must have a direct path to the
+> underlying evidence.**
 
-without forcing the first user to think like the second user.
-
-The governing product principle remains:
-
-> **Algolia for usability, Vespa for conceptual depth, Search Kernel for product
-> vocabulary and semantics.**
-
-W5 must therefore satisfy both of these requirements:
-
-1. A developer who knows search concepts but not Vespa can diagnose common relevance
-   and query problems through guided workflows.
-2. A Vespa engineer can drill through every abstraction and inspect the authoritative
-   engine evidence needed for serious debugging.
-
-Every friendly explanation must have a “show me the evidence” path.
+W5 is not a separate observability product. It is a progressive extension of
+Search Lab.
 
 ---
 
-# 2. Product outcome
+# 2. User-facing mental model
 
-W5 is complete when Searchkernel Web can answer these questions from a real query:
+The user-facing model has only three layers:
 
-- What query did Search Kernel actually send to the engine?
-- How did Vespa transform and execute it?
-- Why did this document match?
-- Why is result A above result B?
-- Why is an expected document missing?
-- Where did a document fall out of the retrieval/ranking pipeline?
-- Which ranking signals materially differ between two hits?
-- Which ranking phase produced the effective score?
-- Is approximate nearest-neighbor retrieval causing recall loss?
-- Why is this query slow?
-- Which search iterators or ranking features consume the time?
-- What raw Vespa evidence supports the UI's explanation?
+```text
+Explain
+   ↓
+Investigate
+   ↓
+Inspect
+```
 
-The normal search experience must remain simple and fast when none of those
-questions are being asked.
+Do not expose separate "diagnostic modes" or force users to understand cost
+tiers. Cost is surfaced contextually on actions that require reruns.
+
+## 2.1 Explain
+
+Answer the immediate question with the smallest useful amount of evidence.
+
+Typical entry points:
+
+- **Why this result?**
+- **Compare with result above**
+- **Explain lens**
+
+Explain stays in the result context.
+
+## 2.2 Investigate
+
+Guide the user through a problem:
+
+- zero results;
+- expected result missing;
+- result ranked too high/low;
+- too many/irrelevant results;
+- vector/hybrid retrieval looks wrong;
+- query is slow;
+- query itself is confusing.
+
+The flow is organized around findings, not engine components.
+
+## 2.3 Inspect
+
+Expose the search pipeline and raw evidence:
+
+- query;
+- retrieval;
+- ranking;
+- performance;
+- vector internals;
+- raw Vespa evidence.
+
+Every technical term shown here must have a concise inline definition.
 
 ---
 
-# 3. Progressive-disclosure model
+# 3. Search Lab interaction model
 
-W5 uses five levels of disclosure.
+W5 should remain anchored in Search Lab.
 
-## 3.1 Level 0 — Search
+Use a persistent split view:
 
-This is the ordinary Search Lab experience.
+```text
+┌──────────────────────────────┬───────────────────────────────┐
+│ Search + results             │ Evidence panel                │
+│                              │                               │
+│ #1 result                    │ Explain / Investigate /       │
+│ #2 result                    │ Inspect content for the       │
+│ #3 result                    │ current selection             │
+│ #4 result                    │                               │
+│ ...                          │                               │
+└──────────────────────────────┴───────────────────────────────┘
+```
 
-The user sees:
+Selecting a hit changes the evidence panel without leaving the result list.
 
-- query controls;
-- selected rank profile;
-- filters and sorting;
-- returned hits;
-- final relevance where meaningful;
-- timing and coverage at the existing normal level.
+Pinning a second hit starts a comparison.
 
-The user does **not** see by default:
+Provide a direct shortcut:
 
-- Vespa trace levels;
-- query blueprints;
-- iterator trees;
-- HNSW internals;
-- complete rank-feature dumps;
-- match/first-phase/second-phase profiling controls.
+> **Compare with result above**
 
-Each hit gains a low-friction affordance:
+because "why is #4 below #3?" is a natural ranking-debugging question.
 
-> **Why this result?**
+The existing Analyze route may remain as an expanded/full-page view of the same
+evidence model, but it must not be required for ordinary investigation.
 
-The query gains:
+---
 
-> **Understand this search**
+# 4. Explain layer
 
-No diagnostic instrumentation should be enabled merely because the Search Lab is
-open.
+## 4.1 Why this result? — baseline state
 
-## 3.2 Level 1 — Explain
+The most common case must work even when the rank profile exposes no named
+explanation functions.
 
-This is the default human-readable explanation layer.
+Baseline panel:
 
-For a selected hit, prefer a compact explanation built only from authoritative,
-named evidence already exposed by the rank profile or Search Kernel.
+```text
+WHY THIS RESULT?
+
+Result #4
+Ranking profile: product-search
+
+What we know
+────────────────────────────────
+
+Returned position                 #4
+Final relevance                   0.782
+
+Ranking path
+Retrieval                         completed
+Initial ranking                   rank #11
+Reranking                         selected
+Final ordering                    #4
+
+Explanation signals
+────────────────────────────────
+
+This profile does not expose named ranking signals,
+so Search Kernel cannot safely say which parts of the
+ranking expression mattered.
+
+[Make this profile easier to explain]
+
+Technical evidence
+[Show ranking phases]
+[Show available rank features]
+```
+
+This is not an error state. It is a useful explanation with an explicit limit.
+
+## 4.2 Make this profile easier to explain
+
+The no-signals state must offer a concrete path forward.
 
 Example:
 
 ```text
-Why this ranked #1
+Make this profile easier to explain
 
-Strong text relevance
-  Text relevance signal: 3.91
+Expose meaningful intermediate functions from your
+rank profile as match-features or summary-features.
 
-Strong semantic similarity
-  Semantic signal: 0.84
+function lexical_score() {
+    expression: bm25(title) + bm25(body)
+}
 
-Popularity helped
-  Popularity signal: 0.73
+function semantic_score() {
+    expression: closeness(field, embedding)
+}
 
-Ranking profile
-  semantic-v2
+match-features {
+    lexical_score
+    semantic_score
+}
 
-[Show ranking details]
+[Copy example] [Open rank profile]
 ```
 
-This layer should use human labels when the underlying signals are intentionally
-named, for example rank-profile functions such as:
+W3 owns editing the rank profile. W5 should deep-link into the relevant W3
+surface when editing is available.
 
-- `lexical_score`;
-- `semantic_score`;
-- `freshness_score`;
-- `business_score`.
+## 4.3 Why this result? — rich-signal state
 
-It must not reverse-engineer arbitrary Vespa ranking expressions and then invent
-a semantic explanation.
+When a profile exposes named signals, show values with context, not adjectives.
 
-If a profile does not expose meaningful explanation signals, say so explicitly:
+Do **not** say:
 
-> This ranking profile does not expose named explanation signals.
+- "Strong text relevance";
+- "Popularity helped";
+- "Weak semantic score";
 
-Then offer the technical evidence.
+unless there is an explicit, defined baseline that makes the label true.
 
-## 3.3 Level 2 — Troubleshoot
+Prefer:
 
-This is a guided diagnostic layer organized around user problems, not Vespa API
-parameters.
+```text
+WHY THIS RESULT?
 
-Entry point:
+Result #4 of 10
+Ranking profile: semantic-v2
+
+Ranking signals
+────────────────────────────────
+
+Text relevance        3.91
+2nd highest among these 10 returned results
+
+#1  4.43  ━━━━━━━━━━━━━━━━━━━●
+You 3.91  ━━━━━━━━━━━━━━━━●━━━
+#10 0.62  ━━●━━━━━━━━━━━━━━━━━
+
+Semantic similarity   0.84
+5th highest among these 10 returned results
+
+Freshness             0.54
+8th highest among these 10 returned results
+
+[Show ranking path] [Inspect evidence]
+```
+
+Any percentile/rank label must state its comparison set. Do not imply corpus-wide
+or matched-set percentiles when only returned hits were observed.
+
+## 4.4 Explain lens
+
+Add an optional **Explain lens** for scanning the result set.
+
+When enabled, each hit may show a compact subset of intentionally named signals:
+
+```text
+#1 Sony ...
+   lexical  █████████
+   semantic ███████
+
+#2 Bose ...
+   lexical  ██████
+   semantic ████████
+```
+
+The lens is for pattern recognition, not for proving causal importance.
+
+Users can configure which named signals are visible if the profile exposes many.
+
+Normal search remains uncluttered when the lens is off.
+
+## 4.5 Matched-term evidence
+
+Where the engine/backend exposes authoritative match information, show intuitive
+lexical evidence such as:
+
+```text
+Matched terms
+
+"wireless"   title
+"headphones" title, description
+```
+
+Highlight matched terms in snippets when that evidence is available.
+
+Do not infer field-level matching from string coincidence in the frontend.
+
+---
+
+# 5. Compare results
+
+## 5.1 Interaction
+
+A user can pin two hits or choose **Compare with result above**.
+
+Keep both hits visible in the result list while the evidence panel shows the
+comparison.
+
+## 5.2 Default comparison
+
+Do not highlight the largest raw numeric difference across heterogeneous feature
+scales.
+
+Instead show:
+
+- which hit each signal favours by its position within the current returned set;
+- each hit's result-set rank for that signal;
+- raw values as secondary evidence.
+
+Example:
+
+```text
+WHY IS A ABOVE B?
+
+                         Result A       Result B
+
+Lexical score            2nd / 10       7th / 10
+                         favors A
+
+Semantic score           6th / 10       1st / 10
+                                         favors B
+
+Popularity               4th / 10       5th / 10
+                         similar
+
+Initial rank             #3             #17
+Reranked                 yes            yes
+Final position           #3             #8
+
+[Show raw values]
+[Inspect ranking expression]
+```
+
+Do not use color alone to communicate favour/direction.
+
+## 5.3 Causality rule
+
+The comparison may say:
+
+- "A has a higher lexical signal";
+- "B has a higher semantic signal";
+- "A was ranked #3 after first phase";
+
+but must not say:
+
+- "A won because lexical mattered more";
+
+unless the configured ranking expression and available evidence establish that
+relationship.
+
+---
+
+# 6. Investigate layer
+
+The main entry point is:
 
 > **What's wrong with this search?**
 
-Initial guided intents:
+Initial choices:
 
-- A result is ranked too high or too low.
+- I got zero results.
 - A result I expected is missing.
+- A result is ranked too high or too low.
 - Too many or irrelevant results are matching.
 - Vector/hybrid search looks wrong.
 - The query is slow.
-- I want to understand the query itself.
+- I want to understand the query.
 
-The selected intent determines the diagnostic preset and what instrumentation is
-requested.
+The UI should land on a **finding** and make the engine tabs/evidence secondary.
 
-The user should not need to know that a workflow uses
-`trace.explainLevel`, `ranking.listFeatures`, or a profiling depth.
+---
 
-## 3.4 Level 3 — Search engineer
+# 7. Zero-results flow
 
-This level exposes the actual search pipeline explicitly.
+Zero results is a first-class W5 workflow.
 
-The user can inspect:
+## 7.1 Entry state
+
+When a query returns zero hits, Search Lab should offer:
+
+> **Find out why**
+
+Do not require the user to open Analyze manually.
+
+## 7.2 Controlled elimination experiments
+
+The backend may generate safe diagnostic variants that remove one constraint at
+a time.
+
+Example:
+
+```text
+NO RESULTS
+
+Let's find where the result set became empty.
+
+Original query
+  "wireless headphones"
+  region = "EU"
+  in_stock = true
+                                  0 results
+
+Diagnostic experiments
+────────────────────────────────
+
+Remove in_stock                  42 results
+Remove region                   117 results
+Remove "wireless"               18 results
+```
+
+A finding may then say:
+
+> Removing `in_stock = true` is sufficient to produce results.
+
+This is evidence from a rerun, not a claim about logical causality beyond that
+experiment.
+
+The backend, not the browser, must construct valid query variants because
+removing clauses can change semantics for non-monotonic/top-k operators.
+
+## 7.3 Next actions
+
+Allow the user to:
+
+- inspect the exact variant;
+- apply the variant into the experiment lane;
+- inspect the query tree;
+- inspect filters;
+- return to the original query.
+
+---
+
+# 8. Missing-result flow
+
+## 8.1 Selecting the expected document
+
+Do not require a document ID.
+
+Allow:
+
+- document ID;
+- browse/search by title or configured fields;
+- paste a known URL or unique field value when the index supports it.
+
+The selected document is clearly identified before diagnostics run.
+
+## 8.2 Finding-oriented output
+
+Prefer:
+
+```text
+EXPECTED RESULT: "Bose QuietComfort Ultra"
+
+Finding
+────────────────────────────────
+The document is excluded when the region = "EU"
+filter is applied.
+
+Evidence
+────────────────────────────────
+Document exists                         yes
+Query without region filter returns it  yes
+Query with region = "EU returns it      no
+
+[Inspect filter]
+[Open experiment]
+```
+
+When the backend can prove deeper pipeline state, show it:
+
+```text
+Document exists?                  YES
+Satisfies explicit filters?       YES
+Entered retrieval candidate set?  NO   ← first observed divergence
+Initial ranking?                  —
+Reranking?                        —
+Returned?                         NO
+```
+
+Each row must distinguish:
+
+- observed;
+- calculated from observed values;
+- unavailable.
+
+Avoid a separate, noisy badge vocabulary for every provenance detail.
+
+## 8.3 Counterfactual ranking
+
+A forced diagnostic may evaluate ranking signals for a document that did not
+enter the original candidate set.
+
+It must be visually labelled:
+
+> **Counterfactual diagnostic rerun — not the original execution**
+
+Never use counterfactual feature values as proof that the document originally
+matched.
+
+---
+
+# 9. Ranking-problem flow
+
+When the user chooses "A result is ranked too high or too low":
+
+1. select the result;
+2. optionally select the result it should be near/above/below;
+3. show the ranking path;
+4. show named-signal positions across the current result set;
+5. offer deeper feature/phase evidence;
+6. offer an experiment.
+
+Do not begin with a full rank-feature table.
+
+---
+
+# 10. Too-many/irrelevant-results flow
+
+Start with query interpretation and retrieval rather than ranking.
+
+Useful findings include:
+
+- a filter was not applied as expected;
+- a term is matching a broader field set than expected;
+- the effective query is OR-like where the user expected AND-like behavior;
+- a top-k retrieval operator is producing a broad candidate set;
+- query transformation changed the apparent structure.
+
+A friendly query rendering is desirable, for example:
+
+```text
+Matches ANY of:
+  title contains "wireless"
+  body contains "wireless"
+
+AND
+
+category is "headphones"
+```
+
+This rendering must be generated from backend-owned query semantics. The
+frontend must not independently interpret Vespa query syntax.
+
+---
+
+# 11. Vector/hybrid retrieval flow
+
+For nearest-neighbor/hybrid queries, start with friendly concepts:
+
+```text
+Vector retrieval
+
+Approximate search        on
+Candidate target          100
+Returned                  10
+Distance metric           angular
+
+[Compare with exact retrieval]
+```
+
+Technical details can drill into:
+
+- tensor field;
+- query tensor;
+- `approximate`;
+- `targetHits`;
+- `hnsw.exploreAdditionalHits`;
+- distance/closeness;
+- filtering interaction;
+- candidate counts.
+
+## 11.1 Exact comparison
+
+When safe, support:
+
+> **Compare with exact retrieval**
+
+Show:
+
+- overlap@k;
+- hits entering/leaving top-k;
+- rank movement;
+- approximate latency;
+- exact diagnostic latency.
+
+Only call the metric "recall@k" when the exact run is a valid reference for that
+claim.
+
+Warn clearly that exact search may be much more expensive.
+
+---
+
+# 12. Slow-query flow
+
+Begin with the least invasive evidence:
+
+```text
+Query time
+
+Query processing      1.8 ms
+Matching             12.9 ms
+Initial ranking       8.7 ms
+Reranking             5.1 ms
+Fill / summaries      2.9 ms
+```
+
+Then offer targeted reruns:
+
+> **Profile matching — reruns query with tracing**
+
+> **Profile ranking — reruns query with profiling; slower**
+
+The user should never have to select `trace.profileDepth` just to answer "why
+is this slow?"
+
+Inspect can expose the raw Vespa controls and profiler trees.
+
+Diagnostic timing must be labelled separately from normal-run timing.
+
+---
+
+# 13. Experiment lane
+
+Diagnosis should lead naturally to a safe "what if?" loop.
+
+W5 includes a lightweight experiment lane, not a full relevance-evaluation
+platform.
+
+Supported experiments may include:
+
+- change rank profile;
+- add/remove a filter;
+- change supported query input;
+- adjust vector target-hit controls;
+- switch approximate vs exact where valid.
+
+Example:
+
+```text
+ORIGINAL                    EXPERIMENT
+
+semantic-v2                 semantic-v3
+targetHits: 100             targetHits: 300
+
+────────────────────────────────────────
+
+Result overlap               7 / 10
+
+Sony XM6                     #1 → #3
+Bose QC                      #4 → #2
+AirPods Max                  new → #5
+
+Latency                      8.2 ms → 12.7 ms
+```
+
+Every experimental result must be clearly labelled:
+
+> **Experimental rerun**
+
+The user can return to the original run at any time.
+
+W5 does not include judgment sets, NDCG/MRR, statistical evaluation, or
+production A/B testing.
+
+---
+
+# 14. Inspect layer
+
+Inspect exposes the actual search pipeline:
 
 ```text
 Query processing
@@ -189,1009 +674,482 @@ Global-phase ranking
 Fill / summary
 ```
 
-Each stage can expose the relevant engine concepts and values.
+Recommended sections:
 
-At this level it is appropriate to show terms such as:
+- Query
+- Retrieval
+- Ranking
+- Performance
+- Vectors
+- Vespa internals
 
-- query tree;
-- `weakAnd`;
-- WAND;
-- `nearestNeighbor`;
-- target hits;
-- first phase;
-- second phase;
-- global phase;
-- match features;
-- summary features;
-- query features;
-- rank features;
-- score-drop limits;
-- rerank counts.
+These are evidence sections, not the primary way a user chooses a debugging task.
 
-## 3.5 Level 4 — Vespa internals
+## 14.1 Inline definitions
 
-This is the no-abstraction expert view.
-
-It must provide direct access, where available, to:
-
-- raw Vespa request;
-- raw Vespa response;
-- trace output;
-- `trace.level`;
-- `trace.explainLevel`;
-- query blueprint;
-- search iterator tree;
-- `ranking.listFeatures` output;
-- raw match features;
-- raw summary features;
-- matching profiler output;
-- first-phase ranking profiler output;
-- second-phase ranking profiler output;
-- engine-specific diagnostic warnings.
-
-Searchkernel Web may organize this data, but must not hide or reinterpret the raw
-evidence in this view.
-
----
-
-# 4. Diagnostic cost model
-
-Progressive disclosure applies to query cost as well as visual complexity.
-
-Define four conceptual execution modes:
-
-| Mode | Intended use | Engine overhead |
-| --- | --- | --- |
-| Normal | ordinary Search Lab | minimal |
-| Explain | explain returned hits using deliberately exposed features | low |
-| Diagnose | guided troubleshooting with targeted instrumentation | medium |
-| Deep diagnose | Vespa trace/explain/profiling/full feature inspection | high |
-
-The exact backend API does not need to expose these literal names if a better
-typed model emerges, but the cost boundaries must remain.
-
-## 4.1 Normal
-
-Normal search must not automatically request full rank features, trace plans, or
-profiling.
-
-## 4.2 Explain
-
-Prefer already configured `match-features` / `summary-features` and named
-rank-profile functions.
-
-This is the intended inexpensive path for “Why this result?”
-
-## 4.3 Diagnose
-
-Rerun the query with the minimum additional instrumentation required by the
-selected troubleshooting intent.
+Every engine-specific term must have a short definition available in place.
 
 Examples:
 
-- ranking comparison -> selected rank features and phase scores;
-- missing result -> retrieval/query-plan diagnostics;
-- slow query -> trace timestamps and targeted profiling;
-- vector problem -> ANN/exact comparison and vector-specific settings.
+- **weakAnd** — retrieves a bounded set of likely best lexical matches instead of
+  exhaustively scoring every logical match.
+- **target hits** — the requested candidate count for a top-k retrieval operator.
+- **second phase** — reranking applied only to a configured subset of top initial
+  results.
 
-## 4.4 Deep diagnose
+Definitions should be concise and should not hide the raw term from expert users.
 
-Deep diagnostics may alter latency and produce large responses.
+## 14.2 Query tree readability
 
-The UI must state that clearly:
+Provide two representations where possible:
 
-> This reruns the query with expensive diagnostic instrumentation. Diagnostic
-> latency is not representative of normal execution.
+1. backend-generated friendly rendering;
+2. technical/raw tree.
 
-Deep diagnostics are opt-in.
+Example:
 
----
+```text
+Friendly
+Matches title or body for "wireless headphones"
+AND category = "audio"
 
-# 5. Vespa execution model represented by the UI
+Technical
+AND
+├── weakAnd(...)
+└── category:"audio"
+```
 
-The UI must reflect Vespa's actual execution stages rather than inventing a
-generic “relevance score” model.
+## 14.3 Vespa internals
 
-## 5.1 Query processing and transformation
+Expert view should expose, when supported:
 
-Vespa query tracing can expose progressively deeper information about query
-transformation and execution.
-
-Relevant engine controls include:
-
+- raw Vespa request;
+- raw Vespa response;
+- trace;
 - `trace.level`;
-- `trace.query`;
-- `trace.timestamps`;
-- `trace.explainLevel`.
-
-The debugger should be able to show a progression such as:
-
-```text
-User input
-    ↓
-Canonical Search Kernel query
-    ↓
-Vespa request / YQL
-    ↓
-Parsed / transformed query tree
-    ↓
-Dispatched query
-```
-
-The exact representation available at each point depends on the Search Kernel
-adapter and Vespa diagnostics. The UI must label provenance rather than implying
-that all stages are canonical Search Kernel objects.
-
-## 5.2 Retrieval and matching
-
-Retrieval must be shown separately from ranking.
-
-Relevant cases include:
-
-- term retrieval;
-- filters;
-- `weakAnd`;
-- WAND;
-- nearest-neighbor retrieval;
-- combinations of lexical and vector retrieval.
-
-The UI must not present `totalCount` or target-hit values as “all logically
-matching documents” when the retrieval operator only exposes a bounded candidate
-set.
-
-The debugger should be able to show, where evidence exists:
-
-```text
-Corpus
-  ↓
-retrieval / matching
-  ↓
-candidates exposed to first phase
-  ↓
-first-phase ranking
-  ↓
-second-phase selection
-  ↓
-merge
-  ↓
-global phase
-  ↓
-returned hits
-```
-
-Counts must be labelled by their actual semantics.
-
-## 5.3 First-phase ranking
-
-Vespa evaluates the configured first-phase expression over documents exposed to
-ranking by retrieval.
-
-For a selected hit, expose where available:
-
-- first-phase expression or named function;
-- `firstPhase`;
-- `firstPhaseRank`;
-- `firstPhaseMax`;
-- rank-score-drop behavior;
-- component rank features used by the profile.
-
-## 5.4 Second-phase ranking
-
-When configured, expose:
-
-- whether the hit entered the second-phase rerank set;
-- configured total/per-node rerank bounds;
-- `secondPhase`;
-- relevant rank features/functions;
-- score-drop behavior where configured.
-
-Do not imply that every first-phase hit is second-phase ranked.
-
-## 5.5 Global phase
-
-When configured, expose global phase separately from content-node ranking.
-
-Show:
-
-- that the phase is global/container-side;
-- rerank count;
-- normalized/cross-hit features where relevant;
-- final relevance after global reranking.
-
-A first-phase or second-phase score must not be labelled “final score” when
-global-phase changes the result ordering.
-
-## 5.6 Fill / summary
-
-Show summary/fill as a distinct phase when relevant to diagnostics.
-
-This matters because `summary-features` are recalculated during fill for the
-final selected hits, while `match-features` are computed in the match protocol.
-
-The UI should preserve that distinction so users do not assume every displayed
-feature value came from the same phase.
-
----
-
-# 6. Ranking evidence model
-
-## 6.1 Named functions are the preferred human explanation vocabulary
-
-Vespa rank-profile functions provide the best bridge between arbitrary ranking
-power and an understandable UI.
-
-Example profile:
-
-```text
-function lexical_score() {
-    expression: bm25(title) + bm25(body)
-}
-
-function semantic_score() {
-    expression: closeness(field, embedding)
-}
-
-function freshness_score() {
-    expression: ...
-}
-```
-
-If these functions are exposed through match/summary features, the UI can present:
-
-```text
-Ranking signals
-
-Lexical relevance       3.72
-Semantic relevance      0.86
-Freshness               0.54
-```
-
-W5 should encourage this pattern without requiring Search Kernel to understand
-the meaning of arbitrary expression syntax.
-
-## 6.2 Match features
-
-Configured `match-features` are computed during the match protocol and returned
-per hit.
-
-Use them when the diagnostic needs values from the matching/ranking phase and the
-profile intentionally exposes those values.
-
-## 6.3 Summary features
-
-Configured `summary-features` are recalculated during fill for the final hits.
-
-Use them for inexpensive, result-focused explanations when their phase semantics
-are appropriate.
-
-The UI must label feature provenance if the distinction matters.
-
-## 6.4 Full rank-feature dump
-
-`ranking.listFeatures=true` can request the configured/default rank-feature
-dump.
-
-This belongs in Diagnose/Deep diagnose, not Normal.
-
-The feature inspector must support both scalar and tensor feature values.
-
-Do not design the UI under the assumption that every rank feature is a double.
-
----
-
-# 7. Core user workflows
-
-## 7.1 Why this result?
-
-Entry point: each search hit.
-
-Default output should answer:
-
-- which rank profile ran;
-- which named explanation signals are available;
-- what those signals were for this hit;
-- which ranking phases were configured;
-- the final relevance value;
-- whether deeper diagnostics are needed to explain more.
-
-The compact explanation must link to:
-
-> Show ranking details
-
-and ultimately:
-
-> Vespa internals
-
-## 7.2 Why is A above B?
-
-Allow selecting two hits from the same query.
-
-Show side-by-side values for:
-
-- final relevance;
-- first-phase score/rank where available;
-- second-phase score/participation;
-- global-phase evidence where available;
-- named ranking functions;
-- selected match/summary features;
-- query inputs shared by the run.
-
-Example:
-
-| Signal | Hit A | Hit B |
-| --- | ---: | ---: |
-| lexical_score | 5.21 | 4.10 |
-| semantic_score | 0.71 | 0.84 |
-| firstPhase | 5.78 | 4.77 |
-| firstPhaseRank | 3 | 17 |
-| secondPhase | 0.82 | 0.91 |
-| final relevance | 0.89 | 0.84 |
-
-The UI may highlight the largest numerical differences, but must not claim causal
-importance beyond what the ranking expression/evidence establishes.
-
-## 7.3 A result I expected is missing
-
-The guided flow takes a known document identifier plus the original query.
-
-The ideal presentation is a pipeline diagnosis:
-
-```text
-Document exists?                  YES
-Satisfies explicit filters?       YES
-Entered retrieval candidate set?  NO   ← first observed divergence
-First-phase ranked?               —
-Second-phase reranked?            —
-Returned?                         NO
-```
-
-Not every stage can always be proven cheaply. The UI must distinguish:
-
-- observed;
-- inferred from authoritative engine evidence;
-- unavailable.
-
-If direct proof is unavailable, say so.
-
-A forced/counterfactual diagnostic query may be used where supported, but it must
-be clearly labelled as a rerun that differs from the original execution.
-
-Never present counterfactual ranking values as proof that the document matched
-the original query.
-
-## 7.4 Too many / irrelevant results are matching
-
-The guided flow should emphasize retrieval/query interpretation before ranking.
-
-Useful evidence includes:
-
-- effective query tree;
-- tokenization/field scoping where available;
-- filters;
-- retrieval operator type;
-- weakAnd/WAND limits;
-- candidate counts;
-- query transformations.
-
-The likely debugging question is often “what did we retrieve?” rather than “why
-did this score win?”
-
-## 7.5 Vector/hybrid search looks wrong
-
-For `nearestNeighbor` retrieval, expose:
-
-- tensor field;
-- query tensor name/type;
-- distance metric where available;
-- `approximate`;
-- `totalTargetHits` / target-hit controls;
-- `hnsw.exploreAdditionalHits`;
-- distance/closeness features where configured;
-- relevant filtering behavior;
-- candidate counts.
-
-Provide an explicit diagnostic action:
-
-> **Compare with exact retrieval**
-
-Run the equivalent query with `approximate:false` when the backend can do so
-safely.
-
-Report useful comparison metrics such as:
-
-- overlap@k;
-- recall@k when the exact run is a valid reference;
-- hits entering/leaving top-k;
-- rank movement;
-- normal approximate latency;
-- exact diagnostic latency.
-
-The UI must warn that exact retrieval can be much more expensive.
-
-## 7.6 The query is slow
-
-The guided flow should progressively request:
-
-1. ordinary query/search/fill timing;
-2. trace timestamps;
-3. matching profiling;
-4. first-phase ranking profiling;
-5. second-phase ranking profiling.
-
-Vespa exposes targeted profiling using:
-
-- `trace.profiling.matching.depth`;
-- `trace.profiling.firstPhaseRanking.depth`;
-- `trace.profiling.secondPhaseRanking.depth`;
-- the aggregate `trace.profileDepth`.
-
-The UI should render both tree and flat/top-self-time forms when available.
-
-Example:
-
-```text
-Query execution                 31.4 ms
-
-Container / query processing     1.8 ms
-Matching                        12.9 ms
-First-phase ranking              8.7 ms
-Second-phase ranking             5.1 ms
-Fill / summaries                 2.9 ms
-```
-
-Then drill down into an expensive phase:
-
-```text
-First-phase ranking              8.7 ms
-
-bm25(title)                      3.8 ms
-closeness(embedding)             2.9 ms
-attribute(popularity)            0.1 ms
-other expression work            1.9 ms
-```
-
-Do not compare diagnostic-profile latency directly with ordinary latency without
-labelling the instrumentation overhead.
-
-## 7.7 I want to understand the query
-
-Show the query progressively:
-
-- user-facing Search Lab state;
-- canonical Search Kernel request;
-- engine request/YQL where exposed;
-- transformed query tree;
-- content-node blueprint;
-- search iterator tree.
-
-The first view should explain structure visually.
-
-The final view should expose raw evidence.
-
----
-
-# 8. Analyze information architecture
-
-The existing Analyze surface should become the home of W5 rather than adding a
-separate top-level product.
-
-Recommended structure:
-
-```text
-ANALYZE
-
-Overview
-Ranking
-Matching
-Performance
-Vectors
-Vespa internals
-```
-
-## 8.1 Overview
-
-Start with the smallest useful summary:
-
-```text
-Query
-  "wireless headphones"
-
-Results
-  10 returned
-
-Ranking
-  semantic-v2
-  first phase → second phase
-  no global phase
-
-Retrieval
-  hybrid lexical + nearest neighbor
-
-Performance
-  12.4 ms
-
-Diagnostic hints
-  Approximate vector retrieval targets 100 candidates.
-```
-
-Do not show a warning merely because an advanced engine feature is in use.
-Diagnostic hints should identify facts worth investigating, not generate noisy
-“best practice” advice.
-
-## 8.2 Ranking
-
-Contains:
-
-- compact named-signal explanation;
-- phase pipeline;
-- per-hit evidence;
-- hit comparison;
-- raw feature inspector.
-
-## 8.3 Matching
-
-Contains:
-
-- effective query;
-- query tree;
-- filters;
-- candidate-generation information;
-- blueprint;
-- iterator tree at advanced depth.
-
-## 8.4 Performance
-
-Contains:
-
-- normal timing;
-- diagnostic timing;
-- matching profiling;
-- ranking profiling;
-- fill/summary timing.
-
-## 8.5 Vectors
-
-Shown when vector retrieval/ranking is involved.
-
-Contains:
-
-- NN operator configuration;
-- distance/closeness evidence;
-- approximate/exact status;
-- HNSW search controls;
-- filtering interaction;
-- exact-vs-approx comparison.
-
-## 8.6 Vespa internals
-
-Contains raw/near-raw engine evidence and explicit engine parameters.
-
-This tab is intentionally allowed to be dense.
-
----
-
-# 9. Backend contract
-
-W5 must not make the frontend a parser/interpreter for Vespa semantics.
-
-## 9.1 Keep ordinary search canonical
-
-The normal Search Kernel search request/response remains the production semantic
-contract.
-
-Do not add unstable Vespa tracing payloads to every ordinary `SearchResponse`.
-
-## 9.2 Add an explicit diagnostic operation
-
-Introduce a dedicated diagnostic request path in Search Kernel/searchkerneld.
-
-The exact schema/name is implementation work, but conceptually:
-
-```text
-QueryDiagnosticsRequest
-  target / generation
-  canonical query
-  diagnostic intent
-  requested evidence
-  optional selected hit/document ids
-  diagnostic limits
-```
-
-Possible typed diagnostic intents:
-
-```text
-EXPLAIN_HIT
-COMPARE_HITS
-MISSING_DOCUMENT
-MATCHING
-VECTOR_RETRIEVAL
-PERFORMANCE
-QUERY_TRANSFORMATION
-DEEP_ENGINE
-```
-
-The backend maps these intents to engine-specific diagnostic controls.
-
-Do not make the browser construct arbitrary Vespa query parameters as the
-primary product API.
-
-## 9.3 Diagnostic response
-
-Conceptually:
-
-```text
-QueryDiagnostics
-  request_identity
-  target_identity
-  normal_result_reference
-  effective_query
-  retrieval
-  ranking
-  timing
-  hit_evidence[]
-  warnings[]
-  raw_engine_diagnostics?
-```
-
-The normalized response should include only concepts Search Kernel is willing to
-support as a durable diagnostic contract.
-
-## 9.4 Raw Vespa diagnostics are explicitly unstable
-
-Vespa documents trace/explain/profiling output as subject to change.
-
-Therefore:
-
-- keep raw engine diagnostics in an engine-specific/opaque section;
-- version or label their engine provenance;
-- do not silently promote raw Vespa JSON field names into stable Search Kernel
-  semantics;
-- normalize only the subset we intentionally own;
-- preserve raw payloads for expert inspection when practical.
-
-## 9.5 Provenance is mandatory
-
-Every piece of displayed evidence should have an identifiable provenance class:
-
-- canonical Search Kernel request;
-- normalized Search Kernel diagnostic;
-- configured rank-profile feature;
-- raw Vespa diagnostic;
-- UI-derived comparison.
-
-UI-derived comparison means arithmetic or presentation such as “largest
-difference between A and B”; it must not be confused with engine-authored causal
-explanation.
-
-## 9.6 Incarnation safety
-
-Diagnostics operate on the same generation-bound target semantics as ordinary
-search.
-
-A diagnostic rerun against a stale/recreated index must fail through the normal
-canonical stale-incarnation behavior rather than silently running against the
-new incarnation.
-
----
-
-# 10. Friendly explanation rules
-
-The approachable UI must follow strict evidence rules.
-
-## 10.1 Allowed
-
-The UI may:
-
-- rename intentionally configured signals using known display metadata;
-- group rank features by phase;
-- compare numeric values;
-- show rank movement;
-- show whether a phase ran;
-- summarize authoritative pipeline facts;
-- calculate overlap@k from two returned result sets;
-- identify the first stage for which authoritative evidence shows divergence.
-
-## 10.2 Forbidden
-
-The UI must not:
-
-- infer the semantic meaning of arbitrary ranking-expression fragments;
-- claim a feature “caused” a rank difference unless the configured expression
-  establishes that relationship;
-- claim a missing document “did not match” merely because it was not returned;
-- treat approximate NN top-k as exhaustive matching;
-- present a counterfactual diagnostic rerun as the original execution;
-- reconstruct Search Kernel/Vespa query or ranking semantics in TypeScript;
-- hide engine uncertainty behind generated natural-language confidence.
-
-## 10.3 Optional future natural-language assistance
-
-A future assistant could summarize diagnostic evidence in natural language, but
-that is outside W5 closure.
-
-If added later, it must cite/link every claim back to structured evidence and
-must never replace the deterministic diagnostic view.
-
----
-
-# 11. Rank-profile authoring implications
-
-W3 owns rank-profile configuration; W5 consumes it.
-
-W5 should encourage, but not require, profiles to expose meaningful named
-functions for debugging.
-
-A well-debuggable profile might define:
-
-```text
-function lexical_score() { ... }
-function semantic_score() { ... }
-function freshness_score() { ... }
-
-match-features {
-    lexical_score
-    semantic_score
-}
-
-summary-features {
-    freshness_score
-}
-```
-
-Possible future W3 enhancement:
-
-- optional human display labels/descriptions for selected explanation features.
-
-Do not require Search Kernel's core semantic schema to adopt UI-only display
-metadata unless the requirement proves broadly useful outside the web product.
-
----
-
-# 12. Implementation slices
-
-Implement W5 vertically.
-
-## W5.0 — diagnostic transport and evidence model
-
-Deliver:
-
-- dedicated diagnostic operation;
-- generation-bound target semantics;
-- typed diagnostic intent;
-- normalized-vs-raw evidence separation;
-- real-engine fixtures/tests for trace, ranking features, and profiling.
-
-No broad UI should be built before this seam is credible.
-
-## W5.1 — Why this result?
-
-Deliver:
-
-- per-hit entry point;
-- named match/summary feature display;
-- phase-aware score display;
-- compact explanation;
-- raw evidence drill-down.
-
-This is the first user-visible slice.
-
-## W5.2 — compare hits
-
-Deliver:
-
-- two-hit selection;
-- aligned named feature comparison;
-- first/second/final score comparison;
-- tensor-safe feature rendering;
-- difference highlighting with no invented causality.
-
-## W5.3 — guided query troubleshooting
-
-Deliver intent-driven flows for:
-
-- missing result;
-- overmatching/irrelevant matching;
-- query understanding.
-
-Include query tree / blueprint evidence where available.
-
-## W5.4 — query performance debugger
-
-Deliver:
-
-- timing hierarchy;
-- trace timestamps;
+- `trace.explainLevel`;
+- query blueprint;
+- iterator tree;
+- raw match features;
+- raw summary features;
+- `ranking.listFeatures`;
 - matching profiler;
 - first-phase profiler;
-- second-phase profiler;
-- tree/flat representations.
+- second-phase profiler.
 
-## W5.5 — vector/hybrid diagnostics
+Raw Vespa output remains engine-specific and is not itself a stable Search Kernel
+semantic contract.
 
-Deliver:
+---
 
-- NN configuration inspection;
-- distance/closeness evidence;
-- approximate/exact comparison;
-- overlap/recall analysis;
-- filtering/candidate diagnostics.
+# 15. Findings and evidence
 
-## W5.6 — Vespa expert surface
+W5 separates **findings** from **evidence**.
 
-Deliver:
+Example:
 
-- raw engine request/response;
-- raw trace;
+```text
+Finding
+
+The expected document disappears when
+region = "EU" is applied.
+
+Evidence
+
+Without region filter      returned
+With region filter         not returned
+
+[Inspect exact requests]
+```
+
+A finding is a deterministic presentation of evidence, not a free-form inference
+engine.
+
+## 15.1 Evidence labels
+
+Use one simple provenance vocabulary:
+
+- **Profile** — intentionally exposed by the rank profile/schema.
+- **Engine** — reported by Search Kernel/Vespa execution.
+- **Calculated** — deterministic arithmetic/comparison performed by the UI or
+  normalized backend.
+
+Observed/unavailable state should be represented directly in the data row rather
+than layered into a second badge taxonomy.
+
+Keep provenance visually quiet in Explain/Investigate and explicit in Inspect.
+
+---
+
+# 16. Rerun consistency
+
+Diagnostic and experimental reruns may not reproduce the original result set
+because of:
+
+- index mutations;
+- index generation changes;
+- ANN behavior;
+- timing-sensitive state;
+- different diagnostic instrumentation.
+
+The UI must detect and show divergence.
+
+Example:
+
+> **This diagnostic rerun differs from the original search: 2 of the top 10
+> results changed. Evidence below is from the diagnostic rerun.**
+
+Never silently attach rerun evidence to the original result list.
+
+Generation-bound target semantics remain mandatory.
+
+---
+
+# 17. Loading, empty, error, and unsupported states
+
+These are part of W5 closure.
+
+## 17.1 Loading
+
+For diagnostic reruns:
+
+- keep the original results visible;
+- show which evidence is being collected;
+- allow cancellation where backend semantics support it;
+- do not blank the evidence panel.
+
+Example:
+
+```text
+Collecting ranking evidence…
+Original search results remain visible.
+```
+
+## 17.2 No named explanation features
+
+Use the useful baseline state from Section 4.1, not an empty/error panel.
+
+## 17.3 Unsupported capability
+
+Example:
+
+> This Vespa/Search Kernel version does not expose iterator-plan diagnostics for
+> this query.
+
+Offer whatever lower-depth evidence remains available.
+
+## 17.4 Timeout
+
+Example:
+
+> Ranking profiling exceeded the diagnostic timeout. The original search was not
+> affected.
+
+Offer a narrower rerun or lower profiling depth if supported.
+
+## 17.5 Stale incarnation
+
+Use canonical Search Kernel stale-generation behavior and tell the user the index
+was recreated/reopened under a new generation.
+
+Do not silently rerun against the new incarnation.
+
+## 17.6 Partial evidence
+
+A diagnostic may succeed partially.
+
+Show available sections and mark only the unavailable evidence, rather than
+failing the whole investigation.
+
+---
+
+# 18. Accessibility
+
+W5 must not encode meaning only in diagrams, position, or color.
+
+Requirements:
+
+- all pipeline stages are represented as navigable text/structure;
+- tree views support keyboard expansion/collapse;
+- screen readers receive stage names, status, counts, and relationships;
+- compare views include textual "favours A / favours B / similar" labels;
+- Explain lens bars include numeric/text equivalents;
+- focus remains stable when result selection changes;
+- loading updates use appropriate live-region behavior without excessive chatter.
+
+Accessibility applies to technical Inspect views as well as friendly layers.
+
+---
+
+# 19. Sharing and diagnostic bundles
+
+W5 needs explicit sharing semantics.
+
+## 19.1 Shareable URL
+
+A shareable Search Lab/diagnostic URL may contain only non-sensitive,
+user-approved query state that is already part of the normal URL-backed Search
+Lab model.
+
+Do not put into URLs by default:
+
+- document bodies;
+- tensors;
+- raw diagnostic payloads;
+- credentials;
+- arbitrary query feature values that may be sensitive.
+
+## 19.2 Diagnostic bundle
+
+Provide an explicit export/copy action for collaboration/support.
+
+A diagnostic bundle may include:
+
+- Search Kernel version;
+- Vespa/native version;
+- target/index identity excluding secrets;
+- query/ranking configuration;
+- canonical request;
+- normalized diagnostic evidence;
+- optional raw Vespa evidence;
+- rerun/divergence metadata.
+
+The user chooses whether raw document fields/query feature values are included.
+
+## 19.3 Copy as curl
+
+Where the public diagnostic API supports it, provide **Copy as curl** using the
+Search Kernel/searchkerneld API, not a private browser-only endpoint.
+
+Secrets/auth headers must never be embedded automatically.
+
+---
+
+# 20. Diagnostic hints
+
+Hints must be based on observed anomalies or comparisons, not merely on the
+presence of an advanced feature.
+
+Good:
+
+> Only 37 candidates remained after filtering from a target of 100.
+
+Good:
+
+> Exact retrieval found 4 top-10 results that approximate retrieval missed.
+
+Bad:
+
+> Approximate vector retrieval is enabled.
+
+Bad:
+
+> This profile uses second-phase ranking.
+
+A configuration fact is evidence, not automatically a warning.
+
+---
+
+# 21. Implementation order
+
+W5 should be implemented vertically around user value, and UX prototyping should
+not wait for the complete diagnostic transport.
+
+Captured real Vespa traces/fixtures may be used for early UI/task testing.
+
+## W5.0 — UX prototypes and evidence fixtures
+
+Prototype with captured real-engine evidence:
+
+- no-signals Why this result?;
+- rich-signals Why this result?;
+- zero-results flow;
+- missing-result flow;
+- persistent split view.
+
+Run task-based usability tests before freezing the full contract.
+
+## W5.1 — diagnostic transport and evidence model
+
+Implement the companion backend contract:
+
+- generation-bound diagnostic request;
+- findings/evidence model;
+- normalized-vs-raw engine evidence;
+- bounded diagnostic controls.
+
+## W5.2 — Why this result?
+
+Ship:
+
+- persistent evidence panel;
+- useful no-signals state;
+- named-signal context across returned hits;
+- explain lens;
+- matched-term evidence where available;
+- "Make this profile easier to explain."
+
+## W5.3 — zero-results and missing-result investigation
+
+Ship these before broad hit-comparison work because they provide value even when
+rank profiles expose few named features.
+
+## W5.4 — experiment lane
+
+Ship controlled query/ranking/vector reruns with explicit original-vs-experiment
+comparison and divergence labelling.
+
+## W5.5 — hit comparison and ranking investigation
+
+Ship:
+
+- pin/compare;
+- compare-with-result-above;
+- signal position/direction;
+- phase evidence;
+- raw values.
+
+## W5.6 — performance and vector diagnostics
+
+Ship:
+
+- timing drill-down;
+- profiling reruns;
+- ANN/exact comparison;
+- retrieval diagnostics.
+
+## W5.7 — Inspect / Vespa expert surface
+
+Ship:
+
+- query tree;
 - blueprint;
 - iterator tree;
 - raw feature views;
-- explicit low-level diagnostic controls where safe.
+- profiler trees;
+- raw Vespa request/response;
+- low-level controls where safe.
 
 ---
 
-# 13. Verification
+# 22. Usability acceptance
 
-W5 requires real-engine evidence.
+W5 exit criteria include task success, not only correctness constraints.
 
-## 13.1 Unit/component tests
+Test with developers who understand search at a normal application-engineering
+level but are not Vespa specialists.
 
-Cover:
+Representative tasks:
 
-- progressive disclosure;
-- feature scalar/tensor rendering;
-- no-explanation state;
-- phase-presence/absence;
-- hit comparison;
-- provenance labels;
-- diagnostic cost warnings.
+1. Explain what is known about why a returned hit is #4 when the rank profile has
+   no named explanation functions.
+2. Identify which query constraint is sufficient to turn a zero-result query into
+   a non-zero-result query.
+3. Determine the first observed stage at which an expected document disappears.
+4. Compare two adjacent hits and identify which named signals favour each hit
+   without interpreting raw feature scale as importance.
+5. Determine whether approximate NN retrieval is changing the top-10 result set.
+6. Identify the dominant phase of a slow query and reach the underlying profiler
+   evidence.
 
-## 13.2 Contract tests
+Success criteria:
 
-Cover:
+- users can begin each task from Search Lab without knowing a Vespa trace
+  parameter;
+- the correct finding is reached without assistance;
+- users can distinguish original execution from diagnostic/experimental reruns;
+- users can reach the raw evidence when asked;
+- no test requires learning the five-stage Vespa ranking vocabulary before the
+  first useful answer appears.
 
-- diagnostic request/response canonical encoding;
-- unknown/unsupported diagnostic intent;
-- raw diagnostic payload isolation;
-- stale-generation rejection;
-- diagnostic error propagation.
-
-## 13.3 Real-engine integration cases
-
-At minimum:
-
-1. lexical rank profile with named features;
-2. first + second phase;
-3. first + second + global phase if supported in the embedded path;
-4. missing-result investigation;
-5. approximate NN;
-6. approximate vs exact NN comparison;
-7. matching profiler;
-8. first-phase profiler;
-9. second-phase profiler;
-10. restart/reopen followed by identical diagnostic query;
-11. stale incarnation rejected after delete/recreate.
-
-## 13.4 Browser E2E
-
-A representative E2E should prove:
-
-```text
-open real index
-  -> run query
-  -> open Why this result?
-  -> see authoritative named ranking evidence
-  -> compare two hits
-  -> run one guided diagnostic
-  -> drill into Vespa internals
-  -> reload/share state where appropriate
-```
-
-The browser test must use a real `searchkerneld` and real embedded engine path,
-not fixture-only data.
+Track completion time during testing, but do not encode an arbitrary fixed minute
+threshold until baseline usability data exists.
 
 ---
 
-# 14. Performance and safety constraints
+# 23. Engineering correctness constraints
 
-- Normal search must not pay deep-diagnostic cost.
-- Diagnostic response sizes must be bounded.
-- Trace/profile depth must have safe server-side maxima.
-- Large tensors require truncation/preview controls in the UI while preserving an
-  explicit path to full data when feasible.
-- Deep diagnostics must respect normal query timeout/cancellation semantics.
-- Diagnostic reruns must never mutate index state.
-- Raw engine diagnostics must be treated as potentially large and
-  version-dependent.
-- Sensitive query/document data must not be persisted merely to support the
-  debugger unless a separate product decision explicitly introduces saved
-  diagnostic sessions.
+The UX above relies on the companion backend contract.
+
+Non-negotiable rules:
+
+- frontend does not reconstruct Search Kernel/Vespa query semantics;
+- friendly query rendering comes from backend-owned semantics;
+- ordinary search does not pay deep-diagnostic cost;
+- diagnostic queries are opt-in reruns;
+- arbitrary rank expressions are not given invented semantic explanations;
+- counterfactual reruns are always labelled;
+- approximate top-k is not presented as exhaustive matching;
+- raw Vespa diagnostics remain engine-specific/unstable;
+- target/generation semantics apply to every diagnostic rerun;
+- large tensors and diagnostic payloads are bounded;
+- diagnostic reruns never mutate index state.
+
+See `W5 — Query Diagnostics Backend Contract.md` for the transport and evidence
+model.
 
 ---
 
-# 15. Explicit non-goals
+# 24. Explicit non-goals
 
 W5 is not:
 
 - a generic Vespa administration console;
 - a distributed Vespa cluster debugger;
-- a replacement for application-level observability;
+- a generic log viewer;
+- a replacement for application observability;
 - an offline relevance-evaluation suite;
 - judgment-set management;
 - NDCG/MRR experiment management;
 - production A/B testing;
-- a generic log viewer;
-- distributed tracing across external services;
 - an LLM that guesses why ranking happened;
 - a frontend implementation of query/ranking semantics.
 
-Those may become separate products or later milestones.
+The experiment lane is intentionally lightweight and query-local.
 
 ---
 
-# 16. Milestone exit criteria
+# 25. Milestone exit criteria
 
-W5 is complete when all of the following are true:
+W5 is complete when:
 
-- ordinary Search Lab remains uncluttered and does not enable expensive
-  diagnostics by default;
-- every result has a useful `Why this result?` path;
-- approachable explanations use only authoritative exposed signals;
-- users can compare ranking evidence between two hits;
-- users can launch guided troubleshooting for missing results, overmatching,
-  vector retrieval, slow queries, and query interpretation;
-- retrieval and ranking are shown as separate concepts;
-- first-phase, second-phase, global-phase, and fill behavior are represented
-  accurately when present;
-- vector diagnostics support approximate-vs-exact comparison where supported;
-- query performance diagnostics can expose matching and ranking profiler data;
-- diagnostic modes are opt-in and cost-tiered;
-- the UI never fabricates explanation semantics for arbitrary rank expressions;
-- every friendly abstraction has a direct evidence drill-down;
-- expert users can access raw Vespa trace/plan/feature/profiling evidence;
-- unstable Vespa diagnostic structures are not accidentally promoted into the
-  stable Search Kernel search contract;
-- diagnostic execution obeys canonical target/generation semantics;
-- real-engine browser evidence covers the principal workflow.
-
----
-
-# 17. Vespa capability references
-
-The implementation should be grounded in the current Vespa behavior documented
-by the upstream project, especially:
-
-- Query API tracing and profiling:
-  https://docs.vespa.ai/en/reference/api/query.html
-- Phased ranking:
-  https://docs.vespa.ai/en/ranking/phased-ranking.html
-- Ranking basics / rank-profile functions:
-  https://docs.vespa.ai/en/basics/ranking.html
-- Rank feature reference:
-  https://docs.vespa.ai/en/reference/ranking/rank-features.html
-- Schema reference for match-features / summary-features:
-  https://docs.vespa.ai/en/reference/schemas/schemas.html
-- YQL nearest-neighbor annotations:
-  https://docs.vespa.ai/en/reference/querying/yql.html
-- Nearest-neighbor diagnostic/tuning guide:
-  https://docs.vespa.ai/en/querying/nearest-neighbor-search-guide.html
-
-When Vespa diagnostic output differs from this spec, prefer the actual supported
-engine behavior and update this specification rather than adding frontend
-heuristics.
+- Search Lab remains simple with diagnostics closed;
+- Explain → Investigate → Inspect is the visible mental model;
+- evidence appears in a persistent result-adjacent panel;
+- Why this result? is useful even with no named rank-profile signals;
+- the UI teaches users how to make a rank profile more explainable;
+- named signal values always have an explicit comparison context;
+- Explain lens supports scanning multiple hits;
+- adjacent-hit comparison is one action away;
+- zero results has a guided controlled-elimination flow;
+- expected documents can be selected without requiring document IDs;
+- missing-result diagnosis reports findings backed by explicit evidence;
+- query experiments are clearly separated from original execution;
+- diagnostic rerun divergence is visible;
+- vector workflows can compare approximate and exact retrieval where supported;
+- slow-query workflows progressively request profiler evidence;
+- every friendly abstraction drills into authoritative evidence;
+- technical terms have inline definitions;
+- loading, timeout, unsupported, partial-evidence, and stale-generation states are
+  designed and tested;
+- tree/pipeline/compare UIs meet keyboard and screen-reader requirements;
+- users can export a diagnostic bundle and copy a reproducible public-API request
+  without leaking credentials;
+- task-based testing with non-Vespa-specialist developers demonstrates that the
+  primary investigations can be completed without assistance;
+- expert users can still reach raw Vespa trace/plan/feature/profiling evidence.
 
 ---
 
-# 18. Product principle to preserve
+# 26. Product principle to preserve
 
-W5 should make Search Kernel feel simpler than Vespa without making it less
-powerful.
-
-The user journey should therefore be:
+The journey is:
 
 ```text
 search
-  → explain
-  → troubleshoot
+  → explain what we know
+  → investigate the user's problem
+  → experiment safely
   → inspect the search pipeline
   → inspect Vespa itself
 ```
@@ -1201,7 +1159,7 @@ not:
 ```text
 learn Vespa
   → understand the debugger
-  → maybe diagnose the search
+  → maybe find the problem
 ```
 
 That progressive path is the product.
