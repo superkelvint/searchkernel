@@ -38,7 +38,7 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
         &text_schema().rank_profile(
             RankProfile::new("diagnostic")
                 .first_phase("query(weight)")
-                .query_input("private_tensor", "tensor<float>(x[2])"),
+                .query_input("private_tensor", "tensor<float>(x[512])"),
         ),
     );
     let engine = Engine::open(&data, &config).expect("open diagnostic fixture");
@@ -57,9 +57,9 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
     .query_feature("weight", 2.75)
     .query_tensor(
         "private_tensor",
-        TensorValue::dense("tensor<float>(x[2])", vec![9182.5, 8371.25]),
+        TensorValue::dense("tensor<float>(x[512])", vec![9182.5; 512]),
     )
-    .rank_property("private_property", "secret_value".repeat(8192))
+    .rank_property("private_property", "secret_value".repeat(16))
     .sort(SortField::descending("qty"))
     .limit(3)
     .timeout(Duration::from_secs(30));
