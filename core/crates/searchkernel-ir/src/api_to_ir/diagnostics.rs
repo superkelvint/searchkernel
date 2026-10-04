@@ -36,6 +36,9 @@ pub fn query_diagnostics_to_ir(
         .experiment()
         .map(|value| context.search_to_ir(value))
         .transpose()?;
+    if crate::wire::v1::search_request_ir_to_api(&request).len() > 262_144 || experiment.as_ref().is_some_and(|request| crate::wire::v1::search_request_ir_to_api(request).len() > 262_144) {
+        return Err(invalid("request", "canonical diagnostic requests must not exceed 262144 encoded bytes"));
+    }
     if (intent == DiagnosticIntent::Experiment) != experiment.is_some() {
         return Err(invalid(
             "experiment",
@@ -113,6 +116,20 @@ pub fn query_diagnostics_to_ir(
         }
     }
     let mut limits = DiagnosticLimits::default();
+    if requested_evidence.is_empty() {
+        use DiagnosticSection::*;
+        requested_evidence = match intent {
+            DiagnosticIntent::ExplainHit => vec![Query, Ranking, MatchedTerms],
+            DiagnosticIntent::ZeroResults | DiagnosticIntent::MissingDocument => vec![Query, Retrieval],
+            DiagnosticIntent::RankingComparison => vec![Ranking],
+            DiagnosticIntent::Overmatching => vec![Query, Retrieval, MatchedTerms],
+            DiagnosticIntent::QueryInterpretation => vec![Query],
+            DiagnosticIntent::VectorRetrieval => vec![Vectors, Retrieval, Ranking],
+            DiagnosticIntent::Performance => vec![Timing],
+            DiagnosticIntent::DeepEngine => vec![Trace, Blueprint, IteratorTree, RawEngine],
+            DiagnosticIntent::Experiment => vec![Ranking, Retrieval, Timing],
+        };
+    }
     if let Some(value) = input.limits() {
         macro_rules! limit {
             ($name:ident, $max:expr) => {

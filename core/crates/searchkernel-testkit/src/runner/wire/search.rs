@@ -969,6 +969,7 @@ impl WireBuilder {
         Ok(api::SearchRequest::create(
             &mut self.builder,
             &api::SearchRequestArgs {
+                diagnostic_source: input.get("diagnostic_source").and_then(JsonValue::as_bool).unwrap_or(false),
                 query: query_source,
                 search_fields,
                 filters,

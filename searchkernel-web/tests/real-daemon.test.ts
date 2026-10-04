@@ -58,7 +58,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     const profiled = await index.queryDiagnostics(profileDiagnostic)
     for (const section of profileDiagnostic.requestedEvidence) expect(profiled.evidence.find(item => item.section === section)?.status).toBe(DiagnosticStatus.Available)
     expect(profiled.rawEngine[0]?.version).toBe('2300ef0412bdb76f227ae3b497c8ca5e73c5da4e')
-    const truncatedRequest = new QueryDiagnosticsRequestT(canonical, DiagnosticIntent.DeepEngine, [DiagnosticSection.Trace])
+    const truncatedRequest = new QueryDiagnosticsRequestT(canonical, DiagnosticIntent.DeepEngine, [DiagnosticSection.Trace, DiagnosticSection.RawEngine])
     truncatedRequest.limits = new DiagnosticLimitsT(); truncatedRequest.limits.rawBytes = new OptionalUInt32T(128)
     const truncated = await index.queryDiagnostics(truncatedRequest)
     expect(truncated.rawEngine[0]?.status).toBe(DiagnosticStatus.Truncated)

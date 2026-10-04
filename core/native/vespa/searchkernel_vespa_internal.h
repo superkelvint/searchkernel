@@ -604,6 +604,7 @@ struct LocalHitState {
 struct LocalSearchResultState {
     std::string diagnostic_trace;
     bool diagnostic_truncated = false;
+    bool diagnostic_features_truncated = false;
     double diagnostic_matching_seconds = 0.0;
     double diagnostic_summary_seconds = 0.0;
     double diagnostic_query_seconds = 0.0;

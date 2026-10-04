@@ -4265,7 +4265,27 @@ public:
         if (features.values.size() != features.names.size() * reply->hits.size()) {
             throw std::runtime_error("native match-feature matrix shape mismatch");
         }
-        result.match_feature_names = features.names;
+        std::vector<size_t> feature_columns;
+        size_t feature_bytes_remaining = options.diagnostic_raw_bytes;
+        for (size_t column = 0; column < features.names.size(); ++column) {
+            size_t bytes = 0;
+            bool fits = true;
+            if (options.diagnostic_raw_bytes != 0) {
+                for (size_t row = 0; row < reply->hits.size(); ++row) {
+                    const auto &value = features.values[row * features.names.size() + column];
+                    if (value.is_data()) {
+                        const auto data = value.as_data();
+                        if (data.size() > feature_bytes_remaining - bytes) { fits = false; break; }
+                        bytes += data.size();
+                    }
+                }
+            }
+            if (fits) {
+                result.match_feature_names.push_back(features.names[column]);
+                feature_columns.push_back(column);
+                if (options.diagnostic_raw_bytes != 0) feature_bytes_remaining -= bytes;
+            } else { result.diagnostic_features_truncated = true; }
+        }
         std::vector<size_t> live_hit_rows;
         live_hit_rows.reserve(reply->hits.size());
         result.hits.reserve(reply->hits.size());
@@ -4284,8 +4304,8 @@ public:
         // never use the original reply row as the result accessor row.
         result.match_feature_values.reserve(result.match_feature_names.size() * live_hit_rows.size());
         for (const size_t row : live_hit_rows) {
-            for (size_t feature = 0; feature < result.match_feature_names.size(); ++feature) {
-                const auto &value = features.values[row * result.match_feature_names.size() + feature];
+            for (const size_t feature : feature_columns) {
+                const auto &value = features.values[row * features.names.size() + feature];
                 result.match_feature_values.push_back({value});
             }
         }

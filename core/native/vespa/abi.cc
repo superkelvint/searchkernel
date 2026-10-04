@@ -2970,7 +2970,7 @@ extern "C" int32_t sk_diagnostic_tensor_decode(
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out_type_length) *out_type_length = 0;
     if (out_cell_count) *out_cell_count = 0;
-    return guarded(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         if (!data || !type_spec || !cells || !out_type_length || !out_cell_count ||
             length == 0 || length > 262144 || cell_capacity == 0 || cell_capacity > 4096) {
             throw std::invalid_argument("diagnostic tensor arguments exceed bounds");
@@ -3006,7 +3006,7 @@ extern "C" int32_t sk_generic_search_result_diagnostics(
     }
     *out_trace = reinterpret_cast<const uint8_t *>(result->diagnostic_trace.data());
     *out_length = static_cast<uint32_t>(result->diagnostic_trace.size());
-    *out_truncated = result->diagnostic_truncated ? 1U : 0U;
+    *out_truncated = (result->diagnostic_truncated ? 1U : 0U) | (result->diagnostic_features_truncated ? 2U : 0U);
     *out_matching_seconds = result->diagnostic_matching_seconds;
     *out_summary_seconds = result->diagnostic_summary_seconds;
     *out_query_seconds = result->diagnostic_query_seconds;

@@ -371,7 +371,8 @@ impl VespaBackend {
         }
         let errors = portable_errors_from_native_issues(&result.issues);
         let native_diagnostics = result.diagnostics;
-        let timing = native_diagnostics
+        let feature_payload_truncated = native_diagnostics.as_ref().is_some_and(|value| value.features_truncated);
+        let mut timing = native_diagnostics
             .as_ref()
             .map(|value| searchkernel_ir::SearchTiming {
                 query_time_seconds: Some(value.query_seconds),
@@ -402,6 +403,18 @@ impl VespaBackend {
                         ] {
                             if engine_tree_has_key(&tree, key) {
                                 observed_sections.push(section);
+                            }
+                            if let Some(time) = timing.as_mut() {
+                                let measurements = engine_profile_elapsed(&tree, key);
+                                if !measurements.is_empty() {
+                                    let name = match section {
+                                        searchkernel_ir::DiagnosticSection::MatchingProfiler => Some("matching_profile_elapsed_seconds_sum"),
+                                        searchkernel_ir::DiagnosticSection::FirstPhaseProfiler => Some("first_phase_profile_elapsed_seconds_sum"),
+                                        searchkernel_ir::DiagnosticSection::SecondPhaseProfiler => Some("second_phase_profile_elapsed_seconds_sum"),
+                                        _ => None,
+                                    };
+                                    if let Some(name) = name { time.metadata.insert(name.into(), searchkernel_ir::Value::Float64(measurements.iter().sum::<f64>() / 1000.0)); }
+                                }
                             }
                         }
                         observed_sections.push(searchkernel_ir::DiagnosticSection::RawEngine);
@@ -446,7 +459,7 @@ impl VespaBackend {
                 timing,
                 errors,
                 trace: None,
-                metadata: std::collections::BTreeMap::new(),
+                metadata: if feature_payload_truncated { std::collections::BTreeMap::from([("diagnostic_feature_truncated".into(), searchkernel_ir::Value::Bool(true))]) } else { std::collections::BTreeMap::new() },
             },
             raw_engine,
             observed_sections,
@@ -464,6 +477,19 @@ fn engine_tree_has_key(value: &serde_json::Value, key: &str) -> bool {
             values.iter().any(|value| engine_tree_has_key(value, key))
         }
         _ => false,
+    }
+}
+
+// ExecutionProfiler::report at the pinned revision reports a root elapsed
+// total in milliseconds. Sum roots across threads, never descendant totals.
+fn engine_profile_elapsed(value: &serde_json::Value, key: &str) -> Vec<f64> {
+    match value {
+        serde_json::Value::Object(values) => values.iter().flat_map(|(name, value)| {
+            if name == key { value.get("total_time_ms").and_then(serde_json::Value::as_f64).filter(|value| value.is_finite() && *value >= 0.0).into_iter().collect() }
+            else { engine_profile_elapsed(value, key) }
+        }).collect(),
+        serde_json::Value::Array(values) => values.iter().flat_map(|value| engine_profile_elapsed(value, key)).collect(),
+        _ => Vec::new(),
     }
 }
 

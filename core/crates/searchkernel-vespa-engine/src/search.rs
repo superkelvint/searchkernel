@@ -157,6 +157,7 @@ pub struct SearchResult {
 pub struct SearchDiagnostics {
     pub trace: String,
     pub truncated: bool,
+    pub features_truncated: bool,
     pub matching_seconds: f64,
     pub summary_seconds: f64,
     pub query_seconds: f64,

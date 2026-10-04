@@ -3,6 +3,9 @@ use crate::{model::*, Backend, GetInput, IndexContext, PortableError, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
+#[cfg(test)]
+mod tests;
+
 pub const SOURCE_RUN_METADATA_KEY: &str = "searchkernel.source_run";
 
 /// A deterministic identity over canonical resolved request bytes, not an
@@ -24,11 +27,12 @@ pub fn returned_hits(node: &ResultNode) -> Vec<&Hit> {
 
 pub fn execution_complete(result: &SearchResult) -> bool {
     result.errors.is_empty()
+        && !result.coverage.as_ref().is_some_and(|value| value.full == Some(false))
         && !result
             .coverage
             .as_ref()
             .and_then(|value| value.degraded.as_ref())
-            .is_some_and(|value| value.timeout == Some(true) || value.ann_timeout == Some(true))
+            .is_some_and(|value| value.timeout == Some(true) || value.ann_timeout == Some(true) || value.adaptive_timeout == Some(true))
 }
 
 pub fn compare_runs(
@@ -53,7 +57,7 @@ pub fn compare_runs(
     DiagnosticComparison {
         baseline_execution_id: baseline.execution.id.clone(),
         rerun_execution_id: execution.id.clone(),
-        results_changed: Some(
+        results_changed: (baseline.execution.complete && execution.complete).then_some(
             baseline.result.total_hits != result.total_hits
                 || baseline_hits
                     .iter()
@@ -138,7 +142,7 @@ fn hit_evidence(
     signals: &BTreeSet<String>,
 ) -> (Vec<DiagnosticHit>, bool) {
     let hits = returned_hits(&result.root);
-    let mut truncated = hits.len() > limits.feature_hit_count as usize;
+    let mut truncated = hits.len() > limits.feature_hit_count as usize || result.metadata.get("diagnostic_feature_truncated") == Some(&Value::Bool(true));
     let displayed = &hits[..hits.len().min(limits.feature_hit_count as usize)];
     let mut remaining_cells = limits.tensor_cells as usize;
     let hits = displayed
@@ -333,6 +337,17 @@ fn exact_variant(request: &SearchRequestIr, limits: &DiagnosticLimits) -> Option
     Some(variant)
 }
 
+fn positive_clause_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> {
+    let QueryIr::Typed(expression) = request.query() else { return Vec::new() };
+    let QueryExprKindIr::And(clauses) = &expression.kind else { return Vec::new() };
+    clauses.iter().enumerate().filter(|(_, clause)| !matches!(clause.kind, QueryExprKindIr::Not(_))).map(|(index, _)| {
+        let mut variant = request.clone();
+        let remaining: Vec<_> = clauses.iter().enumerate().filter(|(i, _)| *i != index).map(|(_, clause)| clause.clone()).collect();
+        variant.query = match remaining.len() { 0 => QueryIr::MatchAll, 1 => QueryIr::Typed(Box::new(remaining.into_iter().next().unwrap_or(QueryExprIr { kind: QueryExprKindIr::True, annotations: Default::default() }))), _ => QueryIr::Typed(Box::new(QueryExprIr { kind: QueryExprKindIr::And(remaining), annotations: expression.annotations.clone() })) };
+        (format!("Removing positive AND clause {}", index + 1), variant)
+    }).collect()
+}
+
 fn bounded_request(
     request: &SearchRequestIr,
     limits: &DiagnosticLimits,
@@ -380,13 +395,19 @@ pub fn execute(
     } else {
         DiagnosticExecutionKind::DiagnosticRerun
     };
-    let acquired =
-        backend.search_diagnostic(request.clone(), &input.requested_evidence, &input.limits)?;
-    execution.complete = execution_complete(&acquired.result);
+    let (acquired, timed_out) = match backend.search_diagnostic(request.clone(), &input.requested_evidence, &input.limits) {
+        Ok(result) => (result, false),
+        Err(error) if error.code == crate::ErrorCode::DeadlineExceeded => (DiagnosticSearchResult {
+            result: SearchResult::empty(TotalHits { value: 0, relation: TotalHitsRelation::Unknown }), raw_engine: Vec::new(), observed_sections: Vec::new(),
+        }, true),
+        Err(error) => return Err(error),
+    };
+    execution.complete = !timed_out && execution_complete(&acquired.result);
     let comparison = source
         .as_ref()
         .map(|source| compare_runs(source, &execution, &acquired.result, request.offset()));
     let mut warnings = Vec::new();
+    if timed_out { warnings.push("Diagnostic acquisition exceeded its timeout. The original search was not affected; no complete rerun evidence was obtained.".into()); }
     if input.source_run_id.is_some() && source.is_none() {
         warnings.push("Original execution evidence has expired or was too large to retain. This evidence comes from a diagnostic rerun.".into());
     }
@@ -479,6 +500,7 @@ pub fn execute(
     let mut timing = evidence("timing", DiagnosticSection::Timing, &execution,
         "Timing from this diagnostic rerun. Original timing remains in the original search response.");
     if let Some(time) = &acquired.result.timing {
+        timing.values.extend(time.metadata.clone());
         for (name, value) in [
             ("query_time_seconds", time.query_time_seconds),
             ("search_time_seconds", time.search_time_seconds),
@@ -509,6 +531,7 @@ pub fn execute(
         .values
         .insert("retrieval_candidate_count".into(), Value::Null);
     let mut evidence_items = vec![effective, retrieval, ranking, timing];
+    if timed_out { for item in &mut evidence_items { if item.section != DiagnosticSection::Query { item.status = DiagnosticStatus::TimedOut; } } }
     if input.intent == DiagnosticIntent::VectorRetrieval {
         let mut vector = evidence("vectors", DiagnosticSection::Vectors, &execution,
             "Canonical vector request configuration. Approximate is a requested mode, not proof of exhaustive matching or of the engine's actual retrieval algorithm. Candidate counts are unavailable.");
@@ -584,6 +607,13 @@ pub fn execute(
         evidence_items.push(vector);
     }
     let mut findings = Vec::new();
+    if let Some(time) = &acquired.result.timing {
+        if let (Some(Value::Float64(first)), Some(Value::Float64(second))) = (time.metadata.get("first_phase_profile_elapsed_seconds_sum"), time.metadata.get("second_phase_profile_elapsed_seconds_sum")) {
+            if first != second {
+                findings.push(DiagnosticFinding { code: "measured_ranking_phase_comparison".into(), message: format!("Summed measured {}-phase profiler elapsed time exceeded {}-phase time in this rerun ({first:.6}s first phase; {second:.6}s second phase). These are sums across engine threads, not wall-clock query latency.", if first > second { "first" } else { "second" }, if first > second { "second" } else { "first" }), evidence_ids: vec!["timing".into()] });
+            }
+        }
+    }
     let mut expected_document = None;
     if let Some(id) = &input.expected_document_id {
         let get = crate::resolve_get(
@@ -593,7 +623,7 @@ pub fn execute(
                 projection: Some(Vec::new()),
             },
         )?;
-        let exists = backend.get(get)?.document.is_some();
+        let exists = if timed_out { false } else { backend.get(get)?.document.is_some() };
         let returned = returned_hits(&acquired.result.root)
             .iter()
             .any(|hit| &hit.id == id);
@@ -602,9 +632,11 @@ pub fn execute(
         item.values
             .insert("document_exists".into(), Value::Bool(exists));
         item.values.insert("returned".into(), Value::Bool(returned));
+        if !timed_out && (!exists || !returned) { item.values.insert("first_observed_negative_stage".into(), Value::String(if exists { "Returned" } else { "Document exists" }.into())); }
+        if timed_out { item.status = DiagnosticStatus::TimedOut; item.values.clear(); }
         evidence_items.push(item);
         let observed = |value| {
-            if value {
+            if timed_out { DiagnosticObservation::Unavailable } else if value {
                 DiagnosticObservation::ObservedYes
             } else {
                 DiagnosticObservation::ObservedNo
@@ -632,7 +664,7 @@ pub fn execute(
             })
             .collect(),
         });
-        if !exists || !returned {
+        if !timed_out && (!exists || !returned) {
             findings.push(DiagnosticFinding { code: if exists { "expected_document_not_returned" } else { "expected_document_absent" }.into(),
                 message: if exists { "The expected document exists but was not returned by this diagnostic rerun. Its matching and ranking stages were not observed." }
                     else { "A fresh document read did not find the expected document." }.into(), evidence_ids: vec!["expected-document".into()] });
@@ -643,10 +675,11 @@ pub fn execute(
     {
         for (i, (description, variant)) in filter_variants(&input.request)
             .into_iter()
+            .chain(positive_clause_variants(&input.request))
             .take(input.limits.variant_count as usize)
             .enumerate()
         {
-            let id = format!("filter-variant-{}", i + 1);
+            let id = format!("constraint-variant-{}", i + 1);
             let variant = match bounded_request(&variant, &input.limits, deadline) {
                 Ok(value) => value,
                 Err(_) => {
@@ -684,7 +717,7 @@ pub fn execute(
                     if !execution_complete(&result) {
                         item.status = DiagnosticStatus::TimedOut;
                         execution.complete = false;
-                    } else if execution_complete(&acquired.result)
+                    } else if !timed_out && execution_complete(&acquired.result)
                         && ((acquired.result.total_hits.value == 0 && result.total_hits.value > 0)
                             || (expected_returned
                                 && input.expected_document_id.as_ref().is_some_and(|id| {
@@ -694,7 +727,7 @@ pub fn execute(
                                 })))
                     {
                         findings.push(DiagnosticFinding {
-                            code: "filter_variant_sufficient".into(),
+                            code: "constraint_variant_sufficient".into(),
                             message: format!(
                                 "{description} is sufficient to {} in this diagnostic rerun.",
                                 if expected_returned {
@@ -872,6 +905,8 @@ pub fn execute(
             item.values
                 .insert("raw_evidence_section".into(), Value::String("Trace".into()));
         }
+        if timed_out { item.status = DiagnosticStatus::TimedOut; }
+        else if raw.is_none() && raw_engine.iter().any(|item| item.status == DiagnosticStatus::Truncated) { item.status = DiagnosticStatus::Truncated; item.message = "Raw diagnostic acquisition was truncated; this section's availability could not be established.".into(); }
         evidence_items.push(item);
     }
     Ok(QueryDiagnosticsResult {

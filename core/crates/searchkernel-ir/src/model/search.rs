@@ -80,6 +80,8 @@ impl SearchRequestIr {
         self.diagnostic_source
     }
 
+    pub fn with_diagnostic_source(mut self, retain: bool) -> Self { self.diagnostic_source = retain; self }
+
     pub fn search_fields(&self) -> &[SearchFieldIr] {
         &self.search_fields
     }
@@ -246,6 +248,7 @@ impl SearchRequestIr {
             timeout: _,
             prefix_policy: _,
             typo_policy: _,
+            diagnostic_source: _,
         } = self;
         &[
             "query",
