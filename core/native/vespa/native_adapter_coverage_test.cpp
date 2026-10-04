@@ -19,6 +19,30 @@
 namespace {
 
 void highlighting_decoder_unit() {
+    const auto clipped_annotation = searchkernel::native_highlighting::decode(
+        "\x1e" "before \x1fspeaker\x1f \xEF\xBF\xB9Long\xEF\xBF\xBAlong\x1e");
+    assert(clipped_annotation && clipped_annotation->size() == 1);
+    assert((*clipped_annotation)[0].text == "before speaker Long");
+    assert((*clipped_annotation)[0].matches.size() == 1);
+    assert((*clipped_annotation)[0].matches[0].start_byte == 7);
+    assert((*clipped_annotation)[0].matches[0].end_byte == 14);
+    const auto clipped_surface = searchkernel::native_highlighting::decode("before \xEF\xBF\xB9trailing\x1e");
+    assert(clipped_surface && clipped_surface->at(0).text == "before trailing");
+    const auto clipped_prefix = searchkernel::native_highlighting::decode("\x1e" "an\xEF\xBF\xBB intro \x1f" "headphones\x1f");
+    assert(clipped_prefix && clipped_prefix->at(0).text == " intro headphones");
+    assert(clipped_prefix->at(0).matches.at(0).start_byte == 7);
+    assert(clipped_prefix->at(0).matches.at(0).end_byte == 17);
+    const auto clipped_prefix_surface = searchkernel::native_highlighting::decode("\x1e" "An\xEF\xBF\xBA" "an\xEF\xBF\xBB next");
+    assert(clipped_prefix_surface && clipped_prefix_surface->at(0).text == "An next");
+    for (const auto malformed : {
+             "\xEF\xBF\xB9Long\xEF\xBF\xBAlong",
+             "\xEF\xBF\xB9Long",
+             "\x1f\xEF\xBF\xB9Long\xEF\xBF\xBAlong\x1e"}) {
+        bool rejected = false;
+        try { (void)searchkernel::native_highlighting::decode(malformed); }
+        catch (const std::runtime_error&) { rejected = true; }
+        assert(rejected);
+    }
     const auto decoded = searchkernel::native_highlighting::decode(
         "prefix\x1f" "Brown" "\x1f " "\x1f" "fox" "\x1f");
     assert(decoded);

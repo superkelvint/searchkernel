@@ -20,10 +20,10 @@ export function Documents() {
   const state = restored.state
   const prepared = useMemo(() => { try { return { value: client.prepareSearch(state) } } catch (error) { return { error } } }, [client, state])
   const selected = useMemo(() => { try { return { id: documentToken ? decodeDocumentId(documentToken) : legacyId } } catch (error) { return { error } } }, [documentToken, legacyId])
-  const search = useQuery({ queryKey: ['document-browse', index.id, index.generation, prepared.value?.canonical], queryFn: clientQuery(signal => client.executeSearch(index.id, prepared.value!, { signal })), ...clientQueryDefaults, enabled: !!prepared.value && !restored.error })
-  const document = useQuery({ queryKey: ['document', index.id, index.generation, selected.id], queryFn: clientQuery(async signal => (await client.getDocument(index.id, selected.id!, { signal })) ?? null), ...clientQueryDefaults, enabled: selected.id !== undefined })
+  const search = useQuery({ queryKey: ['document-browse', index.id, index.generation, prepared.value?.canonical], queryFn: clientQuery(signal => client.executeSearch(index.target ?? index.id, prepared.value!, { signal })), ...clientQueryDefaults, enabled: !!prepared.value && !restored.error })
+  const document = useQuery({ queryKey: ['document', index.id, index.generation, selected.id], queryFn: clientQuery(async signal => (await client.getDocument(index.target ?? index.id, selected.id!, { signal })) ?? null), ...clientQueryDefaults, enabled: selected.id !== undefined })
   const rows = search.data?.hits ?? []
-  const update = (patch: Parameters<typeof updateSearchState>[1]) => setParams(encodeSearchParams(updateSearchState(state, patch)))
+  const update = (patch: Parameters<typeof updateSearchState>[1]) => setParams(() => { const next = encodeSearchParams(updateSearchState(state, patch)); if (index.generation) next.set('generation', index.generation); return next })
   const open = (id: string) => { setCreating(false); navigate(`${documentPath(index.id, id)}?${params}`) }
   const close = () => navigate(`/indexes/${encodeURIComponent(index.id)}/data/documents?${params}`)
   const writable = capabilities.capabilities?.documents.write === true

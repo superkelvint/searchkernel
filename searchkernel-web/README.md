@@ -17,8 +17,7 @@ reach canonical validation. Browsing uses match-all for an empty query and real
 text search otherwise. Documents are read through the same generation-bound
 handle. Stale handles are reported without automatic reconnection.
 
-Metrics, health, diagnostics, query inspection and linguistic analysis are
-unavailable in this slice. No fixture values fill gaps in daemon output. Large
+Metrics, query inspection and linguistic analysis remain unavailable. No fixture values fill gaps in daemon output. Large
 integers and byte/tensor payloads use tagged JSON display values, preserving
 precision and payloads.
 
@@ -70,3 +69,35 @@ clears results from the old incarnation after an explicit apply or reopen.
 Plans expire on process restart or bounded-cache eviction and must be validated
 again. F7 and F9 acceptance verifiers remain immutable `NOT_IMPLEMENTED`
 placeholders; ordinary test results do not establish those milestones.
+
+## Index lifecycle and diagnostics (W4)
+
+Index administration uses canonical CreateIndex, OpenIndex, DeleteIndex,
+ListIndexes and Describe through SearchKernelClient. Create loads the index;
+opening a loaded index returns its existing generation. Generations identify
+loaded process incarnations, and change after restart/reopen or delete/recreate.
+Workspace URLs retain `generation`; an explicit open establishes a new target.
+A stale URL never silently upgrades a mutation to a replacement incarnation.
+
+`POST /admin/status` reports typed registry/storage diagnostics without loading
+indexes. W3 canonical PlanIndexChange validates and compiles creation definitions before
+CreateIndex. The shared W3 editor supports field controls and an advanced
+standard FlatBuffers JSON mode. The
+read-only diagnostics surface does not expose environment variables, paths, logs,
+credentials, or host files. Counts, resource metrics, runtime version and lifecycle
+history remain unavailable. Native status means the runtime is linked; it is not
+an invented engine health probe. Transitioning targets have unknown persistence
+until a completed lifecycle snapshot can establish it.
+
+Delete confirmation captures the exact canonical target and requires its logical
+name. The bound client includes the captured generation in DeleteIndex. Failed or
+lost lifecycle responses are never optimistic successes; refresh authoritative
+inventory before retrying. Per-index operation state and generation-scoped caches
+preserve sibling independence. Workbench state remounts across incarnations.
+
+
+W3 configuration operations consume the same canonical selected target. Plan/apply
+uses a dedicated generation-bound SDK client so an apply response cannot upgrade
+a cached historical handle. Successful apply/reopen establishes the returned
+incarnation in the URL and clears only the prior incarnation's dependent views.
+Opening a client handle remains distinct from unloading the shared daemon engine.

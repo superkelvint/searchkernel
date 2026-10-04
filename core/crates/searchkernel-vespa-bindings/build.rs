@@ -216,6 +216,7 @@ fn main() {
         manifest_dir.join("../../native/vespa/abi.cc").display()
     );
     for source in [
+        "highlighting.h",
         "hardening.cc",
         "engine.cc",
         "tensor.cc",

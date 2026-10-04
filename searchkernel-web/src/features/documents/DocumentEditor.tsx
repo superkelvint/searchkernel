@@ -30,7 +30,7 @@ export function DocumentEditor({ document, id = '', browse, open }: { document?:
       // Abort cached reads before the write; consumed signals prevent an older
       // in-flight GET/search from overwriting the post-publication refetch.
       await Promise.all([cache.cancelQueries({ queryKey: ['document', index.id, index.generation] }), cache.cancelQueries({ queryKey: ['document-browse', index.id, index.generation] })])
-      const next = await mutateAndVerify(client, index.id, prepared.value, browse, { signal: controller.signal })
+      const next = await mutateAndVerify(client, index.target ?? index.id, prepared.value, browse, { signal: controller.signal })
       await Promise.all([cache.invalidateQueries({ queryKey: ['document', index.id, index.generation] }), cache.invalidateQueries({ queryKey: ['document-browse', index.id, index.generation] })])
       if (live.current) { setResult(next); if (next.document?.canonicalFields) setState(previous => ({ ...previous, fields: next.document!.canonicalFields! })) }
     } catch (error) {
@@ -47,7 +47,7 @@ export function DocumentEditor({ document, id = '', browse, open }: { document?:
     setReconciling(true); setError(undefined)
     const controller = new AbortController(); readAbort.current = controller
     try {
-      const fresh = await client.getDocument(index.id, unknownMutation.id, { signal: controller.signal })
+      const fresh = await client.getDocument(index.target ?? index.id, unknownMutation.id, { signal: controller.signal })
       await Promise.all([cache.invalidateQueries({ queryKey: ['document', index.id, index.generation] }), cache.invalidateQueries({ queryKey: ['document-browse', index.id, index.generation] })])
       if (live.current) {
         setReconciliation(fresh ?? null)

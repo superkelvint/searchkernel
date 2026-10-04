@@ -1,3 +1,4 @@
+import { targetName, type Target } from '../../api/searchkernel-client'
 import { SearchKernelClientError, normalizeClientError, type SearchKernelClient, type PreparedDocumentMutation, type PreparedSearchRequest, type RequestOptions } from '../../api/searchkernel-client'
 
 /** Dispatch one write, then perform cancellable read-back outside browser caches.
@@ -7,7 +8,7 @@ import { SearchKernelClientError, normalizeClientError, type SearchKernelClient,
  * canonical dispatch. Such failures are deliberately non-retryable until an
  * authoritative GET reconciles the document state.
  */
-export async function mutateAndVerify(client: SearchKernelClient, target: string, mutation: PreparedDocumentMutation, search: PreparedSearchRequest, options?: RequestOptions) {
+export async function mutateAndVerify(client: SearchKernelClient, target: Target, mutation: PreparedDocumentMutation, search: PreparedSearchRequest, options?: RequestOptions) {
   let acknowledgement
   try {
     // Do not bind the write lifetime to a React observer/component AbortSignal.
@@ -55,4 +56,4 @@ export function decodeDocumentId(token: string): string {
   if (encodeDocumentId(id) !== token) throw new TypeError('Noncanonical document URL token')
   return id
 }
-export function documentPath(target: string, id: string) { return `/indexes/${encodeURIComponent(target)}/data/documents/by-id/${encodeDocumentId(id)}` }
+export function documentPath(target: Target, id: string) { return `/indexes/${encodeURIComponent(targetName(target))}/data/documents/by-id/${encodeDocumentId(id)}` }

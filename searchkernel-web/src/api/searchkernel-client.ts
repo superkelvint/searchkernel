@@ -1,4 +1,10 @@
 import type { IndexDefinitionT } from '@searchkernel/client'
+import { IndexTargetT } from '@searchkernel/client'
+export { IndexTargetT }
+export type Target = string | IndexTargetT
+export const targetName = (target: Target): string => typeof target === 'string' ? target : String(target.name)
+export const targetKey = (target: Target): string => JSON.stringify(typeof target === 'string' ? [target, null] : [target.name, target.generation])
+
 /**
  * Browser-facing shape of the generated Search Kernel client.
  *
@@ -40,20 +46,12 @@ export type Index = {
   id: string
   definition?: IndexDefinitionT
   generation?: string
+  target?: IndexTargetT
   profileInputs?: Record<string, string>
   profiles: string[]
   summaries: string[]
   searchDefaults: SearchRequestDefaults
   fields: Field[]
-}
-
-export type ConfigurationPlan = {
-  definition: IndexDefinitionT
-  generation?: string
-  planId: string
-  supported: boolean
-  requiresReopen: boolean
-  reasons: string[]
 }
 
 export type SearchFilter = { field: string; operator: 'eq' | 'ne' | 'lt' | 'lte' | 'gt' | 'gte' | 'in' | 'exists'; value: string }
@@ -142,20 +140,37 @@ export interface SearchKernelClient {
   prepareDiagnostics?(index: Index, request: PreparedSearchRequest, sourceRunId: string | undefined, options: DiagnosticOptions): PreparedDiagnostics
   executeDiagnostics?(request: PreparedDiagnostics, options?: RequestOptions): Promise<ClientDiagnostics>
   diagnosticsCurl?(request: PreparedDiagnostics, publicHttpEndpoint: string): string
-  planIndexChange?(indexId: string, definition: IndexDefinitionT, options?: RequestOptions): Promise<ConfigurationPlan>
-  applyIndexChange?(indexId: string, planId: string, options?: RequestOptions): Promise<Index>
-  reopenIndex?(indexId: string, options?: RequestOptions): Promise<Index>
+  createIndex?(name: string, definition: IndexDefinitionT): Promise<Index>
+  openIndex?(name: string, options?: RequestOptions): Promise<Index>
+  deleteIndex?(target: IndexTargetT, options?: RequestOptions): Promise<void>
+  daemonStatus?(options?: RequestOptions): Promise<DaemonStatus>
+  indexDiagnostics?(target: IndexTargetT, options?: RequestOptions): Promise<{ status: IndexStatus; definition: unknown; canonical: string }>
+  planIndexChange?(target: Target, definition: IndexDefinitionT, options?: RequestOptions): Promise<ConfigurationPlan>
+  applyIndexChange?(target: Target, planId: string, options?: RequestOptions): Promise<Index>
+  reopenIndex?(target: Target, options?: RequestOptions): Promise<Index>
   capabilities(): Promise<Capabilities>
   listIndexes(options?: RequestOptions): Promise<Array<{ id: string }>>
-  getIndex(indexId: string, options?: RequestOptions): Promise<Index | undefined>
-  getDocument(indexId: string, documentId: string, options?: RequestOptions): Promise<Document | undefined>
-  browseDocuments(indexId: string, request: BrowseDocumentsRequest, options?: RequestOptions): Promise<BrowseDocumentsResponse>
+  getIndex(indexId: Target, options?: RequestOptions): Promise<Index | undefined>
+  getDocument(indexId: Target, documentId: string, options?: RequestOptions): Promise<Document | undefined>
+  browseDocuments(indexId: Target, request: BrowseDocumentsRequest, options?: RequestOptions): Promise<BrowseDocumentsResponse>
   prepareDocumentMutation(state: DocumentEditorState): PreparedDocumentMutation
-  executeDocumentMutation(indexId: string, request: PreparedDocumentMutation, options?: RequestOptions): Promise<DocumentMutationResult>
+  executeDocumentMutation(indexId: Target, request: PreparedDocumentMutation, options?: RequestOptions): Promise<DocumentMutationResult>
   prepareSearch(request: ClientSearchRequest): PreparedSearchRequest
-  executeSearch(indexId: string, request: PreparedSearchRequest, options?: RequestOptions): Promise<ClientSearchResponse>
-  search(indexId: string, request: ClientSearchRequest, options?: RequestOptions): Promise<ClientSearchResponse>
-  analyze(indexId: string, text: string, options?: AnalysisOptions): Promise<AnalysisToken[]>
+  executeSearch(indexId: Target, request: PreparedSearchRequest, options?: RequestOptions): Promise<ClientSearchResponse>
+  search(indexId: Target, request: ClientSearchRequest, options?: RequestOptions): Promise<ClientSearchResponse>
+  analyze(indexId: Target, text: string, options?: AnalysisOptions): Promise<AnalysisToken[]>
 }
 
 export const unsupportedCapabilityMessage = 'Unavailable because this capability is not exposed by the server.'
+
+export type IndexStatus = { name: string; generation: string | null; state: 'open' | 'persisted' | 'transitioning' | 'unopenable'; persisted: boolean | null; schema_name: string | null; warning: string | null }
+export type DaemonStatus = { version: string; ready: boolean; native_runtime: string; lifecycle: string; indexes: IndexStatus[]; unavailable: string[] }
+
+export function reconcileTarget(target: IndexTargetT, inventory: IndexStatus[]): 'current' | 'missing' | 'stale' | 'transitioning' {
+  const item = inventory.find(item => item.name === target.name)
+  if (!item) return 'missing'
+  if (item.state === 'transitioning') return 'transitioning'
+  return item.generation === target.generation ? 'current' : 'stale'
+}
+
+export type ConfigurationPlan = { definition: IndexDefinitionT; generation?: string; planId: string; supported: boolean; requiresReopen: boolean; reasons: string[] }
