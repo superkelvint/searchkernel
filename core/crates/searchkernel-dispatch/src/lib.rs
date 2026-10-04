@@ -169,10 +169,15 @@ impl Dispatcher {
                 "diagnostic_source_incarnation_mismatch", Some("source_run_id"),
                 "the original search belongs to another target incarnation; refresh/reselect explicitly"));
         }
-        Ok(self.source_runs
+        Ok(self
+            .source_runs
             .lock()
-            .map_err(|_| searchkernel_ir::PortableError::new(searchkernel_ir::ErrorCode::Internal,
-                "diagnostic source cache is unavailable"))?
+            .map_err(|_| {
+                searchkernel_ir::PortableError::new(
+                    searchkernel_ir::ErrorCode::Internal,
+                    "diagnostic source cache is unavailable",
+                )
+            })?
             .iter()
             .find(|source| {
                 source.execution.id == id
