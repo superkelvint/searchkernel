@@ -263,9 +263,15 @@ fn filter_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> 
 /// Only an isolated canonical NN operator has a supported exact comparison.
 /// We do not rewrite opaque YQL or arbitrary non-monotonic hybrid trees.
 fn exact_variant(request: &SearchRequestIr, limits: &DiagnosticLimits) -> Option<SearchRequestIr> {
-    let QueryIr::Typed(expression) = request.query() else { return None };
-    if !matches!(expression.kind, QueryExprKindIr::NearestNeighbor { .. }) { return None; }
-    let target_hits = expression.annotations.get("targetNumHits")
+    let QueryIr::Typed(expression) = request.query() else {
+        return None;
+    };
+    if !matches!(expression.kind, QueryExprKindIr::NearestNeighbor { .. }) {
+        return None;
+    }
+    let target_hits = expression
+        .annotations
+        .get("targetNumHits")
         .or_else(|| expression.annotations.get("totalTargetHits"));
     let count = match target_hits {
         Some(RequestValueIr::Int64(value)) => u32::try_from(*value).ok()?,
@@ -273,10 +279,16 @@ fn exact_variant(request: &SearchRequestIr, limits: &DiagnosticLimits) -> Option
         None => 100,
         _ => return None,
     };
-    if count > limits.exact_nn_hits || request.limit() > limits.exact_nn_hits { return None; }
+    if count > limits.exact_nn_hits || request.limit() > limits.exact_nn_hits {
+        return None;
+    }
     let mut variant = request.clone();
-    let QueryIr::Typed(expression) = &mut variant.query else { return None };
-    expression.annotations.insert("approximate".into(), RequestValueIr::Bool(false));
+    let QueryIr::Typed(expression) = &mut variant.query else {
+        return None;
+    };
+    expression
+        .annotations
+        .insert("approximate".into(), RequestValueIr::Bool(false));
     Some(variant)
 }
 
@@ -559,8 +571,12 @@ pub fn execute(
                         execution.complete = false;
                     } else if execution_complete(&acquired.result)
                         && ((acquired.result.total_hits.value == 0 && result.total_hits.value > 0)
-                        || (expected_returned && input.expected_document_id.as_ref().is_some_and(|id|
-                            !returned_hits(&acquired.result.root).iter().any(|hit| &hit.id == id))))
+                            || (expected_returned
+                                && input.expected_document_id.as_ref().is_some_and(|id| {
+                                    !returned_hits(&acquired.result.root)
+                                        .iter()
+                                        .any(|hit| &hit.id == id)
+                                })))
                     {
                         findings.push(DiagnosticFinding {
                             code: "filter_variant_sufficient".into(),
@@ -610,28 +626,99 @@ pub fn execute(
                 Ok(mut exact) => {
                     let mut exact_execution = execution.clone();
                     exact_execution.id = format!("{}/exact", execution.id);
-                    exact_execution.request_hash = request_hash(item.canonical_request.as_ref().unwrap_or(&request));
+                    exact_execution.request_hash =
+                        request_hash(item.canonical_request.as_ref().unwrap_or(&request));
                     exact_execution.complete = execution_complete(&exact.result);
                     item.execution_id = exact_execution.id.clone();
                     if execution.complete && exact_execution.complete {
-                        let baseline = DiagnosticSourceRun { execution: execution.clone(), request: request.clone(), result: acquired.result.clone() };
-                        let comparison = compare_runs(&baseline, &exact_execution, &exact.result, request.offset());
+                        let baseline = DiagnosticSourceRun {
+                            execution: execution.clone(),
+                            request: request.clone(),
+                            result: acquired.result.clone(),
+                        };
+                        let comparison = compare_runs(
+                            &baseline,
+                            &exact_execution,
+                            &exact.result,
+                            request.offset(),
+                        );
                         item.provenance = DiagnosticProvenance::Calculated;
-                        item.values.insert("overlap_count".into(), Value::UInt64(comparison.overlap_count.into()));
-                        item.values.insert("comparison_count".into(), Value::UInt64(comparison.comparison_count.into()));
-                        item.values.insert("entering".into(), Value::List(comparison.entering.iter().cloned().map(Value::String).collect()));
-                        item.values.insert("leaving".into(), Value::List(comparison.leaving.iter().cloned().map(Value::String).collect()));
-                        item.values.insert("rank_movements".into(), Value::List(comparison.movements.iter().map(|movement| Value::Object(BTreeMap::from([
-                            ("id".into(), Value::String(movement.id.clone())),
-                            ("baseline_position".into(), movement.baseline_position.map(|v| Value::UInt64(v.into())).unwrap_or(Value::Null)),
-                            ("exact_position".into(), movement.rerun_position.map(|v| Value::UInt64(v.into())).unwrap_or(Value::Null)),
-                        ]))).collect()));
+                        item.values.insert(
+                            "overlap_count".into(),
+                            Value::UInt64(comparison.overlap_count.into()),
+                        );
+                        item.values.insert(
+                            "comparison_count".into(),
+                            Value::UInt64(comparison.comparison_count.into()),
+                        );
+                        item.values.insert(
+                            "entering".into(),
+                            Value::List(
+                                comparison
+                                    .entering
+                                    .iter()
+                                    .cloned()
+                                    .map(Value::String)
+                                    .collect(),
+                            ),
+                        );
+                        item.values.insert(
+                            "leaving".into(),
+                            Value::List(
+                                comparison
+                                    .leaving
+                                    .iter()
+                                    .cloned()
+                                    .map(Value::String)
+                                    .collect(),
+                            ),
+                        );
+                        item.values.insert(
+                            "rank_movements".into(),
+                            Value::List(
+                                comparison
+                                    .movements
+                                    .iter()
+                                    .map(|movement| {
+                                        Value::Object(BTreeMap::from([
+                                            ("id".into(), Value::String(movement.id.clone())),
+                                            (
+                                                "baseline_position".into(),
+                                                movement
+                                                    .baseline_position
+                                                    .map(|v| Value::UInt64(v.into()))
+                                                    .unwrap_or(Value::Null),
+                                            ),
+                                            (
+                                                "exact_position".into(),
+                                                movement
+                                                    .rerun_position
+                                                    .map(|v| Value::UInt64(v.into()))
+                                                    .unwrap_or(Value::Null),
+                                            ),
+                                        ]))
+                                    })
+                                    .collect(),
+                            ),
+                        );
                         findings.push(DiagnosticFinding { code: "exact_retrieval_comparison".into(), message: format!("Exact retrieval produced {} returned documents absent from the diagnostic baseline; overlap was {} of {} returned documents.", comparison.entering.len(), comparison.overlap_count, comparison.comparison_count), evidence_ids: vec![item.id.clone(), "retrieval".into()] });
-                    } else { item.status = DiagnosticStatus::TimedOut; execution.complete = false; }
-                    strip_document_bodies(&mut exact.result.root); strip_features(&mut exact.result.root);
+                    } else {
+                        item.status = DiagnosticStatus::TimedOut;
+                        execution.complete = false;
+                    }
+                    strip_document_bodies(&mut exact.result.root);
+                    strip_features(&mut exact.result.root);
                     item.result = Some(exact.result);
                 }
-                Err(error) => { item.message = error.message; item.status = if error.code == crate::ErrorCode::DeadlineExceeded { DiagnosticStatus::TimedOut } else { DiagnosticStatus::Failed }; execution.complete = false; }
+                Err(error) => {
+                    item.message = error.message;
+                    item.status = if error.code == crate::ErrorCode::DeadlineExceeded {
+                        DiagnosticStatus::TimedOut
+                    } else {
+                        DiagnosticStatus::Failed
+                    };
+                    execution.complete = false;
+                }
             }
         } else {
             item.status = DiagnosticStatus::UnavailableForQuery;
@@ -658,12 +745,17 @@ pub fn execute(
                 "This engine integration does not provide authoritative evidence for this section."
             },
         );
-        item.status = raw
-            .map(|item| item.status)
-            .unwrap_or_else(|| if acquired.observed_sections.contains(section) { DiagnosticStatus::Available } else { DiagnosticStatus::Unsupported });
+        item.status = raw.map(|item| item.status).unwrap_or_else(|| {
+            if acquired.observed_sections.contains(section) {
+                DiagnosticStatus::Available
+            } else {
+                DiagnosticStatus::Unsupported
+            }
+        });
         if acquired.observed_sections.contains(section) {
             item.message = "Observed in this engine execution. Inspect its versioned raw trace for the complete tree; raw keys are unstable.".into();
-            item.values.insert("raw_evidence_section".into(), Value::String("Trace".into()));
+            item.values
+                .insert("raw_evidence_section".into(), Value::String("Trace".into()));
         }
         evidence_items.push(item);
     }
@@ -682,8 +774,16 @@ pub fn execute(
 
 fn strip_features(node: &mut ResultNode) {
     match node {
-        ResultNode::Hit(hit) => { hit.match_features.clear(); hit.summary_features.clear(); hit.rank_features.clear(); }
-        ResultNode::Group(group) => for child in &mut group.children { strip_features(child); },
+        ResultNode::Hit(hit) => {
+            hit.match_features.clear();
+            hit.summary_features.clear();
+            hit.rank_features.clear();
+        }
+        ResultNode::Group(group) => {
+            for child in &mut group.children {
+                strip_features(child);
+            }
+        }
     }
 }
 

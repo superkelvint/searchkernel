@@ -207,9 +207,20 @@ impl VespaBackend {
             });
             m_request.diagnostics = Some(searchkernel_vespa_engine::SearchDiagnosticControls {
                 trace_level: if tracing {
-                    let preset = if sections.iter().any(|section| matches!(section, Section::Blueprint | Section::IteratorTree | Section::RawEngine)) { 7 } else { 3 };
+                    let preset = if sections.iter().any(|section| {
+                        matches!(
+                            section,
+                            Section::Blueprint | Section::IteratorTree | Section::RawEngine
+                        )
+                    }) {
+                        7
+                    } else {
+                        3
+                    };
                     preset.min(limits.trace_depth)
-                } else { 0 },
+                } else {
+                    0
+                },
                 matching_depth: if sections.contains(&Section::MatchingProfiler) {
                     limits.profiler_depth
                 } else {
@@ -367,12 +378,23 @@ impl VespaBackend {
                 if !value.truncated {
                     if let Ok(tree) = serde_json::from_str::<serde_json::Value>(&value.trace) {
                         for (section, key) in [
-                            (searchkernel_ir::DiagnosticSection::MatchingProfiler, "match_profiling"),
-                            (searchkernel_ir::DiagnosticSection::FirstPhaseProfiler, "first_phase_profiling"),
-                            (searchkernel_ir::DiagnosticSection::SecondPhaseProfiler, "second_phase_profiling"),
+                            (
+                                searchkernel_ir::DiagnosticSection::MatchingProfiler,
+                                "match_profiling",
+                            ),
+                            (
+                                searchkernel_ir::DiagnosticSection::FirstPhaseProfiler,
+                                "first_phase_profiling",
+                            ),
+                            (
+                                searchkernel_ir::DiagnosticSection::SecondPhaseProfiler,
+                                "second_phase_profiling",
+                            ),
                             (searchkernel_ir::DiagnosticSection::IteratorTree, "iterator"),
                         ] {
-                            if engine_tree_has_key(&tree, key) { observed_sections.push(section); }
+                            if engine_tree_has_key(&tree, key) {
+                                observed_sections.push(section);
+                            }
                         }
                         observed_sections.push(searchkernel_ir::DiagnosticSection::RawEngine);
                     }
@@ -427,8 +449,12 @@ impl VespaBackend {
 // Pinned engine keys belong here, never in the portable finding evaluator or UI.
 fn engine_tree_has_key(value: &serde_json::Value, key: &str) -> bool {
     match value {
-        serde_json::Value::Object(values) => values.contains_key(key) || values.values().any(|value| engine_tree_has_key(value, key)),
-        serde_json::Value::Array(values) => values.iter().any(|value| engine_tree_has_key(value, key)),
+        serde_json::Value::Object(values) => {
+            values.contains_key(key) || values.values().any(|value| engine_tree_has_key(value, key))
+        }
+        serde_json::Value::Array(values) => {
+            values.iter().any(|value| engine_tree_has_key(value, key))
+        }
         _ => false,
     }
 }

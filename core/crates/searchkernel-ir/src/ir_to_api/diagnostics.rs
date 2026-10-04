@@ -2,14 +2,35 @@ use super::*;
 use result::{relevance_offset, value_entries_offset, value_offset};
 use search::resolved_request_offset;
 
-pub(super) fn query_diagnostics_request_offset<'a>(builder: &mut flatbuffers::FlatBufferBuilder<'a>, input: &ir::QueryDiagnosticsRequestIr) -> flatbuffers::WIPOffset<api::QueryDiagnosticsRequest<'a>> {
+pub(super) fn query_diagnostics_request_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    input: &ir::QueryDiagnosticsRequestIr,
+) -> flatbuffers::WIPOffset<api::QueryDiagnosticsRequest<'a>> {
     let request = search::search_request_offset(builder, &input.request);
-    let experiment = input.experiment.as_ref().map(|request| search::search_request_offset(builder, request));
-    let source_run_id = input.source_run_id.as_ref().map(|id| builder.create_string(id));
-    let selected_hits: Vec<_> = input.selected_hits.iter().map(|id| builder.create_string(id)).collect();
+    let experiment = input
+        .experiment
+        .as_ref()
+        .map(|request| search::search_request_offset(builder, request));
+    let source_run_id = input
+        .source_run_id
+        .as_ref()
+        .map(|id| builder.create_string(id));
+    let selected_hits: Vec<_> = input
+        .selected_hits
+        .iter()
+        .map(|id| builder.create_string(id))
+        .collect();
     let selected_hits = builder.create_vector(&selected_hits);
-    let expected_document_id = input.expected_document_id.as_ref().map(|id| builder.create_string(id));
-    let requested_evidence: Vec<_> = input.requested_evidence.iter().copied().map(section).collect();
+    let expected_document_id = input
+        .expected_document_id
+        .as_ref()
+        .map(|id| builder.create_string(id));
+    let requested_evidence: Vec<_> = input
+        .requested_evidence
+        .iter()
+        .copied()
+        .map(section)
+        .collect();
     let requested_evidence = builder.create_vector(&requested_evidence);
     let timeout_ms = api::OptionalUInt64::new(input.limits.timeout_ms);
     let variant_count = api::OptionalUInt32::new(input.limits.variant_count);
@@ -19,8 +40,33 @@ pub(super) fn query_diagnostics_request_offset<'a>(builder: &mut flatbuffers::Fl
     let trace_depth = api::OptionalUInt32::new(input.limits.trace_depth);
     let profiler_depth = api::OptionalUInt32::new(input.limits.profiler_depth);
     let exact_nn_hits = api::OptionalUInt32::new(input.limits.exact_nn_hits);
-    let limits = api::DiagnosticLimits::create(builder, &api::DiagnosticLimitsArgs { timeout_ms: Some(&timeout_ms), variant_count: Some(&variant_count), feature_hit_count: Some(&feature_hit_count), tensor_cells: Some(&tensor_cells), raw_bytes: Some(&raw_bytes), trace_depth: Some(&trace_depth), profiler_depth: Some(&profiler_depth), exact_nn_hits: Some(&exact_nn_hits) });
-    api::QueryDiagnosticsRequest::create(builder, &api::QueryDiagnosticsRequestArgs { request: Some(request), intent: intent(input.intent), requested_evidence: Some(requested_evidence), source_run_id, selected_hits: Some(selected_hits), expected_document_id, experiment, compare_exact: input.compare_exact, limits: Some(limits) })
+    let limits = api::DiagnosticLimits::create(
+        builder,
+        &api::DiagnosticLimitsArgs {
+            timeout_ms: Some(&timeout_ms),
+            variant_count: Some(&variant_count),
+            feature_hit_count: Some(&feature_hit_count),
+            tensor_cells: Some(&tensor_cells),
+            raw_bytes: Some(&raw_bytes),
+            trace_depth: Some(&trace_depth),
+            profiler_depth: Some(&profiler_depth),
+            exact_nn_hits: Some(&exact_nn_hits),
+        },
+    );
+    api::QueryDiagnosticsRequest::create(
+        builder,
+        &api::QueryDiagnosticsRequestArgs {
+            request: Some(request),
+            intent: intent(input.intent),
+            requested_evidence: Some(requested_evidence),
+            source_run_id,
+            selected_hits: Some(selected_hits),
+            expected_document_id,
+            experiment,
+            compare_exact: input.compare_exact,
+            limits: Some(limits),
+        },
+    )
 }
 
 macro_rules! enum_conversion {
@@ -30,7 +76,20 @@ macro_rules! enum_conversion {
         }
     };
 }
-enum_conversion!(intent, DiagnosticIntent, ExplainHit, ZeroResults, MissingDocument, RankingComparison, Overmatching, QueryInterpretation, VectorRetrieval, Performance, DeepEngine, Experiment);
+enum_conversion!(
+    intent,
+    DiagnosticIntent,
+    ExplainHit,
+    ZeroResults,
+    MissingDocument,
+    RankingComparison,
+    Overmatching,
+    QueryInterpretation,
+    VectorRetrieval,
+    Performance,
+    DeepEngine,
+    Experiment
+);
 enum_conversion!(
     section,
     DiagnosticSection,
