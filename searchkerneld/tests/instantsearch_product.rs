@@ -2,7 +2,7 @@
 use searchkernel::{Field, Index, IndexDefinition};
 use searchkernel_protocol::{json::request_json_to_flatbuffer, protocol::v1 as wire};
 use searchkerneld::{
-    public_search::{
+    search_endpoints::{
         start_public_search, PublicEndpoint, PublicFieldKind, PublicSearchConfig, PublicSort,
     },
     IndexRegistry,
