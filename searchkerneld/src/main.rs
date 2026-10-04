@@ -17,7 +17,7 @@ mod native_main {
     use searchkernel::Index;
     use searchkernel_dispatch::Dispatcher;
     use searchkernel_ir::validate_index_target;
-    use searchkerneld::public_search::{start_public_search, PublicSearchConfig};
+    use searchkerneld::search_endpoints::{start_public_search, PublicSearchConfig};
     use searchkerneld::{start, start_multi, IndexRegistry, ServerConfig, ServerError};
 
     const DEFAULT_UNIX_SOCKET: &str = "/tmp/searchkerneld.sock";
