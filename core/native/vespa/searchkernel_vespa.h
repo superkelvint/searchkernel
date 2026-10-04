@@ -174,9 +174,14 @@ typedef struct sk_grouping_filter sk_grouping_filter;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* ABI revision 16. Diagnostics add setters/accessors around opaque handles;
-   existing signatures, layouts and behavior remain compatible. */
-#define SK_NATIVE_ABI_VERSION 16U
+/* ABI revision 17. Authoritative diagnostic term/field match evidence is
+   exposed through additive setters/accessors around opaque handles. */
+#define SK_NATIVE_ABI_VERSION 17U
+
+#define SK_MATCH_EVIDENCE_AVAILABLE 1U
+#define SK_MATCH_EVIDENCE_TRUNCATED 2U
+#define SK_MATCH_EVIDENCE_PARTIAL 4U
+#define SK_MATCH_EVIDENCE_FAILED 8U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -749,6 +754,11 @@ SK_API int32_t sk_generic_search_request_set_diagnostics(
     uint32_t matching_depth, uint32_t first_phase_depth,
     uint32_t second_phase_depth, uint32_t raw_bytes,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Opt-in diagnostic replay over at most hit_limit returned hits. The native
+   matcher retains its exact query session only for this diagnostic request. */
+SK_API int32_t sk_generic_search_request_set_match_evidence(
+    sk_generic_search_request *request, uint32_t hit_limit,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_sort(
     sk_generic_search_request *request, const char *field, uint32_t order,
     uint32_t missing, uint8_t *out_error,
@@ -823,6 +833,21 @@ SK_API int32_t sk_generic_search_result_diagnostics(
     uint32_t *out_length, uint32_t *out_truncated,
     double *out_matching_seconds, double *out_summary_seconds,
     double *out_query_seconds, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Match evidence status is a bit mask of SK_MATCH_EVIDENCE_* flags.
+   An AVAILABLE result with zero records is an authoritative negative result
+   for the bounded returned-hit set, not an inference from highlights. */
+SK_API uint32_t sk_generic_search_result_match_evidence_status(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_term_field_evidence_count(
+    const sk_generic_search_result *result, uint32_t hit_index) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_term_field_evidence(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t evidence_index, uint32_t *out_term_id,
+    const char **out_operator, uint32_t *out_operator_length,
+    const char **out_term, uint32_t *out_term_length,
+    const char **out_field, uint32_t *out_field_length,
+    uint8_t *out_matched, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_issue_message(
     const sk_generic_search_result *result, uint32_t index,
