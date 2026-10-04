@@ -346,7 +346,13 @@ fn exact_variant(request: &SearchRequestIr, limits: &DiagnosticLimits) -> Option
 }
 
 fn friendly_typed_query(expression: &QueryExprIr) -> String {
-    let list = |children: &[QueryExprIr], operator: &str| children.iter().map(|child| format!("({})", friendly_typed_query(child))).collect::<Vec<_>>().join(operator);
+    let list = |children: &[QueryExprIr], operator: &str| {
+        children
+            .iter()
+            .map(|child| format!("({})", friendly_typed_query(child)))
+            .collect::<Vec<_>>()
+            .join(operator)
+    };
     let text = match &expression.kind {
         QueryExprKindIr::True => "Match all".into(),
         QueryExprKindIr::False => "Match none".into(),
@@ -367,7 +373,11 @@ fn friendly_typed_query(expression: &QueryExprIr) -> String {
         // renderer. Never guess their semantics from an engine query string.
         _ => "Advanced canonical operator; inspect its normalized query tree for exact controls".into(),
     };
-    if expression.annotations.is_empty() { text } else { format!("{text}. Explicit operator annotations are shown in the normalized request") }
+    if expression.annotations.is_empty() {
+        text
+    } else {
+        format!("{text}. Explicit operator annotations are shown in the normalized request")
+    }
 }
 
 fn positive_clause_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> {
@@ -507,7 +517,10 @@ pub fn execute(
         });
     effective.canonical_request = Some(request.clone());
     if let QueryIr::Typed(query) = request.query() {
-        effective.values.insert("friendly_query".into(), Value::String(friendly_typed_query(query)));
+        effective.values.insert(
+            "friendly_query".into(),
+            Value::String(friendly_typed_query(query)),
+        );
     }
 
     effective.values.insert(
