@@ -11,7 +11,7 @@ pub const SOURCE_RUN_METADATA_KEY: &str = "searchkernel.source_run";
 /// A deterministic identity over canonical resolved request bytes, not an
 /// authentication token. Source-cache equality additionally checks the full IR.
 pub fn request_hash(request: &SearchRequestIr) -> String {
-    let bytes = crate::ir_to_api::search_request_ir_to_api(request);
+    let bytes = crate::wire::v1::search_request_ir_to_api(request);
     let hash = bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     });
