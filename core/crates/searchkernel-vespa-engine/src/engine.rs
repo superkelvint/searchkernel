@@ -1044,6 +1044,18 @@ impl Engine {
                 )
             };
             check(status, &error)?;
+            if controls.match_evidence_hit_count != 0 {
+                let mut error = NativeError::new();
+                let status = unsafe {
+                    sys::sk_generic_search_request_set_match_evidence(
+                        native_request.0.as_ptr(),
+                        controls.match_evidence_hit_count,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                };
+                check(status, &error)?;
+            }
         }
         if let Some(summary_class) = &request.summary_class {
             let summary_class = cstring(summary_class)?;
