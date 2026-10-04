@@ -1,0 +1,35 @@
+{
+  "name": "@searchkernel/instantsearch",
+  "version": "0.1.0",
+  "description": "Bounded Search Kernel search client for the pinned InstantSearch contract",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
+    "./compatibility": "./dist/compatibility.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run tests/unit.test.ts tests/guards.test.ts",
+    "test:engine": "vitest run tests/real-engine.test.ts && node scripts/browser-e2e.mjs",
+    "typecheck": "tsc --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --resolveJsonModule --noEmit tests/types.ts",
+    "check:contract": "node scripts/check-contract.mjs"
+  },
+  "devDependencies": {
+    "@algolia/client-search": "5.59.0",
+    "algoliasearch": "5.59.0",
+    "algoliasearch-helper": "3.30.0",
+    "esbuild": "0.28.2",
+    "instantsearch.js": "4.119.0",
+    "jsdom": "26.1.0",
+    "playwright": "1.56.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

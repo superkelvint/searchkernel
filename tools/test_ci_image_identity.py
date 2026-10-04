@@ -34,6 +34,11 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-ci-image-identity.") as ra
     typescript = repo_root / "clients/typescript"
     toolchain.mkdir(parents=True)
     typescript.mkdir(parents=True)
+    instantsearch = repo_root / "integrations/instantsearch"
+    instantsearch.mkdir(parents=True)
+    (instantsearch / "package.json").write_text('{"name":"instantsearch-fixture"}\n', encoding="utf-8")
+    instantsearch_lock = instantsearch / "package-lock.json"
+    instantsearch_lock.write_text('{"lockfileVersion":3,"fixture":"a"}\n', encoding="utf-8")
     (toolchain / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
     (typescript / "package.json").write_text('{"name":"fixture"}\n', encoding="utf-8")
     lockfile = typescript / "package-lock.json"
@@ -58,6 +63,11 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-ci-image-identity.") as ra
     ).stdout.strip()
     if toolchain_a == toolchain_lock_changed:
         raise SystemExit("toolchain identity ignored the TypeScript dependency lockfile")
+
+    instantsearch_lock.write_text('{"lockfileVersion":3,"fixture":"b"}\n', encoding="utf-8")
+    instantsearch_lock_changed = call("ci_image_toolchain_id", str(repo_root), digest_a).stdout.strip()
+    if instantsearch_lock_changed == toolchain_lock_changed:
+        raise SystemExit("toolchain identity ignored the InstantSearch dependency lockfile")
 
     mutable = call(
         "ci_image_toolchain_id",

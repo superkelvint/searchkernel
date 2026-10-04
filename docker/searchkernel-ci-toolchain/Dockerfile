@@ -30,6 +30,8 @@ ENV GCC_TOOLSET_ROOT="/opt/rh/gcc-toolset-15/root/usr" \
     SK_NATIVE_DISABLE_PUBLISHED_BASE="1" \
     SEARCHKERNEL_TYPESCRIPT_NODE_MODULES="/opt/searchkernel/typescript/node_modules"
 
+ENV PLAYWRIGHT_BROWSERS_PATH="/opt/searchkernel/playwright"
+
 # Stable OS/tooling surface. This image is published only when the CI toolchain
 # changes (for example, adding a client language or bumping a compiler/runtime).
 RUN dnf install -y epel-release dnf-plugins-core \
@@ -102,6 +104,13 @@ RUN npm ci --prefix /opt/searchkernel/typescript --no-audit --no-fund \
     && test -x /opt/searchkernel/typescript/node_modules/protoc-gen-grpc-web/bin/protoc-gen-grpc-web \
     && test -x /opt/searchkernel/typescript/node_modules/.bin/tsc \
     && test -x /opt/searchkernel/typescript/node_modules/.bin/vitest
+
+# InstantSearch acceptance consumes this declared, pinned browser prerequisite.
+# Normal checks never install operating-system packages or browser binaries.
+RUN dnf install -y alsa-lib atk at-spi2-atk at-spi2-core cups-libs libdrm libX11 libXcomposite libXdamage libXext libXfixes libXrandr libxcb libxkbcommon mesa-libgbm nss pango cairo && dnf clean all
+COPY integrations/instantsearch/package.json integrations/instantsearch/package-lock.json /opt/searchkernel/instantsearch/
+RUN npm ci --prefix /opt/searchkernel/instantsearch && \
+    npm exec --prefix /opt/searchkernel/instantsearch -- playwright install chromium
 
 RUN curl --fail --location --retry 5 --silent --show-error \
         "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-${RUBY_VERSION}.tar.gz" \

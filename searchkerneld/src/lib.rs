@@ -4,6 +4,7 @@
 //! semantic work is delegated to the canonical transport-independent
 //! dispatcher.
 
+pub mod public_search;
 #[cfg(feature = "native")]
 mod registry;
 mod search_endpoints;

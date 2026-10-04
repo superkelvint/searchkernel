@@ -26,6 +26,10 @@ searchkernel-dispatch = { path = "../core/crates/searchkernel-dispatch" }
 searchkernel-ir = { path = "../core/crates/searchkernel-ir" }
 searchkernel-protocol = { path = "../core/crates/searchkernel-protocol" }
 searchkernel-rpc = { path = "../core/crates/searchkernel-rpc" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tonic = { version = "0.12", features = ["transport"] }

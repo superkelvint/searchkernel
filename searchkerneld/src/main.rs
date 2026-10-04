@@ -10,12 +10,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(feature = "native")]
 mod native_main {
+    use std::net::SocketAddr;
     use std::{env, error::Error, path::PathBuf, sync::Arc};
 
     use http::HeaderValue;
     use searchkernel::Index;
     use searchkernel_dispatch::Dispatcher;
     use searchkernel_ir::validate_index_target;
+    use searchkerneld::public_search::{start_public_search, PublicSearchConfig};
     use searchkerneld::{start, start_multi, IndexRegistry, ServerConfig, ServerError};
 
     const DEFAULT_UNIX_SOCKET: &str = "/tmp/searchkerneld.sock";
@@ -41,6 +43,7 @@ mod native_main {
     struct Config {
         mode: Mode,
         server: ServerConfig,
+        public_search: Option<(SocketAddr, PublicSearchConfig)>,
     }
 
     fn config() -> Result<Config, Box<dyn Error>> {
@@ -56,9 +59,25 @@ mod native_main {
         let mut web_origins = Vec::new();
         let mut execution_limit = None;
         let mut admission_limit = None;
+        let mut public_search_config = None;
+        let mut public_search_listen = None;
 
         while let Some(argument) = args.next() {
             match argument.to_string_lossy().as_ref() {
+                "--public-search-config" => {
+                    public_search_config = Some(PathBuf::from(
+                        args.next().ok_or("--public-search-config needs a path")?,
+                    ));
+                }
+                "--public-search-listen" => {
+                    public_search_listen = Some(
+                        args.next()
+                            .ok_or("--public-search-listen needs an address")?
+                            .into_string()
+                            .map_err(|_| "invalid public listener address")?
+                            .parse::<SocketAddr>()?,
+                    );
+                }
                 "--data-root" => {
                     data_root = Some(
                         args.next()
@@ -252,8 +271,25 @@ mod native_main {
             server = server.with_web_allowed_origin(origin);
         }
 
+        let public_search =
+            match (public_search_config, public_search_listen) {
+                (None, None) => None,
+                (Some(path), Some(address)) => {
+                    if !matches!(mode, Mode::Multi { .. }) {
+                        return Err("public search requires --data-root multi-index mode".into());
+                    }
+                    let public: PublicSearchConfig = serde_json::from_slice(&std::fs::read(path)?)?;
+                    public.validate()?;
+                    Some((address, public))
+                }
+                _ => return Err(
+                    "--public-search-config and --public-search-listen must be supplied together"
+                        .into(),
+                ),
+            };
         Ok(Config {
             mode,
+            public_search,
             server: server
                 .with_execution_limit(execution_limit)
                 .with_admission_limit(admission_limit),
@@ -371,7 +407,16 @@ mod native_main {
             Mode::Multi { data_root } => {
                 let registry = Arc::new(IndexRegistry::new(data_root)?);
                 let server = start_multi(config.server, registry.clone()).await?;
+                let public = match config.public_search {
+                    Some((address, config)) => {
+                        Some(start_public_search(address, config, registry.clone()).await?)
+                    }
+                    None => None,
+                };
                 let result = wait_for_shutdown(server).await;
+                if let Some(public) = public {
+                    public.shutdown().await;
+                }
                 registry.close_all()?;
                 result?;
             }
