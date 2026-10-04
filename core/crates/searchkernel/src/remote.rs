@@ -795,7 +795,10 @@ pub struct DiagnosticResponse {
 
 impl std::fmt::Debug for DiagnosticResponse {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("DiagnosticResponse").field("encoded_bytes", &self.payload.len()).finish_non_exhaustive()
+        formatter
+            .debug_struct("DiagnosticResponse")
+            .field("encoded_bytes", &self.payload.len())
+            .finish_non_exhaustive()
     }
 }
 
