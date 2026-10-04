@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { Daemon, Index as RemoteIndex, IndexDefinitionT, Text, SearchKernelError, TransportError, ResultDecodeError, fromCanonicalJson, toCanonicalJson } from '@searchkernel/client'
+import { Client, Daemon, Index as RemoteIndex, IndexDefinitionT, Text, SearchKernelError, TransportError, ResultDecodeError, fromCanonicalJson, toCanonicalJson } from '@searchkernel/client'
 import { createDaemonSearchKernelClient, dashboardValue, daemonError } from './daemon-searchkernel-client'
 
 afterEach(() => vi.restoreAllMocks())
@@ -85,6 +85,34 @@ describe('daemon dashboard boundary', () => {
     expect(daemonError(new TransportError('admission', { status: 503, code: 14 }))).toMatchObject({ origin: 'transport', status: 503, details: { transportCode: 14 } })
     expect(daemonError(new TransportError('offline'))).toMatchObject({ origin: 'transport', retryable: true })
     expect(daemonError(new TransportError('cancelled', undefined, 'aborted'))).toMatchObject({ code: 'aborted', retryable: false })
+  })
+  it('gates configuration writes from daemon discovery and preserves the complete definition', async () => {
+    vi.spyOn(Client.prototype, 'listIndexes').mockResolvedValue({ targets: [], configuration: null } as never)
+    const client = createDaemonSearchKernelClient('http://daemon')
+    expect(await client.capabilities()).toMatchObject({ indexes: { create: false }, schema: { changePlan: false }, ranking: { write: false } })
+    vi.mocked(Client.prototype.listIndexes).mockResolvedValue({ targets: [], configuration: { createIndex: true, rankProfilesWrite: true, changePlan: true, fieldMutation: false } } as never)
+    expect(await client.capabilities()).toMatchObject({ indexes: { create: true }, schema: { write: false, changePlan: true }, ranking: { write: true } })
+    const definition = new IndexDefinitionT('schema')
+    vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition, generation: 'old' } as unknown as RemoteIndex)
+    expect((await client.getIndex('alpha'))?.definition).toBe(definition)
+  })
+  it('applies through the same generation-bound SDK client and explicitly reopens on request', async () => {
+    const definition = new IndexDefinitionT('schema')
+    const remote = new Client({ execute: vi.fn() }, 'alpha')
+    const close = vi.spyOn(remote, 'close').mockResolvedValue()
+    const plan = vi.spyOn(remote, 'planIndexChange').mockResolvedValue({ definition, generation: 'old', planId: 'token', supported: true, requiresReopen: true, reasons: ['Rank changes only'] } as never)
+    const apply = vi.spyOn(remote, 'applyIndexChange').mockResolvedValue({ index: definition, generation: 'new' } as never)
+    const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ client: remote, definition, generation: 'old' } as unknown as RemoteIndex)
+    const client = createDaemonSearchKernelClient('http://daemon')
+    await client.getIndex('alpha')
+    expect(await client.planIndexChange!('alpha', definition)).toMatchObject({ planId: 'token', requiresReopen: true })
+    expect(plan).toHaveBeenCalledWith(definition, undefined)
+    expect(await client.applyIndexChange!('alpha', 'token')).toMatchObject({ generation: 'new', definition })
+    expect(apply).toHaveBeenCalledWith('token', undefined)
+    expect(open).toHaveBeenCalledTimes(1)
+    await client.reopenIndex!('alpha')
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledTimes(2)
   })
   it('sends the exact mutation payload through the bound public client without GET-based upsert', async () => {
     const execute = vi.fn().mockResolvedValue(fromCanonicalJson('UpsertResult', { id: 'one' }))

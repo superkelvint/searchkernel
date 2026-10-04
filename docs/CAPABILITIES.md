@@ -79,6 +79,7 @@ canonical semantics, and executable through the backend.
 | Embedded single-node Vespa scope (`platform.embedded_vespa_scope`) | platform | no | no | no | [docs/architecture.md](../docs/architecture.md), [docs/status.md](../docs/status.md) |
 | Targeted multi-index daemon lifecycle protocol (`daemon.multi_index_lifecycle`) | daemon | yes | yes | yes | [api/searchkernel_request.fbs](../api/searchkernel_request.fbs), [core/crates/searchkernel-ir/src/api_to_ir/control_plane.rs](../core/crates/searchkernel-ir/src/api_to_ir/control_plane.rs), [core/crates/searchkernel-protocol/tests/standard_json.rs](../core/crates/searchkernel-protocol/tests/standard_json.rs), [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs) |
 | Server-scoped durable logical index discovery (`daemon.durable_index_discovery`) | daemon | yes | yes | yes | [api/wire/v1/searchkernel.fbs](../api/wire/v1/searchkernel.fbs), [core/crates/searchkernel-ir/src/wire.rs](../core/crates/searchkernel-ir/src/wire.rs), [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs), [searchkernel-web/tests/real-daemon.test.ts](../searchkernel-web/tests/real-daemon.test.ts) |
+| Validated index creation and rank-profile configuration apply (`daemon.configuration_workflow`) | daemon | yes | yes | yes | [api/wire/v1/searchkernel.fbs](../api/wire/v1/searchkernel.fbs), [core/crates/searchkernel-ir/src/wire.rs](../core/crates/searchkernel-ir/src/wire.rs), [core/crates/searchkernel/src/index/configuration.rs](../core/crates/searchkernel/src/index/configuration.rs), [searchkerneld/tests/multi_index/configuration_workflow.rs](../searchkerneld/tests/multi_index/configuration_workflow.rs), [clients/typescript/tests/lifecycle.test.ts](../clients/typescript/tests/lifecycle.test.ts), [searchkernel-web/tests/real-daemon.test.ts](../searchkernel-web/tests/real-daemon.test.ts) |
 
 ## Limitations at a glance
 
@@ -140,6 +141,7 @@ Capabilities with known constraints are collected in the generated
 - `platform.embedded_vespa_scope` — Distributed routing, configuration services, schema deployment, federation, and other container-level Vespa facilities are outside this wrapper.
 - `daemon.multi_index_lifecycle` — Target-bound operations require an explicit logical target; server-scoped ListIndexes requires none.
 - `daemon.durable_index_discovery` — Listing is an ordered candidate snapshot with per-target inspection, not a transaction across all targets; OpenIndex remains authoritative for definition and generation.
+- `daemon.configuration_workflow` — Apply supports new-index creation and existing-index rank-profile changes only. Field, schema identity, summaries, constants and models require an unsupported reindex workflow.
 
 ## Structured facade support
 

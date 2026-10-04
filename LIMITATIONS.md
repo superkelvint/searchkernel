@@ -269,6 +269,12 @@ approximated.
 
 - Listing is an ordered candidate snapshot with per-target inspection, not a transaction across all targets; OpenIndex remains authoritative for definition and generation.
 
+### Validated index creation and rank-profile configuration apply (`daemon.configuration_workflow`)
+
+- Apply supports new-index creation and existing-index rank-profile changes only. Field, schema identity, summaries, constants and models require an unsupported reindex workflow.
+- Plans are process-local, single-use, target/generation-bound and bounded to 128 retained plans. Restart or plan eviction requires validation again.
+- The dashboard editor supports primitive field creation and first-phase rank expressions. Other canonical settings are inspected and preserved; backend validation remains authoritative.
+
 ## Evidence and versioning
 
 The state and limitations are cross-layer summaries. Behavioral authority

@@ -5,6 +5,7 @@ import numpy as np
 
 import typing
 from SearchKernel.Wire.AnalyzeRequest import AnalyzeRequest
+from SearchKernel.Wire.ApplyIndexChangeRequest import ApplyIndexChangeRequest
 from SearchKernel.Wire.CreateIndexRequest import CreateIndexRequest
 from SearchKernel.Wire.DeleteIndexRequest import DeleteIndexRequest
 from SearchKernel.Wire.DeleteRequest import DeleteRequest
@@ -15,6 +16,7 @@ from SearchKernel.Wire.InspectQueryRequest import InspectQueryRequest
 from SearchKernel.Wire.ListIndexesRequest import ListIndexesRequest
 from SearchKernel.Wire.OpenIndexRequest import OpenIndexRequest
 from SearchKernel.Wire.PatchRequest import PatchRequest
+from SearchKernel.Wire.PlanIndexChangeRequest import PlanIndexChangeRequest
 from SearchKernel.Wire.SearchRequest import SearchRequest
 from SearchKernel.Wire.UpdateRequest import UpdateRequest
 from SearchKernel.Wire.UpsertRequest import UpsertRequest
@@ -39,4 +41,6 @@ class RequestPayload(object):
   SearchKernel_Wire_OpenIndexRequest = cast(int, ...)
   SearchKernel_Wire_DeleteIndexRequest = cast(int, ...)
   SearchKernel_Wire_ListIndexesRequest = cast(int, ...)
-def RequestPayloadCreator(union_type: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_Wire_InsertRequest, RequestPayload.SearchKernel_Wire_UpsertRequest, RequestPayload.SearchKernel_Wire_PatchRequest, RequestPayload.SearchKernel_Wire_DeleteRequest, RequestPayload.SearchKernel_Wire_GetRequest, RequestPayload.SearchKernel_Wire_SearchRequest, RequestPayload.SearchKernel_Wire_AnalyzeRequest, RequestPayload.SearchKernel_Wire_DescribeRequest, RequestPayload.SearchKernel_Wire_InspectQueryRequest, RequestPayload.SearchKernel_Wire_UpdateRequest, RequestPayload.SearchKernel_Wire_CreateIndexRequest, RequestPayload.SearchKernel_Wire_OpenIndexRequest, RequestPayload.SearchKernel_Wire_DeleteIndexRequest, RequestPayload.SearchKernel_Wire_ListIndexesRequest], table: table.Table) -> typing.Union[None, InsertRequest, UpsertRequest, PatchRequest, DeleteRequest, GetRequest, SearchRequest, AnalyzeRequest, DescribeRequest, InspectQueryRequest, UpdateRequest, CreateIndexRequest, OpenIndexRequest, DeleteIndexRequest, ListIndexesRequest]: ...
+  SearchKernel_Wire_PlanIndexChangeRequest = cast(int, ...)
+  SearchKernel_Wire_ApplyIndexChangeRequest = cast(int, ...)
+def RequestPayloadCreator(union_type: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_Wire_InsertRequest, RequestPayload.SearchKernel_Wire_UpsertRequest, RequestPayload.SearchKernel_Wire_PatchRequest, RequestPayload.SearchKernel_Wire_DeleteRequest, RequestPayload.SearchKernel_Wire_GetRequest, RequestPayload.SearchKernel_Wire_SearchRequest, RequestPayload.SearchKernel_Wire_AnalyzeRequest, RequestPayload.SearchKernel_Wire_DescribeRequest, RequestPayload.SearchKernel_Wire_InspectQueryRequest, RequestPayload.SearchKernel_Wire_UpdateRequest, RequestPayload.SearchKernel_Wire_CreateIndexRequest, RequestPayload.SearchKernel_Wire_OpenIndexRequest, RequestPayload.SearchKernel_Wire_DeleteIndexRequest, RequestPayload.SearchKernel_Wire_ListIndexesRequest, RequestPayload.SearchKernel_Wire_PlanIndexChangeRequest, RequestPayload.SearchKernel_Wire_ApplyIndexChangeRequest], table: table.Table) -> typing.Union[None, InsertRequest, UpsertRequest, PatchRequest, DeleteRequest, GetRequest, SearchRequest, AnalyzeRequest, DescribeRequest, InspectQueryRequest, UpdateRequest, CreateIndexRequest, OpenIndexRequest, DeleteIndexRequest, ListIndexesRequest, PlanIndexChangeRequest, ApplyIndexChangeRequest]: ...

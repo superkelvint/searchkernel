@@ -11,13 +11,13 @@ pub const ENUM_MIN_RESPONSE_PAYLOAD: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_RESPONSE_PAYLOAD: u8 = 15;
+pub const ENUM_MAX_RESPONSE_PAYLOAD: u8 = 17;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 16] = [
+pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 18] = [
     ResponsePayload::NONE,
     ResponsePayload::SearchKernel_Wire_InsertResult,
     ResponsePayload::SearchKernel_Wire_UpsertResult,
@@ -34,6 +34,8 @@ pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 16] = [
     ResponsePayload::SearchKernel_Wire_OpenIndexResult,
     ResponsePayload::SearchKernel_Wire_DeleteIndexResult,
     ResponsePayload::SearchKernel_Wire_ListIndexesResult,
+    ResponsePayload::SearchKernel_Wire_PlanIndexChangeResult,
+    ResponsePayload::SearchKernel_Wire_ApplyIndexChangeResult,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -57,9 +59,11 @@ impl ResponsePayload {
     pub const SearchKernel_Wire_OpenIndexResult: Self = Self(13);
     pub const SearchKernel_Wire_DeleteIndexResult: Self = Self(14);
     pub const SearchKernel_Wire_ListIndexesResult: Self = Self(15);
+    pub const SearchKernel_Wire_PlanIndexChangeResult: Self = Self(16);
+    pub const SearchKernel_Wire_ApplyIndexChangeResult: Self = Self(17);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 15;
+    pub const ENUM_MAX: u8 = 17;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::NONE,
         Self::SearchKernel_Wire_InsertResult,
@@ -77,6 +81,8 @@ impl ResponsePayload {
         Self::SearchKernel_Wire_OpenIndexResult,
         Self::SearchKernel_Wire_DeleteIndexResult,
         Self::SearchKernel_Wire_ListIndexesResult,
+        Self::SearchKernel_Wire_PlanIndexChangeResult,
+        Self::SearchKernel_Wire_ApplyIndexChangeResult,
     ];
     /// Returns the variant's name or "" if unknown.
     pub fn variant_name(self) -> Option<&'static str> {
@@ -104,6 +110,12 @@ impl ResponsePayload {
             }
             Self::SearchKernel_Wire_ListIndexesResult => {
                 Some("SearchKernel_Wire_ListIndexesResult")
+            }
+            Self::SearchKernel_Wire_PlanIndexChangeResult => {
+                Some("SearchKernel_Wire_PlanIndexChangeResult")
+            }
+            Self::SearchKernel_Wire_ApplyIndexChangeResult => {
+                Some("SearchKernel_Wire_ApplyIndexChangeResult")
             }
             _ => None,
         }

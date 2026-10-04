@@ -100,8 +100,15 @@ struct RegistryEntry {
     generation: String,
 }
 
+struct ConfigurationPlan {
+    target: String,
+    generation: Option<String>,
+    definition: IndexDefinitionIr,
+}
+
 pub struct IndexRegistry {
     data_root: PathBuf,
+    plans: Mutex<BTreeMap<String, ConfigurationPlan>>,
     entries: Mutex<BTreeMap<String, Arc<RegistryEntry>>>,
     transition_locks: Mutex<BTreeMap<String, Weak<Mutex<()>>>>,
     shutdown: RwLock<bool>,
@@ -116,6 +123,7 @@ impl IndexRegistry {
         }
         Ok(Self {
             data_root,
+            plans: Mutex::new(BTreeMap::new()),
             entries: Mutex::new(BTreeMap::new()),
             transition_locks: Mutex::new(BTreeMap::new()),
             shutdown: RwLock::new(false),
@@ -186,6 +194,21 @@ impl IndexRegistry {
 
         match decoded.request {
             ControlPlaneRequest::ListIndexes => self.list_indexes(version),
+            ControlPlaneRequest::PlanChange {
+                target,
+                expected_generation,
+                definition,
+            } => self.plan_change(
+                &target,
+                expected_generation.as_deref(),
+                *definition,
+                version,
+            ),
+            ControlPlaneRequest::ApplyChange {
+                target,
+                expected_generation,
+                plan_id,
+            } => self.apply_change(&target, expected_generation.as_deref(), &plan_id, version),
             ControlPlaneRequest::Create { target, definition } => {
                 self.create(&target, *definition, version)
             }
@@ -313,6 +336,276 @@ impl IndexRegistry {
         Ok(RegistryDispatchResult::payload(
             wire::encode_list_indexes_result(version, &targets),
         ))
+    }
+
+    fn plan_change(
+        &self,
+        target: &str,
+        expected_generation: Option<&str>,
+        definition: IndexDefinitionIr,
+        version: wire::WireVersion,
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+        let transition = self.transition_lock(target)?;
+        let _transition = transition
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        let path = match self.checked_index_path(target) {
+            Ok(path) => path,
+            Err(error) => {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version, error,
+                )))
+            }
+        };
+        let current = self
+            .entries
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?
+            .get(target)
+            .cloned();
+        let generation = current.as_ref().map(|entry| entry.generation.as_str());
+        if generation != expected_generation || (path.exists() && current.is_none()) {
+            return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version,
+                searchkernel_ir::stale_index_handle_error(),
+            )));
+        }
+        if let Err(error) = searchkernel_ir_adapter::validate_index_definition(&definition) {
+            return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version, error,
+            )));
+        }
+        let supported = current.as_ref().is_none_or(|entry| {
+            searchkernel_ir_adapter::rank_profile_change_supported(
+                entry.index.clone().into_session_parts().0.definition(),
+                &definition,
+            )
+        });
+        let reasons = if supported {
+            vec![if current.is_some() {
+                "Rank profiles will be applied with an exclusive close and reopen; document data is retained.".to_owned()
+            } else {
+                "A new index will be created; an existing target is never replaced.".to_owned()
+            }]
+        } else {
+            vec!["Field, schema identity, summaries, constants and model changes require reindexing, which is not supported by this apply operation.".to_owned()]
+        };
+        let plan_id = new_generation();
+        if supported {
+            // Exercise native configuration/ranking compilation without touching
+            // the selected index. Validation never publishes the target.
+            let probe_root = self
+                .data_root
+                .join(format!(".configuration-probe-{plan_id}"));
+            if let Err(error) = std::fs::create_dir(&probe_root) {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
+                    PortableError::new(searchkernel_ir::ErrorCode::Unavailable, error.to_string()),
+                )));
+            }
+            let probe_path = probe_root.join("index");
+            let bytes = wire::v1::index_definition_ir_to_api(&definition);
+            let probe = Index::create_from_definition_bytes(&probe_path, &bytes);
+            let validated = match probe {
+                Ok(probe) => probe.close(),
+                Err(error) => Err(error),
+            };
+            let cleanup = if probe_path.exists() {
+                Index::delete_storage(&probe_path)
+            } else {
+                Ok(())
+            };
+            let cleanup_root = std::fs::remove_dir_all(&probe_root)
+                .map_err(|error| IndexError::Infrastructure(error.to_string()));
+            if let Err(error) = validated.and(cleanup).and(cleanup_root) {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
+                    configuration_error_to_portable(error),
+                )));
+            }
+            let mut plans = self
+                .plans
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            if plans.len() >= 128 {
+                if let Some(oldest) = plans.keys().next().cloned() {
+                    plans.remove(&oldest);
+                }
+            }
+            plans.insert(
+                plan_id.clone(),
+                ConfigurationPlan {
+                    target: target.to_owned(),
+                    generation: generation.map(str::to_owned),
+                    definition: definition.clone(),
+                },
+            );
+        }
+        Ok(RegistryDispatchResult::payload(
+            wire::encode_plan_index_change_result(
+                version,
+                &definition,
+                generation,
+                if supported { &plan_id } else { "" },
+                supported,
+                current.is_some(),
+                &reasons,
+            ),
+        ))
+    }
+
+    fn apply_change(
+        &self,
+        target: &str,
+        expected_generation: Option<&str>,
+        plan_id: &str,
+        version: wire::WireVersion,
+    ) -> Result<RegistryDispatchResult, RegistryDispatchError> {
+        let transition = self.transition_lock(target)?;
+        let _transition = transition
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        let invalid_plan = searchkernel_ir::invalid_configuration_plan_error;
+        let mut plans = self
+            .plans
+            .lock()
+            .map_err(|_| RegistryDispatchError::Poisoned)?;
+        let Some(plan) = plans.get(plan_id) else {
+            return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version,
+                invalid_plan(),
+            )));
+        };
+        if plan.target != target || plan.generation.as_deref() != expected_generation {
+            return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version,
+                invalid_plan(),
+            )));
+        }
+        let plan = plans
+            .remove(plan_id)
+            .ok_or(RegistryDispatchError::Poisoned)?;
+        drop(plans);
+
+        let path = match self.checked_index_path(target) {
+            Ok(path) => path,
+            Err(error) => {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version, error,
+                )))
+            }
+        };
+
+        // Retire the currently reachable incarnation under the registry mutex
+        // before waiting for its exclusive lifecycle guard. This preserves the
+        // canonical map -> lifecycle lock order used by dispatch_loaded() and
+        // delete_index(): requests admitted before retirement drain, while new
+        // requests cannot select the retiring entry and deadlock the transition.
+        let entry = {
+            let mut entries = self
+                .entries
+                .lock()
+                .map_err(|_| RegistryDispatchError::Poisoned)?;
+            let entry = entries.get(target).cloned();
+            if entry.as_ref().map(|entry| entry.generation.as_str()) != expected_generation
+                || (entry.is_none() && path.exists())
+            {
+                return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                    version,
+                    searchkernel_ir::stale_index_handle_error(),
+                )));
+            }
+            if entry.is_some() {
+                entries.remove(target)
+            } else {
+                None
+            }
+        };
+
+        let bytes = wire::v1::index_definition_ir_to_api(&plan.definition);
+        let result = if let Some(entry) = entry.as_ref() {
+            let _lifecycle = match entry.lifecycle.write() {
+                Ok(lifecycle) => lifecycle,
+                Err(_) => {
+                    self.entries
+                        .lock()
+                        .map_err(|_| RegistryDispatchError::Poisoned)?
+                        .insert(target.to_owned(), Arc::clone(entry));
+                    return Err(RegistryDispatchError::Poisoned);
+                }
+            };
+
+            match entry.index.apply_rank_definition_bytes_recovering(&bytes) {
+                Ok(index) => Ok(index),
+                Err((error, recovered)) => {
+                    if let Some(index) = recovered {
+                        // The old native owner was closed, rollback completed,
+                        // and the restored owner retained the filesystem
+                        // lifecycle lock throughout. Publish it as a fresh
+                        // incarnation so every stale client generation fails.
+                        let generation = new_generation();
+                        let (context, session) = index.clone().into_session_parts();
+                        let dispatcher = Arc::new(Dispatcher::new(context.clone(), session));
+                        self.entries
+                            .lock()
+                            .map_err(|_| RegistryDispatchError::Poisoned)?
+                            .insert(
+                                target.to_owned(),
+                                Arc::new(RegistryEntry {
+                                    index,
+                                    dispatcher,
+                                    lifecycle: RwLock::new(()),
+                                    generation,
+                                }),
+                            );
+                    } else if entry.index.describe().is_ok() {
+                        // Preparation failed before shutdown. Restore the same
+                        // entry and generation because its incarnation never
+                        // changed.
+                        self.entries
+                            .lock()
+                            .map_err(|_| RegistryDispatchError::Poisoned)?
+                            .insert(target.to_owned(), Arc::clone(entry));
+                    }
+                    return Ok(RegistryDispatchResult::payload(encode_registry_error(
+                        version,
+                        configuration_error_to_portable(error),
+                    )));
+                }
+            }
+        } else {
+            Index::create_from_definition_bytes(&path, &bytes)
+        };
+
+        match result {
+            Ok(index) => {
+                let generation = new_generation();
+                let (context, session) = index.clone().into_session_parts();
+                let dispatcher = Arc::new(Dispatcher::new(context.clone(), session));
+                let payload = wire::encode_apply_index_change_result(
+                    version,
+                    context.definition(),
+                    &generation,
+                );
+                self.entries
+                    .lock()
+                    .map_err(|_| RegistryDispatchError::Poisoned)?
+                    .insert(
+                        target.to_owned(),
+                        Arc::new(RegistryEntry {
+                            index,
+                            dispatcher,
+                            lifecycle: RwLock::new(()),
+                            generation,
+                        }),
+                    );
+                Ok(RegistryDispatchResult::payload(payload))
+            }
+            Err(error) => Ok(RegistryDispatchResult::payload(encode_registry_error(
+                version,
+                configuration_error_to_portable(error),
+            ))),
+        }
     }
 
     fn create(
@@ -601,4 +894,160 @@ fn lifecycle_index_error_to_portable(
     error: IndexError,
 ) -> PortableError {
     searchkernel_ir::lifecycle_failure(operation, error.to_lifecycle_failure())
+}
+
+fn configuration_error_to_portable(error: IndexError) -> PortableError {
+    let code = match error.code() {
+        searchkernel::ErrorCode::InvalidArgument => searchkernel_ir::ErrorCode::InvalidArgument,
+        searchkernel::ErrorCode::Unsupported => searchkernel_ir::ErrorCode::Unsupported,
+        searchkernel::ErrorCode::FailedPrecondition
+        | searchkernel::ErrorCode::CorruptIndex
+        | searchkernel::ErrorCode::IncompatibleIndex
+        | searchkernel::ErrorCode::IndexClosed => searchkernel_ir::ErrorCode::FailedPrecondition,
+        searchkernel::ErrorCode::AlreadyExists => searchkernel_ir::ErrorCode::AlreadyExists,
+        _ => searchkernel_ir::ErrorCode::Unavailable,
+    };
+    let mut result = PortableError::new(code, error.to_string());
+    for detail in error.details() {
+        result = result.with_detail(&detail.code, detail.path.as_deref(), &detail.message);
+    }
+    result
+}
+
+#[cfg(all(test, feature = "native"))]
+mod configuration_lock_order_tests {
+    use super::*;
+    use std::sync::{mpsc, Arc};
+    use std::time::{Duration, Instant};
+
+    struct Root(PathBuf);
+
+    impl Root {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "searchkerneld-configuration-lock-order-{}-{}",
+                std::process::id(),
+                new_generation()
+            ));
+            std::fs::create_dir(&path).expect("create test root");
+            Self(path)
+        }
+    }
+
+    impl Drop for Root {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn apply_retires_entry_before_waiting_for_inflight_readers() {
+        let root = Root::new();
+        let registry = Arc::new(IndexRegistry::new(&root.0).expect("registry"));
+        let index = Index::create(
+            root.0.join("catalog"),
+            searchkernel::IndexDefinition::new()
+                .name("products")
+                .field(
+                    searchkernel::Field::text("title")
+                        .stored(true)
+                        .searchable(true),
+                )
+                .rank_profile(searchkernel::RankProfile::new("product_rank").first_phase("1")),
+        )
+        .expect("create index");
+
+        let (context, session) = index.clone().into_session_parts();
+        let generation = "test-generation".to_owned();
+        let entry = Arc::new(RegistryEntry {
+            index,
+            dispatcher: Arc::new(Dispatcher::new(context.clone(), session)),
+            lifecycle: RwLock::new(()),
+            generation: generation.clone(),
+        });
+        registry
+            .entries
+            .lock()
+            .expect("entries")
+            .insert("catalog".to_owned(), Arc::clone(&entry));
+
+        let mut proposed = context.definition().clone();
+        let mut profiles = proposed.rank_profiles().to_vec();
+        profiles[0]
+            .first_phase
+            .as_mut()
+            .expect("first phase")
+            .expression = Some("2".to_owned());
+        proposed.set_rank_profiles(profiles);
+        registry.plans.lock().expect("plans").insert(
+            "test-plan".to_owned(),
+            ConfigurationPlan {
+                target: "catalog".to_owned(),
+                generation: Some(generation.clone()),
+                definition: proposed,
+            },
+        );
+
+        // Model a request that was admitted before the configuration transition.
+        // apply_change must first retire the registry entry and only then wait
+        // for this reader to drain. The previous lock order waited for write()
+        // first and left the entry reachable, enabling entries <-> lifecycle
+        // ABBA deadlock with dispatch_loaded().
+        let admitted_reader = entry.lifecycle.read().expect("reader");
+        let apply_registry = Arc::clone(&registry);
+        let apply_generation = generation.clone();
+        let (sent, received) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let result = apply_registry.apply_change(
+                "catalog",
+                Some(&apply_generation),
+                "test-plan",
+                WireVersion::V1,
+            );
+            let _ = sent.send(result);
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if registry
+                .loaded_targets()
+                .expect("loaded targets")
+                .is_empty()
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "configuration apply waited for lifecycle.write() while the old entry remained reachable"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        // A new request can still acquire the global registry map while the
+        // transition waits for the admitted reader. It observes the retired
+        // incarnation instead of holding entries while blocking on its guard.
+        registry
+            .dispatch_loaded("catalog", &[], Some(&generation), WireVersion::V1)
+            .expect("retired target returns a canonical response");
+
+        drop(admitted_reader);
+
+        received
+            .recv_timeout(Duration::from_secs(60))
+            .expect("configuration apply completed after reader drained")
+            .expect("configuration apply registry result");
+        worker.join().expect("apply worker");
+
+        let replacement_generation = registry
+            .entries
+            .lock()
+            .expect("entries")
+            .get("catalog")
+            .expect("replacement entry")
+            .generation
+            .clone();
+        assert_ne!(replacement_generation, generation);
+
+        registry.close_all().expect("close registry");
+    }
 }

@@ -684,6 +684,7 @@ dependencies = [
  "searchkernel",
  "searchkernel-dispatch",
  "searchkernel-ir",
+ "searchkernel-ir-adapter",
  "searchkernel-protocol",
  "searchkernel-rpc",
  "searchkernel-testkit",

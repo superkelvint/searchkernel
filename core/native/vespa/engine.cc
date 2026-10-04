@@ -683,6 +683,35 @@ class EmbeddedEngine {
         return identity;
     }
 
+    // Rank configuration affects query execution, not persisted document/index
+    // layout. Preserve the v2 marker format and compare every storage-relevant
+    // byte; parse length-framed blocks so expression text cannot spoof a section.
+    static std::optional<std::string> storage_identity(const std::string &identity) {
+        if (!identity.starts_with("version=2\ndocument_type=")) return std::nullopt;
+        const auto first_file = identity.find("file=indexschema.cfg\nlength=");
+        if (first_file == std::string::npos) return std::nullopt;
+        std::string result = identity.substr(0, first_file);
+        size_t cursor = first_file;
+        for (const char *name : {"indexschema.cfg", "attributes.cfg", "summary.cfg",
+                                 "rank-profiles.cfg", "juniperrc.cfg"}) {
+            const auto prefix = "file=" + std::string(name) + "\nlength=";
+            if (identity.compare(cursor, prefix.size(), prefix) != 0) return std::nullopt;
+            const auto start = cursor;
+            cursor += prefix.size();
+            const auto newline = identity.find('\n', cursor);
+            if (newline == std::string::npos) return std::nullopt;
+            size_t length = 0;
+            const auto parsed = std::from_chars(identity.data() + cursor, identity.data() + newline, length);
+            if (parsed.ec != std::errc() || parsed.ptr != identity.data() + newline) return std::nullopt;
+            cursor = newline + 1;
+            if (length >= identity.size() - cursor || identity[cursor + length] != '\n') return std::nullopt;
+            cursor += length + 1;
+            if (std::string_view(name) != "rank-profiles.cfg") result.append(identity, start, cursor - start);
+        }
+        if (cursor != identity.size()) return std::nullopt;
+        return result;
+    }
+
     static std::string validate_or_persist_schema_identity(
         const std::string &data_dir, const std::string &config_dir,
         const SchemaManifest &manifest, bool had_existing_state) {
@@ -696,7 +725,9 @@ class EmbeddedEngine {
                 throw std::invalid_argument("index schema identity is not a regular file");
             }
             const auto actual = read_identity_file(path);
-            if (actual != expected) {
+            const auto actual_storage = storage_identity(actual);
+            const auto expected_storage = storage_identity(expected);
+            if (actual != expected && (!actual_storage || !expected_storage || *actual_storage != *expected_storage)) {
                 throw std::invalid_argument(
                     "index data was created with a different generated schema");
             }
@@ -3160,6 +3191,21 @@ public:
             bucket_spaces, tune, _hw_info);
         config.forwardConfig(bootstrap);
         config.nextGeneration(_shared_service.transport(), 0ms);
+
+        // DocumentDB builds its matchers on a worker where an invalid expression
+        // can escape as a fatal exception. Compile the exact same Vespa matcher
+        // synchronously first so malformed administration input becomes an ABI
+        // error and cannot terminate the daemon.
+        const auto snapshot = config.getConfig();
+        vespalib::eval::ConstantTensorLoader constant_factory(vespalib::eval::FastValueBuilderFactory::get());
+        search::fef::RankingAssetsRepo ranking_assets(constant_factory,
+            snapshot->getRankingConstantsSP(), snapshot->getRankingExpressionsSP(), snapshot->getOnnxModelsSP());
+        for (const auto &profile : snapshot->getRankProfilesConfig().rankprofile) {
+            search::fef::Properties properties;
+            for (const auto &property : profile.fef.property) properties.add(property.name, property.value);
+            proton::matching::Matcher preflight(*snapshot->getSchemaSP(), std::move(properties),
+                _shared_service.nowRef(), _query_limiter, ranking_assets, -1);
+        }
 
         proton::ConfigStore::UP config_store;
         if (std::filesystem::exists(std::filesystem::path(config_dir) / "proton.cfg")) {

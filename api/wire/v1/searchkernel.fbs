@@ -600,9 +600,34 @@ table DeleteIndexResult {
 table ListIndexesRequest {
 }
 
+// Administration slice actually served by this daemon. Absent metadata means
+// the server has not exposed these operations; clients must gate mutation.
+table ConfigurationCapabilities {
+  create_index:bool;
+  rank_profiles_write:bool;
+  change_plan:bool;
+  field_mutation:bool;
+}
 table ListIndexesResult {
   targets:[string];
+  configuration:ConfigurationCapabilities;
 }
+
+// Configuration administration validates through the same IR/backend path as
+// create. A plan is process-local, single-use, and bound to the target incarnation.
+// Existing-index changes currently support rank profiles only; schema changes
+// requiring reindexing are reported explicitly and cannot be applied.
+table PlanIndexChangeRequest { definition:IndexDefinition; }
+table PlanIndexChangeResult {
+  definition:IndexDefinition;
+  generation:string;
+  plan_id:string;
+  supported:bool;
+  requires_reopen:bool;
+  reasons:[string];
+}
+table ApplyIndexChangeRequest { plan_id:string; }
+table ApplyIndexChangeResult { index:IndexDefinition; generation:string; }
 
 table IndexDefinition {
   name:string;

@@ -3516,7 +3516,31 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/tests/lifecycle.test.ts",
-              "line": 35
+              "line": 37
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "daemon.configuration_workflow",
+      "title": "Validated index creation and rank-profile configuration apply",
+      "area": "daemon",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "daemon.configuration_workflow",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "browser",
+              "kind": "ergonomic",
+              "strength": "builder",
+              "path": "clients/typescript/tests/lifecycle.test.ts",
+              "line": 51
             }
           ],
           "overrides": []

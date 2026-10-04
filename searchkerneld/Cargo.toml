@@ -23,6 +23,7 @@ http-body-util = "0.1"
 prost = "0.13"
 searchkernel = { path = "../core/crates/searchkernel", default-features = false, features = ["internal-api"] }
 searchkernel-dispatch = { path = "../core/crates/searchkernel-dispatch" }
+searchkernel-ir-adapter = { path = "../core/crates/searchkernel-ir-adapter" }
 searchkernel-ir = { path = "../core/crates/searchkernel-ir" }
 searchkernel-protocol = { path = "../core/crates/searchkernel-protocol" }
 searchkernel-rpc = { path = "../core/crates/searchkernel-rpc" }
@@ -43,6 +44,7 @@ http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 searchkernel = { path = "../core/crates/searchkernel", default-features = false, features = ["internal-api", "remote"] }
+searchkernel-ir-adapter = { path = "../core/crates/searchkernel-ir-adapter" }
 searchkernel-ir = { path = "../core/crates/searchkernel-ir" }
 searchkernel-testkit = { path = "../core/crates/searchkernel-testkit" }
 

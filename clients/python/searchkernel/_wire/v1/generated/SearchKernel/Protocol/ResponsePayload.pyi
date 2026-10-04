@@ -5,6 +5,7 @@ import numpy as np
 
 import typing
 from SearchKernel.Wire.AnalyzeResult import AnalyzeResult
+from SearchKernel.Wire.ApplyIndexChangeResult import ApplyIndexChangeResult
 from SearchKernel.Wire.CreateIndexResult import CreateIndexResult
 from SearchKernel.Wire.DeleteIndexResult import DeleteIndexResult
 from SearchKernel.Wire.DeleteResult import DeleteResult
@@ -16,6 +17,7 @@ from SearchKernel.Wire.InspectQueryResult import InspectQueryResult
 from SearchKernel.Wire.ListIndexesResult import ListIndexesResult
 from SearchKernel.Wire.OpenIndexResult import OpenIndexResult
 from SearchKernel.Wire.PatchResult import PatchResult
+from SearchKernel.Wire.PlanIndexChangeResult import PlanIndexChangeResult
 from SearchKernel.Wire.SearchResult import SearchResult
 from SearchKernel.Wire.UpdateResult import UpdateResult
 from SearchKernel.Wire.UpsertResult import UpsertResult
@@ -41,4 +43,6 @@ class ResponsePayload(object):
   SearchKernel_Wire_OpenIndexResult = cast(int, ...)
   SearchKernel_Wire_DeleteIndexResult = cast(int, ...)
   SearchKernel_Wire_ListIndexesResult = cast(int, ...)
-def ResponsePayloadCreator(union_type: typing.Literal[ResponsePayload.NONE, ResponsePayload.SearchKernel_Wire_InsertResult, ResponsePayload.SearchKernel_Wire_UpsertResult, ResponsePayload.SearchKernel_Wire_PatchResult, ResponsePayload.SearchKernel_Wire_DeleteResult, ResponsePayload.SearchKernel_Wire_GetResult, ResponsePayload.SearchKernel_Wire_SearchResult, ResponsePayload.SearchKernel_Wire_AnalyzeResult, ResponsePayload.SearchKernel_Wire_Error, ResponsePayload.SearchKernel_Wire_DescribeResult, ResponsePayload.SearchKernel_Wire_InspectQueryResult, ResponsePayload.SearchKernel_Wire_UpdateResult, ResponsePayload.SearchKernel_Wire_CreateIndexResult, ResponsePayload.SearchKernel_Wire_OpenIndexResult, ResponsePayload.SearchKernel_Wire_DeleteIndexResult, ResponsePayload.SearchKernel_Wire_ListIndexesResult], table: table.Table) -> typing.Union[None, InsertResult, UpsertResult, PatchResult, DeleteResult, GetResult, SearchResult, AnalyzeResult, Error, DescribeResult, InspectQueryResult, UpdateResult, CreateIndexResult, OpenIndexResult, DeleteIndexResult, ListIndexesResult]: ...
+  SearchKernel_Wire_PlanIndexChangeResult = cast(int, ...)
+  SearchKernel_Wire_ApplyIndexChangeResult = cast(int, ...)
+def ResponsePayloadCreator(union_type: typing.Literal[ResponsePayload.NONE, ResponsePayload.SearchKernel_Wire_InsertResult, ResponsePayload.SearchKernel_Wire_UpsertResult, ResponsePayload.SearchKernel_Wire_PatchResult, ResponsePayload.SearchKernel_Wire_DeleteResult, ResponsePayload.SearchKernel_Wire_GetResult, ResponsePayload.SearchKernel_Wire_SearchResult, ResponsePayload.SearchKernel_Wire_AnalyzeResult, ResponsePayload.SearchKernel_Wire_Error, ResponsePayload.SearchKernel_Wire_DescribeResult, ResponsePayload.SearchKernel_Wire_InspectQueryResult, ResponsePayload.SearchKernel_Wire_UpdateResult, ResponsePayload.SearchKernel_Wire_CreateIndexResult, ResponsePayload.SearchKernel_Wire_OpenIndexResult, ResponsePayload.SearchKernel_Wire_DeleteIndexResult, ResponsePayload.SearchKernel_Wire_ListIndexesResult, ResponsePayload.SearchKernel_Wire_PlanIndexChangeResult, ResponsePayload.SearchKernel_Wire_ApplyIndexChangeResult], table: table.Table) -> typing.Union[None, InsertResult, UpsertResult, PatchResult, DeleteResult, GetResult, SearchResult, AnalyzeResult, Error, DescribeResult, InspectQueryResult, UpdateResult, CreateIndexResult, OpenIndexResult, DeleteIndexResult, ListIndexesResult, PlanIndexChangeResult, ApplyIndexChangeResult]: ...

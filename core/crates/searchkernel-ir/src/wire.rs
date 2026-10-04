@@ -69,6 +69,36 @@ pub fn encode_open_index_result(
     }
 }
 
+pub fn encode_plan_index_change_result(
+    version: WireVersion,
+    definition: &crate::IndexDefinitionIr,
+    generation: Option<&str>,
+    plan_id: &str,
+    supported: bool,
+    requires_reopen: bool,
+    reasons: &[String],
+) -> Vec<u8> {
+    match version {
+        WireVersion::V1 => v1::encode_plan_index_change_result(
+            definition,
+            generation,
+            plan_id,
+            supported,
+            requires_reopen,
+            reasons,
+        ),
+    }
+}
+pub fn encode_apply_index_change_result(
+    version: WireVersion,
+    definition: &crate::IndexDefinitionIr,
+    generation: &str,
+) -> Vec<u8> {
+    match version {
+        WireVersion::V1 => v1::encode_apply_index_change_result(definition, generation),
+    }
+}
+
 pub fn encode_delete_index_result(version: WireVersion) -> Vec<u8> {
     match version {
         WireVersion::V1 => v1::encode_delete_index_result(),
@@ -167,6 +197,47 @@ pub mod v1 {
             .to_owned();
 
         match envelope.payload_type() {
+            wire::RequestPayload::SearchKernel_Wire_PlanIndexChangeRequest => {
+                let payload = envelope
+                    .payload_as_search_kernel_wire_plan_index_change_request()
+                    .ok_or(ControlPlaneDecodeError::InvalidRequest)?;
+                let definition =
+                    payload
+                        .definition()
+                        .ok_or_else(|| ControlPlaneDecodeError::Semantic {
+                            version: WireVersion::V1,
+                            error: crate::missing_configuration_definition_error(),
+                        })?;
+                let definition = index_definition_to_ir(definition).map_err(|error| {
+                    ControlPlaneDecodeError::Semantic {
+                        version: WireVersion::V1,
+                        error,
+                    }
+                })?;
+                Ok(ControlPlaneRequest::PlanChange {
+                    target,
+                    expected_generation: target_view.generation().map(str::to_owned),
+                    definition: Box::new(definition),
+                })
+            }
+            wire::RequestPayload::SearchKernel_Wire_ApplyIndexChangeRequest => {
+                let payload = envelope
+                    .payload_as_search_kernel_wire_apply_index_change_request()
+                    .ok_or(ControlPlaneDecodeError::InvalidRequest)?;
+                let plan_id = payload
+                    .plan_id()
+                    .filter(|id| !id.is_empty())
+                    .ok_or_else(|| ControlPlaneDecodeError::Semantic {
+                        version: WireVersion::V1,
+                        error: crate::invalid_configuration_plan_error(),
+                    })?
+                    .to_owned();
+                Ok(ControlPlaneRequest::ApplyChange {
+                    target,
+                    expected_generation: target_view.generation().map(str::to_owned),
+                    plan_id,
+                })
+            }
             wire::RequestPayload::SearchKernel_Wire_CreateIndexRequest => {
                 let payload = envelope
                     .payload_as_search_kernel_wire_create_index_request()
@@ -268,6 +339,61 @@ pub mod v1 {
         )
     }
 
+    pub(super) fn encode_plan_index_change_result(
+        definition: &crate::IndexDefinitionIr,
+        generation: Option<&str>,
+        plan_id: &str,
+        supported: bool,
+        requires_reopen: bool,
+        reasons: &[String],
+    ) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let definition = crate::ir_to_api::index_definition_offset(&mut builder, definition);
+        let generation = generation.map(|value| builder.create_string(value));
+        let plan_id = builder.create_string(plan_id);
+        let reasons: Vec<_> = reasons
+            .iter()
+            .map(|reason| builder.create_string(reason))
+            .collect();
+        let reasons = builder.create_vector(&reasons);
+        let payload = schema::PlanIndexChangeResult::create(
+            &mut builder,
+            &schema::PlanIndexChangeResultArgs {
+                definition: Some(definition),
+                generation,
+                plan_id: Some(plan_id),
+                supported,
+                requires_reopen,
+                reasons: Some(reasons),
+            },
+        );
+        encode_response(
+            &mut builder,
+            wire::ResponsePayload::SearchKernel_Wire_PlanIndexChangeResult,
+            payload.as_union_value(),
+        )
+    }
+    pub(super) fn encode_apply_index_change_result(
+        definition: &crate::IndexDefinitionIr,
+        generation: &str,
+    ) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let index = crate::ir_to_api::index_definition_offset(&mut builder, definition);
+        let generation = builder.create_string(generation);
+        let payload = schema::ApplyIndexChangeResult::create(
+            &mut builder,
+            &schema::ApplyIndexChangeResultArgs {
+                index: Some(index),
+                generation: Some(generation),
+            },
+        );
+        encode_response(
+            &mut builder,
+            wire::ResponsePayload::SearchKernel_Wire_ApplyIndexChangeResult,
+            payload.as_union_value(),
+        )
+    }
+
     pub(super) fn encode_delete_index_result() -> Vec<u8> {
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let payload = schema::DeleteIndexResult::create(
@@ -289,10 +415,20 @@ pub mod v1 {
             .map(|name| builder.create_string(name))
             .collect();
         let targets = builder.create_vector(&names);
+        let configuration = schema::ConfigurationCapabilities::create(
+            &mut builder,
+            &schema::ConfigurationCapabilitiesArgs {
+                create_index: true,
+                rank_profiles_write: true,
+                change_plan: true,
+                field_mutation: false,
+            },
+        );
         let payload = schema::ListIndexesResult::create(
             &mut builder,
             &schema::ListIndexesResultArgs {
                 targets: Some(targets),
+                configuration: Some(configuration),
             },
         )
         .as_union_value();
