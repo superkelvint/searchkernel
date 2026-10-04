@@ -2149,13 +2149,13 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
     engine
         .put(
             Document::new("doc-1")
-                .field("title", "private_term")
+                .field("title", "secretterm")
                 .field("qty", 7_i64),
         )
         .expect("insert diagnostic fixture");
     let request = SearchRequest::new(Query::Term {
         field: "title".into(),
-        text: "private_term".into(),
+        text: "secretterm".into(),
     })
     .rank_profile("diagnostic")
     .query_feature("weight", 2.75)
@@ -2164,7 +2164,6 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
         TensorValue::dense("tensor<float>(x[512])", vec![9182.5; 512]),
     )
     .rank_property("private_property", "secret_value".repeat(16))
-    .sort(SortField::descending("qty"))
     .limit(3)
     .timeout(Duration::from_secs(30));
 
@@ -2203,7 +2202,7 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
     assert_eq!(snapshot["timeout_ms"], 30_000.0);
     assert!(snapshot["time_left_ms"].as_f64().unwrap() <= 30_000.0);
     assert_eq!(snapshot["maxhits"], 3);
-    assert_eq!(snapshot["sort"], "-qty");
+    assert_eq!(snapshot["sort"], "");
     assert_eq!(snapshot["trace_level"], 0);
     assert_eq!(snapshot["grouping_bytes"], 0);
     assert!(!snapshot["query_tree"].as_array().unwrap().is_empty());
@@ -2222,9 +2221,21 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
     assert_eq!(property(rank, "query(private_tensor)"), "[redacted]");
     assert_eq!(property(features, "query(weight)"), "[redacted]");
     let snapshot_text = snapshot.to_string();
-    for secret in ["private_term", "secret_value", "9182.5", "8371.25", "2.75"] {
+    for secret in ["secretterm", "secret_value", "9182.5", "8371.25", "2.75"] {
         assert!(!snapshot_text.contains(secret), "snapshot leaked {secret}");
     }
+
+    let sorted_request = request.clone().sort(SortField::descending("qty"));
+    let sorted_ordinary = engine
+        .search(sorted_request)
+        .expect("ordinary sorted search");
+    let sorted = engine
+        .search(diagnostic.clone().sort(SortField::descending("qty")))
+        .expect("diagnostic sorted search");
+    assert_eq!(sorted.hits, sorted_ordinary.hits);
+    let sorted_raw: serde_json::Value =
+        serde_json::from_str(&sorted.diagnostics.unwrap().trace).unwrap();
+    assert_eq!(sorted_raw["final_matcher_request"]["sort"], "-qty");
 
     // Output limits and structural limits are independent and both explicit.
     diagnostic.diagnostics.as_mut().unwrap().raw_bytes = 128;
