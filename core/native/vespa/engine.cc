@@ -4171,6 +4171,157 @@ public:
         return result;
     }
 
+
+    struct DiagnosticTermFieldDescriptor {
+        uint32_t term_id;
+        search::fef::TermFieldHandle handle;
+        std::string operator_name;
+        std::string term;
+        std::string field;
+    };
+
+    static std::optional<std::pair<std::string, std::string>>
+    diagnostic_term_identity(const search::fef::ITermData &term) {
+        if (const auto *node = dynamic_cast<const search::query::StringTerm *>(&term)) {
+            return std::pair<std::string, std::string>{"term", node->getTerm()};
+        }
+        if (const auto *node = dynamic_cast<const search::query::PrefixTerm *>(&term)) {
+            return std::pair<std::string, std::string>{"prefix", node->getTerm()};
+        }
+        if (const auto *node = dynamic_cast<const search::query::SubstringTerm *>(&term)) {
+            return std::pair<std::string, std::string>{"substring", node->getTerm()};
+        }
+        if (const auto *node = dynamic_cast<const search::query::SuffixTerm *>(&term)) {
+            return std::pair<std::string, std::string>{"suffix", node->getTerm()};
+        }
+        if (const auto *node = dynamic_cast<const search::query::RegExpTerm *>(&term)) {
+            return std::pair<std::string, std::string>{"regexp", node->getTerm()};
+        }
+        if (const auto *node = dynamic_cast<const search::query::FuzzyTerm *>(&term)) {
+            return std::pair<std::string, std::string>{"fuzzy", node->getTerm()};
+        }
+        if (const auto *node = dynamic_cast<const search::query::NumberTerm *>(&term)) {
+            return std::pair<std::string, std::string>{"number", node->getTerm()};
+        }
+        if (dynamic_cast<const search::query::Phrase *>(&term) != nullptr) {
+            return std::pair<std::string, std::string>{"phrase", std::string{}};
+        }
+        if (dynamic_cast<const search::query::SameElement *>(&term) != nullptr) {
+            return std::pair<std::string, std::string>{"same_element", std::string{}};
+        }
+        // Vector, predicate, geo and compound weighted/range terms have distinct
+        // semantics. Do not coerce them into lexical term evidence.
+        return std::nullopt;
+    }
+
+    static void capture_match_evidence(
+        proton::matching::SearchSession &session, const SearchReply &reply,
+        const std::vector<size_t> &live_hit_rows, LocalSearchResultState &result,
+        uint32_t hit_limit) {
+        constexpr size_t MAX_EVIDENCE_RECORDS = 4096;
+        result.diagnostic_match_evidence_status = SK_MATCH_EVIDENCE_AVAILABLE;
+        const size_t bounded_hits =
+            std::min<size_t>(std::min(live_hit_rows.size(), result.hits.size()), hit_limit);
+        if (bounded_hits < result.hits.size()) {
+            result.diagnostic_match_evidence_status |= SK_MATCH_EVIDENCE_TRUNCATED;
+        }
+        if (bounded_hits == 0) {
+            return;
+        }
+
+        auto &factory = session.getMatchToolsFactory();
+        auto &match_query = const_cast<proton::matching::Query &>(factory.query());
+        std::vector<const search::fef::ITermData *> terms;
+        match_query.extractTerms(terms);
+
+        auto field_names = factory.getFieldIdToNameMapper();
+        std::vector<DiagnosticTermFieldDescriptor> descriptors;
+        const size_t descriptor_limit =
+            std::max<size_t>(1, MAX_EVIDENCE_RECORDS / bounded_hits);
+        for (const auto *term : terms) {
+            if (term == nullptr) {
+                result.diagnostic_match_evidence_status |= SK_MATCH_EVIDENCE_PARTIAL;
+                continue;
+            }
+            const auto identity = diagnostic_term_identity(*term);
+            if (!identity) {
+                result.diagnostic_match_evidence_status |= SK_MATCH_EVIDENCE_PARTIAL;
+                continue;
+            }
+            for (uint32_t field_index = 0; field_index < term->numFields(); ++field_index) {
+                const auto &field = term->field(field_index);
+                const auto handle = field.getHandle();
+                if (handle == search::fef::IllegalHandle) {
+                    result.diagnostic_match_evidence_status |= SK_MATCH_EVIDENCE_PARTIAL;
+                    continue;
+                }
+                if (descriptors.size() == descriptor_limit) {
+                    result.diagnostic_match_evidence_status |= SK_MATCH_EVIDENCE_TRUNCATED;
+                    break;
+                }
+                descriptors.push_back({
+                    term->getUniqueId(),
+                    handle,
+                    identity->first,
+                    identity->second,
+                    field_names.lookup(field.getFieldId()),
+                });
+            }
+            if (descriptors.size() == descriptor_limit) {
+                break;
+            }
+        }
+        if (descriptors.empty()) {
+            return;
+        }
+
+        auto match_data = factory.createMatchData();
+        for (uint32_t handle = 0; handle < match_data->getNumTermFields(); ++handle) {
+            match_data->resolveTermField(handle)->tagAsNotNeeded();
+        }
+        for (const auto &descriptor : descriptors) {
+            match_data->resolveTermField(descriptor.handle)->setNeedNormalFeatures(true);
+        }
+        match_query.set_matching_phase(search::queryeval::MatchingPhase::MATCH_FEATURES);
+        auto search = match_query.createSearch(*match_data);
+
+        std::vector<std::pair<uint32_t, size_t>> documents;
+        documents.reserve(bounded_hits);
+        for (size_t result_index = 0; result_index < bounded_hits; ++result_index) {
+            const size_t reply_index = live_hit_rows[result_index];
+            if (reply_index >= reply.hits.size()) {
+                result.diagnostic_match_evidence_status |= SK_MATCH_EVIDENCE_PARTIAL;
+                continue;
+            }
+            uint32_t lid = 0;
+            if (!factory.metaStore().getLid(reply.hits[reply_index].gid, lid)) {
+                result.diagnostic_match_evidence_status |= SK_MATCH_EVIDENCE_PARTIAL;
+                continue;
+            }
+            documents.emplace_back(lid, result_index);
+        }
+        if (documents.empty()) {
+            return;
+        }
+        std::sort(documents.begin(), documents.end());
+        search->initRange(documents.front().first, documents.back().first + 1);
+        for (const auto &[lid, result_index] : documents) {
+            search->unpack(lid);
+            auto &out = result.hits[result_index].term_field_evidence;
+            out.reserve(descriptors.size());
+            for (const auto &descriptor : descriptors) {
+                const auto *match = match_data->resolveTermField(descriptor.handle);
+                out.push_back({
+                    descriptor.term_id,
+                    descriptor.operator_name,
+                    descriptor.term,
+                    descriptor.field,
+                    match->has_ranking_data(lid),
+                });
+            }
+        }
+    }
+
     LocalSearchResultState search_local(const NativeQueryState &query,
                                         const LocalSearchRequestState &options) const {
         if (options.rank_profile.empty()) throw std::invalid_argument("rank profile must not be empty");
@@ -4182,6 +4333,14 @@ public:
         request.ranking = options.rank_profile;
         request.propertiesMap.lookupCreate(search::MapNames::RANK)
             .add("vespa.matching.numthreadspersearch", "1");
+        if (options.diagnostic_match_evidence_hits != 0) {
+            static std::atomic<uint64_t> diagnostic_session_counter{1};
+            const auto session_id = std::string("searchkernel-match-evidence-") +
+                                    std::to_string(diagnostic_session_counter.fetch_add(
+                                        1, std::memory_order_relaxed));
+            request.sessionId.assign(session_id.begin(), session_id.end());
+            request.propertiesMap.lookupCreate(search::MapNames::CACHES).add("query", "true");
+        }
         // This environment-gated hook is deliberately outside the public ABI.
         // M14 uses it to capture Vespa's own blueprint and query statistics;
         // normal callers never request or receive native execution traces.
@@ -4254,6 +4413,15 @@ public:
         const auto match_end = std::chrono::steady_clock::now();
         failpoint("search_after_match");
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
+        std::shared_ptr<proton::matching::SearchSession> diagnostic_session;
+        if (options.diagnostic_match_evidence_hits != 0) {
+            auto [session, expected] =
+                proton::matching::Matcher::lookupSearchSession(_db->session_manager(), request);
+            diagnostic_session = std::move(session);
+            if (!expected) {
+                diagnostic_session.reset();
+            }
+        }
         write_native_trace(request.trace());
         LocalSearchResultState result;
         if (options.diagnostic_raw_bytes != 0) {
@@ -4299,6 +4467,24 @@ public:
             }
         }
         failpoint("search_after_id_resolution");
+        if (options.diagnostic_match_evidence_hits != 0) {
+            if (result.hits.empty()) {
+                result.diagnostic_match_evidence_status = SK_MATCH_EVIDENCE_AVAILABLE;
+            } else if (!diagnostic_session) {
+                result.diagnostic_match_evidence_status = SK_MATCH_EVIDENCE_FAILED;
+            } else {
+                try {
+                    capture_match_evidence(*diagnostic_session, *reply, live_hit_rows, result,
+                                           options.diagnostic_match_evidence_hits);
+                } catch (...) {
+                    // Diagnostic collection must never change search success semantics.
+                    result.diagnostic_match_evidence_status = SK_MATCH_EVIDENCE_FAILED;
+                    for (auto &hit : result.hits) {
+                        hit.term_field_evidence.clear();
+                    }
+                }
+            }
+        }
         // The document meta store can invalidate a hit after matching. Keep
         // all per-hit result data aligned with the compacted live-hit list;
         // never use the original reply row as the result accessor row.
