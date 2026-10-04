@@ -3,6 +3,7 @@ import type { ClientDiagnostics, PreparedDiagnostics } from '../../api/searchker
 export function diagnosticBundle(result: ClientDiagnostics, request: PreparedDiagnostics,
   include: { query: boolean; values: boolean; raw: boolean }) {
   return JSON.stringify({ format: 'searchkernel-query-diagnostics-v1',
+    searchKernelVersion: result.evidence.find(value => value.section === 'Query')?.values.searchkernel_version ?? 'Unavailable',
     execution: result.execution, sourceRun: result.sourceRun,
     engineVersions: result.rawEngine.map(value => ({ engine: value.engine, version: value.version })),
     request: include.query ? JSON.parse(request.canonical) : undefined,

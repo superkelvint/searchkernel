@@ -4275,8 +4275,8 @@ public:
                     const auto &value = features.values[row * features.names.size() + column];
                     if (value.is_data()) {
                         const auto data = value.as_data();
-                        if (data.size() > feature_bytes_remaining - bytes) { fits = false; break; }
-                        bytes += data.size();
+                        if (data.size > feature_bytes_remaining - bytes) { fits = false; break; }
+                        bytes += data.size;
                     }
                 }
             }

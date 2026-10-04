@@ -248,6 +248,9 @@ fn filter_variants(request: &SearchRequestIr) -> Vec<(String, SearchRequestIr)> 
         FilterIr::And(clauses) => clauses.clone(),
         other => vec![other.clone()],
     };
+    // Root annotations can affect retrieval; removing a clause must not silently
+    // discard or reinterpret those controls.
+    if !expression.annotations.is_empty() { return Vec::new(); }
     clauses
         .iter()
         .enumerate()
@@ -476,6 +479,8 @@ pub fn execute(
             QueryIr::Yql { .. } => "Engine-owned YQL query. Friendly interpretation of arbitrary YQL is unavailable; inspect the exact source and engine tree.",
         });
     effective.canonical_request = Some(request.clone());
+    effective.values.insert("searchkernel_version".into(), Value::String(env!("CARGO_PKG_VERSION").into()));
+    if let Some(filter) = request.filter() { effective.values.insert("explicit_filters".into(), Value::String(friendly_filter(filter))); }
     let profiles = configured_profiles(context, &request.ranking_request().profile);
     let signals: BTreeSet<_> = profiles
         .iter()
@@ -696,8 +701,8 @@ pub fn execute(
             "Existence is a fresh document read; returned status is observed in the diagnostic rerun. Unobserved intermediate stages remain unavailable.");
         item.values
             .insert("document_exists".into(), Value::Bool(exists));
-        item.values.insert("returned".into(), Value::Bool(returned));
-        if !timed_out && (!exists || !returned) {
+        item.values.insert("returned".into(), if returned || execution.complete { Value::Bool(returned) } else { Value::Null });
+        if !timed_out && (!exists || (!returned && execution.complete)) {
             item.values.insert(
                 "first_observed_negative_stage".into(),
                 Value::String(
@@ -732,7 +737,7 @@ pub fn execute(
                 ("Retrieval candidates", DiagnosticObservation::Unavailable),
                 ("First-phase ranking", DiagnosticObservation::Unavailable),
                 ("Second-phase ranking", DiagnosticObservation::Unavailable),
-                ("Returned", observed(returned)),
+                ("Returned", if !returned && !execution.complete { DiagnosticObservation::Unavailable } else { observed(returned) }),
             ]
             .into_iter()
             .map(|(name, observation)| DiagnosticDocumentStage {
@@ -746,7 +751,7 @@ pub fn execute(
             })
             .collect(),
         });
-        if !timed_out && (!exists || !returned) {
+        if !timed_out && (!exists || (!returned && execution.complete)) {
             findings.push(DiagnosticFinding { code: if exists { "expected_document_not_returned" } else { "expected_document_absent" }.into(),
                 message: if exists { "The expected document exists but was not returned by this diagnostic rerun. Its matching and ranking stages were not observed." }
                     else { "A fresh document read did not find the expected document." }.into(), evidence_ids: vec!["expected-document".into()] });
