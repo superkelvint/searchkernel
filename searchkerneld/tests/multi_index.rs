@@ -323,8 +323,19 @@ fn diagnostic_request(target_name: Option<&str>, generation: Option<&str>, text:
             ..Default::default()
         },
     );
-    let sections = builder.create_vector(&[api::DiagnosticSection::Ranking, api::DiagnosticSection::Counterfactual]);
-    let payload = api::QueryDiagnosticsRequest::create(&mut builder, &api::QueryDiagnosticsRequestArgs { request: Some(payload), intent: api::DiagnosticIntent::ExplainHit, requested_evidence: Some(sections), ..Default::default() });
+    let sections = builder.create_vector(&[
+        api::DiagnosticSection::Ranking,
+        api::DiagnosticSection::Counterfactual,
+    ]);
+    let payload = api::QueryDiagnosticsRequest::create(
+        &mut builder,
+        &api::QueryDiagnosticsRequestArgs {
+            request: Some(payload),
+            intent: api::DiagnosticIntent::ExplainHit,
+            requested_evidence: Some(sections),
+            ..Default::default()
+        },
+    );
     let target = target_name.map(|name| target_with_generation(&mut builder, name, generation));
     let envelope = wire::RequestEnvelope::create(
         &mut builder,
@@ -800,10 +811,7 @@ async fn diagnostics_are_generation_bound_and_transport_independent() {
     }
     for (target, detail) in [
         (None, MISSING_INDEX_TARGET_DETAIL_CODE),
-        (
-            Some("diagnostics"),
-            "missing_diagnostic_generation",
-        ),
+        (Some("diagnostics"), "missing_diagnostic_generation"),
     ] {
         let invalid = diagnostic_request(target, None, "orchid");
         let native = grpc

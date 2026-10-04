@@ -514,7 +514,9 @@ impl VespaBackend {
 fn engine_tree_has_key(value: &serde_json::Value, key: &str) -> bool {
     match value {
         serde_json::Value::Object(values) => {
-            values.get("tag").and_then(serde_json::Value::as_str) == Some(key) || values.contains_key(key) || values.values().any(|value| engine_tree_has_key(value, key))
+            values.get("tag").and_then(serde_json::Value::as_str) == Some(key)
+                || values.contains_key(key)
+                || values.values().any(|value| engine_tree_has_key(value, key))
         }
         serde_json::Value::Array(values) => {
             values.iter().any(|value| engine_tree_has_key(value, key))
@@ -531,14 +533,33 @@ fn engine_profile_elapsed(value: &serde_json::Value, key: &str) -> Vec<f64> {
             if values.get("tag").and_then(serde_json::Value::as_str) == Some(key) {
                 // Trace::createCursor records the profiler as a tagged trace
                 // object; it does not create a property named after the tag.
-                return values.get("total_time_ms").and_then(serde_json::Value::as_f64).filter(|value| value.is_finite() && *value >= 0.0).into_iter().collect();
+                return values
+                    .get("total_time_ms")
+                    .and_then(serde_json::Value::as_f64)
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+                    .into_iter()
+                    .collect();
             }
-            values.iter().flat_map(|(name, value)| {
-                if name == key { value.get("total_time_ms").and_then(serde_json::Value::as_f64).filter(|value| value.is_finite() && *value >= 0.0).into_iter().collect() }
-                else { engine_profile_elapsed(value, key) }
-            }).collect()
+            values
+                .iter()
+                .flat_map(|(name, value)| {
+                    if name == key {
+                        value
+                            .get("total_time_ms")
+                            .and_then(serde_json::Value::as_f64)
+                            .filter(|value| value.is_finite() && *value >= 0.0)
+                            .into_iter()
+                            .collect()
+                    } else {
+                        engine_profile_elapsed(value, key)
+                    }
+                })
+                .collect()
         }
-        serde_json::Value::Array(values) => values.iter().flat_map(|value| engine_profile_elapsed(value, key)).collect(),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .flat_map(|value| engine_profile_elapsed(value, key))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -1047,8 +1068,14 @@ mod implicit_output_name_regression_tests {
     fn vespa_profiler_tags_and_root_totals_are_normalized_without_double_counting() {
         let trace = serde_json::json!({ "traces": [{ "tag": "query_execution", "threads": [{ "traces": [{ "tag": "first_phase_profiling", "total_time_ms": 12.0, "children": [{ "total_time_ms": 7.0 }] }, { "tag": "second_phase_profiling", "total_time_ms": 3.0 }] }] }] });
         assert!(engine_tree_has_key(&trace, "first_phase_profiling"));
-        assert_eq!(engine_profile_elapsed(&trace, "first_phase_profiling"), [12.0]);
-        assert_eq!(engine_profile_elapsed(&trace, "second_phase_profiling"), [3.0]);
+        assert_eq!(
+            engine_profile_elapsed(&trace, "first_phase_profiling"),
+            [12.0]
+        );
+        assert_eq!(
+            engine_profile_elapsed(&trace, "second_phase_profiling"),
+            [3.0]
+        );
         assert!(!engine_tree_has_key(&trace, "match_profiling"));
     }
 
