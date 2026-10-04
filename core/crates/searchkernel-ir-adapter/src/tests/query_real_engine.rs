@@ -8,7 +8,7 @@ fn filter_and_typed_membership_agree_through_real_native_interm() {
             field(name),
             if array { DataTypeIr::Array(Box::new(scalar)) } else { scalar },
             None,
-            FieldCapabilities::new(false, true, true, false, false),
+            FieldCapabilities::new(true, false, true, false, false),
         );
         member.set_matching_config(Some(MatchingConfigIr {
             mode: MatchingModeIr::Exact,
@@ -25,7 +25,7 @@ fn filter_and_typed_membership_agree_through_real_native_interm() {
                 field("qty"),
                 DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
                 None,
-                FieldCapabilities::new(false, true, true, false, false),
+                FieldCapabilities::new(true, false, true, false, false),
             ),
         ],
         Vec::new(),
