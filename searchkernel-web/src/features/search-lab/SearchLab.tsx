@@ -19,8 +19,8 @@ export function SearchLab() {
   // Query feature values stay in this history entry unless explicitly shared.
   // Reload/back/forward retain them; a copied URL deliberately excludes them.
   const privateInputs = typeof location.state?.searchLabInputs === 'string' ? location.state.searchLabInputs : undefined
-  const state = useMemo(() => privateInputs === undefined ? restored.state : { ...restored.state, inputs: privateInputs }, [restored.state, privateInputs])
-  const shareInputs = restored.state.inputs !== undefined
+  const urlState = useMemo(() => privateInputs === undefined ? restored.state : { ...restored.state, inputs: privateInputs }, [restored.state, privateInputs])
+  const urlShareInputs = restored.state.inputs !== undefined
   const navigationType = useNavigationType()
   // A pending URL write is a transaction, not an independent form model. Rapid
   // edits compose against its latest value until the router commits it. POP
@@ -29,6 +29,9 @@ export function SearchLab() {
   const signature = JSON.stringify([key, privateInputs])
   if (pendingWrite.current && (pendingWrite.current.signature === signature || (navigationType === 'POP' && pendingWrite.current.locationKey !== location.key))) pendingWrite.current = undefined
 
+  const [, renderPendingWrite] = useState(0)
+  const state = pendingWrite.current?.state ?? urlState
+  const shareInputs = pendingWrite.current?.includeInputs ?? urlShareInputs
   const prepared = useMemo(() => {
     try { return { value: client.prepareSearch(state) } }
     catch (error) { return { error: normalizeClientError(error) } }
@@ -77,6 +80,7 @@ export function SearchLab() {
     const history = !includeInputs && value.inputs !== undefined ? { searchLabInputs: value.inputs } : null
     if (next.toString() !== key || history?.searchLabInputs !== privateInputs) {
       pendingWrite.current = { state: value, signature: JSON.stringify([next.toString(), history?.searchLabInputs]), locationKey: location.key, includeInputs }
+      renderPendingWrite(value => value + 1)
       setParams(next, { state: history })
     }
   }
