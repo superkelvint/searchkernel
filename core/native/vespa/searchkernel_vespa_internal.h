@@ -3,6 +3,7 @@
 #include "searchkernel_vespa.h"
 #include <vespa/config-rank-profiles.h>
 #include <vespa/searchcore/proton/matching/matcher.h>
+#include <vespa/searchcore/proton/matching/match_tools.h>
 #include <vespa/searchlib/fef/ranking_assets_repo.h>
 #include <vespa/eval/eval/value_cache/constant_tensor_loader.h>
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
@@ -559,6 +560,7 @@ struct LocalSearchRequestState {
     uint32_t diagnostic_first_phase_depth = 0;
     uint32_t diagnostic_second_phase_depth = 0;
     uint32_t diagnostic_raw_bytes = 0;
+    uint32_t diagnostic_match_evidence_hits = 0;
     uint32_t summary_kind = SK_SUMMARY_NONE;
     struct Sort {
         std::string field;
@@ -594,11 +596,20 @@ struct LocalHighlightState {
     std::vector<LocalHighlightFragmentState> fragments;
 };
 
+struct LocalTermFieldEvidenceState {
+    uint32_t term_id = 0;
+    std::string operator_name;
+    std::string term;
+    std::string field;
+    bool matched = false;
+};
+
 struct LocalHitState {
     std::string id;
     double score = 0.0;
     std::vector<std::pair<std::string, OwnedValue>> summary;
     std::vector<LocalHighlightState> highlights;
+    std::vector<LocalTermFieldEvidenceState> term_field_evidence;
 };
 
 struct LocalSearchResultState {
@@ -608,6 +619,7 @@ struct LocalSearchResultState {
     double diagnostic_matching_seconds = 0.0;
     double diagnostic_summary_seconds = 0.0;
     double diagnostic_query_seconds = 0.0;
+    uint32_t diagnostic_match_evidence_status = 0;
     uint64_t total_hit_count = 0;
     uint64_t coverage_active = 0;
     uint64_t coverage_covered = 0;
