@@ -368,6 +368,23 @@ impl<'a> RequestEnvelope<'a> {
             None
         }
     }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub fn payload_as_search_kernel_wire_query_diagnostics_request(
+        &self,
+    ) -> Option<super::wire::QueryDiagnosticsRequest<'a>> {
+        if self.payload_type() == RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest {
+            self.payload().map(|t| {
+                // Safety:
+                // Created from a valid Table for this object
+                // Which contains a valid union in this slot
+                unsafe { super::wire::QueryDiagnosticsRequest::init_from_table(t) }
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
@@ -396,6 +413,7 @@ impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
           RequestPayload::SearchKernel_Wire_ListIndexesRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::wire::ListIndexesRequest>>("RequestPayload::SearchKernel_Wire_ListIndexesRequest", pos),
           RequestPayload::SearchKernel_Wire_PlanIndexChangeRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::wire::PlanIndexChangeRequest>>("RequestPayload::SearchKernel_Wire_PlanIndexChangeRequest", pos),
           RequestPayload::SearchKernel_Wire_ApplyIndexChangeRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::wire::ApplyIndexChangeRequest>>("RequestPayload::SearchKernel_Wire_ApplyIndexChangeRequest", pos),
+          RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::wire::QueryDiagnosticsRequest>>("RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest", pos),
           _ => Ok(()),
         }
      })?
@@ -631,6 +649,16 @@ impl ::core::fmt::Debug for RequestEnvelope<'_> {
             }
             RequestPayload::SearchKernel_Wire_ApplyIndexChangeRequest => {
                 if let Some(x) = self.payload_as_search_kernel_wire_apply_index_change_request() {
+                    ds.field("payload", &x)
+                } else {
+                    ds.field(
+                        "payload",
+                        &"InvalidFlatbuffer: Union discriminant does not match value.",
+                    )
+                }
+            }
+            RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest => {
+                if let Some(x) = self.payload_as_search_kernel_wire_query_diagnostics_request() {
                     ds.field("payload", &x)
                 } else {
                     ds.field(

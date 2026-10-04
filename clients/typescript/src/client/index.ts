@@ -17,6 +17,7 @@ import { InsertRequestT } from "../semantic.js";
 import { InsertResultT } from "../semantic.js";
 import { InspectQueryRequestT } from "../semantic.js";
 import { InspectQueryResultT } from "../semantic.js";
+import { QueryDiagnosticsRequestT, QueryDiagnosticsResultT } from "../semantic.js";
 import { PatchRequestT } from "../semantic.js";
 import { PatchResultT } from "../semantic.js";
 import { SearchRequestT } from "../semantic.js";
@@ -89,6 +90,7 @@ function document(id: string, fields: Record<string, ValueInput>): DocumentT {
 }
 
 export interface OperationResponseMap {
+  queryDiagnostics: QueryDiagnosticsResultT;
   listIndexes: ListIndexesResultT;
   planIndexChange: PlanIndexChangeResultT;
   applyIndexChange: ApplyIndexChangeResultT;
@@ -240,6 +242,10 @@ export class Client {
 
   inspectQuery(request: SearchRequestT, options?: ExecuteOptions): Promise<InspectQueryResultT> {
     return this.execute("inspectQuery", new InspectQueryRequestT(request), options);
+  }
+
+  queryDiagnostics(request: QueryDiagnosticsRequestT, options?: ExecuteOptions): Promise<QueryDiagnosticsResultT> {
+    return this.execute("queryDiagnostics", request, options);
   }
 
   /** Validate against canonical semantics and the native backend without applying. */
@@ -469,6 +475,11 @@ export class Index {
 
   inspectQuery(request: SearchRequestT, options?: ExecuteOptions): Promise<InspectQueryResultT> {
     return this.client.inspectQuery(request, options);
+  }
+
+  /** Explicit, read-only evidence collection against this opened incarnation. */
+  queryDiagnostics(request: QueryDiagnosticsRequestT, options?: ExecuteOptions): Promise<QueryDiagnosticsResultT> {
+    return this.client.queryDiagnostics(request, options);
   }
 
   async close(): Promise<void> {

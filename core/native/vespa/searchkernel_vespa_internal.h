@@ -554,6 +554,11 @@ struct LocalSearchRequestState {
     uint32_t limit = 10;
     uint32_t offset = 0;
     uint64_t timeout_millis = 60000;
+    uint32_t diagnostic_trace_level = 0;
+    uint32_t diagnostic_matching_depth = 0;
+    uint32_t diagnostic_first_phase_depth = 0;
+    uint32_t diagnostic_second_phase_depth = 0;
+    uint32_t diagnostic_raw_bytes = 0;
     uint32_t summary_kind = SK_SUMMARY_NONE;
     struct Sort {
         std::string field;
@@ -597,6 +602,11 @@ struct LocalHitState {
 };
 
 struct LocalSearchResultState {
+    std::string diagnostic_trace;
+    bool diagnostic_truncated = false;
+    double diagnostic_matching_seconds = 0.0;
+    double diagnostic_summary_seconds = 0.0;
+    double diagnostic_query_seconds = 0.0;
     uint64_t total_hit_count = 0;
     uint64_t coverage_active = 0;
     uint64_t coverage_covered = 0;

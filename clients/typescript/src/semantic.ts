@@ -169,6 +169,89 @@ export class DescribeResultT extends SemanticTable {
   declare index: IndexDefinitionT|null;
   constructor(index: IndexDefinitionT|null = null) { super('DescribeResult', ['index'], [index], [null]); }
 }
+export class DiagnosticComparisonT extends SemanticTable {
+  declare baselineExecutionId: string|Uint8Array|null;
+  declare rerunExecutionId: string|Uint8Array|null;
+  declare resultsChanged: OptionalBoolT|null;
+  declare overlapCount: number;
+  declare comparisonCount: number;
+  declare movements: (DiagnosticRankMovementT)[];
+  declare entering: (string)[];
+  declare leaving: (string)[];
+  constructor(baselineExecutionId: string|Uint8Array|null = null, rerunExecutionId: string|Uint8Array|null = null, resultsChanged: OptionalBoolT|null = null, overlapCount: number = 0, comparisonCount: number = 0, movements: (DiagnosticRankMovementT)[] = [], entering: (string)[] = [], leaving: (string)[] = []) { super('DiagnosticComparison', ['baselineExecutionId', 'rerunExecutionId', 'resultsChanged', 'overlapCount', 'comparisonCount', 'movements', 'entering', 'leaving'], [baselineExecutionId, rerunExecutionId, resultsChanged, overlapCount, comparisonCount, movements, entering, leaving], [null, null, null, 0, 0, [], [], []]); }
+}
+export class DiagnosticDocumentStageT extends SemanticTable {
+  declare name: string|Uint8Array|null;
+  declare observation: DiagnosticObservation;
+  declare evidenceIds: (string)[];
+  constructor(name: string|Uint8Array|null = null, observation: DiagnosticObservation = DiagnosticObservation.Unavailable, evidenceIds: (string)[] = []) { super('DiagnosticDocumentStage', ['name', 'observation', 'evidenceIds'], [name, observation, evidenceIds], [null, DiagnosticObservation.Unavailable, []]); }
+}
+export class DiagnosticEvidenceT extends SemanticTable {
+  declare id: string|Uint8Array|null;
+  declare section: DiagnosticSection;
+  declare status: DiagnosticStatus;
+  declare provenance: DiagnosticProvenance;
+  declare executionId: string|Uint8Array|null;
+  declare message: string|Uint8Array|null;
+  declare values: (ValueEntryT)[];
+  declare canonicalRequest: ResolvedSearchRequestT|null;
+  declare result: SearchResultT|null;
+  constructor(id: string|Uint8Array|null = null, section: DiagnosticSection = DiagnosticSection.Query, status: DiagnosticStatus = DiagnosticStatus.Available, provenance: DiagnosticProvenance = DiagnosticProvenance.Engine, executionId: string|Uint8Array|null = null, message: string|Uint8Array|null = null, values: (ValueEntryT)[] = [], canonicalRequest: ResolvedSearchRequestT|null = null, result: SearchResultT|null = null) { super('DiagnosticEvidence', ['id', 'section', 'status', 'provenance', 'executionId', 'message', 'values', 'canonicalRequest', 'result'], [id, section, status, provenance, executionId, message, values, canonicalRequest, result], [null, DiagnosticSection.Query, DiagnosticStatus.Available, DiagnosticProvenance.Engine, null, null, [], null, null]); }
+}
+export class DiagnosticExecutionT extends SemanticTable {
+  declare id: string|Uint8Array|null;
+  declare requestHash: string|Uint8Array|null;
+  declare target: IndexTargetT|null;
+  declare kind: DiagnosticExecutionKind;
+  declare complete: boolean;
+  constructor(id: string|Uint8Array|null = null, requestHash: string|Uint8Array|null = null, target: IndexTargetT|null = null, kind: DiagnosticExecutionKind = DiagnosticExecutionKind.Original, complete: boolean = false) { super('DiagnosticExecution', ['id', 'requestHash', 'target', 'kind', 'complete'], [id, requestHash, target, kind, complete], [null, null, null, DiagnosticExecutionKind.Original, false]); }
+}
+export class DiagnosticExpectedDocumentT extends SemanticTable {
+  declare id: string|Uint8Array|null;
+  declare stages: (DiagnosticDocumentStageT)[];
+  constructor(id: string|Uint8Array|null = null, stages: (DiagnosticDocumentStageT)[] = []) { super('DiagnosticExpectedDocument', ['id', 'stages'], [id, stages], [null, []]); }
+}
+export class DiagnosticFindingT extends SemanticTable {
+  declare code: string|Uint8Array|null;
+  declare message: string|Uint8Array|null;
+  declare evidenceIds: (string)[];
+  constructor(code: string|Uint8Array|null = null, message: string|Uint8Array|null = null, evidenceIds: (string)[] = []) { super('DiagnosticFinding', ['code', 'message', 'evidenceIds'], [code, message, evidenceIds], [null, null, []]); }
+}
+export class DiagnosticHitT extends SemanticTable {
+  declare id: string|Uint8Array|null;
+  declare executionId: string|Uint8Array|null;
+  declare returnedPosition: number;
+  declare relevance: RelevanceT|null;
+  declare signals: (DiagnosticSignalT)[];
+  declare evidenceIds: (string)[];
+  constructor(id: string|Uint8Array|null = null, executionId: string|Uint8Array|null = null, returnedPosition: number = 0, relevance: RelevanceT|null = null, signals: (DiagnosticSignalT)[] = [], evidenceIds: (string)[] = []) { super('DiagnosticHit', ['id', 'executionId', 'returnedPosition', 'relevance', 'signals', 'evidenceIds'], [id, executionId, returnedPosition, relevance, signals, evidenceIds], [null, null, 0, null, [], []]); }
+}
+export class DiagnosticLimitsT extends SemanticTable {
+  declare timeoutMs: OptionalUInt64T|null;
+  declare variantCount: OptionalUInt32T|null;
+  declare featureHitCount: OptionalUInt32T|null;
+  declare tensorCells: OptionalUInt32T|null;
+  declare rawBytes: OptionalUInt32T|null;
+  declare traceDepth: OptionalUInt32T|null;
+  declare profilerDepth: OptionalUInt32T|null;
+  declare exactNnHits: OptionalUInt32T|null;
+  constructor(timeoutMs: OptionalUInt64T|null = null, variantCount: OptionalUInt32T|null = null, featureHitCount: OptionalUInt32T|null = null, tensorCells: OptionalUInt32T|null = null, rawBytes: OptionalUInt32T|null = null, traceDepth: OptionalUInt32T|null = null, profilerDepth: OptionalUInt32T|null = null, exactNnHits: OptionalUInt32T|null = null) { super('DiagnosticLimits', ['timeoutMs', 'variantCount', 'featureHitCount', 'tensorCells', 'rawBytes', 'traceDepth', 'profilerDepth', 'exactNnHits'], [timeoutMs, variantCount, featureHitCount, tensorCells, rawBytes, traceDepth, profilerDepth, exactNnHits], [null, null, null, null, null, null, null, null]); }
+}
+export class DiagnosticRankMovementT extends SemanticTable {
+  declare id: string|Uint8Array|null;
+  declare baselinePosition: OptionalUInt32T|null;
+  declare rerunPosition: OptionalUInt32T|null;
+  constructor(id: string|Uint8Array|null = null, baselinePosition: OptionalUInt32T|null = null, rerunPosition: OptionalUInt32T|null = null) { super('DiagnosticRankMovement', ['id', 'baselinePosition', 'rerunPosition'], [id, baselinePosition, rerunPosition], [null, null, null]); }
+}
+export class DiagnosticSignalT extends SemanticTable {
+  declare name: string|Uint8Array|null;
+  declare value: ValueT|null;
+  declare position: OptionalUInt32T|null;
+  declare ties: OptionalUInt32T|null;
+  declare comparisonCount: number;
+  declare comparisonSet: string|Uint8Array|null;
+  constructor(name: string|Uint8Array|null = null, value: ValueT|null = null, position: OptionalUInt32T|null = null, ties: OptionalUInt32T|null = null, comparisonCount: number = 0, comparisonSet: string|Uint8Array|null = null) { super('DiagnosticSignal', ['name', 'value', 'position', 'ties', 'comparisonCount', 'comparisonSet'], [name, value, position, ties, comparisonCount, comparisonSet], [null, null, null, null, 0, null]); }
+}
 export class DocumentT extends SemanticTable {
   declare id: string|Uint8Array|null;
   declare fields: (ValueEntryT)[];
@@ -784,6 +867,30 @@ export class QueryContainsT extends SemanticTable {
   declare item: QueryExprT|null;
   constructor(field: QueryFieldRefT|null = null, item: QueryExprT|null = null) { super('QueryContains', ['field', 'item'], [field, item], [null, null]); }
 }
+export class QueryDiagnosticsRequestT extends SemanticTable {
+  declare request: SearchRequestT|null;
+  declare intent: DiagnosticIntent;
+  declare requestedEvidence: (DiagnosticSection)[];
+  declare sourceRunId: string|Uint8Array|null;
+  declare selectedHits: (string)[];
+  declare expectedDocumentId: string|Uint8Array|null;
+  declare experiment: SearchRequestT|null;
+  declare compareExact: boolean;
+  declare limits: DiagnosticLimitsT|null;
+  constructor(request: SearchRequestT|null = null, intent: DiagnosticIntent = DiagnosticIntent.Unspecified, requestedEvidence: (DiagnosticSection)[] = [], sourceRunId: string|Uint8Array|null = null, selectedHits: (string)[] = [], expectedDocumentId: string|Uint8Array|null = null, experiment: SearchRequestT|null = null, compareExact: boolean = false, limits: DiagnosticLimitsT|null = null) { super('QueryDiagnosticsRequest', ['request', 'intent', 'requestedEvidence', 'sourceRunId', 'selectedHits', 'expectedDocumentId', 'experiment', 'compareExact', 'limits'], [request, intent, requestedEvidence, sourceRunId, selectedHits, expectedDocumentId, experiment, compareExact, limits], [null, DiagnosticIntent.Unspecified, [], null, [], null, null, false, null]); }
+}
+export class QueryDiagnosticsResultT extends SemanticTable {
+  declare execution: DiagnosticExecutionT|null;
+  declare sourceRun: DiagnosticExecutionT|null;
+  declare findings: (DiagnosticFindingT)[];
+  declare evidence: (DiagnosticEvidenceT)[];
+  declare hits: (DiagnosticHitT)[];
+  declare expectedDocument: DiagnosticExpectedDocumentT|null;
+  declare comparison: DiagnosticComparisonT|null;
+  declare rawEngine: (RawEngineDiagnosticsT)[];
+  declare warnings: (string)[];
+  constructor(execution: DiagnosticExecutionT|null = null, sourceRun: DiagnosticExecutionT|null = null, findings: (DiagnosticFindingT)[] = [], evidence: (DiagnosticEvidenceT)[] = [], hits: (DiagnosticHitT)[] = [], expectedDocument: DiagnosticExpectedDocumentT|null = null, comparison: DiagnosticComparisonT|null = null, rawEngine: (RawEngineDiagnosticsT)[] = [], warnings: (string)[] = []) { super('QueryDiagnosticsResult', ['execution', 'sourceRun', 'findings', 'evidence', 'hits', 'expectedDocument', 'comparison', 'rawEngine', 'warnings'], [execution, sourceRun, findings, evidence, hits, expectedDocument, comparison, rawEngine, warnings], [null, null, [], [], [], null, null, [], []]); }
+}
 export class QueryDotProductT extends SemanticTable {
   declare field: QueryFieldRefT|null;
   declare items: (WeightedQueryItemT)[];
@@ -1010,6 +1117,16 @@ export class RankingRequestT extends SemanticTable {
   declare profile: string|Uint8Array|null;
   declare properties: (StringEntryT)[];
   constructor(profile: string|Uint8Array|null = null, properties: (StringEntryT)[] = []) { super('RankingRequest', ['profile', 'properties'], [profile, properties], [null, []]); }
+}
+export class RawEngineDiagnosticsT extends SemanticTable {
+  declare engine: string|Uint8Array|null;
+  declare version: string|Uint8Array|null;
+  declare executionId: string|Uint8Array|null;
+  declare section: DiagnosticSection;
+  declare status: DiagnosticStatus;
+  declare mediaType: string|Uint8Array|null;
+  declare payload: string|Uint8Array|null;
+  constructor(engine: string|Uint8Array|null = null, version: string|Uint8Array|null = null, executionId: string|Uint8Array|null = null, section: DiagnosticSection = DiagnosticSection.RawEngine, status: DiagnosticStatus = DiagnosticStatus.Available, mediaType: string|Uint8Array|null = null, payload: string|Uint8Array|null = null) { super('RawEngineDiagnostics', ['engine', 'version', 'executionId', 'section', 'status', 'mediaType', 'payload'], [engine, version, executionId, section, status, mediaType, payload], [null, null, null, DiagnosticSection.RawEngine, DiagnosticStatus.Available, null, null]); }
 }
 export class RawGroupingSourceT extends SemanticTable {
   declare expression: string|Uint8Array|null;
@@ -1401,6 +1518,59 @@ export enum DataTypeKind {
   PositionDataType = 9,
   ReferenceDataType = 10,
 }
+export enum DiagnosticExecutionKind {
+  Original = 0,
+  DiagnosticRerun = 1,
+  Experiment = 2,
+  Counterfactual = 3,
+}
+export enum DiagnosticIntent {
+  Unspecified = 0,
+  ExplainHit = 1,
+  ZeroResults = 2,
+  MissingDocument = 3,
+  RankingComparison = 4,
+  Overmatching = 5,
+  QueryInterpretation = 6,
+  VectorRetrieval = 7,
+  Performance = 8,
+  DeepEngine = 9,
+  Experiment = 10,
+}
+export enum DiagnosticObservation {
+  Unavailable = 0,
+  ObservedYes = 1,
+  ObservedNo = 2,
+}
+export enum DiagnosticProvenance {
+  Profile = 0,
+  Engine = 1,
+  Calculated = 2,
+}
+export enum DiagnosticSection {
+  Query = 0,
+  Retrieval = 1,
+  Ranking = 2,
+  Timing = 3,
+  MatchedTerms = 4,
+  Vectors = 5,
+  Trace = 6,
+  MatchingProfiler = 7,
+  FirstPhaseProfiler = 8,
+  SecondPhaseProfiler = 9,
+  Blueprint = 10,
+  IteratorTree = 11,
+  RawEngine = 12,
+  Counterfactual = 13,
+}
+export enum DiagnosticStatus {
+  Available = 0,
+  Unsupported = 1,
+  TimedOut = 2,
+  Truncated = 3,
+  UnavailableForQuery = 4,
+  Failed = 5,
+}
 export enum DistanceMetric {
   Unspecified = 0,
   Euclidean = 1,
@@ -1674,6 +1844,9 @@ export const SEMANTIC_ENUM_FIELDS: Readonly<Record<string, Readonly<Record<strin
   AttributeConfig: { distanceMetric: 'DistanceMetric' },
   ConstantDefinition: { sourceType: 'ConstantSourceKind' },
   DataType: { kindType: 'DataTypeKind' },
+  DiagnosticDocumentStage: { observation: 'DiagnosticObservation' },
+  DiagnosticEvidence: { section: 'DiagnosticSection', status: 'DiagnosticStatus', provenance: 'DiagnosticProvenance' },
+  DiagnosticExecution: { kind: 'DiagnosticExecutionKind' },
   Error: { code: 'ErrorCode' },
   FilterComparison: { op: 'ComparisonOp' },
   FilterExpr: { exprType: 'FilterExprKind' },
@@ -1693,10 +1866,12 @@ export const SEMANTIC_ENUM_FIELDS: Readonly<Record<string, Readonly<Record<strin
   PatchOperation: { operationType: 'PatchOperationKind' },
   PrimitiveDataType: { kind: 'PrimitiveDataTypeKind' },
   QueryComparison: { op: 'ComparisonOp' },
+  QueryDiagnosticsRequest: { intent: 'DiagnosticIntent', requestedEvidence: 'DiagnosticSection[]' },
   QueryExpr: { exprType: 'QueryExprKind' },
   QueryInput: { inputType: 'QueryInputKind' },
   QuerySource: { sourceType: 'QuerySourceKind' },
   RangeBound: { boundType: 'RangeBoundKind' },
+  RawEngineDiagnostics: { section: 'DiagnosticSection', status: 'DiagnosticStatus' },
   Relevance: { valueType: 'RelevanceKind' },
   ResolvedSortExpr: { direction: 'SortDirection' },
   ResolvedSortTarget: { targetType: 'ResolvedSortTargetKind' },
@@ -1889,6 +2064,28 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "unsigned": false
     }
   },
+  "ApplyIndexChangeRequest": {
+    "planId": {
+      "name": "plan_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    }
+  },
+  "ApplyIndexChangeResult": {
+    "index": {
+      "name": "index",
+      "type": "IndexDefinitionT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "generation": {
+      "name": "generation",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    }
+  },
   "ArithmeticUpdate": {
     "operator": {
       "name": "operator",
@@ -1976,6 +2173,32 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
     }
   },
   "ClearUpdate": {},
+  "ConfigurationCapabilities": {
+    "createIndex": {
+      "name": "create_index",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
+    },
+    "rankProfilesWrite": {
+      "name": "rank_profiles_write",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
+    },
+    "changePlan": {
+      "name": "change_plan",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
+    },
+    "fieldMutation": {
+      "name": "field_mutation",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
+    }
+  },
   "ConstantDefinition": {
     "name": {
       "name": "name",
@@ -2177,6 +2400,344 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "name": "index",
       "type": "IndexDefinitionT|null",
       "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "DiagnosticComparison": {
+    "baselineExecutionId": {
+      "name": "baseline_execution_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "rerunExecutionId": {
+      "name": "rerun_execution_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "resultsChanged": {
+      "name": "results_changed",
+      "type": "OptionalBoolT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "overlapCount": {
+      "name": "overlap_count",
+      "type": "number",
+      "scalar": "UInt",
+      "unsigned": false
+    },
+    "comparisonCount": {
+      "name": "comparison_count",
+      "type": "number",
+      "scalar": "UInt",
+      "unsigned": false
+    },
+    "movements": {
+      "name": "movements",
+      "type": "(DiagnosticRankMovementT)[]",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "entering": {
+      "name": "entering",
+      "type": "(string)[]",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "leaving": {
+      "name": "leaving",
+      "type": "(string)[]",
+      "scalar": "String",
+      "unsigned": false
+    }
+  },
+  "DiagnosticDocumentStage": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "observation": {
+      "name": "observation",
+      "type": "DiagnosticObservation",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "evidenceIds": {
+      "name": "evidence_ids",
+      "type": "(string)[]",
+      "scalar": "String",
+      "unsigned": false
+    }
+  },
+  "DiagnosticEvidence": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "section": {
+      "name": "section",
+      "type": "DiagnosticSection",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "status": {
+      "name": "status",
+      "type": "DiagnosticStatus",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "provenance": {
+      "name": "provenance",
+      "type": "DiagnosticProvenance",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "executionId": {
+      "name": "execution_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "message": {
+      "name": "message",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "values": {
+      "name": "values",
+      "type": "(ValueEntryT)[]",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "canonicalRequest": {
+      "name": "canonical_request",
+      "type": "ResolvedSearchRequestT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "result": {
+      "name": "result",
+      "type": "SearchResultT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "DiagnosticExecution": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "requestHash": {
+      "name": "request_hash",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "target": {
+      "name": "target",
+      "type": "IndexTargetT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "kind": {
+      "name": "kind",
+      "type": "DiagnosticExecutionKind",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "complete": {
+      "name": "complete",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
+    }
+  },
+  "DiagnosticExpectedDocument": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "stages": {
+      "name": "stages",
+      "type": "(DiagnosticDocumentStageT)[]",
+      "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "DiagnosticFinding": {
+    "code": {
+      "name": "code",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "message": {
+      "name": "message",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "evidenceIds": {
+      "name": "evidence_ids",
+      "type": "(string)[]",
+      "scalar": "String",
+      "unsigned": false
+    }
+  },
+  "DiagnosticHit": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "executionId": {
+      "name": "execution_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "returnedPosition": {
+      "name": "returned_position",
+      "type": "number",
+      "scalar": "UInt",
+      "unsigned": false
+    },
+    "relevance": {
+      "name": "relevance",
+      "type": "RelevanceT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "signals": {
+      "name": "signals",
+      "type": "(DiagnosticSignalT)[]",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "evidenceIds": {
+      "name": "evidence_ids",
+      "type": "(string)[]",
+      "scalar": "String",
+      "unsigned": false
+    }
+  },
+  "DiagnosticLimits": {
+    "timeoutMs": {
+      "name": "timeout_ms",
+      "type": "OptionalUInt64T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "variantCount": {
+      "name": "variant_count",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "featureHitCount": {
+      "name": "feature_hit_count",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "tensorCells": {
+      "name": "tensor_cells",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "rawBytes": {
+      "name": "raw_bytes",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "traceDepth": {
+      "name": "trace_depth",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "profilerDepth": {
+      "name": "profiler_depth",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "exactNnHits": {
+      "name": "exact_nn_hits",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "DiagnosticRankMovement": {
+    "id": {
+      "name": "id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "baselinePosition": {
+      "name": "baseline_position",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "rerunPosition": {
+      "name": "rerun_position",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "DiagnosticSignal": {
+    "name": {
+      "name": "name",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "value": {
+      "name": "value",
+      "type": "ValueT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "position": {
+      "name": "position",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "ties": {
+      "name": "ties",
+      "type": "OptionalUInt32T|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "comparisonCount": {
+      "name": "comparison_count",
+      "type": "number",
+      "scalar": "UInt",
+      "unsigned": false
+    },
+    "comparisonSet": {
+      "name": "comparison_set",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
       "unsigned": false
     }
   },
@@ -3432,6 +3993,12 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "type": "(string)[]",
       "scalar": "String",
       "unsigned": false
+    },
+    "configuration": {
+      "name": "configuration",
+      "type": "ConfigurationCapabilitiesT|null",
+      "scalar": "Obj",
+      "unsigned": false
     }
   },
   "LiteralConstantSource": {
@@ -3726,6 +4293,52 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "unsigned": false
     }
   },
+  "PlanIndexChangeRequest": {
+    "definition": {
+      "name": "definition",
+      "type": "IndexDefinitionT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "PlanIndexChangeResult": {
+    "definition": {
+      "name": "definition",
+      "type": "IndexDefinitionT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "generation": {
+      "name": "generation",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "planId": {
+      "name": "plan_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "supported": {
+      "name": "supported",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
+    },
+    "requiresReopen": {
+      "name": "requires_reopen",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
+    },
+    "reasons": {
+      "name": "reasons",
+      "type": "(string)[]",
+      "scalar": "String",
+      "unsigned": false
+    }
+  },
   "PositionDataType": {},
   "PositiveInfinityBound": {},
   "PositiveInfinityRelevance": {},
@@ -3851,6 +4464,118 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "name": "item",
       "type": "QueryExprT|null",
       "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "QueryDiagnosticsRequest": {
+    "request": {
+      "name": "request",
+      "type": "SearchRequestT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "intent": {
+      "name": "intent",
+      "type": "DiagnosticIntent",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "requestedEvidence": {
+      "name": "requested_evidence",
+      "type": "(DiagnosticSection)[]",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "sourceRunId": {
+      "name": "source_run_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "selectedHits": {
+      "name": "selected_hits",
+      "type": "(string)[]",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "expectedDocumentId": {
+      "name": "expected_document_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "experiment": {
+      "name": "experiment",
+      "type": "SearchRequestT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "compareExact": {
+      "name": "compare_exact",
+      "type": "boolean",
+      "scalar": "Bool",
+      "unsigned": false
+    },
+    "limits": {
+      "name": "limits",
+      "type": "DiagnosticLimitsT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "QueryDiagnosticsResult": {
+    "execution": {
+      "name": "execution",
+      "type": "DiagnosticExecutionT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "sourceRun": {
+      "name": "source_run",
+      "type": "DiagnosticExecutionT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "findings": {
+      "name": "findings",
+      "type": "(DiagnosticFindingT)[]",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "evidence": {
+      "name": "evidence",
+      "type": "(DiagnosticEvidenceT)[]",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "hits": {
+      "name": "hits",
+      "type": "(DiagnosticHitT)[]",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "expectedDocument": {
+      "name": "expected_document",
+      "type": "DiagnosticExpectedDocumentT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "comparison": {
+      "name": "comparison",
+      "type": "DiagnosticComparisonT|null",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "rawEngine": {
+      "name": "raw_engine",
+      "type": "(RawEngineDiagnosticsT)[]",
+      "scalar": "Obj",
+      "unsigned": false
+    },
+    "warnings": {
+      "name": "warnings",
+      "type": "(string)[]",
+      "scalar": "String",
       "unsigned": false
     }
   },
@@ -4570,6 +5295,50 @@ export const SEMANTIC_JSON_FIELDS: Readonly<Record<string, Readonly<Record<strin
       "name": "properties",
       "type": "(StringEntryT)[]",
       "scalar": "Obj",
+      "unsigned": false
+    }
+  },
+  "RawEngineDiagnostics": {
+    "engine": {
+      "name": "engine",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "version": {
+      "name": "version",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "executionId": {
+      "name": "execution_id",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "section": {
+      "name": "section",
+      "type": "DiagnosticSection",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "status": {
+      "name": "status",
+      "type": "DiagnosticStatus",
+      "scalar": "UByte",
+      "unsigned": false
+    },
+    "mediaType": {
+      "name": "media_type",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
+      "unsigned": false
+    },
+    "payload": {
+      "name": "payload",
+      "type": "string|Uint8Array|null",
+      "scalar": "String",
       "unsigned": false
     }
   },

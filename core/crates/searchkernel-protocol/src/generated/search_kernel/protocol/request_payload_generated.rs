@@ -11,13 +11,13 @@ pub const ENUM_MIN_REQUEST_PAYLOAD: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_REQUEST_PAYLOAD: u8 = 16;
+pub const ENUM_MAX_REQUEST_PAYLOAD: u8 = 17;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 17] = [
+pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 18] = [
     RequestPayload::NONE,
     RequestPayload::SearchKernel_Wire_InsertRequest,
     RequestPayload::SearchKernel_Wire_UpsertRequest,
@@ -35,6 +35,7 @@ pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 17] = [
     RequestPayload::SearchKernel_Wire_ListIndexesRequest,
     RequestPayload::SearchKernel_Wire_PlanIndexChangeRequest,
     RequestPayload::SearchKernel_Wire_ApplyIndexChangeRequest,
+    RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -59,9 +60,10 @@ impl RequestPayload {
     pub const SearchKernel_Wire_ListIndexesRequest: Self = Self(14);
     pub const SearchKernel_Wire_PlanIndexChangeRequest: Self = Self(15);
     pub const SearchKernel_Wire_ApplyIndexChangeRequest: Self = Self(16);
+    pub const SearchKernel_Wire_QueryDiagnosticsRequest: Self = Self(17);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 16;
+    pub const ENUM_MAX: u8 = 17;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::NONE,
         Self::SearchKernel_Wire_InsertRequest,
@@ -80,6 +82,7 @@ impl RequestPayload {
         Self::SearchKernel_Wire_ListIndexesRequest,
         Self::SearchKernel_Wire_PlanIndexChangeRequest,
         Self::SearchKernel_Wire_ApplyIndexChangeRequest,
+        Self::SearchKernel_Wire_QueryDiagnosticsRequest,
     ];
     /// Returns the variant's name or "" if unknown.
     pub fn variant_name(self) -> Option<&'static str> {
@@ -112,6 +115,9 @@ impl RequestPayload {
             }
             Self::SearchKernel_Wire_ApplyIndexChangeRequest => {
                 Some("SearchKernel_Wire_ApplyIndexChangeRequest")
+            }
+            Self::SearchKernel_Wire_QueryDiagnosticsRequest => {
+                Some("SearchKernel_Wire_QueryDiagnosticsRequest")
             }
             _ => None,
         }

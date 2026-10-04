@@ -28,9 +28,10 @@ export const PROTOCOL_VERSION = 1;
 export const REQUEST_IDENTIFIER = "SKRQ";
 export const RESPONSE_IDENTIFIER = "SKRS";
 
-export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex" | "deleteIndex" | "listIndexes" | "planIndexChange" | "applyIndexChange";
+export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery" | "createIndex" | "openIndex" | "deleteIndex" | "listIndexes" | "planIndexChange" | "applyIndexChange" | "queryDiagnostics";
 
 export interface OperationRequestMap {
+  queryDiagnostics: Semantic.QueryDiagnosticsRequestT;
   listIndexes: Semantic.ListIndexesRequestT;
   planIndexChange: PlanIndexChangeRequestT;
   applyIndexChange: ApplyIndexChangeRequestT;
@@ -50,6 +51,7 @@ export interface OperationRequestMap {
 }
 
 const requestTypes: Record<Operation, RequestPayload> = {
+  queryDiagnostics: RequestPayload.SearchKernel_Wire_QueryDiagnosticsRequest,
   listIndexes: RequestPayload.SearchKernel_Wire_ListIndexesRequest,
   planIndexChange: RequestPayload.SearchKernel_Wire_PlanIndexChangeRequest,
   applyIndexChange: RequestPayload.SearchKernel_Wire_ApplyIndexChangeRequest,
@@ -69,6 +71,7 @@ const requestTypes: Record<Operation, RequestPayload> = {
 };
 
 const responseTypes: Record<Operation, ResponsePayload> = {
+  queryDiagnostics: ResponsePayload.SearchKernel_Wire_QueryDiagnosticsResult,
   listIndexes: ResponsePayload.SearchKernel_Wire_ListIndexesResult,
   planIndexChange: ResponsePayload.SearchKernel_Wire_PlanIndexChangeResult,
   applyIndexChange: ResponsePayload.SearchKernel_Wire_ApplyIndexChangeResult,

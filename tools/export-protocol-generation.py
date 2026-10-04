@@ -16,6 +16,8 @@ OUTPUTS = (
     "core/crates/searchkernel-protocol/bfbs",
     "core/crates/searchkernel-protocol/src/lib.rs",
     "core/crates/searchkernel-protocol/src/protocol.rs",
+    "core/crates/searchkernel-vespa-bindings/src/bindings.rs",
+    "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs",
     "clients/typescript/src/_wire/v1/generated",
     "clients/typescript/src/semantic.ts",
     "clients/python/searchkernel/_wire/v1/generated",

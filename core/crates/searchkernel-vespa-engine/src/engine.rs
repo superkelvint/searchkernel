@@ -987,6 +987,16 @@ impl Engine {
         check(status, &error)?;
         let native_request =
             NativeGenericSearchRequest(require_ptr(native_request, "generic search request")?);
+        if let Some(controls) = &request.diagnostics {
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_request_set_diagnostics(native_request.0.as_ptr(),
+                    controls.trace_level, controls.matching_depth, controls.first_phase_depth,
+                    controls.second_phase_depth, controls.raw_bytes,
+                    error.as_mut_ptr(), error.capacity())
+            };
+            check(status, &error)?;
+        }
         if let Some(summary_class) = &request.summary_class {
             let summary_class = cstring(summary_class)?;
             let mut error = NativeError::new();

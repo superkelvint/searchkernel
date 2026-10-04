@@ -3,6 +3,39 @@
 // boundary while responsibilities stay physically searchable by subsystem.
 
 #include "highlighting.h"
+#include <vespa/vespalib/data/output.h>
+
+struct DiagnosticOutputFull {};
+
+// Bound JSON encoding before allocation, not after creating a large temporary.
+class BoundedDiagnosticOutput final : public vespalib::Output {
+    std::string _buffer;
+    size_t _used = 0;
+public:
+    explicit BoundedDiagnosticOutput(size_t limit) : _buffer(limit, '\0') {}
+    vespalib::WritableMemory reserve(size_t bytes) override {
+        if (bytes > _buffer.size() - _used) throw DiagnosticOutputFull{};
+        return {_buffer.data() + _used, _buffer.size() - _used};
+    }
+    vespalib::Output &commit(size_t bytes) override {
+        if (bytes > _buffer.size() - _used) throw DiagnosticOutputFull{};
+        _used += bytes;
+        return *this;
+    }
+    std::string payload() const { return {_buffer.data(), _used}; }
+};
+
+void capture_diagnostic_trace(const search::engine::Trace &trace,
+                              uint32_t limit, LocalSearchResultState &result) {
+    if (!trace.hasTrace() || limit == 0) return;
+    BoundedDiagnosticOutput output(limit);
+    try {
+        vespalib::slime::JsonFormat::encode(trace.getSlime(), output, true);
+    } catch (const DiagnosticOutputFull &) {
+        result.diagnostic_truncated = true;
+    }
+    result.diagnostic_trace = output.payload();
+}
 
 
 constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
@@ -4153,6 +4186,12 @@ public:
         // M14 uses it to capture Vespa's own blueprint and query statistics;
         // normal callers never request or receive native execution traces.
         if (const auto level = native_trace_level()) request.trace().setLevel(*level);
+        if (options.diagnostic_raw_bytes != 0) {
+            request.trace().setLevel(options.diagnostic_trace_level);
+            request.trace().match_profile_depth(static_cast<int32_t>(options.diagnostic_matching_depth));
+            request.trace().first_phase_profile_depth(static_cast<int32_t>(options.diagnostic_first_phase_depth));
+            request.trace().second_phase_profile_depth(static_cast<int32_t>(options.diagnostic_second_phase_depth));
+        }
         auto &rank_properties = request.propertiesMap.lookupCreate(search::MapNames::RANK);
         for (const auto &[name, value] : options.query_features) {
             std::ostringstream encoded;
@@ -4210,11 +4249,17 @@ public:
         }
         request.setSerializedQueryTree(query.serialized_query_tree());
         failpoint("search_before_match");
+        const auto match_start = std::chrono::steady_clock::now();
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
+        const auto match_end = std::chrono::steady_clock::now();
         failpoint("search_after_match");
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
         write_native_trace(request.trace());
         LocalSearchResultState result;
+        if (options.diagnostic_raw_bytes != 0) {
+            result.diagnostic_matching_seconds = std::chrono::duration<double>(match_end - match_start).count();
+            capture_diagnostic_trace(request.trace(), options.diagnostic_raw_bytes, result);
+        }
         copy_search_reply_metadata(*reply, result);
         const auto &features = reply->match_features;
         if (features.values.size() != features.names.size() * reply->hits.size()) {
@@ -4281,7 +4326,11 @@ public:
             if (!docsum_fields.empty()) {
                 docsum_request.setFields(docsum_fields);
             }
+            const auto summary_start = std::chrono::steady_clock::now();
             auto docsum = _db->getDocsums(docsum_request);
+            if (options.diagnostic_raw_bytes != 0) {
+                result.diagnostic_summary_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - summary_start).count();
+            }
             if (!docsum || !docsum->hasResult()) throw std::runtime_error("Vespa docsum returned no result");
             const auto &root = docsum->root();
             for (size_t index = 0; index < result.hits.size(); ++index) {
@@ -4344,6 +4393,9 @@ public:
                 if (tree->root) resolve_grouping_node(*tree->root);
                 result.grouping_trees.push_back(std::move(tree));
             }
+        }
+        if (options.diagnostic_raw_bytes != 0) {
+            result.diagnostic_query_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - search_start).count();
         }
         return result;
     }

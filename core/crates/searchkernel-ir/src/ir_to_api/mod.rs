@@ -5,6 +5,8 @@ use crate::model as ir;
 use searchkernel_protocol::wire::v1 as api;
 
 mod error;
+mod diagnostics;
+pub use diagnostics::query_diagnostics_result_offset;
 mod filter;
 mod grouping;
 mod query;

@@ -724,6 +724,8 @@ test_target() {
     case "$target" in
         protocol-generation)
             regen_protocol
+            SK_NATIVE_BINDINGS_REGENERATE=1 bash "$ROOT/tools/check-native-bindings.sh"
+            "$PYTHON" "$ROOT/tools/generate-native-consumer-bundle.py"
             "$PYTHON" "$ROOT/tools/export-protocol-generation.py"
             ;;
         frontend|frontend-real-engine)
@@ -1576,6 +1578,7 @@ case "${1:-help}" in
     regen)
         case "${2:-}" in
             protocol) regen_protocol ;;
+            native-bindings) SK_NATIVE_BINDINGS_REGENERATE=1 bash "$ROOT/tools/check-native-bindings.sh" ;;
             result-fixtures) regen_result_fixtures ;;
             *)
                 echo 'usage: ./dev regen protocol|result-fixtures' >&2

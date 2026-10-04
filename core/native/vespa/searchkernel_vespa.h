@@ -174,7 +174,8 @@ typedef struct sk_grouping_filter sk_grouping_filter;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* ABI revision 16 adds typed assignment of struct arrays to document updates. */
+/* ABI revision 16. Diagnostics add setters/accessors around opaque handles;
+   existing signatures, layouts and behavior remain compatible. */
 #define SK_NATIVE_ABI_VERSION 16U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
@@ -742,6 +743,12 @@ SK_API int32_t sk_generic_search_request_create(
 SK_API int32_t sk_generic_search_request_set_timeout(
     sk_generic_search_request *request, uint64_t timeout_millis,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+/* All controls are copied. Diagnostics are read-only and opt-in. */
+SK_API int32_t sk_generic_search_request_set_diagnostics(
+    sk_generic_search_request *request, uint32_t trace_level,
+    uint32_t matching_depth, uint32_t first_phase_depth,
+    uint32_t second_phase_depth, uint32_t raw_bytes,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_sort(
     sk_generic_search_request *request, const char *field, uint32_t order,
     uint32_t missing, uint8_t *out_error,
@@ -800,6 +807,15 @@ SK_API uint32_t sk_generic_search_result_degradation_flags(
     const sk_generic_search_result *result) SK_NOEXCEPT;
 SK_API uint32_t sk_generic_search_result_issue_count(
     const sk_generic_search_result *result) SK_NOEXCEPT;
+/* Borrowed bytes remain valid until result destruction. The caller copies
+   them before releasing the opaque result. Truncated payloads are prefixes,
+   not complete JSON; timings are measured seconds from this execution. */
+SK_API int32_t sk_generic_search_result_diagnostics(
+    const sk_generic_search_result *result, const uint8_t **out_trace,
+    uint32_t *out_length, uint32_t *out_truncated,
+    double *out_matching_seconds, double *out_summary_seconds,
+    double *out_query_seconds, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_issue_message(
     const sk_generic_search_result *result, uint32_t index,
     const char **out_message, uint32_t *out_length, uint8_t *out_error,

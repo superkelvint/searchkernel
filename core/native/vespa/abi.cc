@@ -2755,6 +2755,25 @@ extern "C" int32_t sk_generic_search_request_set_timeout(
     });
 }
 
+extern "C" int32_t sk_generic_search_request_set_diagnostics(
+    sk_generic_search_request *request, uint32_t trace_level,
+    uint32_t matching_depth, uint32_t first_phase_depth,
+    uint32_t second_phase_depth, uint32_t raw_bytes,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || trace_level > 9 || matching_depth > 16 ||
+        first_phase_depth > 16 || second_phase_depth > 16 ||
+        raw_bytes == 0 || raw_bytes > 262144) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic controls exceed safe bounds");
+    }
+    request->diagnostic_trace_level = trace_level;
+    request->diagnostic_matching_depth = matching_depth;
+    request->diagnostic_first_phase_depth = first_phase_depth;
+    request->diagnostic_second_phase_depth = second_phase_depth;
+    request->diagnostic_raw_bytes = raw_bytes;
+    return SK_NATIVE_STATUS_OK;
+}
+
 extern "C" int32_t sk_generic_search_request_add_sort(
     sk_generic_search_request *request, const char *field, uint32_t order,
     uint32_t missing, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
@@ -2942,6 +2961,26 @@ extern "C" uint64_t sk_generic_search_result_total_hit_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {
     return sk_local_search_result_total_hit_count(
         static_cast<const sk_local_search_result *>(result));
+}
+
+extern "C" int32_t sk_generic_search_result_diagnostics(
+    const sk_generic_search_result *result, const uint8_t **out_trace,
+    uint32_t *out_length, uint32_t *out_truncated,
+    double *out_matching_seconds, double *out_summary_seconds,
+    double *out_query_seconds, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!result || !out_trace || !out_length || !out_truncated ||
+        !out_matching_seconds || !out_summary_seconds || !out_query_seconds) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic result arguments are invalid");
+    }
+    *out_trace = reinterpret_cast<const uint8_t *>(result->diagnostic_trace.data());
+    *out_length = static_cast<uint32_t>(result->diagnostic_trace.size());
+    *out_truncated = result->diagnostic_truncated ? 1U : 0U;
+    *out_matching_seconds = result->diagnostic_matching_seconds;
+    *out_summary_seconds = result->diagnostic_summary_seconds;
+    *out_query_seconds = result->diagnostic_query_seconds;
+    return SK_NATIVE_STATUS_OK;
 }
 extern "C" uint32_t sk_generic_search_result_hit_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {

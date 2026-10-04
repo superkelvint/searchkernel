@@ -2,6 +2,8 @@
 
 pub mod control_plane;
 mod document;
+mod diagnostics;
+pub use diagnostics::query_diagnostics_to_ir;
 mod filter;
 mod grouping;
 mod query;

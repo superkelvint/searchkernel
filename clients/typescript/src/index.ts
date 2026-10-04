@@ -59,6 +59,9 @@ export { q, type TypedQuery } from "./ergonomic/query.js";
 export { Text, Keyword, Integer, Float, Boolean, TensorField, PositionField, ArrayOfStructField, RankProfile, type FieldOptions } from "./ergonomic/schema.js";
 export { AttributeConfigT, OptionalBoolT, IndexDefinitionT, RankPhaseDefinitionT, RankProfileDefinitionT } from "./semantic.js";
 export { FieldDefinitionT } from "./semantic.js";
+export { QueryDiagnosticsRequestT, QueryDiagnosticsResultT, DiagnosticIntent,
+  DiagnosticSection, DiagnosticStatus, DiagnosticProvenance, DiagnosticExecutionKind,
+  DiagnosticObservation, DiagnosticLimitsT } from "./semantic.js";
 export { DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT } from "./semantic.js";
 export { ProtocolError } from "./protocol/envelope.js";
 export type { ClientTransport } from "./client/index.js";
