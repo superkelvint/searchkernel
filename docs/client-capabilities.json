@@ -1777,7 +1777,7 @@
               "kind": "conformance",
               "strength": "conformance",
               "path": "clients/ruby/test/run.rb",
-              "line": 972
+              "line": 986
             }
           ],
           "overrides": []
@@ -3486,7 +3486,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/python/tests/test_grpc_transport.py",
-              "line": 118
+              "line": 140
             },
             {
               "capability": "daemon.durable_index_discovery",
@@ -3496,7 +3496,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/ruby/test/run.rb",
-              "line": 373
+              "line": 374
             },
             {
               "capability": "daemon.durable_index_discovery",
