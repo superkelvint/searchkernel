@@ -79,6 +79,8 @@ it('actual pinned widgets search, refine, paginate, browse, sort and render thro
     expect(document.querySelectorAll('#hits .ais-Hits-item')).toHaveLength(6);
     await change({query:'wireless',hitsPerPage:4}, () => search.helper!.lastResults?.hitsPerPage === 4);
     expect(search.helper!.lastResults!.nbPages).toBe(5); covered('hitsPerPage');
+    await change({query:'wireless',hitsPerPage:4,page:5}, () => search.helper!.lastResults?.page === 4);
+    expect(search.helper!.lastResults!.hits).toHaveLength(2);
     await change({query:'wireless',refinementList:{brand:['Acme']},hitsPerPage:6}, () => search.helper!.lastResults?.nbHits === 9);
     expect(search.helper!.lastResults!.getFacetValues('brand')).toEqual(expect.arrayContaining([expect.objectContaining({name:'Bravo',count:9})]));
     covered('refinementList','currentRefinements');

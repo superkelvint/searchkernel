@@ -57,6 +57,9 @@ try {
   assert.equal(await page.locator('#hits article').count(),6);
   await page.locator('#perpage select').selectOption('4');
   await state({size:4,pages:5,page:0});
+  await page.locator('#pagination a').getByText('5',{exact:true}).click();
+  await state({page:4});
+  assert.equal(await page.locator('#hits article').count(),2);
   const acme = page.locator('#brand .ais-RefinementList-item').filter({hasText:'Acme'});
   await acme.locator('input').check(); await state({count:9});
   assert.ok((await page.locator('#current').textContent()).includes('Acme'));
