@@ -2,18 +2,16 @@
 //!
 //! # Status
 //!
-//! The first two implementation slices are present here: a typed endpoint
-//! policy/request model, strict named-route GET decoding, and canonical
-//! request-envelope encoding for text and match-all search. Public listener
-//! wiring, public JSON response projection, batching, and richer controls remain
-//! future slices.
+//! This module is the single daemon-side authority for bounded public search.
+//! It owns endpoint exposure policy, hostile-input validation, public listener
+//! serving, batching, canonical request binding, response projection, and the
+//! public concurrency boundary. All execution still converges on the canonical
+//! Search Kernel protocol, registry/dispatcher, IR, and backend.
 //!
-//! InstantSearch.js compatibility is nevertheless a hard acceptance requirement
-//! for this request-binding surface. The first compatibility profile accepts the
-//! core SearchClient vocabulary directly: `query`, `hitsPerPage`, and
-//! zero-based `page`. These are exposure-policy aliases only; they lower to the
-//! same canonical Search Kernel query/limit/offset fields and do not introduce
-//! Algolia search semantics.
+//! InstantSearch.js compatibility is an integration consumer of this surface,
+//! not a second daemon-side implementation. The adapter may translate the
+//! pinned InstantSearch contract into this public request model, but search
+//! meaning remains canonical below the boundary.
 //!
 //! Search Endpoints are intended to let `searchkerneld` serve deliberately
 //! narrow, user-facing search APIs such as:
@@ -741,23 +739,18 @@
 //!   required for safe public search;
 //! - analytics/telemetry product semantics.
 //!
-//! # First-slice rule
+//! # Executable authority
 //!
-//! Keep this module's executable surface smaller than the eventual public HTTP
-//! contract. The current typed binder exists to prove policy validation,
-//! presence preservation, and canonical request construction before routing
-//! and response-shaping are introduced. Do not grow it into a parallel search
-//! API or bypass the canonical dispatcher path when later slices are added.
-
-#![cfg_attr(not(feature = "test-support"), allow(dead_code))]
+//! Deployment JSON compiles into an immutable `SearchEndpointRouter`. Its
+//! `SearchEndpointConfig` definitions own target/generation, exposure, and
+//! serving bounds. GET decoding and batch POST decoding produce the same
+//! transport-neutral inputs for `SearchEndpointConfig::bind`. Execution and
+//! projection use that registry; deployment DTOs never bind or execute requests.
 
 use std::{sync::Arc, time::Duration};
 
 use searchkernel_ir::validate_index_target;
-use searchkernel_protocol::{
-    protocol::v1::{self as wire, PROTOCOL_VERSION},
-    wire::v1 as api,
-};
+use serde::Deserialize;
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError},
     task::JoinHandle,
@@ -927,7 +920,8 @@ impl std::error::Error for SearchEndpointConcurrencyError {}
 ///
 /// These are serving-policy constraints, not Search Kernel query semantics.
 /// A missing default remains missing in the canonical request.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct SearchEndpointPolicy {
     max_query_string_bytes: usize,
     max_parameters: usize,
@@ -935,6 +929,31 @@ pub struct SearchEndpointPolicy {
     default_limit: Option<u32>,
     max_limit: u32,
     max_offset: u32,
+    max_facet_limit: u32,
+    max_filters: usize,
+    max_filter_depth: usize,
+    max_filter_nodes: usize,
+    max_filter_value_bytes: usize,
+    timeout_ms: u64,
+}
+
+impl Default for SearchEndpointPolicy {
+    fn default() -> Self {
+        Self {
+            max_query_string_bytes: 16384,
+            max_parameters: 4,
+            max_query_bytes: 4096,
+            default_limit: Some(searchkernel_ir::DEFAULT_SEARCH_LIMIT),
+            max_limit: 100,
+            max_offset: 10000,
+            max_facet_limit: 100,
+            max_filters: 32,
+            max_filter_depth: 4,
+            max_filter_nodes: 128,
+            max_filter_value_bytes: 1024,
+            timeout_ms: 4000,
+        }
+    }
 }
 
 impl SearchEndpointPolicy {
@@ -942,7 +961,7 @@ impl SearchEndpointPolicy {
     ///
     /// No result-count default is invented here. Call
     /// [`Self::with_default_limit`] when an endpoint deliberately wants one.
-    pub const fn new(
+    pub fn new(
         max_query_string_bytes: usize,
         max_parameters: usize,
         max_query_bytes: usize,
@@ -956,6 +975,7 @@ impl SearchEndpointPolicy {
             default_limit: None,
             max_limit,
             max_offset,
+            ..Self::default()
         }
     }
 
@@ -966,6 +986,16 @@ impl SearchEndpointPolicy {
     }
 
     fn validate(&self) -> Result<(), SearchEndpointBindError> {
+        if self.timeout_ms == 0
+            || self.max_facet_limit == 0
+            || self.max_filter_depth > 16
+            || self.max_filter_nodes > 1024
+            || self.max_filters > 1024
+        {
+            return Err(SearchEndpointBindError::InvalidPolicy(
+                "invalid complexity or timeout bounds",
+            ));
+        }
         if let Some(default_limit) = self.default_limit {
             if default_limit > self.max_limit {
                 return Err(SearchEndpointBindError::InvalidPolicy(
@@ -981,6 +1011,63 @@ impl SearchEndpointPolicy {
     }
 }
 
+/// Listener-wide resource policy, compiled once with the endpoint registry.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct SearchEndpointServingPolicy {
+    max_body_bytes: usize,
+    max_batch_requests: usize,
+    max_response_bytes: usize,
+    max_uri_bytes: usize,
+    max_header_bytes: usize,
+    max_headers: usize,
+    max_connections: usize,
+    admission_limit: usize,
+    execution_limit: usize,
+    read_timeout_ms: u64,
+    request_timeout_ms: u64,
+    connection_timeout_ms: u64,
+}
+impl Default for SearchEndpointServingPolicy {
+    fn default() -> Self {
+        Self {
+            max_body_bytes: 65536,
+            max_batch_requests: 16,
+            max_response_bytes: 1048576,
+            max_uri_bytes: 16384,
+            max_header_bytes: 8192,
+            max_headers: 32,
+            max_connections: 64,
+            admission_limit: 32,
+            execution_limit: 8,
+            read_timeout_ms: 2000,
+            request_timeout_ms: 4000,
+            connection_timeout_ms: 30000,
+        }
+    }
+}
+impl SearchEndpointServingPolicy {
+    fn validate(&self) -> Result<(), PublicSearchError> {
+        if self.max_body_bytes == 0
+            || self.max_batch_requests == 0
+            || self.max_response_bytes == 0
+            || self.max_uri_bytes == 0
+            || self.max_header_bytes == 0
+            || self.max_headers == 0
+            || self.max_connections == 0
+            || self.max_connections > Semaphore::MAX_PERMITS
+            || self.read_timeout_ms == 0
+            || self.request_timeout_ms == 0
+            || self.connection_timeout_ms == 0
+        {
+            return Err(PublicSearchError::InvalidRequest);
+        }
+        SearchEndpointConcurrency::new(self.admission_limit, self.execution_limit)
+            .map_err(|_| PublicSearchError::InvalidRequest)?;
+        Ok(())
+    }
+}
+
 /// One named public Search Endpoint.
 ///
 /// The public route is derived as `/search/{name}`. Names are validated when
@@ -991,6 +1078,12 @@ pub struct SearchEndpointConfig {
     name: String,
     target: String,
     policy: SearchEndpointPolicy,
+    generation: Option<String>,
+    fields: Option<Vec<String>>,
+    filter_fields: std::collections::BTreeMap<String, PublicFieldKind>,
+    facets: Vec<String>,
+    highlights: Vec<String>,
+    sort: Vec<PublicSort>,
 }
 
 impl SearchEndpointConfig {
@@ -1004,6 +1097,12 @@ impl SearchEndpointConfig {
             name: name.into(),
             target: target.into(),
             policy,
+            generation: None,
+            fields: None,
+            filter_fields: Default::default(),
+            facets: vec![],
+            highlights: vec![],
+            sort: vec![],
         }
     }
 
@@ -1031,6 +1130,8 @@ impl SearchEndpointConfig {
 #[derive(Clone, Debug)]
 pub struct SearchEndpointRouter {
     endpoints: std::collections::BTreeMap<String, SearchEndpointConfig>,
+    serving: SearchEndpointServingPolicy,
+    allowed_origins: Vec<String>,
 }
 
 impl SearchEndpointRouter {
@@ -1050,6 +1151,9 @@ impl SearchEndpointRouter {
                 .policy
                 .validate()
                 .map_err(SearchEndpointRouteError::Bind)?;
+            endpoint.validate_exposure().map_err(|error| {
+                SearchEndpointRouteError::Bind(SearchEndpointBindError::Public(error))
+            })?;
             let route = endpoint.route();
             if by_route.insert(route.clone(), endpoint).is_some() {
                 return Err(SearchEndpointRouteError::DuplicateRoute(route));
@@ -1057,6 +1161,8 @@ impl SearchEndpointRouter {
         }
         Ok(Self {
             endpoints: by_route,
+            serving: Default::default(),
+            allowed_origins: vec![],
         })
     }
 
@@ -1065,13 +1171,98 @@ impl SearchEndpointRouter {
         path: &str,
         raw_query: Option<&str>,
     ) -> Result<Vec<u8>, SearchEndpointRouteError> {
+        self.bind_get_input(path, raw_query).map(|(_, bytes)| bytes)
+    }
+
+    fn bind_get_input(
+        &self,
+        path: &str,
+        raw_query: Option<&str>,
+    ) -> Result<(SearchEndpointRequest, Vec<u8>), SearchEndpointRouteError> {
         let endpoint = self
-            .endpoints
-            .get(path)
+            .endpoint_for_path(path)
             .ok_or(SearchEndpointRouteError::UnknownRoute)?;
         let request = decode_get_query(endpoint.policy(), raw_query)?;
-        bind_search_request(endpoint.target(), endpoint.policy(), request)
-            .map_err(SearchEndpointRouteError::Bind)
+        let bytes = endpoint
+            .bind(request.clone())
+            .map_err(|error| match error {
+                SearchEndpointBindError::InvalidQueryText => {
+                    SearchEndpointRouteError::InvalidQueryText
+                }
+                error => SearchEndpointRouteError::Bind(error),
+            })?;
+        Ok((request, bytes))
+    }
+}
+
+impl SearchEndpointRouter {
+    fn endpoint_for_path(&self, path: &str) -> Option<&SearchEndpointConfig> {
+        self.endpoints.get(path)
+    }
+
+    fn endpoint(&self, name: &str) -> Result<&SearchEndpointConfig, PublicSearchError> {
+        validate_endpoint_name(name).map_err(|_| PublicSearchError::UnknownIndex)?;
+        self.endpoint_for_path(&format!("/search/{name}"))
+            .ok_or(PublicSearchError::UnknownIndex)
+    }
+
+    pub fn bind_post(&self, request: &PublicSearchRequest) -> Result<Vec<u8>, PublicSearchError> {
+        self.endpoint(&request.endpoint)?
+            .bind(request.into())
+            .map_err(public_bind_error)
+    }
+
+    pub fn project_response(
+        &self,
+        bytes: &[u8],
+        request: &PublicSearchRequest,
+        elapsed_ms: u128,
+    ) -> Result<serde_json::Value, PublicSearchError> {
+        public_api::project_response(
+            bytes,
+            request,
+            self.endpoint(&request.endpoint)?,
+            elapsed_ms,
+            self.serving.max_response_bytes,
+        )
+    }
+
+    // GET parsing produces the same neutral inputs as POST, then uses the same binder.
+    #[cfg(feature = "native")]
+    fn prepare_get(
+        &self,
+        path: &str,
+        raw_query: Option<&str>,
+    ) -> Result<(PublicSearchRequest, Vec<u8>), PublicSearchError> {
+        let endpoint = self
+            .endpoint_for_path(path)
+            .ok_or(PublicSearchError::UnknownIndex)?;
+        let (request, bytes) = self
+            .bind_get_input(path, raw_query)
+            .map_err(|_| PublicSearchError::InvalidRequest)?;
+        let public = PublicSearchRequest {
+            endpoint: endpoint.name.clone(),
+            query: request.query,
+            limit: request
+                .limit
+                .or(endpoint.policy.default_limit)
+                .unwrap_or(searchkernel_ir::DEFAULT_SEARCH_LIMIT),
+            offset: request.offset.unwrap_or(0),
+            facets: request.facets,
+            facet_limit: request.facet_limit,
+            filters: request.filters,
+            fields: request.fields,
+            highlights: request.highlights,
+            snippets: request.snippets,
+        };
+        Ok((public, bytes))
+    }
+}
+
+fn public_bind_error(error: SearchEndpointBindError) -> PublicSearchError {
+    match error {
+        SearchEndpointBindError::Public(error) => error,
+        _ => PublicSearchError::InvalidRequest,
     }
 }
 
@@ -1290,11 +1481,8 @@ fn decode_get_query(
     }
 
     let mut request = match query {
-        Some(query) if query.chars().any(char::is_control) => {
-            return Err(SearchEndpointRouteError::InvalidQueryText);
-        }
-        Some(query) if !query.trim().is_empty() => SearchEndpointRequest::text(query),
-        Some(_) | None => SearchEndpointRequest::match_all(),
+        Some(query) => SearchEndpointRequest::text(query),
+        None => SearchEndpointRequest::match_all(),
     };
     request.limit = limit;
     request.offset = offset;
@@ -1361,38 +1549,49 @@ fn parse_u32_parameter(
 /// The public GET decoder maps its deliberately small parameter set into this
 /// representation before canonical request construction. Richer endpoint
 /// controls must remain explicit additions rather than generic pass-throughs.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum SearchEndpointQuery {
-    Text(String),
-    MatchAll,
+/// Transport-neutral endpoint inputs. Presence is retained through binding.
+#[derive(Clone, Debug)]
+struct SearchEndpointRequest {
+    query: String,
+    limit: Option<u32>,
+    offset: Option<u32>,
+    facets: Vec<String>,
+    facet_limit: u32,
+    filters: Vec<PublicFilter>,
+    fields: Option<Vec<String>>,
+    highlights: Option<Vec<String>>,
+    snippets: Vec<String>,
 }
-
-/// The first typed Search Endpoint request.
-///
-/// Presence is intentional: `None` means the public caller did not supply that
-/// control. Policy may supply an explicit default; otherwise the field remains
-/// absent in the canonical SearchRequest.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SearchEndpointRequest {
-    pub(crate) query: SearchEndpointQuery,
-    pub(crate) limit: Option<u32>,
-    pub(crate) offset: Option<u32>,
-}
-
 impl SearchEndpointRequest {
-    pub(crate) fn text(query: impl Into<String>) -> Self {
+    fn text(query: impl Into<String>) -> Self {
         Self {
-            query: SearchEndpointQuery::Text(query.into()),
+            query: query.into(),
             limit: None,
             offset: None,
+            facets: vec![],
+            facet_limit: 1,
+            filters: vec![],
+            fields: None,
+            highlights: None,
+            snippets: vec![],
         }
     }
-
-    pub(crate) fn match_all() -> Self {
+    fn match_all() -> Self {
+        Self::text("")
+    }
+}
+impl From<&PublicSearchRequest> for SearchEndpointRequest {
+    fn from(request: &PublicSearchRequest) -> Self {
         Self {
-            query: SearchEndpointQuery::MatchAll,
-            limit: None,
-            offset: None,
+            query: request.query.clone(),
+            limit: Some(request.limit),
+            offset: Some(request.offset),
+            facets: request.facets.clone(),
+            facet_limit: request.facet_limit,
+            filters: request.filters.clone(),
+            fields: request.fields.clone(),
+            highlights: request.highlights.clone(),
+            snippets: request.snippets.clone(),
         }
     }
 }
@@ -1404,6 +1603,8 @@ impl SearchEndpointRequest {
 /// existing canonical path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SearchEndpointBindError {
+    Public(PublicSearchError),
+    InvalidQueryText,
     InvalidPolicy(&'static str),
     QueryTooLarge {
         actual_bytes: usize,
@@ -1422,6 +1623,10 @@ pub enum SearchEndpointBindError {
 impl std::fmt::Display for SearchEndpointBindError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Public(error) => error.fmt(formatter),
+            Self::InvalidQueryText => {
+                formatter.write_str("query text contains unsupported control characters")
+            }
             Self::InvalidPolicy(message) => {
                 write!(formatter, "invalid Search Endpoint policy: {message}")
             }
@@ -1446,120 +1651,938 @@ impl std::fmt::Display for SearchEndpointBindError {
 
 impl std::error::Error for SearchEndpointBindError {}
 
-/// Validates public serving policy and constructs the canonical search
-/// request envelope consumed by `searchkernel-dispatch`.
-///
-/// This function intentionally does not dispatch. The daemon owns scheduling,
-/// admission, blocking execution, and target lifecycle; this module owns only
-/// endpoint policy plus canonical request construction.
-pub(crate) fn bind_search_request(
-    target: &str,
-    policy: &SearchEndpointPolicy,
-    request: SearchEndpointRequest,
-) -> Result<Vec<u8>, SearchEndpointBindError> {
-    policy.validate()?;
+//
+// Production public Search Endpoint surface.
+//
+// InstantSearch and other public integrations must enter through this module.
+// Keeping the listener, exposure policy, canonical binding, projection, and
+// hardened concurrency ownership together prevents a second daemon-side
+// semantic authority from drifting away from Search Endpoints.
+//
+mod public_api {
+    //! Bounded public search representation. Execution always uses canonical frames.
+    use super::*;
+    use searchkernel_protocol::json::request_json_to_flatbuffer;
+    use serde::{Deserialize, Serialize};
+    use serde_json::{json, Value};
+    use std::collections::{BTreeMap, BTreeSet};
 
-    if let SearchEndpointQuery::Text(text) = &request.query {
-        let actual_bytes = text.len();
-        if actual_bytes > policy.max_query_bytes {
-            return Err(SearchEndpointBindError::QueryTooLarge {
-                actual_bytes,
-                max_bytes: policy.max_query_bytes,
-            });
+    /// Serialized deployment format. Compile it before serving requests.
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct PublicSearchConfig {
+        pub endpoints: BTreeMap<String, PublicEndpoint>,
+        #[serde(default)]
+        pub allowed_origins: Vec<String>,
+        /// Internet deployment requires TLS termination and request rate limits.
+        pub behind_rate_limited_proxy: bool,
+        #[serde(default)]
+        pub serving: SearchEndpointServingPolicy,
+    }
+
+    /// Deployment DTO; executable policy lives in `SearchEndpointConfig`.
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct PublicEndpoint {
+        pub target: String,
+        pub generation: String,
+        pub fields: Vec<String>,
+        pub filter_fields: BTreeMap<String, PublicFieldKind>,
+        pub facets: Vec<String>,
+        pub highlights: Vec<String>,
+        #[serde(default)]
+        pub sort: Vec<PublicSort>,
+        #[serde(default)]
+        pub policy: SearchEndpointPolicy,
+    }
+
+    #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "camelCase")]
+    pub enum PublicFieldKind {
+        String,
+        Bool,
+        Int64,
+        Float64,
+    }
+
+    #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct PublicSort {
+        pub field: String,
+        pub descending: bool,
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct PublicSearchRequest {
+        pub endpoint: String,
+        pub query: String,
+        pub limit: u32,
+        pub offset: u32,
+        pub facets: Vec<String>,
+        pub facet_limit: u32,
+        pub filters: Vec<PublicFilter>,
+        pub fields: Option<Vec<String>>,
+        pub highlights: Option<Vec<String>>,
+        pub snippets: Vec<String>,
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(tag = "op", rename_all = "lowercase", deny_unknown_fields)]
+    pub enum PublicFilter {
+        And { clauses: Vec<PublicFilter> },
+        Or { clauses: Vec<PublicFilter> },
+        Eq { field: String, value: Value },
+        Ne { field: String, value: Value },
+        Lt { field: String, value: Value },
+        Lte { field: String, value: Value },
+        Gt { field: String, value: Value },
+        Gte { field: String, value: Value },
+    }
+
+    #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+    #[serde(rename_all = "snake_case")]
+    pub enum PublicSearchError {
+        InvalidRequest,
+        Unsupported,
+        UnknownIndex,
+        StaleTarget,
+        Unavailable,
+        Timeout,
+        Overloaded,
+        BackendFailure,
+    }
+    impl std::fmt::Display for PublicSearchError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Public search error: {self:?}")
+        }
+    }
+    impl std::error::Error for PublicSearchError {}
+
+    impl PublicSearchConfig {
+        pub fn compile(&self) -> Result<SearchEndpointRouter, PublicSearchError> {
+            if !self.behind_rate_limited_proxy
+                || self.endpoints.is_empty()
+                || self.endpoints.len() > 64
+                || self.allowed_origins.len() > 32
+                || self
+                    .allowed_origins
+                    .iter()
+                    .any(|o| o == "*" || o.len() > 1024)
+            {
+                return Err(PublicSearchError::InvalidRequest);
+            }
+            self.serving.validate()?;
+            let endpoints = self
+                .endpoints
+                .iter()
+                .map(|(name, endpoint)| SearchEndpointConfig {
+                    name: name.clone(),
+                    target: endpoint.target.clone(),
+                    generation: Some(endpoint.generation.clone()),
+                    policy: endpoint.policy.clone(),
+                    fields: Some(endpoint.fields.clone()),
+                    filter_fields: endpoint.filter_fields.clone(),
+                    facets: endpoint.facets.clone(),
+                    highlights: endpoint.highlights.clone(),
+                    sort: endpoint.sort.clone(),
+                });
+            let mut registry = SearchEndpointRouter::new(endpoints)
+                .map_err(|_| PublicSearchError::InvalidRequest)?;
+            registry.serving = self.serving.clone();
+            registry.allowed_origins = self.allowed_origins.clone();
+            Ok(registry)
         }
     }
 
-    let limit = request.limit.or(policy.default_limit);
-    if let Some(value) = limit {
-        if value > policy.max_limit {
-            return Err(SearchEndpointBindError::LimitTooLarge {
-                value,
-                max: policy.max_limit,
+    impl SearchEndpointConfig {
+        pub(super) fn validate_exposure(&self) -> Result<(), PublicSearchError> {
+            let endpoint = self;
+            if super::validate_endpoint_name(&endpoint.name).is_err()
+                || endpoint.name.len() > 64
+                || searchkernel_ir::validate_index_target(&endpoint.target).is_err()
+                || endpoint
+                    .generation
+                    .as_ref()
+                    .is_some_and(|generation| generation.is_empty())
+                || endpoint
+                    .generation
+                    .as_ref()
+                    .is_some_and(|generation| generation.len() > 128)
+                || endpoint
+                    .fields
+                    .as_ref()
+                    .is_some_and(|fields| fields.len() > 64)
+                || endpoint.sort.len() > 8
+                || endpoint.filter_fields.len() > 32
+            {
+                return Err(PublicSearchError::InvalidRequest);
+            }
+            if let Some(fields) = &endpoint.fields {
+                bounded_fields(fields)?;
+            }
+            bounded_fields(&endpoint.facets)?;
+            bounded_fields(&endpoint.highlights)?;
+            bounded_fields(
+                &endpoint
+                    .sort
+                    .iter()
+                    .map(|sort| sort.field.clone())
+                    .collect::<Vec<_>>(),
+            )?;
+            bounded_fields(&endpoint.filter_fields.keys().cloned().collect::<Vec<_>>())?;
+            if endpoint
+                .facets
+                .iter()
+                .any(|f| !endpoint.filter_fields.contains_key(f))
+                || endpoint.highlights.iter().any(|f| {
+                    !endpoint
+                        .fields
+                        .as_ref()
+                        .is_some_and(|fields| fields.contains(f))
+                        || f.contains('.')
+                })
+            {
+                return Err(PublicSearchError::InvalidRequest);
+            }
+            Ok(())
+        }
+
+        /// Both HTTP forms construct this input and enter this one policy binder.
+        pub(super) fn bind(
+            &self,
+            request: SearchEndpointRequest,
+        ) -> Result<Vec<u8>, SearchEndpointBindError> {
+            self.policy.validate()?;
+            if request.query.chars().any(char::is_control) {
+                return Err(SearchEndpointBindError::InvalidQueryText);
+            }
+            if request.query.len() > self.policy.max_query_bytes {
+                return Err(SearchEndpointBindError::QueryTooLarge {
+                    actual_bytes: request.query.len(),
+                    max_bytes: self.policy.max_query_bytes,
+                });
+            }
+            let limit = request.limit.or(self.policy.default_limit);
+            if let Some(value) = limit {
+                if value > self.policy.max_limit {
+                    return Err(SearchEndpointBindError::LimitTooLarge {
+                        value,
+                        max: self.policy.max_limit,
+                    });
+                }
+            }
+            if let Some(value) = request.offset {
+                if value > self.policy.max_offset {
+                    return Err(SearchEndpointBindError::OffsetTooLarge {
+                        value,
+                        max: self.policy.max_offset,
+                    });
+                }
+            }
+            self.encode(request, limit)
+                .map_err(SearchEndpointBindError::Public)
+        }
+        fn encode(
+            &self,
+            request: SearchEndpointRequest,
+            limit: Option<u32>,
+        ) -> Result<Vec<u8>, PublicSearchError> {
+            let endpoint = self;
+            if request.facet_limit == 0
+                || request.facet_limit > self.policy.max_facet_limit
+                || request.filters.len() > self.policy.max_filters
+            {
+                return Err(PublicSearchError::InvalidRequest);
+            }
+            let facets = select_fields(&request.facets, &endpoint.facets)?;
+            let fields = match &endpoint.fields {
+                Some(allowed) => Some(select_fields(
+                    request.fields.as_ref().unwrap_or(allowed),
+                    allowed,
+                )?),
+                None if request.fields.is_none() => None,
+                None => return Err(PublicSearchError::Unsupported),
+            };
+            let highlights = select_fields(
+                request.highlights.as_ref().unwrap_or(&endpoint.highlights),
+                &endpoint.highlights,
+            )?;
+            let snippets = select_fields(&request.snippets, &endpoint.highlights)?;
+            let highlight_fields: BTreeSet<_> = highlights.into_iter().chain(snippets).collect();
+            let mut nodes = 0;
+            let filters = request
+                .filters
+                .iter()
+                .map(|f| lower_filter(f, endpoint, 0, &mut nodes))
+                .collect::<Result<Vec<_>, _>>()?;
+            let grouping = facets
+                .iter()
+                .map(|field| facet_grouping(field, request.facet_limit))
+                .collect::<Vec<_>>();
+            let sort = endpoint
+            .sort
+            .iter()
+            .map(|sort| {
+                json!({
+                    "target": {"target_type": "FieldSortTarget", "target": {"field": sort.field}},
+                    "direction": if sort.descending {"Desc"} else {"Asc"}
+                })
+            })
+            .collect::<Vec<_>>();
+            let query = if request.query.trim().is_empty() {
+                json!({"source_type": "MatchAllQuery", "source": {}})
+            } else {
+                json!({"source_type": "SearchKernelTextQuery", "source": {"text": request.query}})
+            };
+            let mut presentation = json!({});
+            if let Some(fields) = fields {
+                presentation["fields"] = json!({"fields": fields});
+            }
+            if !highlight_fields.is_empty() {
+                presentation["highlighting"] = json!({"fields": highlight_fields});
+            }
+            let mut envelope = json!({
+                "protocol_version": searchkernel_protocol::protocol::v1::PROTOCOL_VERSION,
+                "target": {"name": endpoint.target, "generation": endpoint.generation},
+                "payload_type": "SearchKernel_Wire_SearchRequest",
+                "payload": {"query": query,
+                    "timeout_ms": {"value": self.policy.timeout_ms.to_string()}, "filters": {"structured": filters}, "sort": sort,
+                    "grouping": grouping, "presentation": presentation}
             });
+            if let Some(limit) = limit {
+                envelope["payload"]["limit"] = json!({"value": limit});
+            }
+            if let Some(offset) = request.offset {
+                envelope["payload"]["offset"] = json!({"value": offset});
+            }
+            let json =
+                serde_json::to_vec(&envelope).map_err(|_| PublicSearchError::InvalidRequest)?;
+            request_json_to_flatbuffer(&json).map_err(|_| PublicSearchError::InvalidRequest)
         }
     }
 
-    if let Some(value) = request.offset {
-        if value > policy.max_offset {
-            return Err(SearchEndpointBindError::OffsetTooLarge {
-                value,
-                max: policy.max_offset,
-            });
+    fn bounded_fields(fields: &[String]) -> Result<(), PublicSearchError> {
+        if fields.len() > 64
+            || fields
+                .iter()
+                .any(|f| f.is_empty() || f.len() > 128 || f.contains('\0'))
+            || fields.iter().collect::<BTreeSet<_>>().len() != fields.len()
+        {
+            return Err(PublicSearchError::InvalidRequest);
         }
+        Ok(())
+    }
+    fn select_fields(
+        requested: &[String],
+        allowed: &[String],
+    ) -> Result<Vec<String>, PublicSearchError> {
+        bounded_fields(requested)?;
+        if requested == ["*"] {
+            return Ok(allowed.to_vec());
+        }
+        if requested.iter().any(|f| !allowed.contains(f)) {
+            return Err(PublicSearchError::Unsupported);
+        }
+        Ok(requested.to_vec())
+    }
+    fn scalar(
+        kind: PublicFieldKind,
+        value: &Value,
+        max_value_bytes: usize,
+    ) -> Result<Value, PublicSearchError> {
+        let (tag, value) = match kind {
+            PublicFieldKind::String => (
+                "StringValue",
+                json!(value
+                    .as_str()
+                    .filter(|v| v.len() <= max_value_bytes && !v.contains('\0'))
+                    .ok_or(PublicSearchError::InvalidRequest)?),
+            ),
+            PublicFieldKind::Bool => {
+                let parsed = match value {
+                    Value::Bool(b) => *b,
+                    Value::String(s) if s == "true" => true,
+                    Value::String(s) if s == "false" => false,
+                    _ => return Err(PublicSearchError::InvalidRequest),
+                };
+                ("BoolValue", json!(parsed))
+            }
+            PublicFieldKind::Int64 => {
+                let number = value
+                    .as_f64()
+                    .or_else(|| value.as_str()?.parse::<f64>().ok())
+                    .ok_or(PublicSearchError::InvalidRequest)?;
+                if number.fract() != 0.0 || number.abs() > 9_007_199_254_740_991.0 {
+                    return Err(PublicSearchError::InvalidRequest);
+                }
+                ("Int64Value", json!((number as i64).to_string()))
+            }
+            PublicFieldKind::Float64 => (
+                "Float64Value",
+                json!(value
+                    .as_f64()
+                    .or_else(|| value.as_str()?.parse::<f64>().ok())
+                    .filter(|v| v.is_finite())
+                    .ok_or(PublicSearchError::InvalidRequest)?),
+            ),
+        };
+        Ok(json!({"kind_type": tag, "kind": {"value": value}}))
+    }
+    fn lower_filter(
+        filter: &PublicFilter,
+        endpoint: &SearchEndpointConfig,
+        depth: usize,
+        nodes: &mut usize,
+    ) -> Result<Value, PublicSearchError> {
+        *nodes += 1;
+        if depth > endpoint.policy.max_filter_depth || *nodes > endpoint.policy.max_filter_nodes {
+            return Err(PublicSearchError::InvalidRequest);
+        }
+        let (field, value, op) = match filter {
+            PublicFilter::And { clauses } | PublicFilter::Or { clauses } => {
+                if clauses.is_empty() || clauses.len() > 32 {
+                    return Err(PublicSearchError::InvalidRequest);
+                }
+                let children = clauses
+                    .iter()
+                    .map(|c| lower_filter(c, endpoint, depth + 1, nodes))
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(
+                    json!({"expr_type": if matches!(filter, PublicFilter::And {..}) {"FilterAnd"} else {"FilterOr"}, "expr": {"clauses": children}}),
+                );
+            }
+            PublicFilter::Eq { field, value } => (field, value, "Eq"),
+            PublicFilter::Ne { field, value } => (field, value, "Ne"),
+            PublicFilter::Lt { field, value } => (field, value, "Lt"),
+            PublicFilter::Lte { field, value } => (field, value, "Lte"),
+            PublicFilter::Gt { field, value } => (field, value, "Gt"),
+            PublicFilter::Gte { field, value } => (field, value, "Gte"),
+        };
+        let kind = *endpoint
+            .filter_fields
+            .get(field)
+            .ok_or(PublicSearchError::Unsupported)?;
+        Ok(
+            json!({"expr_type": "FilterComparison", "expr": {"field": {"path": field}, "op": op, "value": scalar(kind, value, endpoint.policy.max_filter_value_bytes)?}}),
+        )
+    }
+    fn facet_grouping(field: &str, limit: u32) -> Value {
+        let attribute =
+            json!({"expr_type": "GroupingAttributeExpression", "expr": {"field": field}});
+        let count = json!({"expr_type": "GroupingAggregationExpression", "expr": {"aggregation_type": "CountAggregation", "aggregation": {}}});
+        json!({"source_type": "StructuredGroupingSource", "source": {"root": {"label": field, "operations": [
+            {"operation_type": "GroupingGroupOperation", "operation": {"expression": attribute}},
+            {"operation_type": "GroupingEachOperation", "operation": {"operations": [
+                {"operation_type": "GroupingMaxOperation", "operation": {"value_type": "FiniteGroupingMax", "value": {"value": limit}}},
+                {"operation_type": "GroupingOrderOperation", "operation": {"expressions": [{"expression": {"expr_type": "GroupingUnaryExpression", "expr": {"op": "Negative", "expression": count}}}]}},
+                {"operation_type": "GroupingOutputOperation", "operation": {"outputs": [{"expression": count}]}}
+            ]}}
+        ]}}})
     }
 
-    Ok(encode_search_request(
-        target,
-        request.query,
-        limit,
-        request.offset,
-    ))
-}
+    /// Strict projection of canonical scalar/document values. Unsupported result
+    /// shapes fail instead of exposing engine-specific values or debug formatting.
+    fn result_value(value: &searchkernel_ir::Value) -> Result<Value, PublicSearchError> {
+        use searchkernel_ir::Value as V;
+        Ok(match value {
+            V::Bool(v) => json!(v),
+            V::Int64(v) if v.unsigned_abs() <= 9_007_199_254_740_991 => json!(v),
+            V::UInt64(v) if *v <= 9_007_199_254_740_991 => json!(v),
+            V::Float64(v) if v.is_finite() => json!(v),
+            V::String(v) => json!(v),
+            V::Null => Value::Null,
+            V::List(values) => {
+                Value::Array(values.iter().map(result_value).collect::<Result<_, _>>()?)
+            }
+            V::Object(fields) => Value::Object(
+                fields
+                    .iter()
+                    .map(|(key, value)| Ok((key.clone(), result_value(value)?)))
+                    .collect::<Result<_, PublicSearchError>>()?,
+            ),
+            _ => return Err(PublicSearchError::BackendFailure),
+        })
+    }
 
-fn encode_search_request(
-    target: &str,
-    query: SearchEndpointQuery,
-    limit: Option<u32>,
-    offset: Option<u32>,
-) -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    pub(super) fn project_response(
+        bytes: &[u8],
+        request: &PublicSearchRequest,
+        endpoint: &SearchEndpointConfig,
+        elapsed_ms: u128,
+        max_response_bytes: usize,
+    ) -> Result<Value, PublicSearchError> {
+        use searchkernel_protocol::protocol::v1 as wire;
+        if bytes.len() > max_response_bytes {
+            return Err(PublicSearchError::BackendFailure);
+        }
+        let envelope = flatbuffers::root::<wire::ResponseEnvelope<'_>>(bytes)
+            .map_err(|_| PublicSearchError::BackendFailure)?;
+        if let Some(error) = envelope.payload_as_search_kernel_wire_error() {
+            use searchkernel_protocol::wire::v1::ErrorCode;
+            return Err(match error.code() {
+                ErrorCode::NotFound => PublicSearchError::UnknownIndex,
+                ErrorCode::Conflict => PublicSearchError::StaleTarget,
+                ErrorCode::FailedPrecondition
+                    if error.details().is_some_and(|details| {
+                        details.iter().any(|detail| {
+                            detail.code() == Some(searchkernel_ir::STALE_INDEX_HANDLE_DETAIL_CODE)
+                        })
+                    }) =>
+                {
+                    PublicSearchError::StaleTarget
+                }
+                ErrorCode::Unsupported => PublicSearchError::Unsupported,
+                ErrorCode::InvalidArgument => PublicSearchError::InvalidRequest,
+                ErrorCode::Unavailable => PublicSearchError::Unavailable,
+                ErrorCode::ResourceExhausted => PublicSearchError::Overloaded,
+                ErrorCode::DeadlineExceeded => PublicSearchError::Timeout,
+                _ => PublicSearchError::BackendFailure,
+            });
+        }
+        let result = envelope
+            .payload_as_search_kernel_wire_search_result()
+            .ok_or(PublicSearchError::BackendFailure)?;
+        let result = searchkernel_ir::wire::v1::search_result_from_api(result)
+            .map_err(|_| PublicSearchError::BackendFailure)?;
+        if !result.errors.is_empty() || result.total_hits.value > 9_007_199_254_740_991 {
+            return Err(PublicSearchError::BackendFailure);
+        }
+        let mut hits = Vec::new();
+        let mut facets = BTreeMap::<String, BTreeMap<String, u64>>::new();
+        let facet_fields = select_fields(&request.facets, &endpoint.facets)?;
+        for field in &facet_fields {
+            facets.insert(field.clone(), BTreeMap::new());
+        }
+        let mut seen_facets = BTreeSet::new();
+        let mut projection = endpoint.clone();
+        if let Some(fields) = &request.fields {
+            projection.fields = Some(select_fields(
+                fields,
+                endpoint
+                    .fields
+                    .as_ref()
+                    .ok_or(PublicSearchError::Unsupported)?,
+            )?);
+        }
+        projection.highlights = select_fields(
+            request.highlights.as_ref().unwrap_or(&endpoint.highlights),
+            &endpoint.highlights,
+        )?;
+        for field in select_fields(&request.snippets, &endpoint.highlights)? {
+            if !projection.highlights.contains(&field) {
+                projection.highlights.push(field);
+            }
+        }
+        collect(
+            &result.root,
+            &projection,
+            &mut hits,
+            &mut facets,
+            &mut seen_facets,
+        )?;
+        if seen_facets.len() != facet_fields.len() {
+            return Err(PublicSearchError::BackendFailure);
+        }
+        let exhaustive_facets = result.total_hits.relation
+            == searchkernel_ir::TotalHitsRelation::Exact
+            && facets
+                .values()
+                .all(|values| values.len() < request.facet_limit as usize);
+        Ok(
+            json!({"endpoint": request.endpoint, "query": request.query, "hits": hits,
+        "totalHits": result.total_hits.value, "exact": result.total_hits.relation == searchkernel_ir::TotalHitsRelation::Exact,
+        "processingTimeMs": elapsed_ms, "facets": facets, "exhaustiveFacetsCount": exhaustive_facets}),
+        )
+    }
+    fn collect(
+        node: &searchkernel_ir::ResultNode,
+        endpoint: &SearchEndpointConfig,
+        hits: &mut Vec<Value>,
+        facets: &mut BTreeMap<String, BTreeMap<String, u64>>,
+        seen_facets: &mut BTreeSet<String>,
+    ) -> Result<(), PublicSearchError> {
+        match node {
+            searchkernel_ir::ResultNode::Hit(hit) => {
+                let fields = hit
+                    .fields
+                    .iter()
+                    .filter(|(field, _)| {
+                        endpoint
+                            .fields
+                            .as_ref()
+                            .is_some_and(|fields| fields.contains(field))
+                    })
+                    .map(|(field, value)| Ok((field.clone(), result_value(value)?)))
+                    .collect::<Result<BTreeMap<_, _>, PublicSearchError>>()?;
+                let mut highlights = BTreeMap::new();
+                for highlight in &hit.highlights {
+                    if !endpoint.highlights.contains(&highlight.field) {
+                        continue;
+                    }
+                    highlights.insert(highlight.field.clone(), highlight.fragments.iter().map(|fragment| json!({"text": fragment.text, "matches": fragment.matches.iter().map(|span|
+                    json!({"startByte": span.start_byte, "endByte": span.end_byte})).collect::<Vec<_>>()})).collect::<Vec<_>>());
+                }
+                hits.push(json!({"id": hit.id, "fields": fields, "highlights": highlights}));
+            }
+            searchkernel_ir::ResultNode::Group(group) => {
+                if let Some(counts) = group.label.as_ref().and_then(|label| facets.get_mut(label)) {
+                    if !seen_facets.insert(
+                        group
+                            .label
+                            .clone()
+                            .ok_or(PublicSearchError::BackendFailure)?,
+                    ) {
+                        return Err(PublicSearchError::BackendFailure);
+                    }
+                    for child in &group.children {
+                        if let searchkernel_ir::ResultNode::Group(child) = child {
+                            if let (Some(value), Some(searchkernel_ir::Value::UInt64(count))) =
+                                (&child.value, child.fields.get("count"))
+                            {
+                                let value = result_value(value)?;
+                                let name = value
+                                    .as_str()
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(|| value.to_string());
+                                counts.insert(name, *count);
+                            } else {
+                                return Err(PublicSearchError::BackendFailure);
+                            }
+                        } else {
+                            return Err(PublicSearchError::BackendFailure);
+                        }
+                    }
+                } else {
+                    for child in &group.children {
+                        collect(child, endpoint, hits, facets, seen_facets)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 
-    let query = match query {
-        SearchEndpointQuery::Text(text) => {
-            let text = builder.create_string(&text);
-            let text_query = api::SearchKernelTextQuery::create(
-                &mut builder,
-                &api::SearchKernelTextQueryArgs { text: Some(text) },
+    #[cfg(feature = "native")]
+    mod serving {
+        use super::*;
+        use crate::{
+            search_endpoints::{await_blocking_with_timeout, SearchEndpointConcurrency},
+            IndexRegistry,
+        };
+        use bytes::Bytes;
+        use http::{Request, Response, StatusCode};
+        use http_body_util::{BodyExt, Full};
+        use hyper::{body::Incoming, service::service_fn};
+        use hyper_util::rt::{TokioIo, TokioTimer};
+        use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
+        use tokio::{
+            net::TcpListener,
+            sync::{watch, Semaphore},
+            task::JoinHandle,
+        };
+
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Batch {
+            searches: Vec<PublicSearchRequest>,
+        }
+
+        pub struct PublicSearchServer {
+            address: SocketAddr,
+            shutdown: watch::Sender<bool>,
+            task: JoinHandle<()>,
+        }
+        impl PublicSearchServer {
+            pub fn local_addr(&self) -> SocketAddr {
+                self.address
+            }
+            pub async fn shutdown(self) {
+                let _ = self.shutdown.send(true);
+                let _ = self.task.await;
+            }
+        }
+
+        pub async fn start_public_search(
+            address: SocketAddr,
+            config: SearchEndpointRouter,
+            registry: Arc<IndexRegistry>,
+        ) -> Result<PublicSearchServer, Box<dyn std::error::Error>> {
+            config.serving.validate()?;
+            if config
+                .endpoints
+                .values()
+                .any(|endpoint| endpoint.generation.is_none() || endpoint.fields.is_none())
+            {
+                return Err(PublicSearchError::InvalidRequest.into());
+            }
+            let listener = TcpListener::bind(address).await?;
+            let address = listener.local_addr()?;
+            let config = Arc::new(config);
+            let budgets = SearchEndpointConcurrency::new(
+                config.serving.admission_limit,
+                config.serving.execution_limit,
+            )?;
+            let connections = Arc::new(Semaphore::new(config.serving.max_connections));
+            let (shutdown, mut stopped) = watch::channel(false);
+            let task = tokio::spawn(async move {
+                let mut tasks = tokio::task::JoinSet::new();
+                loop {
+                    tokio::select! {
+                        _ = stopped.changed() => break,
+                        Some(_) = tasks.join_next(), if !tasks.is_empty() => {},
+                        accepted = listener.accept() => {
+                            let Ok((socket, _)) = accepted else { break; };
+                            let Ok(permit) = connections.clone().try_acquire_owned() else { continue; };
+                            let (config, registry, budgets) = (config.clone(), registry.clone(), budgets.clone());
+                            tasks.spawn(async move {
+                                let _permit = permit;
+                                let serving = config.serving.clone();
+                                let service = service_fn(move |request| handle(request, config.clone(), registry.clone(), budgets.clone()));
+                                let mut builder = hyper::server::conn::http1::Builder::new();
+                                builder.keep_alive(true).max_headers(serving.max_headers).max_buf_size(serving.max_header_bytes.max(8192)).timer(TokioTimer::new()).header_read_timeout(Duration::from_millis(serving.read_timeout_ms));
+                                let _ = tokio::time::timeout(Duration::from_millis(serving.connection_timeout_ms), builder.serve_connection(TokioIo::new(socket), service)).await;
+                            });
+                        }
+                    }
+                }
+                tasks.abort_all();
+                while tasks.join_next().await.is_some() {}
+            });
+            Ok(PublicSearchServer {
+                address,
+                shutdown,
+                task,
+            })
+        }
+
+        fn response(status: StatusCode, value: Value) -> Response<Full<Bytes>> {
+            let (status, bytes) = match serde_json::to_vec(&value) {
+                Ok(bytes) => (status, bytes),
+                Err(_) => (
+                    StatusCode::BAD_GATEWAY,
+                    br#"{"error":{"code":"backend_failure","requestIndex":null}}"#.to_vec(),
+                ),
+            };
+            let mut response = Response::new(Full::new(Bytes::from(bytes)));
+            *response.status_mut() = status;
+            response.headers_mut().insert(
+                http::header::CONTENT_TYPE,
+                http::HeaderValue::from_static("application/json"),
             );
-            api::QuerySource::create(
-                &mut builder,
-                &api::QuerySourceArgs {
-                    source_type: api::QuerySourceKind::SearchKernelTextQuery,
-                    source: Some(text_query.as_union_value()),
-                },
+            response.headers_mut().insert(
+                http::header::CACHE_CONTROL,
+                http::HeaderValue::from_static("no-store"),
+            );
+            response
+        }
+        fn error(code: PublicSearchError, index: Option<usize>) -> Response<Full<Bytes>> {
+            let status = match code {
+                PublicSearchError::UnknownIndex => StatusCode::NOT_FOUND,
+                PublicSearchError::StaleTarget => StatusCode::CONFLICT,
+                PublicSearchError::Timeout => StatusCode::GATEWAY_TIMEOUT,
+                PublicSearchError::Overloaded => StatusCode::TOO_MANY_REQUESTS,
+                PublicSearchError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+                PublicSearchError::BackendFailure => StatusCode::BAD_GATEWAY,
+                _ => StatusCode::BAD_REQUEST,
+            };
+            response(
+                status,
+                json!({"error": {"code": code, "requestIndex": index}}),
             )
         }
-        SearchEndpointQuery::MatchAll => {
-            let match_all =
-                api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs::default());
-            api::QuerySource::create(
-                &mut builder,
-                &api::QuerySourceArgs {
-                    source_type: api::QuerySourceKind::MatchAllQuery,
-                    source: Some(match_all.as_union_value()),
-                },
-            )
-        }
-    };
 
-    let limit = limit.map(api::OptionalUInt32::new);
-    let offset = offset.map(api::OptionalUInt32::new);
-    let search = api::SearchRequest::create(
-        &mut builder,
-        &api::SearchRequestArgs {
-            query: Some(query),
-            limit: limit.as_ref(),
-            offset: offset.as_ref(),
-            ..Default::default()
-        },
-    );
-    let target_name = builder.create_string(target);
-    let target = api::IndexTarget::create(
-        &mut builder,
-        &api::IndexTargetArgs {
-            name: Some(target_name),
-            generation: None,
-        },
-    );
-    let envelope = wire::RequestEnvelope::create(
-        &mut builder,
-        &wire::RequestEnvelopeArgs {
-            protocol_version: PROTOCOL_VERSION,
-            target: Some(target),
-            payload_type: wire::RequestPayload::SearchKernel_Wire_SearchRequest,
-            payload: Some(search.as_union_value()),
-        },
-    );
-    wire::finish_request_envelope_buffer(&mut builder, envelope);
-    builder.finished_data().to_vec()
+        async fn handle(
+            request: Request<Incoming>,
+            config: Arc<SearchEndpointRouter>,
+            registry: Arc<IndexRegistry>,
+            budgets: SearchEndpointConcurrency,
+        ) -> Result<Response<Full<Bytes>>, Infallible> {
+            let origin = request
+                .headers()
+                .get(http::header::ORIGIN)
+                .cloned()
+                .filter(|origin| {
+                    origin.to_str().ok().is_some_and(|origin| {
+                        config
+                            .allowed_origins
+                            .iter()
+                            .any(|allowed| allowed == origin)
+                    })
+                });
+            let mut response =
+                if request.method() == http::Method::OPTIONS && request.uri().path() == "/search" {
+                    response(StatusCode::NO_CONTENT, Value::Null)
+                } else {
+                    match budgets.try_admit() {
+                        Err(_) => error(PublicSearchError::Overloaded, None),
+                        Ok(permit) => {
+                            let result = tokio::time::timeout(
+                                Duration::from_millis(
+                                    config
+                                        .serving
+                                        .request_timeout_ms
+                                        .saturating_add(config.serving.read_timeout_ms),
+                                ),
+                                process(request, config, registry, budgets),
+                            )
+                            .await;
+                            drop(permit);
+                            match result {
+                                Ok(response) => response,
+                                Err(_) => error(PublicSearchError::Timeout, None),
+                            }
+                        }
+                    }
+                };
+            if let Some(origin) = origin {
+                response
+                    .headers_mut()
+                    .insert(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+                response.headers_mut().insert(
+                    http::header::ACCESS_CONTROL_ALLOW_METHODS,
+                    http::HeaderValue::from_static("GET, POST, OPTIONS"),
+                );
+                response.headers_mut().insert(
+                    http::header::ACCESS_CONTROL_ALLOW_HEADERS,
+                    http::HeaderValue::from_static("Content-Type"),
+                );
+                response
+                    .headers_mut()
+                    .insert(http::header::VARY, http::HeaderValue::from_static("Origin"));
+            }
+            Ok(response)
+        }
+        async fn process(
+            request: Request<Incoming>,
+            config: Arc<SearchEndpointRouter>,
+            registry: Arc<IndexRegistry>,
+            budgets: SearchEndpointConcurrency,
+        ) -> Response<Full<Bytes>> {
+            let get = request.method() == http::Method::GET;
+            if (get && !config.endpoints.contains_key(request.uri().path()))
+                || (!get && (request.uri().path() != "/search" || request.uri().query().is_some()))
+            {
+                return error(PublicSearchError::UnknownIndex, None);
+            }
+            if (!get
+                && (request.method() != http::Method::POST
+                    || request
+                        .headers()
+                        .get(http::header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
+                        != Some("application/json")))
+                || request.uri().to_string().len() > config.serving.max_uri_bytes
+                || request
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| k.as_str().len() + v.as_bytes().len())
+                    .sum::<usize>()
+                    > config.serving.max_header_bytes
+            {
+                return error(PublicSearchError::InvalidRequest, None);
+            }
+            let bound = if get {
+                match config.prepare_get(request.uri().path(), request.uri().query()) {
+                    Ok(bound) => vec![bound],
+                    Err(code) => return error(code, None),
+                }
+            } else {
+                let mut body = request.into_body();
+                let read = async {
+                    let mut bytes = Vec::new();
+                    while let Some(frame) = body.frame().await {
+                        let frame = frame.map_err(|_| PublicSearchError::InvalidRequest)?;
+                        if let Some(data) = frame.data_ref() {
+                            if bytes.len().saturating_add(data.len())
+                                > config.serving.max_body_bytes
+                            {
+                                return Err(PublicSearchError::InvalidRequest);
+                            }
+                            bytes.extend_from_slice(data);
+                        }
+                    }
+                    Ok(bytes)
+                };
+                let bytes = match tokio::time::timeout(
+                    Duration::from_millis(config.serving.read_timeout_ms),
+                    read,
+                )
+                .await
+                {
+                    Ok(Ok(bytes)) => bytes,
+                    Ok(Err(code)) => return error(code, None),
+                    Err(_) => return error(PublicSearchError::Timeout, None),
+                };
+                let batch: Batch = match serde_json::from_slice(&bytes) {
+                    Ok(batch) => batch,
+                    Err(_) => return error(PublicSearchError::InvalidRequest, None),
+                };
+                if batch.searches.is_empty()
+                    || batch.searches.len() > config.serving.max_batch_requests
+                {
+                    return error(PublicSearchError::InvalidRequest, None);
+                }
+                let mut bound = Vec::new();
+                for (index, request) in batch.searches.iter().enumerate() {
+                    match config.bind_post(request) {
+                        Ok(bytes) => bound.push((request.clone(), bytes)),
+                        Err(code) => return error(code, Some(index)),
+                    }
+                }
+                bound
+            };
+            // The batch uses the tightest endpoint serving ceiling. A deadline
+            // never releases the native slot until all already-started work exits.
+            let timeout_ms = bound
+                .iter()
+                .filter_map(|(request, _)| config.endpoint(&request.endpoint).ok())
+                .map(|endpoint| endpoint.policy.timeout_ms)
+                .fold(config.serving.request_timeout_ms, u64::min);
+            let timeout = Duration::from_millis(timeout_ms);
+            // One bounded sequential batch occupies a native execution slot until
+            // every dispatch exits, even if its HTTP caller times out/disconnects.
+            let task = budgets.try_spawn_blocking(move || {
+                let mut results = Vec::new();
+                let batch_started = std::time::Instant::now();
+                for (index, (request, bytes)) in bound.into_iter().enumerate() {
+                    if batch_started.elapsed() >= timeout {
+                        return Err((PublicSearchError::Timeout, index));
+                    }
+                    let started = std::time::Instant::now();
+                    let bytes = registry
+                        .dispatch(&bytes)
+                        .map_err(|_| (PublicSearchError::Unavailable, index))?;
+                    let projected = config
+                        .project_response(&bytes, &request, started.elapsed().as_millis())
+                        .map_err(|code| (code, index))?;
+                    results.push(projected);
+                }
+                let body = json!({"results": results});
+                if serde_json::to_vec(&body)
+                    .map_err(|_| (PublicSearchError::BackendFailure, 0))?
+                    .len()
+                    > config.serving.max_response_bytes
+                {
+                    return Err((PublicSearchError::BackendFailure, 0));
+                }
+                Ok(body)
+            });
+            let Ok(task) = task else {
+                return error(PublicSearchError::Overloaded, None);
+            };
+            match await_blocking_with_timeout(task, timeout).await {
+                Ok(Ok(body)) => response(StatusCode::OK, body),
+                Ok(Err((code, index))) => error(code, Some(index)),
+                Err(crate::search_endpoints::SearchEndpointExecutionWaitError::TimedOut) => {
+                    error(PublicSearchError::Timeout, None)
+                }
+                Err(_) => error(PublicSearchError::BackendFailure, None),
+            }
+        }
+    }
+    #[cfg(feature = "native")]
+    pub use serving::{start_public_search, PublicSearchServer};
 }
+
+pub use public_api::*;

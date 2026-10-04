@@ -432,6 +432,8 @@ ci_gate() {
 
     echo "== cargo clippy =="
     "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+    echo "== pinned InstantSearch compatibility =="
+    test_target instantsearch-compat
 }
 
 bookkeeping_command() {
@@ -601,6 +603,7 @@ universe() {
     universe_dev_step 'fast repository checks' check-fast
     universe_step 'Vespa binding checks' bash "$ROOT/tools/check-vespa-bindings.sh"
     universe_dev_step 'protocol/generated-artifact checks' check-protocol
+    universe_dev_step 'pinned InstantSearch compatibility' test instantsearch-compat
     universe_dev_step 'all-features Clippy' lint --profile rust-clippy-all-features
 
     universe_step 'Rust tests (all targets/features, including ignored)'         "$CARGO" test --workspace --all-targets --all-features -- --include-ignored
@@ -722,6 +725,9 @@ test_target() {
     local requested=${1:-} target
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
+        instantsearch-compat)
+            bash "$ROOT/tools/verify-instantsearch.sh"
+            ;;
         frontend|frontend-real-engine)
             "$NPM" ci --prefix "$ROOT/clients/typescript"
             "$NPM" run build --prefix "$ROOT/clients/typescript"

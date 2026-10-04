@@ -42,6 +42,9 @@
     }
   },
   "test": {
+    "instantsearch-compat": {
+      "description": "Pinned InstantSearch adapter, canonical public search, and real widgets in JSDOM against Vespa"
+    },
     "native-base-artifact": {
       "description": "Clean-room native-base production, archive install, adapter link, and runtime load"
     },
@@ -914,7 +917,7 @@
         "docs/architecture.md"
       ],
       "architecture": "docs/architecture.md#non-rust-client-apis",
-      "test": [],
+      "test": ["test:instantsearch-compat"],
       "verify": [
         "verify:product.integration"
       ],

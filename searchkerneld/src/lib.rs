@@ -8,7 +8,7 @@
 pub mod diagnostics;
 #[cfg(feature = "native")]
 mod registry;
-mod search_endpoints;
+pub mod search_endpoints;
 
 #[cfg(feature = "native")]
 pub use registry::{IndexRegistry, RegistryDispatchError, RegistryInitError};
