@@ -119,7 +119,19 @@ searchkerneld --data-root /srv/searchkernel --listen 127.0.0.1:9000 \
   --public-search-config public-search.json --public-search-listen 127.0.0.1:9001
 ```
 
-Both public flags are required; serving is disabled by default. The separate public listener accepts only `POST /search` and CORS preflight. Trusted Execute, schema, mutation, administration, and arbitrary native properties are absent. Deploy behind TLS termination and rate limiting; `behindRateLimitedProxy` acknowledges this required deployment boundary. CORS is not authentication; origins are explicit and wildcard origins are rejected.
+Deployment JSON compiles into one immutable daemon Search Endpoint registry. Both
+`GET /search/{alias}` (`q`, `limit`, `offset`) and the batch POST below use its
+request binder, fixed target/generation, exposure rules, dispatcher, and result
+projection. GET returns the same `results` wrapper with one result.
+
+Each endpoint may set `policy` bounds (for example `maxQueryBytes`, `defaultLimit`,
+`maxLimit`, `maxOffset`, `maxFacetLimit`, `maxFilters`, `maxFilterDepth`,
+`maxFilterNodes`, `maxFilterValueBytes`, and `timeoutMs`). Top-level `serving` configures body/batch/response,
+URI/header/connection, admission/execution, and read/request/connection deadline
+limits. Omitted properties use the defaults described below. The public batch
+deadline also obeys its shortest endpoint timeout. Invalid configuration fails startup.
+
+Both public flags are required; serving is disabled by default. The separate public listener accepts only named GET searches, `POST /search`, and CORS preflight. Trusted Execute, schema, mutation, administration, and arbitrary native properties are absent. Deploy behind TLS termination and rate limiting; `behindRateLimitedProxy` acknowledges this required deployment boundary. CORS is not authentication; origins are explicit and wildcard origins are rejected.
 
 The body is `{searches: [...]}`. Each search contains `endpoint`, `query`, `limit`, `offset`, `facets`, `facetLimit`, `filters`, optional `fields` and `highlights`, and `snippets`. Applications normally use the adapter to build it.
 
@@ -147,7 +159,7 @@ Keep Hits' default `escapeHTML: true`. The adapter inserts only the pinned consu
 
 ## Bounds and errors
 
-The server bounds headers, URI, body (64 KiB), batch (16), query (4096 UTF-8 bytes), filter tree (128 nodes, depth 4), field lists, facets (100), hit limit (100), offset (10000), canonical/result payload (1 MiB), connections (64), admission (32), and execution (8). Header/body reads and execution waits have deadlines. Native tasks retain execution permits after HTTP timeout/disconnect. Batches execute sequentially in one native slot and stop starting searches after the deadline.
+By default the server bounds headers, URI, body (64 KiB), batch (16), query (4096 UTF-8 bytes), filter tree (128 nodes, depth 4), field lists, facets (100), hit limit (100), offset (10000), canonical/result payload (1 MiB), connections (64), admission (32), and execution (8). Header/body reads and execution waits have deadlines. Native tasks retain execution permits after HTTP timeout/disconnect. Batches execute sequentially in one native slot and stop starting searches after the deadline.
 
 `SearchKernelInstantSearchError` exposes `code` and optional `requestIndex`. Stable codes: `invalid_request`, `unsupported`, `unknown_index`, `stale_target`, `unavailable`, `timeout`, `overloaded`, `backend_failure`, and adapter-only `invalid_response`. Messages are fixed. Canonical details, filesystem paths, panic text, and stack traces are not returned. Errors never become successful empty results.
 

@@ -12,8 +12,8 @@ use searchkernel_protocol::{
 use searchkernel_testkit::RecordingBackend;
 use searchkerneld::search_endpoints::{PublicSearchConfig, PublicSearchError, PublicSearchRequest};
 
-fn config() -> PublicSearchConfig {
-    serde_json::from_str(
+fn config() -> searchkerneld::search_endpoints::SearchEndpointRouter {
+    serde_json::from_str::<PublicSearchConfig>(
         r#"{
           "behindRateLimitedProxy": true,
           "endpoints": {
@@ -29,6 +29,8 @@ fn config() -> PublicSearchConfig {
         }"#,
     )
     .expect("valid production Search Endpoint config")
+    .compile()
+    .unwrap()
 }
 
 fn request(query: &str, limit: u32, offset: u32) -> PublicSearchRequest {
@@ -119,9 +121,8 @@ fn context() -> Arc<IndexContext> {
 #[test]
 fn production_instantsearch_contract_binds_to_canonical_search_request() {
     let config = config();
-    config.validate().expect("production config validates");
     let bytes = config
-        .bind(&request("search kernel", 20, 40))
+        .bind_post(&request("search kernel", 20, 40))
         .expect("production binder accepts translated InstantSearch request");
 
     let search = decode_search(&bytes);
@@ -133,9 +134,9 @@ fn production_instantsearch_contract_binds_to_canonical_search_request() {
 
 #[test]
 fn production_browse_is_canonical_match_all() {
-    for query in ["", "   ", "\t\n"] {
+    for query in ["", "   "] {
         let bytes = config()
-            .bind(&request(query, 20, 0))
+            .bind_post(&request(query, 20, 0))
             .expect("browse request");
         let search = decode_search(&bytes);
         assert_eq!(
@@ -150,7 +151,7 @@ fn production_binder_converges_on_dispatcher_and_search_ir() {
     let backend = Arc::new(RecordingBackend::new());
     let dispatcher = Dispatcher::from_backend(context(), backend.clone());
     let bytes = config()
-        .bind(&request("canonical instantsearch", 7, 14))
+        .bind_post(&request("canonical instantsearch", 7, 14))
         .expect("production request binds");
 
     dispatcher
@@ -176,14 +177,14 @@ fn hostile_inputs_fail_at_the_production_binder_before_dispatch() {
 
     let mut oversized = request("docs", 101, 0);
     assert_eq!(
-        config.bind(&oversized).expect_err("limit bound"),
+        config.bind_post(&oversized).expect_err("limit bound"),
         PublicSearchError::InvalidRequest
     );
 
     oversized.limit = 10;
     oversized.offset = 10_001;
     assert_eq!(
-        config.bind(&oversized).expect_err("offset bound"),
+        config.bind_post(&oversized).expect_err("offset bound"),
         PublicSearchError::InvalidRequest
     );
 
@@ -191,7 +192,7 @@ fn hostile_inputs_fail_at_the_production_binder_before_dispatch() {
     unknown_projection.fields = Some(vec!["private".into()]);
     assert_eq!(
         config
-            .bind(&unknown_projection)
+            .bind_post(&unknown_projection)
             .expect_err("unexposed field must fail closed"),
         PublicSearchError::Unsupported
     );
@@ -200,7 +201,7 @@ fn hostile_inputs_fail_at_the_production_binder_before_dispatch() {
     oversized_query.offset = 0;
     assert_eq!(
         config
-            .bind(&oversized_query)
+            .bind_post(&oversized_query)
             .expect_err("query bytes are bounded"),
         PublicSearchError::InvalidRequest
     );
@@ -224,8 +225,57 @@ fn production_binding_is_deterministic_across_generated_bounded_requests() {
         let offset = (next(&mut state) % 10_001) as u32;
         let query = format!("case-{case}-{}", next(&mut state));
         let request = request(&query, limit, offset);
-        let first = config.bind(&request).expect("bounded generated request");
-        let second = config.bind(&request).expect("same request binds again");
+        let first = config
+            .bind_post(&request)
+            .expect("bounded generated request");
+        let second = config
+            .bind_post(&request)
+            .expect("same request binds again");
         assert_eq!(first, second, "case {case} must bind deterministically");
+    }
+}
+
+#[test]
+fn get_and_post_share_query_bounds_generation_and_canonical_ir() {
+    let config = config();
+    for (text, encoded) in [
+        ("hello world", "hello+world"),
+        ("café", "caf%C3%A9"),
+        ("", ""),
+        ("   ", "+++"),
+    ] {
+        let post = config.bind_post(&request(text, 7, 14)).unwrap();
+        let get = config
+            .bind_get(
+                "/search/docs",
+                Some(&format!("q={encoded}&limit=7&offset=14")),
+            )
+            .unwrap();
+        assert_eq!(get, post, "same canonical envelope for {text:?}");
+        let envelope = wire::root_as_request_envelope(&get).unwrap();
+        assert_eq!(
+            envelope.target().unwrap().generation(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        let backend = Arc::new(RecordingBackend::new());
+        let dispatcher = Dispatcher::from_backend(context(), backend.clone());
+        dispatcher.dispatch(&get).unwrap();
+        dispatcher.dispatch(&post).unwrap();
+        let calls = backend.take_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0], calls[1]);
+    }
+    for (text, encoded) in [
+        ("\0", "%00"),
+        ("\t\n", "%09%0A"),
+        ("line1\nline2", "line1%0Aline2"),
+    ] {
+        assert!(config
+            .bind_get("/search/docs", Some(&format!("q={encoded}")))
+            .is_err());
+        assert_eq!(
+            config.bind_post(&request(text, 7, 0)).unwrap_err(),
+            PublicSearchError::InvalidRequest
+        );
     }
 }

@@ -17,7 +17,9 @@ mod native_main {
     use searchkernel::Index;
     use searchkernel_dispatch::Dispatcher;
     use searchkernel_ir::validate_index_target;
-    use searchkerneld::search_endpoints::{start_public_search, PublicSearchConfig};
+    use searchkerneld::search_endpoints::{
+        start_public_search, PublicSearchConfig, SearchEndpointRouter,
+    };
     use searchkerneld::{start, start_multi, IndexRegistry, ServerConfig, ServerError};
 
     const DEFAULT_UNIX_SOCKET: &str = "/tmp/searchkerneld.sock";
@@ -43,7 +45,7 @@ mod native_main {
     struct Config {
         mode: Mode,
         server: ServerConfig,
-        public_search: Option<(SocketAddr, PublicSearchConfig)>,
+        public_search: Option<(SocketAddr, SearchEndpointRouter)>,
     }
 
     fn config() -> Result<Config, Box<dyn Error>> {
@@ -279,8 +281,8 @@ mod native_main {
                         return Err("public search requires --data-root multi-index mode".into());
                     }
                     let public: PublicSearchConfig = serde_json::from_slice(&std::fs::read(path)?)?;
-                    public.validate()?;
-                    Some((address, public))
+                    let endpoints = public.compile()?;
+                    Some((address, endpoints))
                 }
                 _ => return Err(
                     "--public-search-config and --public-search-listen must be supplied together"
