@@ -810,6 +810,13 @@ SK_API uint32_t sk_generic_search_result_issue_count(
 /* Borrowed bytes remain valid until result destruction. The caller copies
    them before releasing the opaque result. Truncated payloads are prefixes,
    not complete JSON; timings are measured seconds from this execution. */
+/* Caller-owned output buffers; independent calls retain no pointers. Decoding
+   is above the unchanged raw DOUBLE/DATA feature ABI, using Vespa's codec. */
+SK_API int32_t sk_diagnostic_tensor_decode(
+    const uint8_t *data, uint32_t length, char *type_spec,
+    uint32_t type_capacity, uint32_t *out_type_length, double *cells,
+    uint32_t cell_capacity, uint32_t *out_cell_count,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_diagnostics(
     const sk_generic_search_result *result, const uint8_t **out_trace,
     uint32_t *out_length, uint32_t *out_truncated,

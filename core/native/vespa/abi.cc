@@ -2963,6 +2963,36 @@ extern "C" uint64_t sk_generic_search_result_total_hit_count(
         static_cast<const sk_local_search_result *>(result));
 }
 
+extern "C" int32_t sk_diagnostic_tensor_decode(
+    const uint8_t *data, uint32_t length, char *type_spec,
+    uint32_t type_capacity, uint32_t *out_type_length, double *cells,
+    uint32_t cell_capacity, uint32_t *out_cell_count,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_type_length) *out_type_length = 0;
+    if (out_cell_count) *out_cell_count = 0;
+    return guarded(error, error_capacity, [&] {
+        if (!data || !type_spec || !cells || !out_type_length || !out_cell_count ||
+            length == 0 || length > 262144 || cell_capacity == 0 || cell_capacity > 4096) {
+            throw std::invalid_argument("diagnostic tensor arguments exceed bounds");
+        }
+        vespalib::nbostream stream(reinterpret_cast<const char *>(data), length);
+        auto tensor = vespalib::eval::decode_value(stream, vespalib::eval::FastValueBuilderFactory::get());
+        if (tensor->type().count_mapped_dimensions() != 0 || tensor->type().count_indexed_dimensions() != 1) {
+            throw UnsupportedNativeError("diagnostic_tensor_shape_unsupported", "this integration normalizes only single-indexed dense ranking tensors");
+        }
+        if (tensor->cells().size > cell_capacity) {
+            throw TensorValidationError("diagnostic_tensor_truncated", "ranking tensor exceeds the diagnostic cell budget");
+        }
+        const auto type = tensor->type().to_spec();
+        if (type.size() > type_capacity) throw std::invalid_argument("tensor type exceeds output capacity");
+        const auto values = dense_tensor_cells(*tensor);
+        std::memcpy(type_spec, type.data(), type.size());
+        std::copy(values.begin(), values.end(), cells);
+        *out_type_length = static_cast<uint32_t>(type.size());
+        *out_cell_count = static_cast<uint32_t>(values.size());
+    });
+}
+
 extern "C" int32_t sk_generic_search_result_diagnostics(
     const sk_generic_search_result *result, const uint8_t **out_trace,
     uint32_t *out_length, uint32_t *out_truncated,

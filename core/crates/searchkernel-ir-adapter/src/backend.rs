@@ -311,7 +311,15 @@ impl VespaBackend {
                                     searchkernel_ir::Value::Float64(value)
                                 }
                                 MatchFeatureValue::Data(value) => {
-                                    searchkernel_ir::Value::Bytes(value)
+                                    if let Some((_, limits)) = diagnostics {
+                                        match searchkernel_vespa_engine::decode_diagnostic_tensor(&value, limits.tensor_cells) {
+                                            Ok(tensor) => searchkernel_ir::Value::Tensor(crate::tensor_to_ir(&tensor)),
+                                            Err(error) => searchkernel_ir::Value::Object(std::collections::BTreeMap::from([
+                                                ("availability".into(), searchkernel_ir::Value::String("Unsupported or exceeds diagnostic bounds".into())),
+                                                ("message".into(), searchkernel_ir::Value::String(error.to_string())),
+                                            ])),
+                                        }
+                                    } else { searchkernel_ir::Value::Bytes(value) }
                                 }
                             };
                             (name, value)

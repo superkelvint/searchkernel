@@ -19,7 +19,7 @@ pub use document::{
     FieldUpdate, FieldValue, IntoFieldValue, IntoScalarValue, PositionValue, PredicateValue,
     ScalarValue,
 };
-pub use engine::Engine;
+pub use engine::{decode_diagnostic_tensor, Engine};
 pub use error::{Error, ErrorKind, Result};
 pub use linguistics::{
     DocumentAnalysis, DocumentTerm, Language, Linguistics, LinguisticsOptions, QueryAnalysis,
