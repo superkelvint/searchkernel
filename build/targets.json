@@ -54,6 +54,9 @@
     "ir": {
       "description": "Portable semantic IR tests"
     },
+    "protocol-generation": {
+      "description": "Canonical protocol regeneration with an exact-source generated patch export"
+    },
     "rust-api": {
       "description": "Public Rust API tests",
       "aliases": [

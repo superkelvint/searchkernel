@@ -722,6 +722,10 @@ test_target() {
     local requested=${1:-} target
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
+        protocol-generation)
+            regen_protocol
+            "$PYTHON" "$ROOT/tools/export-protocol-generation.py"
+            ;;
         frontend|frontend-real-engine)
             "$NPM" ci --prefix "$ROOT/clients/typescript"
             "$NPM" run build --prefix "$ROOT/clients/typescript"

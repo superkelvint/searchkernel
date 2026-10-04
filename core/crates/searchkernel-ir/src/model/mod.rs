@@ -1,6 +1,7 @@
 //! Owned, backend-independent Search Kernel IR and result values.
 
 mod document;
+mod diagnostics;
 mod filter;
 mod grouping;
 mod query;
@@ -11,6 +12,7 @@ mod search;
 mod value;
 
 pub use document::*;
+pub use diagnostics::*;
 pub use filter::*;
 pub use grouping::*;
 pub use query::*;

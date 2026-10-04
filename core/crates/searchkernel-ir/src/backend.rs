@@ -24,6 +24,18 @@ pub trait Backend: Send + Sync {
     fn delete(&self, request: DeleteRequestIr) -> Result<DeleteResult>;
     fn get(&self, request: GetRequestIr) -> Result<GetResult>;
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult>;
+    /// Explicit engine evidence acquisition. Ordinary searches never opt in.
+    fn search_diagnostic(
+        &self,
+        request: SearchRequestIr,
+        _sections: &[crate::DiagnosticSection],
+        _limits: &crate::DiagnosticLimits,
+    ) -> Result<crate::DiagnosticSearchResult> {
+        self.search(request).map(|result| crate::DiagnosticSearchResult {
+            result,
+            raw_engine: Vec::new(),
+        })
+    }
     fn analyze(&self, request: AnalyzeRequestIr) -> Result<AnalyzeResult>;
 
     /// Gracefully release backend-owned resources.
