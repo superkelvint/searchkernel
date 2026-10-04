@@ -1,13 +1,13 @@
 import { prepareDocumentMutation, preparedDocumentRequest } from './document-request'
 import { prepareSearch, preparedRequest } from './search-request'
 import {
-  Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
+  Client, IndexTargetT, fromCanonicalJson, GrpcWebTransport, Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
   SearchResults, ResultDecodeError, ValueDecodeError, fromValue, toCanonicalJson, DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
   type IndexDefinitionT, type ClientTransport,
 } from '@searchkernel/client'
 import {
   SearchKernelClientError, type SearchKernelClient, type Index,
-  type FieldValue, type RequestOptions, type Capabilities,
+  reconcileTarget, targetKey, targetName, type Target, type DaemonStatus, type FieldValue, type RequestOptions, type Capabilities,
 } from './searchkernel-client'
 
 /** Lossless JSON-display representation for integers, byte payloads and tensors. */
@@ -54,14 +54,14 @@ function metadata(target: string, definition: IndexDefinitionT): Index {
 }
 
 const capabilities: Capabilities = {
-  indexes: { read: true, create: false, delete: false },
+  indexes: { read: true, create: true, delete: true },
   documents: { read: true, write: true, bulk: false },
   search: { basic: true, sort: true, facets: false, grouping: false },
   analysis: { text: false }, query: { inspect: false },
   schema: { read: true, write: false, changePlan: false },
   ranking: { profiles: true, features: false, write: false },
   summaries: { read: true, write: false }, metrics: { query: false, storage: false },
-  admin: { overview: false, health: false, diagnostics: false },
+  admin: { overview: false, health: true, diagnostics: true },
 }
 
 export function daemonError(error: unknown): SearchKernelClientError {
@@ -77,44 +77,101 @@ export function daemonError(error: unknown): SearchKernelClientError {
   }
   if (error instanceof ProtocolError || error instanceof ResultDecodeError || error instanceof ValueDecodeError) return new SearchKernelClientError(error.message, { code: 'protocol_error', origin: 'protocol' })
   if (error instanceof Error && error.name === 'AbortError') return new SearchKernelClientError(error.message, { code: 'aborted', origin: 'transport' })
-  return new SearchKernelClientError(error instanceof Error ? error.message : 'Client request failed', { code: 'client_error', origin: 'client' })
+  return new SearchKernelClientError(error instanceof Error ? error.message : 'Client request failed', { code: error instanceof SyntaxError ? 'invalid_argument' : 'client_error', origin: 'client' })
 }
 
 /** Owns transport/client details; React sees only the dashboard seam. */
 export function createDaemonSearchKernelClient(endpoint: string, transport?: () => ClientTransport): SearchKernelClient {
   const daemon = new Daemon(endpoint, transport?.())
-  const handles = new Map<string, Promise<RemoteIndex>>()
+  type BoundIndex = Pick<RemoteIndex, 'client' | 'definition' | 'generation'>
+  const handles = new Map<string, Promise<BoundIndex>>()
   async function call<T>(read: () => Promise<T>): Promise<T> {
     try { return await read() } catch (error) { throw daemonError(error) }
   }
-  async function opened(target: string, options?: RequestOptions): Promise<RemoteIndex> {
+  async function opened(target: Target, options?: RequestOptions): Promise<BoundIndex> {
     if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    const existing = handles.get(target)
+    const key = targetKey(target)
+    const existing = handles.get(key)
     if (existing) return waitForOpen(existing, options?.signal)
     // The opened Index is adapter-owned and shared across React views. Do not
     // bind its transport lifetime to one query observer's AbortSignal: StrictMode
     // or route teardown may cancel that observer while another view immediately
     // reuses the same target. Callers can still stop waiting via waitForOpen(),
     // while ordinary search/get/browse operations propagate their own signals.
-    const pending = RemoteIndex.open(endpoint, target, transport?.())
+    const pending = typeof target === 'string' ? RemoteIndex.open(endpoint, target, transport?.()) : (async () => {
+      // A URL-bound incarnation must never OpenIndex by name and adopt a new token.
+      const client = new Client(transport?.() ?? new GrpcWebTransport(endpoint), targetName(target))
+      client.bindGeneration(target.generation)
+      try {
+        const result = await client.describe()
+        if (!result.index) throw new ProtocolError('DescribeResult.index is missing')
+        client.indexDefinition = result.index
+        return { client, definition: result.index, generation: String(target.generation) }
+      } catch (error) { await client.close(); throw error }
+    })()
     // One selected target keeps one generation-bound handle. Stale-generation
     // errors are surfaced rather than silently replacing this incarnation.
-    handles.set(target, pending)
+    handles.set(key, pending)
     try { return await waitForOpen(pending, options?.signal) } catch (error) {
       // Only discard the shared open if the open itself failed. A caller-local
       // abort from waitForOpen must not poison a still-progressing handle.
       pending.catch(() => {
-        if (handles.get(target) === pending) handles.delete(target)
+        if (handles.get(key) === pending) handles.delete(key)
       })
       throw error
     }
   }
+  async function status(options?: RequestOptions): Promise<DaemonStatus> {
+    try {
+      const response = await fetch(`${endpoint.replace(/\/$/, '')}/admin/status`, { method: 'POST', signal: options?.signal })
+      if (!response.ok) throw new SearchKernelClientError('Daemon diagnostics unavailable. Retry or check daemon readiness.', { code: 'diagnostics_unavailable', status: response.status, retryable: true, origin: 'transport' })
+      const value = await response.json()
+      if (typeof value.ready !== 'boolean' || typeof value.version !== 'string' || typeof value.native_runtime !== 'string' || typeof value.lifecycle !== 'string' || !Array.isArray(value.indexes) || !Array.isArray(value.unavailable) || !value.unavailable.every((item: unknown) => typeof item === 'string') || !value.indexes.every((item: any) => item && typeof item.name === 'string' && ['open', 'persisted', 'transitioning', 'unopenable'].includes(item.state) && (item.generation === null || typeof item.generation === 'string') && (item.persisted === null || typeof item.persisted === 'boolean') && (item.schema_name === null || typeof item.schema_name === 'string') && (item.warning === null || typeof item.warning === 'string'))) throw new ProtocolError('Invalid daemon status payload')
+      return value
+    } catch (error) { throw daemonError(error instanceof TypeError ? new TransportError('Daemon unreachable. Retry or refresh health.', error) : error) }
+  }
+  function retained(name: string, index: BoundIndex): Index {
+    const target = new IndexTargetT(name, index.generation)
+    handles.set(targetKey(target), Promise.resolve(index))
+    return { ...metadata(name, index.definition), generation: index.generation, target }
+  }
   return {
+    daemonStatus: status,
+    validateDefinition(definition, options) { return call(async () => {
+      const canonical = toCanonicalJson(fromCanonicalJson('IndexDefinition', JSON.parse(definition)))
+      let response: Response
+      try { response = await fetch(`${endpoint.replace(/\/$/, '')}/admin/validate-definition`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(canonical), signal: options?.signal }) }
+      catch (error) { throw new TransportError('Definition validation could not reach the daemon', error) }
+      if (!response.ok) throw new TransportError(`Definition validation failed: HTTP ${response.status}`)
+      const result = await response.json()
+      if (result.payload_type === 'SearchKernel_Wire_Error') throw new SearchKernelError(result.payload.message, fromCanonicalJson('Error', result.payload) as NonNullable<ConstructorParameters<typeof SearchKernelError>[1]>)
+    }) },
+    createIndex(name, definition) { return call(async () => retained(name, await RemoteIndex.create(endpoint, name, fromCanonicalJson('IndexDefinition', JSON.parse(definition)) as IndexDefinitionT, transport?.()))) },
+    openIndex(name, options) { return call(async () => retained(name, await RemoteIndex.open(endpoint, name, transport?.(), options))) },
+    deleteIndex(target, options) { return call(async () => { await (await opened(target, options)).client.deleteIndex(options) }) },
+    indexDiagnostics(target, options) { return call(async () => {
+      const index = await opened(target, options)
+      const definition = await index.client.describe(options)
+      const snapshot = await status(options)
+      const current = reconcileTarget(target, snapshot.indexes) === 'current' ? snapshot.indexes.find(item => item.name === target.name && item.generation === target.generation) : undefined
+      if (!current) {
+        // Ask the generation-bound canonical surface again to obtain a real
+        // stale error. A transitioning snapshot alone cannot prove staleness.
+        await index.client.describe(options)
+        throw new SearchKernelClientError('Index diagnostics changed during the request. Refresh authoritative state before continuing.', { code: 'diagnostics_changed', retryable: true, origin: 'client' })
+      }
+      return { status: current, definition: toCanonicalJson(definition), canonical: JSON.stringify({ status: current, definition: toCanonicalJson(definition) }, null, 2) }
+    }) },
     async capabilities() { return capabilities },
     listIndexes(options) { return call(async () => (await daemon.listIndexes(options)).map(id => ({ id }))) },
     getIndex(target, options) { return call(async () => {
       const index = await opened(target, options)
-      return { ...metadata(target, index.definition), generation: index.generation }
+      if (typeof target !== 'string') {
+        const result = await index.client.describe(options)
+        if (!result.index) throw new ProtocolError('DescribeResult.index is missing')
+        index.client.indexDefinition = result.index
+      }
+      return retained(targetName(target), index)
     }) },
     getDocument(target, id, options) { return call(async () => {
       const raw = await (await opened(target, options)).client.get(id, undefined, options)
@@ -126,9 +183,7 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
     browseDocuments(target, request, options) { return call(async () => {
       if (request.cursor !== undefined || request.sort !== undefined) throw new SearchKernelClientError('Browse cursor/sort is unavailable', { code: 'unsupported', origin: 'client' })
       const index = await opened(target, options)
-      const builder = request.query ? index.search(request.query) : index.browse()
-      if (request.limit !== undefined) builder.limit(request.limit)
-      const result = await builder.execute(options)
+      const result = new SearchResults(await index.client.search(preparedRequest(prepareSearch({ query: request.query ?? '', limit: request.limit })), options))
       return { documents: result.hits.map(hit => ({ id: hit.id, fields: fields(hit.fields) })), total: result.totalHits.toString() }
     }) },
     prepareDocumentMutation,
@@ -158,7 +213,7 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
   }
 }
 
-function waitForOpen(pending: Promise<RemoteIndex>, signal?: AbortSignal): Promise<RemoteIndex> {
+function waitForOpen<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return pending
   return new Promise((resolve, reject) => {
     const abort = () => reject(new DOMException('Aborted', 'AbortError'))

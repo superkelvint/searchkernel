@@ -143,15 +143,17 @@ export class Client {
       await this.binding;
     }
     try {
-      const lifecycleOperation =
-        operation === "createIndex" || operation === "openIndex" || operation === "deleteIndex";
+      // Create/open establish an incarnation. A bound delete must retain the
+      // captured generation so replacing the logical name cannot retarget it.
+      const establishesIncarnation =
+        operation === "createIndex" || operation === "openIndex";
       const decoded = unpackResponse(
         await this.transport.execute(
           packRequest(
             operation,
             request,
             operation === "listIndexes" ? undefined : this.target,
-            lifecycleOperation ? undefined : this.indexGeneration,
+            establishesIncarnation ? undefined : this.indexGeneration,
           ),
           options,
         ),

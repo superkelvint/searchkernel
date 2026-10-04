@@ -32,6 +32,22 @@ function successfulTransport(responses: Uint8Array[]): ClientTransport {
 }
 
 describe("logical index lifecycle", () => {
+  it("deletes through a bound handle with its exact generation", async () => {
+    const sent: Uint8Array[] = [];
+    const transport: ClientTransport = {
+      execute: async (request) => {
+        sent.push(request);
+        return sent.length === 1
+          ? envelope(ResponsePayload.SearchKernel_Wire_OpenIndexResult, new OpenIndexResultT(new WireIndexDefinitionT("schema"), "old-generation"))
+          : envelope(ResponsePayload.SearchKernel_Wire_DeleteIndexResult, new DeleteIndexResultT());
+      },
+      close: async () => {},
+    };
+    const index = await Index.open("unused", "alpha", transport);
+    await index.client.deleteIndex();
+    const request = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(sent[1]));
+    expect(request.target(new IndexTarget())?.generation()).toBe("old-generation");
+  });
   // SKC: daemon.durable_index_discovery/basic kinds=ergonomic runtime=browser
   it("discovers targets without a target or opening every index", async () => {
     const requests: Uint8Array[] = [];

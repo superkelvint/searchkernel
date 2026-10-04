@@ -3516,7 +3516,7 @@
               "kind": "ergonomic",
               "strength": "builder",
               "path": "clients/typescript/tests/lifecycle.test.ts",
-              "line": 35
+              "line": 51
             }
           ],
           "overrides": []

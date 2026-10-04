@@ -556,4 +556,4 @@ has real-runtime evidence.
   - python / grpc / ergonomic / builder — [clients/python/tests/test_grpc_transport.py](../clients/python/tests/test_grpc_transport.py#L118)
   - ruby / http / ergonomic / builder — [clients/ruby/test/run.rb](../clients/ruby/test/run.rb#L373)
   - rust / grpc / ergonomic / builder — [searchkerneld/tests/multi_index.rs](../searchkerneld/tests/multi_index.rs#L1842)
-  - typescript / browser / ergonomic / builder — [clients/typescript/tests/lifecycle.test.ts](../clients/typescript/tests/lifecycle.test.ts#L35)
+  - typescript / browser / ergonomic / builder — [clients/typescript/tests/lifecycle.test.ts](../clients/typescript/tests/lifecycle.test.ts#L51)

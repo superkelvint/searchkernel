@@ -1,3 +1,4 @@
+import { targetName } from './searchkernel-client'
 import { prepareDocumentMutation } from './document-request'
 import { prepareSearch } from './search-request'
 import {
@@ -79,31 +80,31 @@ export function createFixtureSearchKernelClient(): SearchKernelClient {
     },
     capabilities: async () => capabilities,
     listIndexes: async () => indexes,
-    getIndex: async indexId => indexes.find(index => index.id === indexId),
+    getIndex: async indexId => indexes.find(index => index.id === targetName(indexId)),
     getDocument: async (indexId, documentId, options: RequestOptions = {}) => {
       try {
         await delay(options.signal)
-        const record = definitions.find(index => index.id === indexId)?.records.find(candidate => candidate.id === documentId)
+        const record = definitions.find(index => index.id === targetName(indexId))?.records.find(candidate => candidate.id === documentId)
         return record ? toDocument(record) : undefined
       } catch (error) { throw normalizeClientError(error) }
     },
     browseDocuments: async (indexId, request, options: RequestOptions = {}) => {
       try {
         await delay(options.signal)
-        const definition = definitions.find(item => item.id === indexId)
+        const definition = definitions.find(item => item.id === targetName(indexId))
         if (!definition) throw new Error(`Unknown index: ${indexId}`)
         const query = request.query?.trim().toLowerCase() ?? ''
-        const records = (searchKeys[indexId]?.[query] ?? []).slice(0, request.limit ?? 20)
+        const records = (searchKeys[targetName(indexId)]?.[query] ?? []).slice(0, request.limit ?? 20)
         return { documents: records.map(toDocument), total: records.length }
       } catch (error) { throw normalizeClientError(error) }
     },
-    async analyze(indexId, text, options: AnalysisOptions = {}) { try { await delay(options.signal); return analyses[indexId]?.[text] ?? [] } catch (error) { throw normalizeClientError(error) } },
+    async analyze(indexId, text, options: AnalysisOptions = {}) { try { await delay(options.signal); return analyses[targetName(indexId)]?.[text] ?? [] } catch (error) { throw normalizeClientError(error) } },
     async search(indexId, request, options: RequestOptions = {}): Promise<ClientSearchResponse> {
       try {
         await delay(options.signal)
-        const definition = definitions.find(item => item.id === indexId)
+        const definition = definitions.find(item => item.id === targetName(indexId))
         if (!definition) throw new Error(`Unknown index: ${indexId}`)
-        const records = (searchKeys[indexId]?.[request.query.trim().toLowerCase()] ?? []).slice(0, request.limit)
+        const records = (searchKeys[targetName(indexId)]?.[request.query.trim().toLowerCase()] ?? []).slice(0, request.limit)
         return { request, matches: records.length, timingMs: definition.latency, hits: records.map((record, position) => toHit(record, position + 1)), resolved: `Fixture request echo { query: ${JSON.stringify(request.query)}, ranking: ${JSON.stringify(request.ranking)}, limit: ${request.limit} }`, analysis: 'No daemon linguistic analysis is available in this response.', diagnostics: ['Fixture response only', 'No daemon request executed'] }
       } catch (error) { throw normalizeClientError(error) }
     },

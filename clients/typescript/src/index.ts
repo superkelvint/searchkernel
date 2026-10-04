@@ -1,3 +1,4 @@
+export { IndexTargetT } from './semantic.js';
 export { Client, Daemon, Index, SearchKernelError, type DocumentInput, type OperationResponseMap } from "./client/index.js";
 export {
   Tensor,

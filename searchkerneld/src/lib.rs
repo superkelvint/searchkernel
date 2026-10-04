@@ -5,6 +5,8 @@
 //! dispatcher.
 
 #[cfg(feature = "native")]
+pub mod diagnostics;
+#[cfg(feature = "native")]
 mod registry;
 mod search_endpoints;
 
@@ -434,6 +436,91 @@ fn http_body_response(
         .expect("static HTTP response must be valid")
 }
 
+async fn validate_definition_response(
+    request: HttpRequest<BoxBody>,
+    admission: tokio::sync::OwnedSemaphorePermit,
+) -> http::Response<BoxBody> {
+    if request.method() != Method::POST {
+        return http_body_response(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "text/plain",
+            "Use POST".to_owned(),
+        );
+    }
+    let body = match http_body_util::Limited::new(request.into_body(), MAX_GRPC_MESSAGE_SIZE)
+        .collect()
+        .await
+    {
+        Ok(body) => {
+            let bytes = body.to_bytes();
+            if bytes.len() > MAX_GRPC_MESSAGE_SIZE {
+                return http_body_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "text/plain",
+                    "Definition too large".to_owned(),
+                );
+            }
+            bytes
+        }
+        _ => {
+            return http_body_response(
+                StatusCode::BAD_REQUEST,
+                "text/plain",
+                "Invalid definition body".to_owned(),
+            )
+        }
+    };
+    // BFBS parsing and semantic validation are CPU work. Keep them off the
+    // network reactor, retaining admission until started work actually ends.
+    tokio::task::spawn_blocking(move || {
+        let _admission = admission;
+        validate_definition_json(&body)
+    })
+    .await
+    .unwrap_or_else(|_| {
+        http_body_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "text/plain",
+            "Validation unavailable".to_owned(),
+        )
+    })
+}
+
+fn validate_definition_json(body: &[u8]) -> http::Response<BoxBody> {
+    let parsed = searchkernel_protocol::json::index_definition_json_to_flatbuffer(body)
+        .ok()
+        .and_then(|bytes| {
+            flatbuffers::root::<searchkernel_protocol::wire::v1::IndexDefinition>(&bytes)
+                .ok()
+                .map(searchkernel_ir::wire::v1::index_definition_to_ir)
+        });
+    match parsed {
+        Some(Ok(_)) => http_body_response(StatusCode::OK, "application/json", "{}".to_owned()),
+        error => {
+            let error = error.and_then(Result::err).unwrap_or_else(|| {
+                searchkernel_ir::PortableError::new(
+                    searchkernel_ir::ErrorCode::InvalidArgument,
+                    "Invalid canonical IndexDefinition JSON",
+                )
+            });
+            let bytes =
+                searchkernel_ir::wire::encode_error(searchkernel_ir::wire::WireVersion::V1, &error);
+            match searchkernel_protocol::json::response_flatbuffer_to_json(&bytes) {
+                Ok(json) => http_body_response(
+                    StatusCode::OK,
+                    "application/json",
+                    String::from_utf8_lossy(&json).into_owned(),
+                ),
+                Err(_) => http_body_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "text/plain",
+                    "Validation unavailable".to_owned(),
+                ),
+            }
+        }
+    }
+}
+
 async fn json_execute_response(
     request: HttpRequest<BoxBody>,
     transport: SearchKernelTransport,
@@ -571,6 +658,55 @@ where
             return Box::pin(async move { Ok(response) });
         };
 
+        if request.uri().path() == "/admin/validate-definition" {
+            return Box::pin(
+                async move { Ok(validate_definition_response(request, permit).await) },
+            );
+        }
+        #[cfg(feature = "native")]
+        if request.uri().path() == "/admin/status" {
+            if let Some(transport) = self.json_transport.clone() {
+                return Box::pin(async move {
+                    let response = if request.method() != Method::POST {
+                        http_body_response(
+                            StatusCode::METHOD_NOT_ALLOWED,
+                            "text/plain",
+                            "Use POST".to_owned(),
+                        )
+                    } else if let DispatchTarget::Registry(registry) = transport.target {
+                        match tokio::task::spawn_blocking(move || {
+                            let _admission = permit;
+                            registry.diagnostics()
+                        })
+                        .await
+                        {
+                            Ok(Ok(status)) => match serde_json::to_string(&status) {
+                                Ok(body) => {
+                                    http_body_response(StatusCode::OK, "application/json", body)
+                                }
+                                Err(_) => http_body_response(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    "text/plain",
+                                    "Diagnostics encoding failed".to_owned(),
+                                ),
+                            },
+                            _ => http_body_response(
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                "text/plain",
+                                "Lifecycle diagnostics unavailable".to_owned(),
+                            ),
+                        }
+                    } else {
+                        http_body_response(
+                            StatusCode::NOT_IMPLEMENTED,
+                            "text/plain",
+                            "Diagnostics require multi-index mode".to_owned(),
+                        )
+                    };
+                    Ok(response)
+                });
+            }
+        }
         if request.uri().path() == JSON_EXECUTE_PATH {
             if let Some(transport) = self.json_transport.clone() {
                 return Box::pin(async move {
@@ -591,7 +727,10 @@ where
 }
 
 fn admission_response(request: &HttpRequest<BoxBody>) -> HttpResponse<BoxBody> {
-    if request.uri().path() == JSON_EXECUTE_PATH {
+    if matches!(
+        request.uri().path(),
+        JSON_EXECUTE_PATH | "/admin/status" | "/admin/validate-definition"
+    ) {
         return http_body_response(
             StatusCode::TOO_MANY_REQUESTS,
             "text/plain; charset=utf-8",
@@ -1178,6 +1317,19 @@ async fn bind_unix_listener(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn admin_overload_is_an_http_error_not_grpc_success() {
+        for path in ["/admin/status", "/admin/validate-definition"] {
+            let request = super::HttpRequest::builder()
+                .uri(path)
+                .body(tonic::body::empty_body())
+                .unwrap();
+            assert_eq!(
+                super::admission_response(&request).status(),
+                super::StatusCode::TOO_MANY_REQUESTS
+            );
+        }
+    }
     #[cfg(unix)]
     use std::path::PathBuf;
     use std::sync::{

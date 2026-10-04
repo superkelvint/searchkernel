@@ -1,9 +1,59 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { Daemon, Index as RemoteIndex, IndexDefinitionT, Text, SearchKernelError, TransportError, ResultDecodeError, fromCanonicalJson, toCanonicalJson } from '@searchkernel/client'
+import { Client, Daemon, IndexTargetT, Index as RemoteIndex, IndexDefinitionT, Text, SearchKernelError, TransportError, ResultDecodeError, fromCanonicalJson, toCanonicalJson } from '@searchkernel/client'
 import { createDaemonSearchKernelClient, dashboardValue, daemonError } from './daemon-searchkernel-client'
 
 afterEach(() => vi.restoreAllMocks())
 describe('daemon dashboard boundary', () => {
+  it('uses the canonical URL generation without opening or upgrading it', async () => {
+    const open = vi.spyOn(RemoteIndex, 'open')
+    const describe = vi.spyOn(Client.prototype, 'describe').mockResolvedValue(fromCanonicalJson('DescribeResult', { index: { name: 'old-schema' } }) as any)
+    const get = vi.spyOn(Client.prototype, 'get').mockResolvedValue(fromCanonicalJson('GetResult', {}) as any)
+    const client = createDaemonSearchKernelClient('http://daemon')
+    const target = new IndexTargetT('alpha', 'G1')
+    expect(await client.getIndex(target)).toMatchObject({ id: 'alpha', generation: 'G1', target })
+    await client.getDocument(target, 'one')
+    expect(open).not.toHaveBeenCalled()
+    expect((describe.mock.instances[0] as unknown as Client).generation).toBe('G1')
+    expect((get.mock.instances[0] as unknown as Client).generation).toBe('G1')
+  })
+  it('keeps old and replacement requests attached to independent bound handles', async () => {
+    const definition = new IndexDefinitionT('schema')
+    const oldGet = vi.fn().mockRejectedValue(new SearchKernelError('stale', fromCanonicalJson('Error', { code: 'FailedPrecondition', details: [{ code: 'stale_index_handle' }] }) as any))
+    const newGet = vi.fn().mockResolvedValue(fromCanonicalJson('GetResult', {}))
+    const describe = vi.fn().mockResolvedValue({ index: definition })
+    const open = vi.spyOn(RemoteIndex, 'open').mockResolvedValueOnce({ definition, generation: 'G1', client: { get: oldGet, describe } } as any).mockResolvedValueOnce({ definition, generation: 'G2', client: { get: newGet, describe } } as any)
+    const client = createDaemonSearchKernelClient('http://daemon')
+    const old = await client.openIndex!('alpha'), fresh = await client.openIndex!('alpha')
+    await expect(client.getDocument(old.target!, 'one')).rejects.toMatchObject({ details: [{ code: 'stale_index_handle' }] })
+    await expect(client.getDocument(fresh.target!, 'one')).resolves.toBeUndefined()
+    expect(open).toHaveBeenCalledTimes(2)
+    expect(oldGet).toHaveBeenCalledOnce()
+    expect(newGet).toHaveBeenCalledOnce()
+  })
+  it('fetches intentional daemon status and preserves the exact diagnostic structure', async () => {
+    const payload = { ready: true, version: '0.1.0', native_runtime: 'linked', lifecycle: 'ready', indexes: [{ name: 'alpha', generation: 'G1', state: 'open', persisted: true, schema_name: 'schema', warning: null }], unavailable: ['counts'] }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(payload)))
+    const describe = vi.fn().mockResolvedValue(fromCanonicalJson('DescribeResult', { index: { name: 'schema' } }))
+    vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT('schema'), generation: 'G1', client: { describe } } as any)
+    const client = createDaemonSearchKernelClient('http://daemon')
+    const index = await client.openIndex!('alpha')
+    expect(await client.daemonStatus!()).toEqual(payload)
+    const diagnostics = await client.indexDiagnostics!(index.target!)
+    expect(JSON.parse(diagnostics.canonical)).toEqual({ status: payload.indexes[0], definition: toCanonicalJson(await describe()) })
+  })
+  it('rejects malformed diagnostics instead of fabricating lifecycle state', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ ready: true, version: '0.1', native_runtime: 'linked', lifecycle: 'ready', unavailable: [], indexes: [{ name: 'alpha', state: 'invented' }] })))
+    await expect(createDaemonSearchKernelClient('http://daemon').daemonStatus!()).rejects.toMatchObject({ code: 'protocol_error', origin: 'protocol' })
+  })
+  it('obtains a canonical rejection when diagnostics race a replacement incarnation', async () => {
+    const stale = new SearchKernelError('stale', fromCanonicalJson('Error', { code: 'FailedPrecondition', details: [{ code: 'stale_index_handle' }] }) as any)
+    const describe = vi.fn().mockResolvedValueOnce(fromCanonicalJson('DescribeResult', { index: { name: 'schema' } })).mockRejectedValueOnce(stale)
+    vi.spyOn(RemoteIndex, 'open').mockResolvedValue({ definition: new IndexDefinitionT('schema'), generation: 'G1', client: { describe } } as any)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ ready: true, version: '0.1', native_runtime: 'linked', lifecycle: 'ready', unavailable: [], indexes: [{ name: 'alpha', generation: 'G2', state: 'open', persisted: true, schema_name: 'schema', warning: null }] })))
+    const client = createDaemonSearchKernelClient('http://daemon'), index = await client.openIndex!('alpha')
+    await expect(client.indexDiagnostics!(index.target!)).rejects.toMatchObject({ origin: 'canonical', details: [{ code: 'stale_index_handle' }] })
+    expect(describe).toHaveBeenCalledTimes(2)
+  })
   it('lists without open, hydrates only the selected target, and retains its bound handle', async () => {
     vi.spyOn(Daemon.prototype, 'listIndexes').mockResolvedValue(['alpha', 'beta'])
     const get = vi.fn().mockResolvedValue(fromCanonicalJson('GetResult', { document: { id: 'one', fields: [{ key: 'title', value: { kind_type: 'StringValue', kind: { value: 'real title' } } }, { key: 'quantity', value: { kind_type: 'Int64Value', kind: { value: '9007199254740993' } } }] } }))
