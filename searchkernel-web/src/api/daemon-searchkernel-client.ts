@@ -60,7 +60,7 @@ const capabilities: Capabilities = {
   indexes: { read: true, create: true, delete: true },
   documents: { read: true, write: true, bulk: false },
   search: { basic: true, sort: true, facets: false, grouping: false },
-  analysis: { text: false }, query: { inspect: false },
+  analysis: { text: false }, query: { inspect: false, diagnostics: true },
   schema: { read: true, write: false, changePlan: true },
   ranking: { profiles: true, features: false, write: true },
   summaries: { read: true, write: false }, metrics: { query: false, storage: false },
@@ -146,10 +146,10 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
     diagnosticsCurl: diagnosticCurl,
     executeDiagnostics(prepared, options) { return call(async () => {
       const index = await opened(prepared.target, options)
-      if (index.generation !== prepared.generation) throw new SearchKernelClientError(
+      if (index.generation !== String(prepared.target.generation)) throw new SearchKernelClientError(
         'The index is no longer the same incarnation. Refresh/reselect it explicitly before collecting evidence.',
         { code: 'stale_index_handle', origin: 'client', retryable: false })
-      const raw = await index.queryDiagnostics(preparedDiagnosticRequest(prepared), options)
+      const raw = await index.client.queryDiagnostics(preparedDiagnosticRequest(prepared), options)
       return diagnosticResponse(raw, dashboardValue)
     }) },
     planIndexChange(target, definition, options) { return call(async () => {
