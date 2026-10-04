@@ -54,6 +54,12 @@
     "ir": {
       "description": "Portable semantic IR tests"
     },
+    "ir-adapter": {
+      "description": "Vespa IR adapter lowering and real-engine regression tests"
+    },
+    "native-consumer-generation": {
+      "description": "Regenerate and export the packaged native source bundle"
+    },
     "rust-api": {
       "description": "Public Rust API tests",
       "aliases": [

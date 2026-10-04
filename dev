@@ -766,6 +766,13 @@ test_target() {
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
             ;;
+        ir-adapter)
+            "$CARGO" test -p searchkernel-ir-adapter --all-targets --all-features
+            ;;
+        native-consumer-generation)
+            "$PYTHON" "$ROOT/tools/generate-native-consumer-bundle.py"
+            git -C "$ROOT" diff --binary -- core/crates/searchkernel-vespa-bindings/consumer_bundle.rs
+            ;;
         rust-api)
             "$CARGO" test -p searchkernel --all-targets --no-default-features --features remote,internal-api
             ;;

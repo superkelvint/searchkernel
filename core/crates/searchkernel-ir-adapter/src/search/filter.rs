@@ -2,7 +2,7 @@
 
 use crate::unsupported;
 use searchkernel_ir::{FilterIr, RangeIr, Result, ScalarValueIr};
-use searchkernel_vespa_engine::{Query, Value as VespaValue};
+use searchkernel_vespa_engine::{InQueryValue, Query, Value as VespaValue};
 
 pub(crate) fn lower_filter(filter: &FilterIr) -> Result<Query> {
     match filter {
@@ -26,17 +26,13 @@ pub(crate) fn lower_filter(filter: &FilterIr) -> Result<Query> {
         }),
         FilterIr::Comparison(comparison) => lower_comparison(comparison),
         FilterIr::Range(range) => lower_range(range),
-        FilterIr::In { field, values } => Ok(Query::Or(
-            values
+        FilterIr::In { field, values } => Ok(Query::In {
+            field: field.to_string(),
+            values: values
                 .iter()
-                .map(|value| {
-                    Ok(Query::AttributeEquals {
-                        field: field.to_string(),
-                        value: lower_attribute_value(value)?,
-                    })
-                })
+                .map(lower_in_value)
                 .collect::<Result<Vec<_>>>()?,
-        )),
+        }),
     }
 }
 
@@ -116,6 +112,18 @@ pub(crate) fn lower_attribute_value(value: &ScalarValueIr) -> Result<VespaValue>
         ScalarValueIr::String(value) => Ok(VespaValue::String(value.clone())),
         ScalarValueIr::Bool(value) => Ok(VespaValue::Boolean(*value)),
         ScalarValueIr::Float64(_) => Err(unsupported("float comparison value must be finite")),
+    }
+}
+
+// Both filter membership and typed-query IN must preserve native InTerm's
+// string/integer representation, including the undefined integer sentinel rule.
+pub(super) fn lower_in_value(value: &ScalarValueIr) -> Result<InQueryValue> {
+    match lower_attribute_value(value)? {
+        VespaValue::String(value) => Ok(InQueryValue::String(value)),
+        VespaValue::Integer(value) => Ok(InQueryValue::Integer(value)),
+        _ => Err(unsupported(
+            "in query supports only string and integer values",
+        )),
     }
 }
 
