@@ -76,7 +76,9 @@ impl SearchRequestIr {
         &self.query
     }
 
-    pub fn diagnostic_source(&self) -> bool { self.diagnostic_source }
+    pub fn diagnostic_source(&self) -> bool {
+        self.diagnostic_source
+    }
 
     pub fn search_fields(&self) -> &[SearchFieldIr] {
         &self.search_fields

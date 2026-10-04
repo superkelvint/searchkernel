@@ -96,7 +96,9 @@ impl Dispatcher {
         target: Option<&str>,
         generation: Option<&str>,
     ) {
-        if !request.diagnostic_source() { return; }
+        if !request.diagnostic_source() {
+            return;
+        }
         use searchkernel_ir::{
             DiagnosticExecutionKind, DiagnosticSourceRun, Hit, ResultGroup, ResultNode, Value,
         };

@@ -57,7 +57,9 @@ pub fn search_request(value: &SearchRequestIr) -> Value {
         "prefix_policy": prefix_policy_json(*prefix_policy),
         "typo_policy": typo_policy_json(*typo_policy),
     });
-    if *diagnostic_source { snapshot["diagnostic_source"] = json!(true); }
+    if *diagnostic_source {
+        snapshot["diagnostic_source"] = json!(true);
+    }
     snapshot
 }
 
