@@ -2124,3 +2124,149 @@ fn native_ffi_accepts_zero_byte_string_arrays_and_predicate_features() {
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }
+
+#[test]
+fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
+    use searchkernel_vespa_engine::{
+        RankProfile, SearchDiagnosticControls, SortField, TensorValue,
+    };
+    use std::time::Duration;
+
+    let config = temporary_path("diagnostic-config");
+    let data = temporary_path("diagnostic-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("title", FieldType::Text).indexed())
+        .field(Field::new("qty", FieldType::Integer).attribute())
+        .rank_profile(
+            RankProfile::new("diagnostic")
+                .first_phase("query(weight)")
+                .query_input("private_tensor", "tensor<float>(x[512])"),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile diagnostic fixture");
+    let engine = Engine::open(&data, &config).expect("open diagnostic fixture");
+    engine
+        .put(
+            Document::new("doc-1")
+                .field("title", "private_term")
+                .field("qty", 7_i64),
+        )
+        .expect("insert diagnostic fixture");
+    let request = SearchRequest::new(Query::Term {
+        field: "title".into(),
+        text: "private_term".into(),
+    })
+    .rank_profile("diagnostic")
+    .query_feature("weight", 2.75)
+    .query_tensor(
+        "private_tensor",
+        TensorValue::dense("tensor<float>(x[512])", vec![9182.5; 512]),
+    )
+    .rank_property("private_property", "secret_value".repeat(16))
+    .sort(SortField::descending("qty"))
+    .limit(3)
+    .timeout(Duration::from_secs(30));
+
+    let ordinary = engine.search(request.clone()).expect("ordinary search");
+    assert!(ordinary.diagnostics.is_none());
+    assert_eq!(ordinary.hits.len(), 1);
+    assert_eq!(ordinary.hits[0].score, 2.75);
+
+    let mut diagnostic = request.clone();
+    diagnostic.diagnostics = Some(SearchDiagnosticControls {
+        // Even trace level zero must include the final request snapshot.
+        trace_level: 0,
+        matching_depth: 0,
+        first_phase_depth: 0,
+        second_phase_depth: 0,
+        raw_bytes: 65_536,
+    });
+    let result = engine
+        .search(diagnostic.clone())
+        .expect("diagnostic search");
+    assert_eq!(result.hits, ordinary.hits);
+    let evidence = result.diagnostics.expect("native diagnostics");
+    assert!(!evidence.truncated);
+    assert!(evidence.trace.len() <= 65_536);
+    let raw: serde_json::Value = serde_json::from_str(&evidence.trace).expect("raw JSON");
+    let snapshot = &raw["final_matcher_request"];
+    assert_eq!(snapshot["format"], "searchkernel.proton-request.v1");
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../../../native/vespa/manifest.json")).unwrap();
+    assert_eq!(snapshot["vespa_commit"], manifest["vespa_commit"]);
+    assert_eq!(
+        snapshot["native_abi_version"],
+        manifest["native_abi_version"]
+    );
+    assert_eq!(snapshot["rank_profile"], "diagnostic");
+    assert_eq!(snapshot["timeout_ms"], 30_000.0);
+    assert!(snapshot["time_left_ms"].as_f64().unwrap() <= 30_000.0);
+    assert_eq!(snapshot["maxhits"], 3);
+    assert_eq!(snapshot["sort"], "-qty");
+    assert_eq!(snapshot["trace_level"], 0);
+    assert_eq!(snapshot["grouping_bytes"], 0);
+    assert!(!snapshot["query_tree"].as_array().unwrap().is_empty());
+    assert_eq!(snapshot["query_tree"][0]["term"], "[redacted]");
+    let rank = snapshot["properties"]["rank"]["entries"]
+        .as_array()
+        .unwrap();
+    let features = snapshot["properties"]["feature_overrides"]["entries"]
+        .as_array()
+        .unwrap();
+    let property = |entries: &[serde_json::Value], name: &str| {
+        entries.iter().find(|entry| entry["name"] == name).unwrap()["value"].clone()
+    };
+    assert_eq!(property(rank, "vespa.matching.numthreadspersearch"), "1");
+    assert_eq!(property(rank, "private_property"), "[redacted]");
+    assert_eq!(property(rank, "private_tensor"), "[redacted]");
+    assert_eq!(property(features, "query(weight)"), "[redacted]");
+    let snapshot_text = snapshot.to_string();
+    for secret in ["private_term", "secret_value", "9182.5", "8371.25", "2.75"] {
+        assert!(!snapshot_text.contains(secret), "snapshot leaked {secret}");
+    }
+
+    // Output limits and structural limits are independent and both explicit.
+    diagnostic.diagnostics.as_mut().unwrap().raw_bytes = 128;
+    let tiny = engine
+        .search(diagnostic.clone())
+        .expect("tiny diagnostic budget")
+        .diagnostics
+        .unwrap();
+    assert!(tiny.truncated);
+    assert!(tiny.trace.len() <= 128);
+    diagnostic.diagnostics.as_mut().unwrap().raw_bytes = 65_536;
+    for index in (0..40).rev() {
+        diagnostic
+            .rank_properties
+            .push((format!("bounded_{index:02}"), "private".into()));
+    }
+    let bounded = engine
+        .search(diagnostic.clone())
+        .expect("bounded properties")
+        .diagnostics
+        .unwrap();
+    assert!(bounded.truncated);
+    let raw: serde_json::Value = serde_json::from_str(&bounded.trace).unwrap();
+    let properties = &raw["final_matcher_request"]["properties"]["rank"];
+    assert!(properties["key_count"].as_u64().unwrap() > 32);
+    let entries = properties["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 32);
+    assert_eq!(entries[0]["name"], "bounded_00");
+    assert_eq!(entries[31]["name"], "bounded_31");
+    diagnostic.rank_properties.reverse();
+    let reordered = engine
+        .search(diagnostic)
+        .expect("reordered properties")
+        .diagnostics
+        .unwrap();
+    let raw: serde_json::Value = serde_json::from_str(&reordered.trace).unwrap();
+    assert_eq!(
+        &raw["final_matcher_request"]["properties"]["rank"],
+        properties
+    );
+    assert!(engine.search(request).unwrap().diagnostics.is_none());
+    engine.close().expect("close diagnostic fixture");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}

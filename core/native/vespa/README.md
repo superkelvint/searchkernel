@@ -1,5 +1,20 @@
 # Vespa native adapter
 
+W5 diagnostic searches attach `final_matcher_request` to the existing raw trace
+immediately before `DocumentDB::match()`. `searchkernel.proton-request.v1` is
+private engine evidence, never a portable request or a client semantic source.
+The capture reads the populated request and includes manifest-derived Vespa
+revision/native ABI provenance, matcher/sort/grouping/trace/profiler controls,
+and bounded serialized-tree item types/arity/IDs/flags with terms omitted.
+Property keys are selected lexically (at most 32 per collection). Values,
+including scalar query features and binary tensors, are redacted except for the
+adapter-owned single matching thread control. Keys over 128 bytes and sorting
+over 256 bytes are omitted. The existing raw-byte budget caps final encoding
+and bounds tree/property collection. Structural or encoding truncation sets
+diagnostic truncation. Ordinary searches skip capture. `./dev test native-crud`
+tests post-lowering values, privacy, bounds, deterministic property selection
+and unchanged ordinary-search results against real Vespa.
+
 This directory is the Search Kernel-owned C/C++ adaptation layer around the
 pinned Vespa engine. It is where Vespa-specific headers, object lifetimes,
 configuration details, and native error translation belong.
