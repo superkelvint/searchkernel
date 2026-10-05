@@ -85,19 +85,15 @@ search.addWidgets([
   pagination({ container: '#pages' }),
 ]);
 search.start();`,
-    react: `import { InstantSearch, Configure, SearchBox, Hits, Highlight, Snippet, Pagination } from 'react-instantsearch';
+    react: `import { InstantSearch, Configure, SearchBox, Hits, Pagination } from 'react-instantsearch';
 import { createSearchKernelInstantSearchClient } from '@searchkernel/instantsearch';
 
 const searchClient = createSearchKernelInstantSearchClient({ endpoint: ${endpointLiteral} });
 
-function Product({ hit }) {
-  return <article><Highlight attribute="title" hit={hit}/><Snippet attribute="description" hit={hit}/></article>;
-}
-
 export function ProductSearch() {
   return <InstantSearch indexName=${aliasLiteral} searchClient={searchClient} insights={false}>
     <Configure analytics={false} hitsPerPage={6}/>
-    <SearchBox/><Hits hitComponent={Product}/><Pagination/>
+    <SearchBox/><Hits/><Pagination/>
   </InstantSearch>;
 }`,
     vue: `<script setup>
