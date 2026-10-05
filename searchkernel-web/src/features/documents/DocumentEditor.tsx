@@ -86,7 +86,7 @@ export function DocumentEditor({ document, id = '', browse, open, guided = false
       </>}
       {state.operation === 'delete' && <label className="block text-red-800"><input type="checkbox" aria-label="Confirm document deletion" checked={confirmed} onChange={e => setConfirmed(e.target.checked)}/> Confirm deletion of <code>{state.id}</code> from <code>{index.id}</code>.</label>}
     </fieldset>
-    <ErrorNotice error={prepared.error ?? error}/>
+    <ErrorNotice error={error ?? (basic && !state.id ? undefined : prepared.error)}/>
     {unknownMutation && <div role="status" className="surface border-amber-200 p-3"><p>The {unknownMutation.operation} response was lost, so whether the write committed is unknown. Do not repeat it until the current document has been read from Search Kernel.</p><button className="soft-button mt-2" disabled={reconciling} onClick={() => { void reconcileOutcome() }}>{reconciling ? 'Reading current document…' : 'Read current document before retry'}</button></div>}
     {reconciliation !== undefined && <div role="status" className="space-y-2"><p>Authoritative GET completed. Review the current document state before deciding whether to submit another mutation.</p><CanonicalInspector label="Reconciliation GET" text={reconciliation?.canonical ?? 'GET returned canonical document absence.'}/></div>}
     <CanonicalInspector label="Mutation request" text={prepared.value?.canonical ?? 'Correct malformed input to inspect the request.'}/>

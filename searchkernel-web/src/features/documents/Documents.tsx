@@ -32,7 +32,7 @@ export function Documents() {
   const writable = capabilities.capabilities?.documents.write === true
   const editorKey = JSON.stringify([index.id, index.generation, selected.id])
   return <div className="min-w-0">
-    <Heading title="Documents" description={`Backend document reads and mutations in ${index.id}.`}><CopyButton label="Copy document URL" text={location.href}/>{writable && <button className="primary-button ml-2" onClick={() => setCreating(value => !value)}>{guided ? "Add first document" : "Create document"}</button>}</Heading>
+    <Heading title="Documents" description={guided ? `Add documents to ${index.id}, then search their text in Search Lab.` : `Backend document reads and mutations in ${index.id}.`}><CopyButton label="Copy document URL" text={location.href}/>{writable && <button className="primary-button ml-2" onClick={() => setCreating(value => !value)}>{guided ? "Add first document" : "Create document"}</button>}</Heading>
     <CollectionNextStep page="documents"/>
     <ErrorNotice error={restored.error ? new Error(restored.error) : prepared.error ?? selected.error ?? search.error}/>
     <section className="surface space-y-3 p-4">

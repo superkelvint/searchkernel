@@ -7,7 +7,7 @@ import { createFixtureSearchKernelClient } from '../../api/fixture-searchkernel-
 import { createUnavailableAdminClient } from '../../admin-client/unavailable-admin-client'
 import { ClientProvider } from '../../app/client-context'
 import { IndexContext } from '../../app/index-context'
-import type { Capabilities, ClientSearchResponse, Index } from '../../api/searchkernel-client'
+import { SearchKernelClientError, type Capabilities, type ClientSearchResponse, type Index } from '../../api/searchkernel-client'
 import { CollectionNextStep, FirstSearchWelcome } from './FirstSearch'
 import { canCreateCollection, collectionPath, documentPresence, hasTextFields } from './progress'
 import { firstDocumentFields } from './document-fields'
@@ -15,7 +15,7 @@ import { firstDocumentFields } from './document-fields'
 const empty: ClientSearchResponse = { request: { query: '', limit: 1 }, hits: [], matches: '0', totalRelation: 'exact', diagnostics: [] }
 const populated: ClientSearchResponse = { ...empty, matches: '1', hits: [{ document: { id: 'first', fields: { title: 'orchid' } }, score: '1', rank: 1 }] }
 
-async function view(result: ClientSearchResponse, options: { guided?: boolean; write?: boolean; search?: boolean; text?: boolean; welcome?: boolean; create?: boolean } = {}) {
+async function view(result: ClientSearchResponse, options: { guided?: boolean; write?: boolean; search?: boolean; text?: boolean; welcome?: boolean; create?: boolean; error?: boolean } = {}) {
   const client = createFixtureSearchKernelClient(), caps = await client.capabilities()
   const index = (await client.getIndex('products'))!
   index.generation = '17'; index.target = new IndexTargetT(index.id, '17')
@@ -24,6 +24,7 @@ async function view(result: ClientSearchResponse, options: { guided?: boolean; w
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   cache.setQueryData(['capabilities'], capabilities)
   cache.setQueryData(['first-search', index.id, '17'], result)
+  if (options.error) await cache.fetchQuery({ queryKey: ['first-search', index.id, '17'], staleTime: 0, queryFn: () => { throw new SearchKernelClientError('The selected collection has changed.', { code: 'stale_generation', origin: 'canonical' }) } }).catch(() => undefined)
   const html = renderToStaticMarkup(<QueryClientProvider client={cache}><MemoryRouter initialEntries={[options.guided ? '/?journey=first-search' : '/']}><ClientProvider searchKernelClient={client} adminClient={createUnavailableAdminClient()}><IndexContext.Provider value={index}>{options.welcome ? <FirstSearchWelcome/> : <CollectionNextStep page="documents"/>}</IndexContext.Provider></ClientProvider></MemoryRouter></QueryClientProvider>)
   cache.clear()
   return html
@@ -65,6 +66,11 @@ describe('authoritative first-search progress', () => {
   test('populated returning users are not forced through onboarding', async () => {
     expect(await view(populated)).toBe('')
   })
+  test('cached presence cannot hide a failed incarnation check', async () => {
+    const failed = await view(populated, { guided: true, error: true })
+    expect(failed).toContain('stale_generation')
+    expect(failed).not.toContain('Try your first search')
+  })
   test('missing capabilities never offer impossible writes/search/creation', async () => {
     expect(await view(empty, { guided: true, write: false })).not.toContain('Add first document')
     expect(await view(populated, { guided: true, search: false })).not.toContain('Try your first search')
@@ -85,6 +91,7 @@ test('first document entry preserves SDK scalar types and rejects lossy input', 
   expect(fromValue(fromCanonicalJson('Value', json.active) as Parameters<typeof fromValue>[0])).toBe(false)
   expect(() => firstDocumentFields(fields, { count: '1.5' })).toThrow('whole number')
   expect(() => firstDocumentFields(fields, { price: 'Infinity' })).toThrow('finite number')
+  expect(() => firstDocumentFields(fields, { price: ' ' })).toThrow('finite number')
   expect(() => firstDocumentFields(fields, { active: 'maybe' })).toThrow('true or false')
   expect(() => firstDocumentFields([{ name: 'vector', type: 'tensor' }] as Index['fields'], { vector: '[1,2]' })).toThrow('advanced editor')
 })
