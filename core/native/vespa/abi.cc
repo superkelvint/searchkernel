@@ -2758,15 +2758,16 @@ extern "C" int32_t sk_generic_search_request_set_timeout(
 extern "C" int32_t sk_generic_search_request_set_diagnostics(
     sk_generic_search_request *request, uint32_t trace_level,
     uint32_t matching_depth, uint32_t first_phase_depth,
-    uint32_t second_phase_depth, uint32_t raw_bytes,
+    uint32_t second_phase_depth, uint32_t raw_bytes, uint32_t structure_depth,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
-    if (!request || trace_level > 9 || matching_depth > 16 ||
+    if (!request || structure_depth > 32 || trace_level > 9 || matching_depth > 16 ||
         first_phase_depth > 16 || second_phase_depth > 16 ||
         raw_bytes == 0 || raw_bytes > 262144) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "diagnostic controls exceed safe bounds");
     }
     request->diagnostic_trace_level = trace_level;
+    request->diagnostic_structure_depth = structure_depth;
     request->diagnostic_matching_depth = matching_depth;
     request->diagnostic_first_phase_depth = first_phase_depth;
     request->diagnostic_second_phase_depth = second_phase_depth;
@@ -2991,6 +2992,21 @@ extern "C" int32_t sk_diagnostic_tensor_decode(
         *out_type_length = static_cast<uint32_t>(type.size());
         *out_cell_count = static_cast<uint32_t>(values.size());
     });
+}
+
+extern "C" int32_t sk_generic_search_result_diagnostic_section(
+    const sk_generic_search_result *result, uint32_t section,
+    uint32_t *out_status, const uint8_t **out_data, uint32_t *out_length,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!result || section >= 5 || !out_status || !out_data || !out_length) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "invalid diagnostic section arguments");
+    }
+    const auto& value = result->diagnostic_sections[section];
+    *out_status = value.status;
+    *out_data = reinterpret_cast<const uint8_t*>(value.payload.data());
+    *out_length = static_cast<uint32_t>(value.payload.size());
+    return SK_NATIVE_STATUS_OK;
 }
 
 extern "C" int32_t sk_generic_search_result_diagnostics(

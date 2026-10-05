@@ -836,6 +836,39 @@ fn compile_contract_tests(manifest_dir: &Path, sdk: &Path) {
     );
     println!("cargo:rerun-if-changed=../../native/vespa/file_descriptor.h");
     println!("cargo:rerun-if-changed=../../native/vespa/transport_owner.h");
+    // Only the contract-test feature links these engine libraries directly;
+    // production Rust consumes the Search Kernel C ABI exclusively.
+    println!("cargo:rustc-link-lib=dylib=vespa_searchlib");
+    println!("cargo:rustc-link-lib=dylib=vespalib");
+    let target = env::var("TARGET").expect("Cargo TARGET");
+    let vespa_root = resolve_shared_native_sdk(manifest_dir, &target, "vespa-root")
+        .expect("pinned Vespa headers for native projection tests");
+    let native_root = manifest_dir.join("../../native/vespa");
+    let manifest = fs::read_to_string(native_root.join("manifest.json")).expect("native manifest");
+    let revision = manifest
+        .lines()
+        .find(|line| line.contains("\"vespa_commit\""))
+        .and_then(|line| line.split('"').nth(3))
+        .expect("pinned Vespa revision");
+    let define = format!("\"{revision}\"");
+    println!(
+        "cargo:rerun-if-changed={}",
+        verifier_dir.join("diagnostic_projection_test.cc").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        native_root.join("diagnostic_projection.h").display()
+    );
+    cc::Build::new()
+        .cpp(true)
+        .std("c++23")
+        .file(verifier_dir.join("diagnostic_projection_test.cc"))
+        .include(&native_root)
+        .include(vespa_root.join("vespalib/src"))
+        .include(vespa_root.join("searchlib/src"))
+        .define("SK_PINNED_VESPA_COMMIT", define.as_str())
+        .warnings(true)
+        .compile("searchkernel_diagnostic_projection_test");
     cc::Build::new()
         .cpp(true)
         .file(verifier_dir.join("schema_identity_fd_test.cc"))

@@ -1039,6 +1039,7 @@ impl Engine {
                     controls.first_phase_depth,
                     controls.second_phase_depth,
                     controls.raw_bytes,
+                    controls.structure_depth,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )

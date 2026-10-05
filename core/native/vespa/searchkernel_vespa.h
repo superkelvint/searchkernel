@@ -176,7 +176,7 @@ typedef struct sk_grouping_filter sk_grouping_filter;
 
 /* ABI revision 16. Diagnostics add setters/accessors around opaque handles;
    existing signatures, layouts and behavior remain compatible. */
-#define SK_NATIVE_ABI_VERSION 16U
+#define SK_NATIVE_ABI_VERSION 17U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -747,7 +747,7 @@ SK_API int32_t sk_generic_search_request_set_timeout(
 SK_API int32_t sk_generic_search_request_set_diagnostics(
     sk_generic_search_request *request, uint32_t trace_level,
     uint32_t matching_depth, uint32_t first_phase_depth,
-    uint32_t second_phase_depth, uint32_t raw_bytes,
+    uint32_t second_phase_depth, uint32_t raw_bytes, uint32_t structure_depth,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_sort(
     sk_generic_search_request *request, const char *field, uint32_t order,
@@ -818,6 +818,20 @@ SK_API int32_t sk_diagnostic_tensor_decode(
     uint32_t type_capacity, uint32_t *out_type_length, double *cells,
     uint32_t cell_capacity, uint32_t *out_cell_count,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT;
+/* ABI 17 diagnostic projection v1. section: 0 matching, 1 first phase,
+ * 2 second phase, 3 iterator, 4 optimized blueprint. status: 0 Available,
+ * 1 Unsupported, 2 UnavailableForQuery, 3 Truncated, 4 TimedOut, 5 Failed.
+ * Result owns the <=65536-byte UTF-8 Search Kernel schema buffer. Borrow is
+ * valid until result destruction; concurrent immutable reads are allowed.
+ * Copy before freeing result. No Vespa layout or arbitrary Slime is exposed.
+ * Nodes are preorder records with parent index (-1 root), thread index, name,
+ * optional count/total_ms/self_ms. Report roots preserve engine elapsed totals.
+ * Absence of self_ms is preserved. Provenance: engine/revision/native_abi.
+ */
+SK_API int32_t sk_generic_search_result_diagnostic_section(
+    const sk_generic_search_result *result, uint32_t section,
+    uint32_t *out_status, const uint8_t **out_data, uint32_t *out_length,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_diagnostics(
     const sk_generic_search_result *result, const uint8_t **out_trace,
     uint32_t *out_length, uint32_t *out_truncated,

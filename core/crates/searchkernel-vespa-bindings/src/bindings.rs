@@ -88,7 +88,7 @@ pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
 pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
 pub const SK_FEATURE_VALUE_DATA: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 16;
+pub const SK_NATIVE_ABI_VERSION: u32 = 17;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -1545,6 +1545,7 @@ unsafe extern "C" {
         first_phase_depth: u32,
         second_phase_depth: u32,
         raw_bytes: u32,
+        structure_depth: u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
@@ -1692,6 +1693,17 @@ unsafe extern "C" {
         out_cell_count: *mut u32,
         error: *mut u8,
         error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_diagnostic_section(
+        result: *const sk_generic_search_result,
+        section: u32,
+        out_status: *mut u32,
+        out_data: *mut *const u8,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {

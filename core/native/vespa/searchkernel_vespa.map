@@ -141,6 +141,7 @@ SEARCHKERNEL_2 {
         sk_local_search_result_destroy;
         sk_generic_search_request_create;
         sk_generic_search_request_set_timeout;
+        sk_generic_search_request_set_diagnostics;
         sk_generic_search_request_add_sort;
         sk_generic_search_request_set_sort_spec;
         sk_generic_search_request_add_summary_field;
@@ -153,6 +154,9 @@ SEARCHKERNEL_2 {
         sk_generic_search_request_add_grouping_plan;
         sk_generic_search_request_destroy;
         sk_engine_search_generic;
+        sk_generic_search_result_diagnostic_section;
+        sk_generic_search_result_diagnostics;
+        sk_diagnostic_tensor_decode;
         sk_generic_search_result_total_hit_count;
         sk_generic_search_result_hit_count;
         sk_generic_search_result_coverage_active;

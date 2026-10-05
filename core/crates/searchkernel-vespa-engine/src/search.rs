@@ -155,6 +155,7 @@ pub struct SearchResult {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchDiagnostics {
+    pub sections: Vec<crate::DiagnosticEvidence>,
     pub trace: String,
     pub truncated: bool,
     pub features_truncated: bool,
@@ -165,6 +166,7 @@ pub struct SearchDiagnostics {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchDiagnosticControls {
+    pub structure_depth: u32,
     pub trace_level: u32,
     pub matching_depth: u32,
     pub first_phase_depth: u32,

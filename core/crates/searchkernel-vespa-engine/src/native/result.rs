@@ -49,6 +49,7 @@ pub(crate) fn read_generic_search_result(
             unsafe { std::slice::from_raw_parts(trace, length as usize) }
         };
         Some(crate::search::SearchDiagnostics {
+            sections: read_diagnostic_sections(result.0.as_ptr())?,
             trace: match std::str::from_utf8(bytes) {
                 Ok(value) => value.to_owned(),
                 Err(error) if truncated & 1 != 0 => {
@@ -526,4 +527,64 @@ fn read_search_facet(
         groups.push(FacetGroup { key, count });
     }
     Ok(FacetResult { groups })
+}
+
+fn read_diagnostic_sections(
+    result: *const sys::sk_generic_search_result,
+) -> Result<Vec<crate::DiagnosticEvidence>, Error> {
+    use crate::{DiagnosticEvidence, DiagnosticSection as Section, DiagnosticStatus as Status};
+    let mut sections = Vec::with_capacity(5);
+    for (index, section) in [
+        Section::MatchingProfiler,
+        Section::FirstPhaseProfiler,
+        Section::SecondPhaseProfiler,
+        Section::IteratorTree,
+        Section::Blueprint,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut data = ptr::null();
+        let mut length = 0;
+        let mut state = 0;
+        let mut error = NativeError::new();
+        // Result owns immutable buffers; decode/copy before its Drop.
+        let status = unsafe {
+            sys::sk_generic_search_result_diagnostic_section(
+                result,
+                index as u32,
+                &mut state,
+                &mut data,
+                &mut length,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        if length > 65_536 || (length != 0 && data.is_null()) {
+            return Err(Error::message("invalid native diagnostic section buffer"));
+        }
+        let status = match state {
+            0 => Status::Available,
+            1 => Status::Unsupported,
+            2 => Status::UnavailableForQuery,
+            3 => Status::Truncated,
+            4 => Status::TimedOut,
+            5 => Status::Failed,
+            _ => return Err(Error::message("invalid native diagnostic section status")),
+        };
+        let projection = if length == 0 {
+            None
+        } else {
+            Some(crate::diagnostics::decode_projection(unsafe {
+                std::slice::from_raw_parts(data, length as usize)
+            })?)
+        };
+        sections.push(DiagnosticEvidence {
+            section,
+            status,
+            projection,
+        });
+    }
+    Ok(sections)
 }

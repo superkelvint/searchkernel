@@ -107,13 +107,40 @@ public:
     std::string payload() const { return {_buffer.data(), _used}; }
 };
 
+// JsonFormat traverses recursively. Check depth and work before handing it
+// engine-owned Slime; throwing also stops ObjectTraverser on very wide objects.
+struct DiagnosticStructureLimit {};
+void check_diagnostic_structure(const vespalib::slime::Inspector& value,
+                                uint32_t depth, uint32_t limit, size_t& remaining) {
+    if (depth > limit || remaining == 0) throw DiagnosticStructureLimit{};
+    --remaining;
+    if (sk_diagnostics::array(value)) {
+        for (size_t i = 0; i < value.entries(); ++i) check_diagnostic_structure(value[i], depth + 1, limit, remaining);
+    } else if (sk_diagnostics::object(value)) {
+        struct Fields : vespalib::slime::ObjectTraverser {
+            uint32_t depth;
+            uint32_t limit;
+            size_t& remaining;
+            Fields(uint32_t d, uint32_t l, size_t& r) : depth(d), limit(l), remaining(r) {}
+            void field(const vespalib::Memory&, const vespalib::slime::Inspector& child) override {
+                check_diagnostic_structure(child, depth + 1, limit, remaining);
+            }
+        } fields(depth, limit, remaining);
+        value.traverse(fields);
+    }
+}
+
 void capture_diagnostic_trace(const search::engine::Trace &trace,
-                              uint32_t limit, LocalSearchResultState &result) {
+                              uint32_t limit, uint32_t depth_limit, LocalSearchResultState &result) {
     if (!trace.hasTrace() || limit == 0) return;
     BoundedDiagnosticOutput output(limit);
     try {
+        size_t remaining = 4096;
+        check_diagnostic_structure(trace.getSlime().get(), 0, depth_limit, remaining);
         vespalib::slime::JsonFormat::encode(trace.getSlime(), output, true);
     } catch (const DiagnosticOutputFull &) {
+        result.diagnostic_truncated = true;
+    } catch (const DiagnosticStructureLimit &) {
         result.diagnostic_truncated = true;
     }
     result.diagnostic_trace = output.payload();
@@ -4344,9 +4371,17 @@ public:
         if (options.diagnostic_raw_bytes != 0) {
             result.diagnostic_truncated = request_truncated;
             result.diagnostic_matching_seconds = std::chrono::duration<double>(match_end - match_start).count();
-            capture_diagnostic_trace(request.trace(), options.diagnostic_raw_bytes, result);
+            result.diagnostic_sections = sk_diagnostics::project(request.trace().getSlime().get(),
+                {options.diagnostic_matching_depth, options.diagnostic_first_phase_depth,
+                 options.diagnostic_second_phase_depth}, options.diagnostic_structure_depth);
+            capture_diagnostic_trace(request.trace(), options.diagnostic_raw_bytes, options.diagnostic_structure_depth, result);
         }
         copy_search_reply_metadata(*reply, result);
+        if (result.degradation_flags & SK_DEGRADATION_TIMEOUT) {
+            for (auto& section : result.diagnostic_sections) {
+                if (section.status == sk_diagnostics::UnavailableForQuery) section.status = sk_diagnostics::TimedOut;
+            }
+        }
         const auto &features = reply->match_features;
         if (features.values.size() != features.names.size() * reply->hits.size()) {
             throw std::runtime_error("native match-feature matrix shape mismatch");

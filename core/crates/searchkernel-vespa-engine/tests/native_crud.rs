@@ -2141,6 +2141,12 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
             RankProfile::new("diagnostic")
                 .first_phase("query(weight)")
                 .query_input("private_tensor", "tensor<float>(x[512])"),
+        )
+        .rank_profile(
+            RankProfile::new("both_phases")
+                .first_phase("query(weight)")
+                .second_phase("query(weight)")
+                .rerank_count(10),
         );
     ConfigCompiler
         .compile_to(&schema, &config)
@@ -2174,6 +2180,7 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
 
     let mut diagnostic = request.clone();
     diagnostic.diagnostics = Some(SearchDiagnosticControls {
+        structure_depth: 16,
         // Even trace level zero must include the final request snapshot.
         trace_level: 0,
         matching_depth: 0,
@@ -2243,6 +2250,69 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
     assert_eq!(sorted_raw["final_matcher_request"]["sort"], "-qty");
 
     // Output limits and structural limits are independent and both explicit.
+    // Raw bytes and semantic sections have independent acquisition budgets.
+    let mut projected = diagnostic.clone();
+    let controls = projected.diagnostics.as_mut().unwrap();
+    controls.trace_level = 7;
+    controls.matching_depth = 8;
+    controls.first_phase_depth = 8;
+    controls.second_phase_depth = 8;
+    controls.raw_bytes = 128;
+    let structured = engine
+        .search(projected.clone())
+        .unwrap()
+        .diagnostics
+        .unwrap();
+    assert!(structured.truncated);
+    use searchkernel_vespa_engine::{DiagnosticSection as Section, DiagnosticStatus as Status};
+    for section in [
+        Section::MatchingProfiler,
+        Section::FirstPhaseProfiler,
+        Section::IteratorTree,
+        Section::Blueprint,
+    ] {
+        let item = structured
+            .sections
+            .iter()
+            .find(|item| item.section == section)
+            .unwrap();
+        assert_eq!(item.status, Status::Available, "{section:?}");
+        let projection = item.projection.as_ref().unwrap();
+        assert_eq!(projection.engine, "Vespa");
+        let pin: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../reference/vespa/PINNED_VESPA.json"
+        ))
+        .unwrap();
+        assert_eq!(projection.revision, pin["commit"].as_str().unwrap());
+        assert_eq!(
+            projection.native_abi,
+            pin["native_abi_version"].as_u64().unwrap() as u32
+        );
+        assert!(!projection.nodes.is_empty());
+    }
+    let second = structured
+        .sections
+        .iter()
+        .find(|item| item.section == Section::SecondPhaseProfiler)
+        .unwrap();
+    assert_eq!(second.status, Status::UnavailableForQuery);
+
+    projected.rank_profile = "both_phases".into();
+    let ranked = engine.search(projected).unwrap().diagnostics.unwrap();
+    let second = ranked
+        .sections
+        .iter()
+        .find(|item| item.section == Section::SecondPhaseProfiler)
+        .unwrap();
+    assert_eq!(second.status, Status::Available);
+    assert!(second
+        .projection
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .any(|node| node.count.is_some()));
+
     diagnostic.diagnostics.as_mut().unwrap().raw_bytes = 128;
     let tiny = engine
         .search(diagnostic.clone())

@@ -44,13 +44,19 @@ signals, returned-set ordinals/ties, expected-document stages, result divergence
 and section availability. Provenance is Profile, Engine, or Calculated.
 Configured phase facts do not imply per-hit phase participation or causality.
 
-`searchkernel-ir-adapter` maps typed evidence requests to pinned Vespa trace and
-matching/first-phase/second-phase profiling controls. Raw trees remain under
-`RawEngineDiagnostics`, with engine name, pinned source version, execution ID,
-media type, and status. Raw keys are neither portable semantics nor UI parsers.
-The adapter recognizes observed profiler/iterator sections and reports unavailable
-sections honestly. Measured profiler totals are summed across engine threads;
-they are not wall-clock latency. Ordinary timing and diagnostic timing stay separate.
+`searchkernel-ir-adapter` maps typed evidence requests to engine diagnostic
+controls. ABI 17 projects matching/first-/second-phase profiler, optimized
+blueprint, and iterator structures in native C++ before raw trace encoding.
+Rust maps Search Kernel-owned node records and independent statuses into portable
+evidence; it does not interpret engine trace tags. Each section carries engine,
+pinned revision, and ABI provenance. See `core/native/vespa/README.md` for the
+pinned paths, bounds, and topology limitations.
+
+Raw trace remains separate `RawEngineDiagnostics` with execution ID, media type,
+and status. Raw truncation cannot change structured section status. Profiler
+report-root totals may be summed across captured threads; descendant totals are
+never included in that sum. This measures profiled thread time, not wall-clock
+latency. Missing self time remains absent.
 
 Intentional configured match features supply scalar and supported dense tensor
 signals. Tensor decoding uses Vespa's binary tensor codec at the opaque native
@@ -137,8 +143,9 @@ These must remain explicit rather than receive frontend approximations:
   acquired. No React string matching or counterfactual score inference is used.
 - Exact comparison supports an isolated canonical typed nearest-neighbor root
   within the configured bound. Arbitrary opaque YQL/hybrid trees are not rewritten.
-- Vespa's current trace emits iterator/profiler evidence, but a blueprint tree and
-  full raw engine request/response are not exported through the native boundary.
+- The native boundary projects optimized blueprint and iterator topology.
+  It does not claim per-hit causality, candidate admission, or a full raw engine
+  response. The bounded final matcher request remains separate raw evidence.
 - Diagnostic tensor decoding currently supports single-indexed dense tensors.
   Other tensor forms remain unavailable rather than lose shape/type information.
 
