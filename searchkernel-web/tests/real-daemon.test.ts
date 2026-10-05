@@ -51,7 +51,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     expect(explained.hits[0]?.signals.find(value => value.name === 'bm25(title)')?.comparisonCount).toBe(2)
     expect(explained.evidence.find(value => value.section === DiagnosticSection.Counterfactual)?.status).toBe(DiagnosticStatus.Unsupported)
     const neighbor = parseTypedQuery({ source_type: 'TypedQuery', source: { query: {
-      expr_type: 'QueryNearestNeighbor', expr: { document_field: { field: 'embedding' }, query_tensor: 'q' },
+      expr_type: 'QueryNearestNeighbor', expr: { document_field: { path: 'embedding' }, query_tensor: 'q' },
       annotations: [
         { key: 'approximate', value: { kind_type: 'BoolValue', kind: { value: true } } },
         { key: 'targetNumHits', value: { kind_type: 'Int64Value', kind: { value: '10' } } },
@@ -621,9 +621,9 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W1 real Sear
     await page.getByLabel('Query mode').selectOption('text')
     await page.goBack()
     expect(page.url()).toBe(typedUrl)
-    expect(await page.getByLabel('Query mode').inputValue()).toBe('typed')
+    await expect.poll(() => page.getByLabel('Query mode').inputValue()).toBe('typed')
     await page.goForward()
-    expect(await page.getByLabel('Query mode').inputValue()).toBe('text')
+    await expect.poll(() => page.getByLabel('Query mode').inputValue()).toBe('text')
     await page.getByLabel('Search this index').fill('nomatch')
     await page.locator('form').getByRole('button', { name: 'Search', exact: true }).click()
     await page.getByText('No hits matched this query.', { exact: true }).waitFor()
