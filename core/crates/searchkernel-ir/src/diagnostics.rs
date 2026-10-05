@@ -387,12 +387,10 @@ fn scan_exact_nn(
             let total_target_hits =
                 exact_nn_u32_annotation(&expression.annotations, "totalTargetHits")?;
             let target_hits = match (target_num_hits, total_target_hits) {
-                (Some(_), Some(_)) => {
-                    return Err(
-                        "nearest-neighbor may specify only one of targetNumHits and totalTargetHits"
-                            .into(),
-                    )
-                }
+                (Some(_), Some(_)) => return Err(
+                    "nearest-neighbor may specify only one of targetNumHits and totalTargetHits"
+                        .into(),
+                ),
                 (Some(value), None) | (None, Some(value)) => value,
                 (None, None) => 100,
             };
@@ -420,23 +418,13 @@ fn scan_exact_nn(
             scan_children(children, "or", eligible_path, scan)?;
         }
         QueryExprKindIr::Rank { matching, ranking } => {
-            scan_exact_nn(
-                matching,
-                &format!("{path}.rank.match"),
-                eligible_path,
-                scan,
-            )?;
+            scan_exact_nn(matching, &format!("{path}.rank.match"), eligible_path, scan)?;
             // Rank-only branches are preserved byte-for-byte, but an NN inside
             // one is not a retrieval target for an exact-retrieval diagnostic.
             scan_children(ranking, "rank.ranking", false, scan)?;
         }
         QueryExprKindIr::Labeled { query, .. } => {
-            scan_exact_nn(
-                query,
-                &format!("{path}.labeled.query"),
-                eligible_path,
-                scan,
-            )?;
+            scan_exact_nn(query, &format!("{path}.labeled.query"), eligible_path, scan)?;
         }
         QueryExprKindIr::NonEmpty(query) => {
             scan_exact_nn(
@@ -597,7 +585,9 @@ fn exact_variant(
         unreachable!("typed query was checked above");
     };
     if !set_exact_nn_at_path(expression, "query", &candidate.query_path) {
-        return Err("failed to locate the selected nearest-neighbor node in the cloned query".into());
+        return Err(
+            "failed to locate the selected nearest-neighbor node in the cloned query".into(),
+        );
     }
 
     Ok(ExactVariant {
@@ -1228,10 +1218,8 @@ pub fn execute(
                     "query_tensor".into(),
                     Value::String(plan.query_tensor.clone()),
                 );
-                item.values.insert(
-                    "target_hits".into(),
-                    Value::UInt64(plan.target_hits.into()),
-                );
+                item.values
+                    .insert("target_hits".into(), Value::UInt64(plan.target_hits.into()));
                 item.canonical_request = Some(plan.request.clone());
 
                 match bounded_request(&plan.request, &input.limits, deadline).and_then(|variant| {
@@ -1296,10 +1284,7 @@ pub fn execute(
                                         .iter()
                                         .map(|movement| {
                                             Value::Object(BTreeMap::from([
-                                                (
-                                                    "id".into(),
-                                                    Value::String(movement.id.clone()),
-                                                ),
+                                                ("id".into(), Value::String(movement.id.clone())),
                                                 (
                                                     "baseline_position".into(),
                                                     movement

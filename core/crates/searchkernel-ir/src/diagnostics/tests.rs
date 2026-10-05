@@ -212,7 +212,8 @@ fn exact_variants_clone_safe_typed_hybrids_and_change_only_the_selected_nn_flag(
 }
 
 #[test]
-fn exact_variants_support_rank_matching_paths_but_refuse_ambiguous_opaque_and_non_monotonic_cases() {
+fn exact_variants_support_rank_matching_paths_but_refuse_ambiguous_opaque_and_non_monotonic_cases()
+{
     let mut request = request();
     request.query = QueryIr::Typed(Box::new(QueryExprIr {
         kind: QueryExprKindIr::Rank {
