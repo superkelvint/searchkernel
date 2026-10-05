@@ -1747,6 +1747,17 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_generic_search_result_diagnostic_section(
+        result: *const sk_generic_search_result,
+        section: u32,
+        out_status: *mut u32,
+        out_data: *mut *const u8,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_result_diagnostics(
         result: *const sk_generic_search_result,
         out_trace: *mut *const u8,
