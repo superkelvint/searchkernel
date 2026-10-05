@@ -548,8 +548,7 @@ fn diagnostic_tensor_feature_issue(
     hit_id: Option<&str>,
     error: &searchkernel_vespa_engine::Error,
 ) -> searchkernel_ir::Value {
-    let status = if error.detail_code()
-        == Some("diagnostic_tensor_cell_budget_exceeded")
+    let status = if error.detail_code() == Some("diagnostic_tensor_cell_budget_exceeded")
         || error.kind() == searchkernel_vespa_engine::ErrorKind::ResourceExhausted
     {
         "truncated"

@@ -37,8 +37,7 @@ pub(crate) fn read_generic_search_result(
     let diagnostics = if query_seconds == 0.0 && length == 0 && truncated == 0 {
         None
     } else {
-        let truncated_features =
-            read_diagnostic_truncated_features(result.0.as_ptr())?;
+        let truncated_features = read_diagnostic_truncated_features(result.0.as_ptr())?;
         if (truncated & 2 != 0) != !truncated_features.is_empty() {
             return Err(Error::message(
                 "native diagnostic feature truncation metadata is inconsistent",
@@ -540,9 +539,7 @@ fn read_search_facet(
 fn read_diagnostic_truncated_features(
     result: *const sys::sk_generic_search_result,
 ) -> Result<Vec<String>, Error> {
-    let count = unsafe {
-        sys::sk_generic_search_result_diagnostic_truncated_feature_count(result)
-    };
+    let count = unsafe { sys::sk_generic_search_result_diagnostic_truncated_feature_count(result) };
     let mut names = Vec::with_capacity(count as usize);
     for index in 0..count {
         let mut name = ptr::null();
@@ -566,13 +563,9 @@ fn read_diagnostic_truncated_features(
                 "native diagnostic truncated feature name is invalid",
             ));
         }
-        let bytes = unsafe {
-            std::slice::from_raw_parts(name.cast::<u8>(), length as usize)
-        };
+        let bytes = unsafe { std::slice::from_raw_parts(name.cast::<u8>(), length as usize) };
         let name = String::from_utf8(bytes.to_vec())
-            .map_err(|_| Error::message(
-                "native diagnostic truncated feature name is not UTF-8",
-            ))?;
+            .map_err(|_| Error::message("native diagnostic truncated feature name is not UTF-8"))?;
         if names.iter().any(|existing| existing == &name) {
             return Err(Error::message(
                 "native diagnostic truncated feature names contain duplicates",

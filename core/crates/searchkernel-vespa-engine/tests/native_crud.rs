@@ -2178,9 +2178,7 @@ fn diagnostic_tensor_decoder_preserves_general_vespa_tensor_shapes() {
     let dense = decoded
         .iter()
         .find_map(|value| match value {
-            TensorValue::Dense { type_spec, values }
-                if type_spec == "tensor(x[2],y[2])" =>
-            {
+            TensorValue::Dense { type_spec, values } if type_spec == "tensor(x[2],y[2])" => {
                 Some(values)
             }
             _ => None,
@@ -2191,11 +2189,7 @@ fn diagnostic_tensor_decoder_preserves_general_vespa_tensor_shapes() {
     let sparse = decoded
         .iter()
         .find_map(|value| match value {
-            TensorValue::Sparse { type_spec, cells }
-                if type_spec == "tensor(tag{})" =>
-            {
-                Some(cells)
-            }
+            TensorValue::Sparse { type_spec, cells } if type_spec == "tensor(tag{})" => Some(cells),
             _ => None,
         })
         .expect("mapped sparse feature");
@@ -2224,8 +2218,7 @@ fn diagnostic_tensor_decoder_preserves_general_vespa_tensor_shapes() {
         .zip(decoded.iter())
         .find_map(|(bytes, value)| match value {
             TensorValue::Mixed { type_spec, blocks }
-                if type_spec == "tensor(x[2],tag{})"
-                    || type_spec == "tensor(tag{},x[2])" =>
+                if type_spec == "tensor(x[2],tag{})" || type_spec == "tensor(tag{},x[2])" =>
             {
                 Some((bytes, blocks))
             }
@@ -2264,10 +2257,7 @@ fn diagnostic_tensor_decoder_preserves_general_vespa_tensor_shapes() {
     );
     let malformed = searchkernel_vespa_engine::decode_diagnostic_tensor(&[0xff, 0xff], 32)
         .expect_err("malformed tensor bytes must fail closed");
-    assert_eq!(
-        malformed.detail_code(),
-        Some("diagnostic_tensor_malformed")
-    );
+    assert_eq!(malformed.detail_code(), Some("diagnostic_tensor_malformed"));
 
     engine.close().expect("close diagnostic tensor fixture");
     let _ = fs::remove_dir_all(config);

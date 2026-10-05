@@ -109,8 +109,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
         ));
     }
 
-    let block_count =
-        unsafe { sys::sk_diagnostic_tensor_block_count(tensor.0.as_ptr()) };
+    let block_count = unsafe { sys::sk_diagnostic_tensor_block_count(tensor.0.as_ptr()) };
     if block_count > max_cells.max(1) {
         return Err(Error::message(
             "native diagnostic tensor returned too many blocks",
@@ -120,10 +119,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
     let mut blocks = Vec::with_capacity(block_count as usize);
     for block_index in 0..block_count {
         let address_count = unsafe {
-            sys::sk_diagnostic_tensor_block_address_count(
-                tensor.0.as_ptr(),
-                block_index,
-            )
+            sys::sk_diagnostic_tensor_block_address_count(tensor.0.as_ptr(), block_index)
         };
         if address_count > 4096 {
             return Err(Error::message(
@@ -153,8 +149,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
                 },
                 &error,
             )?;
-            let dimension =
-                diagnostic_tensor_text(dimension, dimension_length, "dimension name")?;
+            let dimension = diagnostic_tensor_text(dimension, dimension_length, "dimension name")?;
             if dimension.is_empty() {
                 return Err(Error::message(
                     "native diagnostic tensor returned an empty dimension name",
@@ -193,10 +188,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
         let values = if value_count == 0 {
             Vec::new()
         } else {
-            unsafe {
-                std::slice::from_raw_parts(values, value_count as usize)
-            }
-            .to_vec()
+            unsafe { std::slice::from_raw_parts(values, value_count as usize) }.to_vec()
         };
         if values.iter().any(|value| !value.is_finite()) {
             return Err(Error::message(

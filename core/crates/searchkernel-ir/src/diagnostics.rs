@@ -605,11 +605,7 @@ pub fn execute(
         ranking.status = DiagnosticStatus::Truncated;
         warnings.push("Ranking evidence exceeded the hit/tensor limit.".into());
     }
-    if let Some(issues) = acquired
-        .result
-        .metadata
-        .get("diagnostic_feature_issues")
-    {
+    if let Some(issues) = acquired.result.metadata.get("diagnostic_feature_issues") {
         let has_budget_truncation = match issues {
             Value::List(items) => items.iter().any(|item| {
                 matches!(
