@@ -141,8 +141,8 @@ These must remain explicit rather than receive frontend approximations:
   observes fresh GET and returned status; intermediate stages are unavailable.
 - Authoritative matched terms/offsets and forced-document evaluation are not
   acquired. No React string matching or counterfactual score inference is used.
-- Exact comparison supports an isolated canonical typed nearest-neighbor root
-  within the configured bound. Arbitrary opaque YQL/hybrid trees are not rewritten.
+- Exact comparison supports one unambiguous canonical typed nearest-neighbor operator within the configured bound when its path is retrieval-preserving: the root, AND/OR children, transparent labeled/non-empty wrappers, or the matching side of rank. The counterfactual clones the canonical request and changes only that NN node's `approximate` annotation; filters, siblings, rank-only branches, ranking, query tensors, target-hit budget, sorting and result controls are preserved.
+- Multiple NN candidates without a selected identity, NN nested under negation/proximity/equivalence/weak-AND/rank-only structures, parser-driven userInput/userQuery nodes, and opaque YQL remain explicitly unsupported. Exact-comparison evidence records the changed query-tree path and before/after annotation values.
 - The native boundary projects optimized blueprint and iterator topology.
   It does not claim per-hit causality, candidate admission, or a full raw engine
   response. The bounded final matcher request remains separate raw evidence.

@@ -9,7 +9,7 @@ import { createServer, createConnection } from 'node:net'
 import { Daemon, Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client/node'
 
 test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diagnostics keep original results, investigate, compare, experiment and reject reincarnation', async () => {
-  const { RankProfile, TensorField, Tensor, SearchRequestBuilder, QueryDiagnosticsRequestT, DiagnosticIntent, DiagnosticSection, DiagnosticStatus, DiagnosticLimitsT, OptionalUInt32T, fromCanonicalJson, toCanonicalJson, q, TypedQueryT, ValueEntryT, value } = await import('@searchkernel/client/node')
+  const { RankProfile, TensorField, Tensor, SearchRequestBuilder, QueryDiagnosticsRequestT, DiagnosticIntent, DiagnosticSection, DiagnosticStatus, DiagnosticLimitsT, OptionalUInt32T, fromCanonicalJson, toCanonicalJson, parseTypedQuery, q } = await import('@searchkernel/client/node')
   const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-w5-e2e-'))
   const grpcPort = await port(), webPort = await port(), uiPort = await port()
   const endpoint = `127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`, ui = `http://127.0.0.1:${uiPort}`
@@ -50,15 +50,25 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     expect(explained.hits).toHaveLength(2)
     expect(explained.hits[0]?.signals.find(value => value.name === 'bm25(title)')?.comparisonCount).toBe(2)
     expect(explained.evidence.find(value => value.section === DiagnosticSection.Counterfactual)?.status).toBe(DiagnosticStatus.Unsupported)
-    const neighbor = q.nearestNeighbor('embedding', 'q')
-    ;(neighbor.source as InstanceType<typeof TypedQueryT>).query!.annotations = [new ValueEntryT('approximate', value(true)), new ValueEntryT('targetNumHits', value(10))]
-    const vectorRequest = new SearchRequestBuilder(neighbor).ranking('vector').input('q', Tensor.dense('tensor(x[2])', [1, 0])).limit(2).build()
+    const neighbor = parseTypedQuery({ source_type: 'TypedQuery', source: { query: {
+      expr_type: 'QueryNearestNeighbor', expr: { document_field: { path: 'embedding' }, query_tensor: 'q' },
+      annotations: [
+        { key: 'approximate', value: { kind_type: 'BoolValue', kind: { value: true } } },
+        { key: 'targetNumHits', value: { kind_type: 'Int64Value', kind: { value: '10' } } },
+      ],
+    } } })
+    const hybridVector = q.allOf(neighbor, q.range('quantity', 0, 1000))
+    const vectorRequest = new SearchRequestBuilder(hybridVector).ranking('vector').input('q', Tensor.dense('tensor(x[2])', [1, 0])).limit(2).build()
     const vectorDiagnostic = new QueryDiagnosticsRequestT(vectorRequest, DiagnosticIntent.VectorRetrieval, [DiagnosticSection.Vectors])
     vectorDiagnostic.compareExact = true
     const vectors = await index.queryDiagnostics(vectorDiagnostic)
     const exact = vectors.evidence.find(value => value.id === 'exact-comparison')
     expect(exact?.status).toBe(DiagnosticStatus.Available)
-    expect(JSON.stringify(toCanonicalJson(exact!))).toContain('overlap_count')
+    const exactJson = JSON.stringify(toCanonicalJson(exact!))
+    expect(exactJson).toContain('overlap_count')
+    expect(exactJson).toContain('rank_movements')
+    expect(exactJson).toContain('changed_query_path')
+    expect(exactJson).toContain('query.and[0]')
     expect(JSON.stringify(toCanonicalJson(vectors.hits[0]!.signals.find(value => value.name === 'query(q)')!))).toContain('tensor(x[2])')
     const profileDiagnostic = new QueryDiagnosticsRequestT(canonical, DiagnosticIntent.Performance, [DiagnosticSection.MatchingProfiler, DiagnosticSection.FirstPhaseProfiler, DiagnosticSection.SecondPhaseProfiler])
     const profiled = await index.queryDiagnostics(profileDiagnostic)
