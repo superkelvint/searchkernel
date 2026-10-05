@@ -2136,9 +2136,14 @@ fn diagnostic_tensor_decoder_preserves_general_vespa_tensor_shapes() {
         .rank_profile(
             RankProfile::new("tensor_features")
                 .first_phase("1")
-                .match_feature("tensor(x[2],y[2]):[[1,2],[3,4]]")
-                .match_feature("tensor(tag{}):{alpha:5,beta:7}")
-                .match_feature("tensor(tag{},x[2]):{alpha:[1,2],beta:[3,4]}"),
+                // Match features must be feature names. The pinned Vespa
+                // RankingExpressionBlueprint accepts an inline expression as
+                // its quoted parameter when no rankingScript is configured.
+                .match_feature(r#"rankingExpression("tensor(x[2],y[2]):[[1,2],[3,4]]")"#)
+                .match_feature(r#"rankingExpression("tensor(tag{}):{alpha:5,beta:7}")"#)
+                .match_feature(
+                    r#"rankingExpression("tensor(tag{},x[2]):{alpha:[1,2],beta:[3,4]}")"#,
+                ),
         );
     ConfigCompiler
         .compile_to(&schema, &config)
