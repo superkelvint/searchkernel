@@ -8,6 +8,60 @@ import { resolve } from 'node:path'
 import { createServer, createConnection } from 'node:net'
 import { Daemon, Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client/node'
 
+test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('first-search journey uses real creation, write, read, search and returning-user paths', async () => {
+  const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-first-search-'))
+  const grpcPort = await port(), webPort = await port(), uiPort = await port()
+  const endpoint = `127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`, ui = `http://127.0.0.1:${uiPort}`
+  let daemon: ChildProcess | undefined, vite: ChildProcess | undefined, browser: Browser | undefined, index: Index | undefined
+  try {
+    daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'), ['--data-root', root, '--listen', endpoint, '--web-listen', `127.0.0.1:${webPort}`, '--web-origin', ui], { stdio: 'inherit' })
+    await reachable(webEndpoint, daemon)
+    vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort'], { env: { ...process.env, VITE_SEARCHKERNEL_ENDPOINT: webEndpoint }, stdio: 'inherit' })
+    await reachable(ui, vite)
+    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await page.goto(ui)
+    await page.getByRole('link', { name: 'Create searchable collection', exact: true }).waitFor()
+    await page.goto(`${ui}/indexes`)
+    await page.getByRole('link', { name: 'Create searchable collection', exact: true }).click()
+    await page.getByLabel('Collection name', { exact: true }).fill('first_collection')
+    await page.getByLabel('Field 1 name').fill('title')
+    await page.getByRole('button', { name: 'Check fields', exact: true }).click()
+    await page.getByRole('checkbox', { name: /Create the collection first_collection/ }).check()
+    await page.getByRole('button', { name: 'Create collection', exact: true }).click()
+    await page.waitForURL('**/data/documents?**')
+    const generation = new URL(page.url()).searchParams.get('generation')!
+    expect(generation).toBeTruthy()
+    await page.getByRole('button', { name: 'Add first document', exact: true }).click()
+    await page.getByLabel('Mutation document ID').fill('first-record')
+    await page.getByLabel('Document field title').fill('orchid first journey')
+    await page.getByRole('button', { name: 'Save document', exact: true }).click()
+    await page.getByRole('link', { name: 'Try your first search', exact: true }).waitFor()
+    index = await Index.open(endpoint, 'first_collection')
+    expect((await index.get('first-record'))?.title).toBe('orchid first journey')
+    await page.getByRole('link', { name: 'Try your first search', exact: true }).click()
+    expect(new URL(page.url()).searchParams.get('generation')).toBe(generation)
+    await page.getByLabel('Search this index').fill('orchid')
+    await page.locator('form').getByRole('button', { name: 'Search', exact: true }).click()
+    await page.getByRole('region', { name: 'Search results' }).getByText('first-record', { exact: true }).waitFor()
+    await page.getByText('Your search returned documents from Search Kernel.', { exact: false }).waitFor()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.reload()
+    await page.getByRole('region', { name: 'Search results' }).getByText('first-record', { exact: true }).waitFor()
+    await page.goto(`${ui}/indexes/first_collection/overview?generation=${generation}`)
+    await page.getByRole('button', { name: 'Search documents', exact: true }).waitFor()
+    expect(await page.getByRole('region', { name: 'Collection next step' }).count()).toBe(0)
+    await page.getByText('Index connection details', { exact: true }).click()
+    await page.getByRole('button', { name: 'Refresh selected incarnation' }).waitFor({ state: 'visible' })
+    await page.goto(`${ui}/indexes/new`)
+    await page.getByLabel('Index target', { exact: true }).waitFor()
+    await page.getByLabel('Schema name', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).waitFor()
+  } finally {
+    await index?.close(); await browser?.close(); await stop(vite); await stop(daemon); await rm(root, { recursive: true, force: true })
+  }
+}, 180_000)
+
 test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diagnostics keep original results, investigate, compare, experiment and reject reincarnation', async () => {
   const { RankProfile, TensorField, Tensor, SearchRequestBuilder, QueryDiagnosticsRequestT, DiagnosticIntent, DiagnosticSection, DiagnosticStatus, DiagnosticLimitsT, OptionalUInt32T, fromCanonicalJson, toCanonicalJson, parseTypedQuery, q } = await import('@searchkernel/client/node')
   const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-w5-e2e-'))
