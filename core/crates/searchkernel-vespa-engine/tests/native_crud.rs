@@ -2126,6 +2126,155 @@ fn native_ffi_accepts_zero_byte_string_arrays_and_predicate_features() {
 }
 
 #[test]
+fn diagnostic_tensor_decoder_preserves_general_vespa_tensor_shapes() {
+    use searchkernel_vespa_engine::{RankProfile, TensorValue};
+
+    let config = temporary_path("diagnostic-tensor-config");
+    let data = temporary_path("diagnostic-tensor-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("qty", FieldType::Integer).attribute())
+        .rank_profile(
+            RankProfile::new("tensor_features")
+                .first_phase("1")
+                .match_feature("tensor(x[2],y[2]):[[1,2],[3,4]]")
+                .match_feature("tensor(tag{}):{alpha:5,beta:7}")
+                .match_feature("tensor(tag{},x[2]):{alpha:[1,2],beta:[3,4]}"),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile diagnostic tensor fixture");
+    let engine = Engine::open(&data, &config).expect("open diagnostic tensor fixture");
+    engine
+        .put(Document::new("doc-1").field("qty", 1_i64))
+        .expect("insert diagnostic tensor fixture");
+
+    let result = engine
+        .search(
+            SearchRequest::new(Query::True)
+                .rank_profile("tensor_features")
+                .limit(1),
+        )
+        .expect("execute tensor feature search");
+    let hit = result.hits.first().expect("tensor feature hit");
+    assert_eq!(hit.match_features.len(), 3);
+    let encoded = hit
+        .match_features
+        .values()
+        .map(|value| {
+            value
+                .as_data()
+                .expect("ordinary search must preserve tensor features as raw DATA")
+                .to_vec()
+        })
+        .collect::<Vec<_>>();
+    let decoded = encoded
+        .iter()
+        .map(|bytes| {
+            searchkernel_vespa_engine::decode_diagnostic_tensor(bytes, 32)
+                .expect("diagnostic tensor should decode")
+        })
+        .collect::<Vec<_>>();
+
+    let dense = decoded
+        .iter()
+        .find_map(|value| match value {
+            TensorValue::Dense { type_spec, values }
+                if type_spec == "tensor(x[2],y[2])" =>
+            {
+                Some(values)
+            }
+            _ => None,
+        })
+        .expect("multi-dimensional dense feature");
+    assert_eq!(dense, &[1.0, 2.0, 3.0, 4.0]);
+
+    let sparse = decoded
+        .iter()
+        .find_map(|value| match value {
+            TensorValue::Sparse { type_spec, cells }
+                if type_spec == "tensor(tag{})" =>
+            {
+                Some(cells)
+            }
+            _ => None,
+        })
+        .expect("mapped sparse feature");
+    let mut sparse_values = sparse
+        .iter()
+        .map(|cell| {
+            (
+                cell.address
+                    .iter()
+                    .find(|entry| entry.dimension == "tag")
+                    .expect("sparse tag address")
+                    .label
+                    .clone(),
+                cell.value,
+            )
+        })
+        .collect::<Vec<_>>();
+    sparse_values.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(
+        sparse_values,
+        vec![("alpha".to_owned(), 5.0), ("beta".to_owned(), 7.0)]
+    );
+
+    let (mixed_bytes, mixed) = encoded
+        .iter()
+        .zip(decoded.iter())
+        .find_map(|(bytes, value)| match value {
+            TensorValue::Mixed { type_spec, blocks }
+                if type_spec == "tensor(x[2],tag{})"
+                    || type_spec == "tensor(tag{},x[2])" =>
+            {
+                Some((bytes, blocks))
+            }
+            _ => None,
+        })
+        .expect("mixed feature");
+    let mut mixed_values = mixed
+        .iter()
+        .map(|block| {
+            (
+                block
+                    .address
+                    .iter()
+                    .find(|entry| entry.dimension == "tag")
+                    .expect("mixed tag address")
+                    .label
+                    .clone(),
+                block.values.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    mixed_values.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(
+        mixed_values,
+        vec![
+            ("alpha".to_owned(), vec![1.0, 2.0]),
+            ("beta".to_owned(), vec![3.0, 4.0]),
+        ]
+    );
+
+    let budget = searchkernel_vespa_engine::decode_diagnostic_tensor(mixed_bytes, 3)
+        .expect_err("cell budget must reject before materializing the full tensor");
+    assert_eq!(
+        budget.detail_code(),
+        Some("diagnostic_tensor_cell_budget_exceeded")
+    );
+    let malformed = searchkernel_vespa_engine::decode_diagnostic_tensor(&[0xff, 0xff], 32)
+        .expect_err("malformed tensor bytes must fail closed");
+    assert_eq!(
+        malformed.detail_code(),
+        Some("diagnostic_tensor_malformed")
+    );
+
+    engine.close().expect("close diagnostic tensor fixture");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
     use searchkernel_vespa_engine::{
         RankProfile, SearchDiagnosticControls, SortField, TensorValue,

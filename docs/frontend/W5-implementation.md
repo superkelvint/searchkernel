@@ -58,7 +58,7 @@ report-root totals may be summed across captured threads; descendant totals are
 never included in that sum. This measures profiled thread time, not wall-clock
 latency. Missing self time remains absent.
 
-Intentional configured match features supply scalar and supported dense tensor
+Intentional configured match features supply scalar and portable tensor
 signals. Tensor decoding uses Vespa's binary tensor codec at the opaque native
 ABI boundary. Unsupported tensor representations are omitted with explicit
 unavailable-feature metadata, never replaced with a fabricated feature value.
@@ -146,8 +146,10 @@ These must remain explicit rather than receive frontend approximations:
 - The native boundary projects optimized blueprint and iterator topology.
   It does not claim per-hit causality, candidate admission, or a full raw engine
   response. The bounded final matcher request remains separate raw evidence.
-- Diagnostic tensor decoding currently supports single-indexed dense tensors.
-  Other tensor forms remain unavailable rather than lose shape/type information.
+- Diagnostic tensor decoding accepts bounded multi-dimensional dense, mapped/sparse,
+  and mixed Vespa tensors whenever the portable tensor IR can represent them losslessly.
+  Malformed, unsupported, and budget-truncated feature values are reported per feature
+  so one unusable signal does not erase unrelated ranking evidence.
 
 ## Human usability acceptance remains required
 

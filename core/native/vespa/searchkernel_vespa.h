@@ -146,6 +146,7 @@ typedef struct sk_generic_grouping_request sk_generic_grouping_request;
 typedef struct sk_local_search_result sk_generic_search_result;
 typedef struct sk_local_grouping_result sk_generic_grouping_result;
 typedef struct sk_feature_value sk_feature_value;
+typedef struct sk_diagnostic_tensor sk_diagnostic_tensor;
 
 /* FeatureSet::Value is deliberately narrower than the general Search Kernel
  * value model: Vespa exposes either a scalar double or an opaque data payload.
@@ -153,6 +154,9 @@ typedef struct sk_feature_value sk_feature_value;
 #define SK_FEATURE_VALUE_KIND_INVALID 0U
 #define SK_FEATURE_VALUE_DOUBLE 1U
 #define SK_FEATURE_VALUE_DATA 2U
+#define SK_DIAGNOSTIC_TENSOR_DENSE 1U
+#define SK_DIAGNOSTIC_TENSOR_SPARSE 2U
+#define SK_DIAGNOSTIC_TENSOR_MIXED 3U
 typedef struct sk_grouping_plan sk_grouping_plan;
 typedef struct sk_grouping_level sk_grouping_level;
 typedef struct sk_grouping_expression sk_grouping_expression;
@@ -811,12 +815,35 @@ SK_API uint32_t sk_generic_search_result_issue_count(
    them before releasing the opaque result. Truncated payloads are prefixes,
    not complete JSON; timings are measured seconds from this execution.
    out_truncated is a mask: 1=trace prefix, 2=omitted oversized DATA columns. */
-/* Caller-owned output buffers; independent calls retain no pointers. Decoding
-   is above the unchanged raw DOUBLE/DATA feature ABI, using Vespa's codec. */
+/* Diagnostic tensor decoding is above the unchanged raw DOUBLE/DATA feature
+   ABI. The opaque result owns its type, mapped labels and normalized f64 cells.
+   cell_limit is enforced by the decoder's value-builder factory before Vespa
+   materializes declared tensor cells. */
 SK_API int32_t sk_diagnostic_tensor_decode(
-    const uint8_t *data, uint32_t length, char *type_spec,
-    uint32_t type_capacity, uint32_t *out_type_length, double *cells,
-    uint32_t cell_capacity, uint32_t *out_cell_count,
+    const uint8_t *data, uint32_t length, uint32_t cell_limit,
+    sk_diagnostic_tensor **out_tensor, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT;
+SK_API void sk_diagnostic_tensor_destroy(
+    sk_diagnostic_tensor *tensor) SK_NOEXCEPT;
+SK_API uint32_t sk_diagnostic_tensor_kind(
+    const sk_diagnostic_tensor *tensor) SK_NOEXCEPT;
+SK_API int32_t sk_diagnostic_tensor_type_spec(
+    const sk_diagnostic_tensor *tensor, const char **out_type,
+    uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_diagnostic_tensor_block_count(
+    const sk_diagnostic_tensor *tensor) SK_NOEXCEPT;
+SK_API uint32_t sk_diagnostic_tensor_block_address_count(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index) SK_NOEXCEPT;
+SK_API int32_t sk_diagnostic_tensor_block_address(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index,
+    uint32_t address_index, const char **out_dimension,
+    uint32_t *out_dimension_length, const char **out_label,
+    uint32_t *out_label_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_diagnostic_tensor_block_values(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index,
+    const double **out_values, uint32_t *out_value_count,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT;
 /* ABI 17 diagnostic projection v1. section: 0 matching, 1 first phase,
  * 2 second phase, 3 iterator, 4 optimized blueprint. status: 0 Available,
@@ -837,6 +864,12 @@ SK_API int32_t sk_generic_search_result_diagnostics(
     uint32_t *out_length, uint32_t *out_truncated,
     double *out_matching_seconds, double *out_summary_seconds,
     double *out_query_seconds, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_diagnostic_truncated_feature_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_diagnostic_truncated_feature_name(
+    const sk_generic_search_result *result, uint32_t index,
+    const char **out_name, uint32_t *out_length, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_issue_message(
     const sk_generic_search_result *result, uint32_t index,

@@ -163,6 +163,7 @@
 #include <vespa/eval/eval/tensor_spec.h>
 #include <vespa/eval/eval/typed_cells.h>
 #include <vespa/eval/eval/value_codec.h>
+#include <vespa/vespalib/util/shared_string_repo.h>
 #include <vespa/vespalib/util/shared_operation_throttler.h>
 
 #include <vespa/persistence/dummyimpl/dummy_bucket_executor.h>
@@ -481,6 +482,17 @@ struct OwnedValue {
     std::vector<std::vector<std::pair<std::string, OwnedValue>>> struct_elements;
 };
 
+struct DiagnosticTensorBlockState {
+    std::vector<std::pair<std::string, std::string>> address;
+    std::vector<double> values;
+};
+
+struct DiagnosticTensorState {
+    uint32_t kind = 0;
+    std::string type_spec;
+    std::vector<DiagnosticTensorBlockState> blocks;
+};
+
 struct DocumentFieldState {
     std::string name;
     OwnedValue value;
@@ -610,6 +622,7 @@ struct LocalSearchResultState {
     sk_diagnostics::Sections diagnostic_sections;
     bool diagnostic_truncated = false;
     bool diagnostic_features_truncated = false;
+    std::vector<std::string> diagnostic_truncated_feature_names;
     double diagnostic_matching_seconds = 0.0;
     double diagnostic_summary_seconds = 0.0;
     double diagnostic_query_seconds = 0.0;

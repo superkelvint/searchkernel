@@ -156,7 +156,16 @@ SEARCHKERNEL_2 {
         sk_engine_search_generic;
         sk_generic_search_result_diagnostic_section;
         sk_generic_search_result_diagnostics;
+        sk_generic_search_result_diagnostic_truncated_feature_count;
+        sk_generic_search_result_diagnostic_truncated_feature_name;
         sk_diagnostic_tensor_decode;
+        sk_diagnostic_tensor_destroy;
+        sk_diagnostic_tensor_kind;
+        sk_diagnostic_tensor_type_spec;
+        sk_diagnostic_tensor_block_count;
+        sk_diagnostic_tensor_block_address_count;
+        sk_diagnostic_tensor_block_address;
+        sk_diagnostic_tensor_block_values;
         sk_generic_search_result_total_hit_count;
         sk_generic_search_result_hit_count;
         sk_generic_search_result_coverage_active;

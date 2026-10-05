@@ -8,6 +8,8 @@ namespace {
 std::string encode_dense_tensor(const char *type_spec, const double *values,
                                 uint32_t value_count);
 std::vector<double> dense_tensor_cells(const vespalib::eval::Value &tensor);
+DiagnosticTensorState decode_diagnostic_tensor(
+    const uint8_t *data, uint32_t length, uint32_t cell_limit);
 OwnedValue make_dense_tensor_value(const char *type_spec, const double *values,
                                    uint32_t value_count);
 std::chrono::milliseconds remaining_search_timeout(
@@ -72,6 +74,7 @@ struct sk_local_grouping_result : LocalGroupingResultState {
 };
 struct sk_generic_search_request : sk_local_search_request {};
 struct sk_generic_grouping_request : sk_local_grouping_request {};
+struct sk_diagnostic_tensor : DiagnosticTensorState {};
 
 template <typename Function>
 void run_open_stage(const char *stage, Function &&function) {
@@ -2965,33 +2968,100 @@ extern "C" uint64_t sk_generic_search_result_total_hit_count(
 }
 
 extern "C" int32_t sk_diagnostic_tensor_decode(
-    const uint8_t *data, uint32_t length, char *type_spec,
-    uint32_t type_capacity, uint32_t *out_type_length, double *cells,
-    uint32_t cell_capacity, uint32_t *out_cell_count,
-    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
-    if (out_type_length) *out_type_length = 0;
-    if (out_cell_count) *out_cell_count = 0;
+    const uint8_t *data, uint32_t length, uint32_t cell_limit,
+    sk_diagnostic_tensor **out_tensor, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_tensor) *out_tensor = nullptr;
+    if (!data || !out_tensor || length == 0 || length > 262144 ||
+        cell_limit == 0 || cell_limit > 4096) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic tensor arguments exceed bounds");
+    }
     return invoke(error, error_capacity, [&] {
-        if (!data || !type_spec || !cells || !out_type_length || !out_cell_count ||
-            length == 0 || length > 262144 || cell_capacity == 0 || cell_capacity > 4096) {
-            throw std::invalid_argument("diagnostic tensor arguments exceed bounds");
-        }
-        vespalib::nbostream stream(reinterpret_cast<const char *>(data), length);
-        auto tensor = vespalib::eval::decode_value(stream, vespalib::eval::FastValueBuilderFactory::get());
-        if (tensor->type().count_mapped_dimensions() != 0 || tensor->type().count_indexed_dimensions() != 1) {
-            throw UnsupportedNativeError("diagnostic_tensor_shape_unsupported", "this integration normalizes only single-indexed dense ranking tensors");
-        }
-        if (tensor->cells().size > cell_capacity) {
-            throw TensorValidationError("diagnostic_tensor_truncated", "ranking tensor exceeds the diagnostic cell budget");
-        }
-        const auto type = tensor->type().to_spec();
-        if (type.size() > type_capacity) throw std::invalid_argument("tensor type exceeds output capacity");
-        const auto values = dense_tensor_cells(*tensor);
-        std::memcpy(type_spec, type.data(), type.size());
-        std::copy(values.begin(), values.end(), cells);
-        *out_type_length = static_cast<uint32_t>(type.size());
-        *out_cell_count = static_cast<uint32_t>(values.size());
+        auto tensor = std::make_unique<sk_diagnostic_tensor>();
+        static_cast<DiagnosticTensorState &>(*tensor) =
+            decode_diagnostic_tensor(data, length, cell_limit);
+        *out_tensor = tensor.release();
     });
+}
+
+extern "C" void sk_diagnostic_tensor_destroy(
+    sk_diagnostic_tensor *tensor) SK_NOEXCEPT {
+    destroy_noexcept(tensor);
+}
+
+extern "C" uint32_t sk_diagnostic_tensor_kind(
+    const sk_diagnostic_tensor *tensor) SK_NOEXCEPT {
+    return tensor ? tensor->kind : 0;
+}
+
+extern "C" int32_t sk_diagnostic_tensor_type_spec(
+    const sk_diagnostic_tensor *tensor, const char **out_type,
+    uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_type) *out_type = nullptr;
+    if (out_length) *out_length = 0;
+    if (!tensor || !out_type || !out_length) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic tensor type arguments are invalid");
+    }
+    *out_type = tensor->type_spec.data();
+    *out_length = static_cast<uint32_t>(tensor->type_spec.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" uint32_t sk_diagnostic_tensor_block_count(
+    const sk_diagnostic_tensor *tensor) SK_NOEXCEPT {
+    return tensor ? static_cast<uint32_t>(tensor->blocks.size()) : 0;
+}
+
+extern "C" uint32_t sk_diagnostic_tensor_block_address_count(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index) SK_NOEXCEPT {
+    if (!tensor || block_index >= tensor->blocks.size()) return 0;
+    return static_cast<uint32_t>(
+        tensor->blocks[block_index].address.size());
+}
+
+extern "C" int32_t sk_diagnostic_tensor_block_address(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index,
+    uint32_t address_index, const char **out_dimension,
+    uint32_t *out_dimension_length, const char **out_label,
+    uint32_t *out_label_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_dimension) *out_dimension = nullptr;
+    if (out_dimension_length) *out_dimension_length = 0;
+    if (out_label) *out_label = nullptr;
+    if (out_label_length) *out_label_length = 0;
+    if (!tensor || !out_dimension || !out_dimension_length || !out_label ||
+        !out_label_length || block_index >= tensor->blocks.size() ||
+        address_index >= tensor->blocks[block_index].address.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic tensor address arguments are invalid");
+    }
+    const auto &entry =
+        tensor->blocks[block_index].address[address_index];
+    *out_dimension = entry.first.data();
+    *out_dimension_length = static_cast<uint32_t>(entry.first.size());
+    *out_label = entry.second.data();
+    *out_label_length = static_cast<uint32_t>(entry.second.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" int32_t sk_diagnostic_tensor_block_values(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index,
+    const double **out_values, uint32_t *out_value_count,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_values) *out_values = nullptr;
+    if (out_value_count) *out_value_count = 0;
+    if (!tensor || !out_values || !out_value_count ||
+        block_index >= tensor->blocks.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic tensor value arguments are invalid");
+    }
+    const auto &values = tensor->blocks[block_index].values;
+    *out_values = values.data();
+    *out_value_count = static_cast<uint32_t>(values.size());
+    return SK_NATIVE_STATUS_OK;
 }
 
 extern "C" int32_t sk_generic_search_result_diagnostic_section(
@@ -3028,6 +3098,31 @@ extern "C" int32_t sk_generic_search_result_diagnostics(
     *out_query_seconds = result->diagnostic_query_seconds;
     return SK_NATIVE_STATUS_OK;
 }
+
+extern "C" uint32_t sk_generic_search_result_diagnostic_truncated_feature_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result
+        ? static_cast<uint32_t>(result->diagnostic_truncated_feature_names.size())
+        : 0;
+}
+
+extern "C" int32_t sk_generic_search_result_diagnostic_truncated_feature_name(
+    const sk_generic_search_result *result, uint32_t index,
+    const char **out_name, uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_name) *out_name = nullptr;
+    if (out_length) *out_length = 0;
+    if (!result || !out_name || !out_length ||
+        index >= result->diagnostic_truncated_feature_names.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic truncated feature arguments are invalid");
+    }
+    const auto &name = result->diagnostic_truncated_feature_names[index];
+    *out_name = name.data();
+    *out_length = static_cast<uint32_t>(name.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
 extern "C" uint32_t sk_generic_search_result_hit_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {
     return sk_local_search_result_hit_count(static_cast<const sk_local_search_result *>(result));

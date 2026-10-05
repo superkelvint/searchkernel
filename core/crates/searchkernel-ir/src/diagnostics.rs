@@ -605,15 +605,31 @@ pub fn execute(
         ranking.status = DiagnosticStatus::Truncated;
         warnings.push("Ranking evidence exceeded the hit/tensor limit.".into());
     }
-    if let Some(unavailable) = acquired
+    if let Some(issues) = acquired
         .result
         .metadata
-        .get("diagnostic_unavailable_features")
+        .get("diagnostic_feature_issues")
     {
+        let has_budget_truncation = match issues {
+            Value::List(items) => items.iter().any(|item| {
+                matches!(
+                    item,
+                    Value::Object(fields)
+                        if matches!(
+                            fields.get("status"),
+                            Some(Value::String(status)) if status == "truncated"
+                        )
+                )
+            }),
+            _ => false,
+        };
+        if has_budget_truncation {
+            ranking.status = DiagnosticStatus::Truncated;
+        }
         ranking
             .values
-            .insert("unavailable_features".into(), unavailable.clone());
-        warnings.push("Some configured ranking features could not be decoded within supported tensor types and diagnostic limits. Their values were omitted.".into());
+            .insert("feature_issues".into(), issues.clone());
+        warnings.push("Some ranking feature evidence was omitted. Per-feature status and code distinguish unsupported values, malformed data, and diagnostic-budget truncation.".into());
     }
     let mut timing = evidence("timing", DiagnosticSection::Timing, &execution,
         "Timing from this diagnostic rerun. Original timing remains in the original search response.");

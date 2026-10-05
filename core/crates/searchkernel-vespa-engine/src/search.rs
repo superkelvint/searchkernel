@@ -159,6 +159,9 @@ pub struct SearchDiagnostics {
     pub trace: String,
     pub truncated: bool,
     pub features_truncated: bool,
+    /// Feature columns omitted before decode because the diagnostic raw-byte
+    /// budget was exhausted.
+    pub truncated_features: Vec<String>,
     pub matching_seconds: f64,
     pub summary_seconds: f64,
     pub query_seconds: f64,

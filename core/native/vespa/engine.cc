@@ -4405,7 +4405,11 @@ public:
                 result.match_feature_names.push_back(features.names[column]);
                 feature_columns.push_back(column);
                 if (options.diagnostic_raw_bytes != 0) feature_bytes_remaining -= bytes;
-            } else { result.diagnostic_features_truncated = true; }
+            } else {
+                result.diagnostic_features_truncated = true;
+                result.diagnostic_truncated_feature_names.push_back(
+                    features.names[column]);
+            }
         }
         std::vector<size_t> live_hit_rows;
         live_hit_rows.reserve(reply->hits.size());

@@ -267,11 +267,12 @@ impl VespaBackend {
                 "native search returned an unexpected structured grouping count",
             ));
         }
-        let mut unavailable_features = std::collections::BTreeMap::new();
+        let mut feature_issues = Vec::new();
         let mut children = result
             .hits
             .into_iter()
             .map(|hit| {
+                let hit_id = hit.document_id.clone();
                 Ok(searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
                     id: hit.document_id,
                     score: Some(hit.score),
@@ -322,10 +323,11 @@ impl VespaBackend {
                                                 crate::tensor_to_ir(&tensor),
                                             ),
                                             Err(error) => {
-                                                unavailable_features.insert(
-                                                    name,
-                                                    searchkernel_ir::Value::String(
-                                                        error.to_string(),
+                                                feature_issues.push(
+                                                    diagnostic_tensor_feature_issue(
+                                                        &name,
+                                                        Some(&hit_id),
+                                                        &error,
                                                     ),
                                                 );
                                                 return None;
@@ -388,6 +390,17 @@ impl VespaBackend {
         let feature_payload_truncated = native_diagnostics
             .as_ref()
             .is_some_and(|value| value.features_truncated);
+        if let Some(value) = native_diagnostics.as_ref() {
+            for name in &value.truncated_features {
+                feature_issues.push(diagnostic_feature_issue(
+                    name,
+                    None,
+                    "truncated",
+                    "diagnostic_tensor_byte_budget_exceeded",
+                    "feature payload was omitted before decoding because the diagnostic raw-byte budget was exhausted",
+                ));
+            }
+        }
         let mut timing = native_diagnostics
             .as_ref()
             .map(|value| searchkernel_ir::SearchTiming {
@@ -482,10 +495,10 @@ impl VespaBackend {
                             searchkernel_ir::Value::Bool(true),
                         );
                     }
-                    if !unavailable_features.is_empty() {
+                    if !feature_issues.is_empty() {
                         metadata.insert(
-                            "diagnostic_unavailable_features".into(),
-                            searchkernel_ir::Value::Object(unavailable_features),
+                            "diagnostic_feature_issues".into(),
+                            searchkernel_ir::Value::List(feature_issues),
                         );
                     }
                     metadata
@@ -495,6 +508,65 @@ impl VespaBackend {
             structured_evidence,
         })
     }
+}
+
+fn diagnostic_feature_issue(
+    feature: &str,
+    hit_id: Option<&str>,
+    status: &str,
+    code: &str,
+    message: &str,
+) -> searchkernel_ir::Value {
+    searchkernel_ir::Value::Object(std::collections::BTreeMap::from([
+        (
+            "feature".into(),
+            searchkernel_ir::Value::String(feature.to_owned()),
+        ),
+        (
+            "hit_id".into(),
+            hit_id
+                .map(|value| searchkernel_ir::Value::String(value.to_owned()))
+                .unwrap_or(searchkernel_ir::Value::Null),
+        ),
+        (
+            "status".into(),
+            searchkernel_ir::Value::String(status.to_owned()),
+        ),
+        (
+            "code".into(),
+            searchkernel_ir::Value::String(code.to_owned()),
+        ),
+        (
+            "message".into(),
+            searchkernel_ir::Value::String(message.to_owned()),
+        ),
+    ]))
+}
+
+fn diagnostic_tensor_feature_issue(
+    feature: &str,
+    hit_id: Option<&str>,
+    error: &searchkernel_vespa_engine::Error,
+) -> searchkernel_ir::Value {
+    let status = if error.detail_code()
+        == Some("diagnostic_tensor_cell_budget_exceeded")
+        || error.kind() == searchkernel_vespa_engine::ErrorKind::ResourceExhausted
+    {
+        "truncated"
+    } else if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
+        "unsupported"
+    } else {
+        "failed"
+    };
+    diagnostic_feature_issue(
+        feature,
+        hit_id,
+        status,
+        error
+            .detail_code()
+            .unwrap_or("diagnostic_tensor_decode_failed"),
+        &error.to_string(),
+    )
 }
 
 fn portable_diagnostic_evidence(
