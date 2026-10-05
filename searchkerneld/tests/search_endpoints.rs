@@ -24,8 +24,13 @@ fn policy() -> SearchEndpointPolicy {
 }
 
 fn docs_router() -> SearchEndpointRouter {
-    SearchEndpointRouter::new([SearchEndpointConfig::new("docs", "docs", policy())])
-        .expect("valid docs endpoint")
+    serde_json::from_value::<searchkerneld::search_endpoints::PublicSearchConfig>(serde_json::json!({
+        "behindRateLimitedProxy": true,
+        "endpoints": {"docs": {"target": "docs", "generation": "0123456789abcdef0123456789abcdef",
+            "fields": ["title"], "filterFields": {}, "facets": [], "highlights": [],
+            "policy": {"maxQueryStringBytes": 256, "maxParameters": 3, "maxQueryBytes": 64,
+                "defaultLimit": null, "maxLimit": 100, "maxOffset": 1000}}}
+    })).unwrap().compile().expect("valid production docs endpoint")
 }
 
 fn decode_search(bytes: &[u8]) -> api::SearchRequest<'_> {

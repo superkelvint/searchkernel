@@ -1,0 +1,385 @@
+{
+  "schemaVersion": 1,
+  "profile": "searchkernel-instantsearch-1",
+  "releaseStatus": "qualified",
+  "packages": {
+    "instantsearch.js": "4.119.0",
+    "algoliasearch-helper": "3.30.0",
+    "algoliasearch": "5.59.0",
+    "@algolia/client-search": "5.59.0",
+    "react-instantsearch": "7.51.0",
+    "react-instantsearch-core": "7.51.0",
+    "vue-instantsearch": "4.30.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "vue": "3.5.43"
+  },
+  "frameworks": {
+    "react-instantsearch": {
+      "status": "constrained",
+      "acceptance": "react-profile",
+      "root": "InstantSearch",
+      "components": {
+        "searchBox": "SearchBox",
+        "hits": "Hits",
+        "pagination": "Pagination",
+        "hitsPerPage": "HitsPerPage",
+        "refinementList": "RefinementList",
+        "menu": "Menu",
+        "numericMenu": "useNumericMenu",
+        "sortBy": "SortBy",
+        "stats": "Stats",
+        "clearRefinements": "ClearRefinements",
+        "currentRefinements": "CurrentRefinements",
+        "configure": "Configure",
+        "index": "Index",
+        "Highlight": "Highlight",
+        "Snippet": "Snippet"
+      },
+      "constraints": "Client-side only; inherits the declared scalar fields, bounded request semantics and supported widget/helper profile. SSR, hydration, routing and unsupported underlying capabilities are not qualified. Configure numericFilters must not share a field with a managed NumericMenu refinement. Numeric menu uses the actual useNumericMenu hook; this version has no NumericMenu UI export. Search-client prop replacement is qualified."
+    },
+    "vue-instantsearch": {
+      "status": "constrained",
+      "acceptance": "vue3-profile",
+      "root": "AisInstantSearch",
+      "components": {
+        "searchBox": "AisSearchBox",
+        "hits": "AisHits",
+        "pagination": "AisPagination",
+        "hitsPerPage": "AisHitsPerPage",
+        "refinementList": "AisRefinementList",
+        "menu": "AisMenu",
+        "numericMenu": "AisNumericMenu",
+        "sortBy": "AisSortBy",
+        "stats": "AisStats",
+        "clearRefinements": "AisClearRefinements",
+        "currentRefinements": "AisCurrentRefinements",
+        "configure": "AisConfigure",
+        "index": "AisIndex",
+        "Highlight": "AisHighlight",
+        "Snippet": "AisSnippet"
+      },
+      "constraints": "Client-side only; inherits the declared scalar fields, bounded request semantics and supported widget/helper profile. SSR, hydration, routing and unsupported underlying capabilities are not qualified. Configure numericFilters must not share a field with a managed NumericMenu refinement. Vue 3 only, using vue-instantsearch/vue3/es. Keep a stable search-client reference: this pinned Vue watcher updates helper.client rather than the executing mainHelper; dynamic prop replacement is not supported by this qualification."
+    }
+  },
+  "methods": {
+    "search": {
+      "batchLimit": 16,
+      "failure": "Validate the whole batch before dispatch; reject on the first validation failure, otherwise the first execution failure in input order"
+    },
+    "addAlgoliaAgent": {
+      "behavior": "Accepted identification hint; no analytics or semantic effect"
+    },
+    "searchForFacetValues": {
+      "status": "unsupported"
+    },
+    "getRecommendations": {
+      "status": "unsupported"
+    }
+  },
+  "parameters": {
+    "query": "UTF-8 text; empty query is canonical browse",
+    "page": "Zero-based; checked offset = page * hitsPerPage; offset <= 10000",
+    "hitsPerPage": "Integer 0..100; zero is facet-only, page must be zero",
+    "facets": "Explicit configured fields or wildcard over configured facets only",
+    "facetFilters": "AND of strings or OR arrays; negative values and escaped leading minus",
+    "numericFilters": "AND of comparisons or OR arrays; =, !=, <, <=, >, >=",
+    "maxValuesPerFacet": "Integer 1..100; backend grouping limit",
+    "attributesToRetrieve": "Configured fields only; wildcard means configured projection",
+    "attributesToHighlight": "Configured scalar text fields only; canonical Vespa teaser fragments",
+    "attributesToSnippet": "Configured scalar text fields or configured-field wildcard; backend Juniper excerpts; Algolia :wordCount is unsupported",
+    "highlightPreTag": "Only the pinned consumer __ais-highlight__ placeholder",
+    "highlightPostTag": "Only the pinned consumer __/ais-highlight__ placeholder",
+    "analytics": "Only false; deliberately disables the unsupported analytics surface",
+    "clickAnalytics": "Only false; deliberately disables the unsupported analytics surface"
+  },
+  "response": [
+    "hits",
+    "objectID",
+    "_highlightResult",
+    "_snippetResult",
+    "nbHits",
+    "nbPages",
+    "page",
+    "hitsPerPage",
+    "query",
+    "index",
+    "processingTimeMS",
+    "exhaustiveNbHits",
+    "exhaustiveFacetsCount",
+    "facets",
+    "facets_stats",
+    "params"
+  ],
+  "helpers": {
+    "Highlight": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:highlight"
+      ],
+      "constraints": "Scalar top-level fields; backend excerpts and byte spans; matchLevel is partial or none, matchedWords are backend surface spans; escapeHTML:true"
+    },
+    "Snippet": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:snippet"
+      ],
+      "constraints": "Scalar top-level fields; backend Juniper excerpts; no Algolia word-count directives; missing field is absent"
+    }
+  },
+  "constraints": [
+    "Public endpoint names map to configured canonical targets and fixed generation tokens; sortBy choices map to explicit server-configured canonical sort expressions",
+    "Scalar string, boolean, int64 and float64 facet/filter fields only; numeric inputs must be exactly representable within JavaScript safe integer bounds",
+    "Hits uses upstream escapeHTML:true; custom highlight markup is unsupported",
+    "Highlight and Snippet display backend-selected excerpts, not a promise of full-field Algolia highlighting or Algolia word-count truncation",
+    "Facet-value search, hierarchical facets, facet ordering rules, arbitrary Algolia filters, replicas, ranking controls, analytics and recommendations are unsupported",
+    "No production support claim until the entire canonical compatibility verifier passes"
+  ],
+  "widgets": {
+    "EXPERIMENTAL_answers": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "EXPERIMENTAL_autocomplete": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "EXPERIMENTAL_configureRelatedItems": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "EXPERIMENTAL_dynamicWidgets": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "analytics": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "autocomplete": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "breadcrumb": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "chat": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "chatTrigger": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "clearRefinements": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:clearRefinements"
+      ],
+      "constraints": "Declared scalar facet and numeric refinements only"
+    },
+    "compareBar": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "configure": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:configure"
+      ],
+      "constraints": "Declared request parameter allowlist only; analytics:false"
+    },
+    "currentRefinements": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:currentRefinements"
+      ],
+      "constraints": "Declared scalar facet and numeric refinements only"
+    },
+    "dynamicWidgets": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "feeds": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "filterSuggestions": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "frequentlyBoughtTogether": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "geoSearch": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "hierarchicalMenu": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "hits": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:hits"
+      ],
+      "constraints": "escapeHTML:true; configured fields; Highlight/Snippet use scalar backend excerpts"
+    },
+    "hitsPerPage": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:hitsPerPage"
+      ],
+      "constraints": "Integer page sizes 1..100; checked offset <=10000"
+    },
+    "index": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:index"
+      ],
+      "constraints": "Configured public aliases only; combined batches <=16"
+    },
+    "infiniteHits": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "lookingSimilar": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "menu": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:menu"
+      ],
+      "constraints": "One selected scalar value of a configured facet"
+    },
+    "menuSelect": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "numericMenu": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:numericMenu"
+      ],
+      "constraints": "Configured numeric fields and typed inclusive/exclusive comparisons; no unrefined numeric statistics"
+    },
+    "pagination": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:pagination"
+      ],
+      "constraints": "Canonical backend limit/offset; checked offset <=10000"
+    },
+    "panel": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "places": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "poweredBy": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "promptSuggestions": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "queryRuleContext": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "queryRuleCustomData": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "rangeInput": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "rangeSlider": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "ratingMenu": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "refinementList": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:refinementList"
+      ],
+      "constraints": "Configured scalar facets; OR/AND; searchable:false; no hierarchical refinements"
+    },
+    "relatedProducts": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "relevantSort": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "resultCard": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "searchBox": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:searchBox"
+      ],
+      "constraints": "Canonical text queries <=4096 UTF-8 bytes; insights:false; empty text browses"
+    },
+    "sortBy": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:sortBy"
+      ],
+      "constraints": "Configured aliases with fixed canonical sorts; no arbitrary replica semantics"
+    },
+    "stats": {
+      "status": "constrained",
+      "acceptance": [
+        "real-engine:stats"
+      ],
+      "constraints": "Canonical total/relation and dispatch/projection wall time"
+    },
+    "toggleRefinement": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "trendingFacets": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "trendingItems": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    },
+    "voiceSearch": {
+      "status": "unsupported",
+      "reason": "Outside the declared backend and acceptance profile"
+    }
+  },
+  "upstreamSources": {
+    "instantsearch.js/es/widgets/index.js": "60008b5074992fab04c84785a5c0bdde4aab4649ea744523740487e9a09ec8a6",
+    "instantsearch.js/es/lib/InstantSearch.js": "8aacf6c0ada5199482a4e1c6c1e134295c147448d8ae199608f1e0f6565c0729",
+    "instantsearch.js/es/lib/utils/escape-highlight.js": "ca2927558ad00b48d4889d43355c461e2949893ff3d609acd3332ce60e697a5d",
+    "algoliasearch-helper/src/requestBuilder.js": "02fe18dfc9d8620281c9bd8f3f5aa4985b6d3feb8fcc3ef467883bb739f794dc",
+    "algoliasearch-helper/types/algoliasearch.d.ts": "2cc3a4b4295f439b045c7bb0ed4df119c8fe2a0e0c860802ada7b26b91d6f3d1",
+    "react-instantsearch-core/dist/es/lib/useInstantSearchApi.js": "35eb009a176b99d14f4ce3109a9280b66714b123d1b97b6f55a1d64061796bbb",
+    "react-instantsearch-core/dist/es/hooks/useInstantSearch.js": "ecd8381089ae7d25feaae26bf99ccbd65ed3edf69e90c236fcc217f9d3ae07b5",
+    "react-instantsearch-core/dist/es/connectors/useNumericMenu.js": "de26d8a20e12db05ba4126bcc45dcef61255911d301f553366eb3c6eac51a4ec",
+    "vue-instantsearch/vue3/es/src/util/createInstantSearchComponent.js": "2e61f3b4ca1720629f0f966a0d6d30e3d59b7ae4fe25da643303faade9a76be3",
+    "vue-instantsearch/vue3/es/src/components/InstantSearch.js": "287981f9dc5a2ed204c1e541e07f3a0b59a79a718b6481180356c9001e3934b8",
+    "vue-instantsearch/vue3/es/src/components/Highlight.vue3.js": "8494275f88a5dea81dc43b47a5f28c08927661d9c4eb21f5de800eb0a4c9875b",
+    "vue-instantsearch/vue3/es/src/components/Snippet.vue3.js": "e1797f06ee292146f4c4c57678b9bba2f473524ceead8836bc06b5cab301e5ef"
+  }
+}

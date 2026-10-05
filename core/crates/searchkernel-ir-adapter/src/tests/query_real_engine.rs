@@ -1,6 +1,198 @@
 use super::*;
 
 #[test]
+fn filter_and_typed_membership_agree_through_real_native_interm() {
+    let keyword = |name, array| {
+        let scalar = DataTypeIr::Primitive(PrimitiveDataTypeIr::String);
+        let mut member = FieldIr::new(
+            field(name),
+            if array {
+                DataTypeIr::Array(Box::new(scalar))
+            } else {
+                scalar
+            },
+            None,
+            FieldCapabilities::new(true, false, true, false, false),
+        );
+        member.set_matching_config(Some(MatchingConfigIr {
+            mode: MatchingModeIr::Exact,
+            options: BTreeMap::new(),
+        }));
+        member
+    };
+    let mut definition = IndexDefinitionIr::new(
+        None,
+        vec![
+            keyword("code", false),
+            keyword("tags", true),
+            FieldIr::new(
+                field("qty"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                None,
+                FieldCapabilities::new(true, false, true, false, false),
+            ),
+        ],
+        Vec::new(),
+    )
+    .unwrap();
+    definition.set_document_type("filter_membership");
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-filter-membership-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    compile_index_definition(&definition, root.join("config")).unwrap();
+    let backend = VespaBackend::open(root.join("data"), root.join("config")).unwrap();
+    for (id, code, tags, qty) in [
+        ("member-a", "alpha", vec!["red", "blue"], 1),
+        ("member-b", "beta", vec!["green"], 2),
+        ("member-c", "gamma", vec!["blue"], 3),
+    ] {
+        backend
+            .insert(InsertRequestIr::new(DocumentIr::new(
+                DocumentId::parse(id).unwrap(),
+                BTreeMap::from([
+                    (
+                        field("code"),
+                        FieldValueIr::Single(ScalarValueIr::String(code.into())),
+                    ),
+                    (
+                        field("tags"),
+                        FieldValueIr::Multi(
+                            tags.into_iter()
+                                .map(|tag| ScalarValueIr::String(tag.into()))
+                                .collect(),
+                        ),
+                    ),
+                    (
+                        field("qty"),
+                        FieldValueIr::Single(ScalarValueIr::Int64(qty)),
+                    ),
+                ]),
+            )))
+            .unwrap();
+    }
+    let context = IndexContext::from_definition_ir(definition.clone());
+    let canonical = |query, filter| {
+        let request = SearchRequestIr::new(
+            query,
+            Vec::new(),
+            filter,
+            Vec::new(),
+            10,
+            0,
+            ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        );
+        let bytes = searchkernel_ir::wire::v1::search_request_ir_to_api(&request);
+        let decoded = searchkernel_ir::__flatbuffers::root::<
+            searchkernel_ir::wire::v1::schema::SearchRequest,
+        >(&bytes)
+        .unwrap();
+        searchkernel_ir::wire::v1::search_to_ir(&context, decoded).unwrap()
+    };
+    let hit_ids = |request| {
+        let result = backend.search(request).unwrap();
+        let ResultNode::Group(group) = result.root else {
+            panic!("expected root group")
+        };
+        let mut ids: Vec<_> = group
+            .children
+            .into_iter()
+            .map(|node| match node {
+                ResultNode::Hit(hit) => hit.id.as_str().to_owned(),
+                ResultNode::Group(_) => panic!("unexpected nested group"),
+            })
+            .collect();
+        ids.sort();
+        ids
+    };
+    for (name, source, scalar, typed, expected) in [
+        (
+            "code",
+            "code IN ('alpha', 'gamma')",
+            vec![
+                ScalarValueIr::String("alpha".into()),
+                ScalarValueIr::String("gamma".into()),
+            ],
+            vec![
+                RequestValueIr::String("alpha".into()),
+                RequestValueIr::String("gamma".into()),
+            ],
+            vec!["member-a", "member-c"],
+        ),
+        (
+            "qty",
+            "qty IN (2, 99)",
+            vec![ScalarValueIr::Int64(2), ScalarValueIr::Int64(99)],
+            vec![RequestValueIr::Int64(2), RequestValueIr::Int64(99)],
+            vec!["member-b"],
+        ),
+        (
+            "tags",
+            "tags IN ('blue', 'missing')",
+            vec![
+                ScalarValueIr::String("blue".into()),
+                ScalarValueIr::String("missing".into()),
+            ],
+            vec![
+                RequestValueIr::String("blue".into()),
+                RequestValueIr::String("missing".into()),
+            ],
+            vec!["member-a", "member-c"],
+        ),
+    ] {
+        let structured = canonical(
+            QueryIr::MatchAll,
+            Some(FilterIr::In {
+                field: field(name),
+                values: scalar,
+            }),
+        );
+        let textual = canonical(
+            QueryIr::MatchAll,
+            Some(bind_filter_expression(source, &definition, &FilterParameters::new()).unwrap()),
+        );
+        assert_eq!(structured.filter(), textual.filter());
+        assert!(matches!(
+            lower_filter(structured.filter().unwrap()).unwrap(),
+            Query::In { .. }
+        ));
+        assert_eq!(hit_ids(structured), expected);
+        assert_eq!(hit_ids(textual), expected);
+        assert_eq!(
+            hit_ids(canonical(
+                typed_expression(QueryExprKindIr::In {
+                    field: typed_field(name),
+                    values: typed
+                }),
+                None
+            )),
+            expected
+        );
+    }
+    let large = FilterIr::In {
+        field: field("qty"),
+        values: (1..=1024).map(ScalarValueIr::Int64).collect(),
+    };
+    assert!(
+        matches!(lower_filter(&large).unwrap(), Query::In { values, .. } if values.len() == 1024)
+    );
+    assert_eq!(
+        hit_ids(canonical(QueryIr::MatchAll, Some(large))),
+        ["member-a", "member-b", "member-c"]
+    );
+    Box::new(backend).close().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     let root = std::env::temp_dir().join(format!(
         "searchkernel-adapter-typed-query-a-{}-{}",

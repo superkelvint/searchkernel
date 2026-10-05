@@ -3569,7 +3569,15 @@ extern "C" int32_t sk_query_add_in_strings(
                          "in query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        validate_query_field(*query, SK_QUERY_FIELD_STRING, field);
+        // InTerm supports membership in both scalar and multi-valued string
+        // attributes. Keep the scalar-string guard for other query operators.
+        validate_query_field(*query, SK_QUERY_FIELD_ATTRIBUTE, field);
+        const auto metadata = std::find_if(
+            query->fields.begin(), query->fields.end(),
+            [field](const auto &candidate) { return candidate.name == field; });
+        if (metadata->type != "string" && metadata->type != "array<string>") {
+            throw std::invalid_argument("in query requires a string attribute field");
+        }
         if (value_count == 0 || value_count > MAX_TEXT_TERMS || !value_lengths ||
             (!value_bytes && value_bytes_length != 0)) {
             throw std::invalid_argument("in query string values are invalid");

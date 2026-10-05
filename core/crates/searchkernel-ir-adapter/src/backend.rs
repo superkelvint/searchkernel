@@ -990,6 +990,12 @@ impl Backend for VespaBackend {
                 "the current native Vespa adapter cannot execute delete test-and-set conditions",
             ));
         }
+        // Native mutation calls wait for their source state after feeding Vespa.
+        // A same-document delete must not remove that state during a put's wait.
+        let existence_mutation_lock = self.existence_mutation_lock(request.id().as_str())?;
+        let _existence_mutation_guard = existence_mutation_lock
+            .lock()
+            .map_err(|_| internal("document existence mutation lock is poisoned"))?;
         let deleted = self
             .engine
             .delete(request.id().as_str())

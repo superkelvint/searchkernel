@@ -527,7 +527,10 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
         }
         Query::In { field, values } => match values.first() {
             Some(InQueryValue::String(_)) => {
-                validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field)
+                // The InTerm boundary checks scalar/array string type after
+                // this shared attribute check; other string operators retain
+                // their scalar-only guard.
+                validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)
             }
             Some(InQueryValue::Integer(_)) => {
                 validate_native_field(native, sys::SK_QUERY_FIELD_INTEGER, field)
