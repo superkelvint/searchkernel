@@ -167,8 +167,13 @@ fn exact_variants_clone_safe_typed_hybrids_and_change_only_the_selected_nn_flag(
     let mut request = request();
     request.query = QueryIr::Typed(Box::new(QueryExprIr {
         kind: QueryExprKindIr::And(vec![nn_expression(), comparison_expression()]),
-        annotations: BTreeMap::from([("filter".into(), RequestValueIr::Bool(true))]),
+        annotations: Default::default(),
     }));
+    request.filter = Some(FilterIr::Comparison(ComparisonIr::new(
+        FieldName::parse("quantity").unwrap(),
+        ComparisonOp::Gte,
+        ScalarValueIr::Int64(1),
+    )));
     let original = request.clone();
     let plan = exact_variant(&request, &DiagnosticLimits::default()).unwrap();
     assert_eq!(plan.query_path, "query.and[0]");
@@ -188,11 +193,7 @@ fn exact_variants_clone_safe_typed_hybrids_and_change_only_the_selected_nn_flag(
         RequestValueIr::Bool(false)
     );
     assert_eq!(children[1], comparison_expression());
-    assert_eq!(
-        root.annotations["filter"],
-        RequestValueIr::Bool(true),
-        "parent annotations must be preserved"
-    );
+    assert_eq!(plan.request.filter(), original.filter());
 
     // Reversing only the selected flag reconstructs the original request,
     // proving that no sibling/request-level semantics were rewritten.
@@ -221,7 +222,7 @@ fn exact_variants_support_rank_matching_paths_but_refuse_ambiguous_opaque_and_no
             }),
             ranking: vec![QueryExprIr {
                 kind: QueryExprKindIr::True,
-                annotations: BTreeMap::from([("rank-only".into(), RequestValueIr::Bool(true))]),
+                annotations: Default::default(),
             }],
         },
         annotations: Default::default(),
@@ -235,8 +236,11 @@ fn exact_variants_support_rank_matching_paths_but_refuse_ambiguous_opaque_and_no
         panic!("rank")
     };
     assert_eq!(
-        ranking[0].annotations["rank-only"],
-        RequestValueIr::Bool(true),
+        ranking[0],
+        QueryExprIr {
+            kind: QueryExprKindIr::True,
+            annotations: Default::default(),
+        },
         "rank-only branches must remain untouched"
     );
 
