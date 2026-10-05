@@ -313,36 +313,301 @@ fn friendly_filter(filter: &FilterIr) -> String {
     }
 }
 
-/// Only an isolated canonical NN operator has a supported exact comparison.
-/// We do not rewrite opaque YQL or arbitrary non-monotonic hybrid trees.
-fn exact_variant(request: &SearchRequestIr, limits: &DiagnosticLimits) -> Option<SearchRequestIr> {
+#[derive(Clone, Debug, PartialEq)]
+struct ExactVariant {
+    request: SearchRequestIr,
+    query_path: String,
+    document_field: String,
+    query_tensor: String,
+    previous_approximate: bool,
+    target_hits: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ExactNnCandidate {
+    query_path: String,
+    document_field: String,
+    query_tensor: String,
+    previous_approximate: bool,
+    target_hits: u32,
+    eligible_path: bool,
+}
+
+#[derive(Default)]
+struct ExactNnScan {
+    candidates: Vec<ExactNnCandidate>,
+    contains_parser_driven_query: bool,
+}
+
+fn exact_nn_u32_annotation(
+    annotations: &BTreeMap<String, RequestValueIr>,
+    key: &str,
+) -> std::result::Result<Option<u32>, String> {
+    match annotations.get(key) {
+        Some(RequestValueIr::Int64(value)) => u32::try_from(*value)
+            .map(Some)
+            .map_err(|_| format!("{key} must be a non-negative 32-bit integer")),
+        Some(RequestValueIr::UInt64(value)) => u32::try_from(*value)
+            .map(Some)
+            .map_err(|_| format!("{key} must fit in a 32-bit integer")),
+        None => Ok(None),
+        Some(_) => Err(format!("{key} must be an integer")),
+    }
+}
+
+fn scan_exact_nn(
+    expression: &QueryExprIr,
+    path: &str,
+    eligible_path: bool,
+    scan: &mut ExactNnScan,
+) -> std::result::Result<(), String> {
+    let scan_children = |children: &[QueryExprIr],
+                         operator: &str,
+                         child_eligible: bool,
+                         scan: &mut ExactNnScan|
+     -> std::result::Result<(), String> {
+        for (index, child) in children.iter().enumerate() {
+            scan_exact_nn(
+                child,
+                &format!("{path}.{operator}[{index}]"),
+                child_eligible,
+                scan,
+            )?;
+        }
+        Ok(())
+    };
+
+    match &expression.kind {
+        QueryExprKindIr::NearestNeighbor {
+            document_field,
+            query_tensor,
+        } => {
+            let target_num_hits =
+                exact_nn_u32_annotation(&expression.annotations, "targetNumHits")?;
+            let total_target_hits =
+                exact_nn_u32_annotation(&expression.annotations, "totalTargetHits")?;
+            let target_hits = match (target_num_hits, total_target_hits) {
+                (Some(_), Some(_)) => {
+                    return Err(
+                        "nearest-neighbor may specify only one of targetNumHits and totalTargetHits"
+                            .into(),
+                    )
+                }
+                (Some(value), None) | (None, Some(value)) => value,
+                (None, None) => 100,
+            };
+            let previous_approximate = match expression.annotations.get("approximate") {
+                Some(RequestValueIr::Bool(value)) => *value,
+                None => true,
+                Some(_) => return Err("nearest-neighbor approximate must be a boolean".into()),
+            };
+            scan.candidates.push(ExactNnCandidate {
+                query_path: path.into(),
+                document_field: document_field.path.as_str().into(),
+                query_tensor: query_tensor.clone(),
+                previous_approximate,
+                target_hits,
+                eligible_path,
+            });
+        }
+        QueryExprKindIr::UserInput { .. } | QueryExprKindIr::UserQuery { .. } => {
+            scan.contains_parser_driven_query = true;
+        }
+        QueryExprKindIr::And(children) => {
+            scan_children(children, "and", eligible_path, scan)?;
+        }
+        QueryExprKindIr::Or(children) => {
+            scan_children(children, "or", eligible_path, scan)?;
+        }
+        QueryExprKindIr::Rank { matching, ranking } => {
+            scan_exact_nn(
+                matching,
+                &format!("{path}.rank.match"),
+                eligible_path,
+                scan,
+            )?;
+            // Rank-only branches are preserved byte-for-byte, but an NN inside
+            // one is not a retrieval target for an exact-retrieval diagnostic.
+            scan_children(ranking, "rank.ranking", false, scan)?;
+        }
+        QueryExprKindIr::Labeled { query, .. } => {
+            scan_exact_nn(
+                query,
+                &format!("{path}.labeled.query"),
+                eligible_path,
+                scan,
+            )?;
+        }
+        QueryExprKindIr::NonEmpty(query) => {
+            scan_exact_nn(
+                query,
+                &format!("{path}.non_empty.query"),
+                eligible_path,
+                scan,
+            )?;
+        }
+        // These operators are structurally typed, but an NN nested inside them
+        // participates in negation, field scoping, proximity/equivalence, or
+        // another bounded candidate operator. We do not claim that replacing
+        // ANN with exact NN there isolates only ANN recall.
+        QueryExprKindIr::Contains { item, .. } => {
+            scan_exact_nn(item, &format!("{path}.contains.item"), false, scan)?;
+        }
+        QueryExprKindIr::Not(child) => {
+            scan_exact_nn(child, &format!("{path}.not.child"), false, scan)?;
+        }
+        QueryExprKindIr::Phrase(children) => {
+            scan_children(children, "phrase", false, scan)?;
+        }
+        QueryExprKindIr::Near { children, .. } => {
+            scan_children(children, "near", false, scan)?;
+        }
+        QueryExprKindIr::ONear { children, .. } => {
+            scan_children(children, "onear", false, scan)?;
+        }
+        QueryExprKindIr::SameElement(children) => {
+            scan_children(children, "same_element", false, scan)?;
+        }
+        QueryExprKindIr::Equiv(children) => {
+            scan_children(children, "equiv", false, scan)?;
+        }
+        QueryExprKindIr::Alternatives(values) => {
+            for (index, value) in values.iter().enumerate() {
+                scan_exact_nn(
+                    &value.query,
+                    &format!("{path}.alternatives[{index}].query"),
+                    false,
+                    scan,
+                )?;
+            }
+        }
+        QueryExprKindIr::WeakAnd { children, .. } => {
+            scan_children(children, "weak_and", false, scan)?;
+        }
+        QueryExprKindIr::Term { .. }
+        | QueryExprKindIr::True
+        | QueryExprKindIr::False
+        | QueryExprKindIr::Comparison { .. }
+        | QueryExprKindIr::Range { .. }
+        | QueryExprKindIr::In { .. }
+        | QueryExprKindIr::Fuzzy { .. }
+        | QueryExprKindIr::Matches { .. }
+        | QueryExprKindIr::Text { .. }
+        | QueryExprKindIr::DotProduct { .. }
+        | QueryExprKindIr::WeightedSet { .. }
+        | QueryExprKindIr::Wand { .. }
+        | QueryExprKindIr::GeoLocation { .. }
+        | QueryExprKindIr::GeoBoundingBox { .. }
+        | QueryExprKindIr::Predicate { .. } => {}
+    }
+    Ok(())
+}
+
+fn set_exact_nn_at_path(expression: &mut QueryExprIr, path: &str, target: &str) -> bool {
+    if path == target {
+        if !matches!(expression.kind, QueryExprKindIr::NearestNeighbor { .. }) {
+            return false;
+        }
+        expression
+            .annotations
+            .insert("approximate".into(), RequestValueIr::Bool(false));
+        return true;
+    }
+
+    match &mut expression.kind {
+        QueryExprKindIr::And(children) => children.iter_mut().enumerate().any(|(index, child)| {
+            set_exact_nn_at_path(child, &format!("{path}.and[{index}]"), target)
+        }),
+        QueryExprKindIr::Or(children) => children.iter_mut().enumerate().any(|(index, child)| {
+            set_exact_nn_at_path(child, &format!("{path}.or[{index}]"), target)
+        }),
+        QueryExprKindIr::Rank { matching, .. } => {
+            set_exact_nn_at_path(matching, &format!("{path}.rank.match"), target)
+        }
+        QueryExprKindIr::Labeled { query, .. } => {
+            set_exact_nn_at_path(query, &format!("{path}.labeled.query"), target)
+        }
+        QueryExprKindIr::NonEmpty(query) => {
+            set_exact_nn_at_path(query, &format!("{path}.non_empty.query"), target)
+        }
+        _ => false,
+    }
+}
+
+/// Build a semantics-preserving exact-NN counterfactual from canonical typed IR.
+///
+/// Eligibility is deliberately structural: there must be exactly one NN node,
+/// it must be in a retrieval-preserving root/AND/OR/rank-matching/wrapper path,
+/// and the tree may not contain parser-driven userInput/userQuery operators.
+/// Opaque YQL is never parsed or rewritten.
+fn exact_variant(
+    request: &SearchRequestIr,
+    limits: &DiagnosticLimits,
+) -> std::result::Result<ExactVariant, String> {
     let QueryIr::Typed(expression) = request.query() else {
-        return None;
+        return Err(
+            "Exact comparison requires a canonical typed query; opaque YQL and text query sources are not rewritten."
+                .into(),
+        );
     };
-    if !matches!(expression.kind, QueryExprKindIr::NearestNeighbor { .. }) {
-        return None;
+    let mut scan = ExactNnScan::default();
+    scan_exact_nn(expression, "query", true, &mut scan)?;
+    if scan.contains_parser_driven_query {
+        return Err(
+            "Exact comparison is unavailable when the typed tree contains userInput/userQuery because those parser-driven operators are not structurally rewritten."
+                .into(),
+        );
     }
-    let target_hits = expression
-        .annotations
-        .get("targetNumHits")
-        .or_else(|| expression.annotations.get("totalTargetHits"));
-    let count = match target_hits {
-        Some(RequestValueIr::Int64(value)) => u32::try_from(*value).ok()?,
-        Some(RequestValueIr::UInt64(value)) => u32::try_from(*value).ok()?,
-        None => 100,
-        _ => return None,
+    let candidate = match scan.candidates.as_slice() {
+        [] => {
+            return Err(
+                "Exact comparison requires one canonical nearest-neighbor operator.".into(),
+            )
+        }
+        [candidate] => candidate,
+        _ => {
+            return Err(
+                "Exact comparison is ambiguous for multiple nearest-neighbor operators without a selected NN identity."
+                    .into(),
+            )
+        }
     };
-    if count > limits.exact_nn_hits || request.limit() > limits.exact_nn_hits {
-        return None;
+    if !candidate.eligible_path {
+        return Err(
+            "The nearest-neighbor operator is nested under a query structure whose exact-vs-approximate retrieval semantics are not proven for this diagnostic."
+                .into(),
+        );
     }
+    if !candidate.previous_approximate {
+        return Err(
+            "The selected nearest-neighbor operator is already exact (approximate=false).".into(),
+        );
+    }
+    if candidate.target_hits > limits.exact_nn_hits || request.limit() > limits.exact_nn_hits {
+        return Err(format!(
+            "Exact comparison exceeds the diagnostic hit budget (target hits {}, result limit {}, budget {}).",
+            candidate.target_hits,
+            request.limit(),
+            limits.exact_nn_hits
+        ));
+    }
+
     let mut variant = request.clone();
     let QueryIr::Typed(expression) = &mut variant.query else {
-        return None;
+        unreachable!("typed query was checked above");
     };
-    expression
-        .annotations
-        .insert("approximate".into(), RequestValueIr::Bool(false));
-    Some(variant)
+    if !set_exact_nn_at_path(expression, "query", &candidate.query_path) {
+        return Err("failed to locate the selected nearest-neighbor node in the cloned query".into());
+    }
+
+    Ok(ExactVariant {
+        request: variant,
+        query_path: candidate.query_path.clone(),
+        document_field: candidate.document_field.clone(),
+        query_tensor: candidate.query_tensor.clone(),
+        previous_approximate: candidate.previous_approximate,
+        target_hits: candidate.target_hits,
+    })
 }
 
 fn friendly_typed_query(expression: &QueryExprIr) -> String {
@@ -928,113 +1193,154 @@ pub fn execute(
         }
     }
     if input.compare_exact {
-        let mut item = evidence("exact-comparison", DiagnosticSection::Vectors, &execution,
-            "Exact diagnostic comparison uses the same canonical NN query, filters, ranking and target-hit budget; only approximate=false changes. Overlap describes these returned sets, not corpus recall.");
-        if let Some(variant) = exact_variant(&input.request, &input.limits) {
-            match bounded_request(&variant, &input.limits, deadline).and_then(|variant| {
-                item.canonical_request = Some(variant.clone());
-                backend.search_diagnostic(variant, &[], &input.limits)
-            }) {
-                Ok(mut exact) => {
-                    let mut exact_execution = execution.clone();
-                    exact_execution.id = format!("{}/exact", execution.id);
-                    exact_execution.request_hash =
-                        request_hash(item.canonical_request.as_ref().unwrap_or(&request));
-                    exact_execution.complete = execution_complete(&exact.result);
-                    item.execution_id = exact_execution.id.clone();
-                    if execution.complete && exact_execution.complete {
-                        let baseline = DiagnosticSourceRun {
-                            execution: execution.clone(),
-                            request: request.clone(),
-                            result: acquired.result.clone(),
+        let mut item = evidence(
+            "exact-comparison",
+            DiagnosticSection::Vectors,
+            &execution,
+            "Exact diagnostic comparison is a backend-owned counterfactual over canonical typed IR.",
+        );
+        item.provenance = DiagnosticProvenance::Calculated;
+        match exact_variant(&request, &input.limits) {
+            Ok(plan) => {
+                item.message = format!(
+                    "Exact diagnostic comparison cloned the canonical typed query and changed only {}.annotations.approximate from true to false. Filters, boolean structure, rank-only branches, ranking, query inputs, target-hit budget, sorting and result controls are preserved. Overlap describes returned sets, not corpus recall.",
+                    plan.query_path
+                );
+                item.values.insert(
+                    "changed_query_path".into(),
+                    Value::String(plan.query_path.clone()),
+                );
+                item.values.insert(
+                    "changed_annotation".into(),
+                    Value::String("approximate".into()),
+                );
+                item.values.insert(
+                    "baseline_approximate".into(),
+                    Value::Bool(plan.previous_approximate),
+                );
+                item.values
+                    .insert("variant_approximate".into(), Value::Bool(false));
+                item.values.insert(
+                    "document_field".into(),
+                    Value::String(plan.document_field.clone()),
+                );
+                item.values.insert(
+                    "query_tensor".into(),
+                    Value::String(plan.query_tensor.clone()),
+                );
+                item.values.insert(
+                    "target_hits".into(),
+                    Value::UInt64(plan.target_hits.into()),
+                );
+                item.canonical_request = Some(plan.request.clone());
+
+                match bounded_request(&plan.request, &input.limits, deadline).and_then(|variant| {
+                    backend.search_diagnostic(variant, &[], &input.limits)
+                }) {
+                    Ok(mut exact) => {
+                        let mut exact_execution = execution.clone();
+                        exact_execution.id = format!("{}/exact", execution.id);
+                        exact_execution.request_hash =
+                            request_hash(item.canonical_request.as_ref().unwrap_or(&request));
+                        exact_execution.complete = execution_complete(&exact.result);
+                        item.execution_id = exact_execution.id.clone();
+                        if execution.complete && exact_execution.complete {
+                            let baseline = DiagnosticSourceRun {
+                                execution: execution.clone(),
+                                request: request.clone(),
+                                result: acquired.result.clone(),
+                            };
+                            let comparison = compare_runs(
+                                &baseline,
+                                &exact_execution,
+                                &exact.result,
+                                request.offset(),
+                            );
+                            item.values.insert(
+                                "overlap_count".into(),
+                                Value::UInt64(comparison.overlap_count.into()),
+                            );
+                            item.values.insert(
+                                "comparison_count".into(),
+                                Value::UInt64(comparison.comparison_count.into()),
+                            );
+                            item.values.insert(
+                                "entering".into(),
+                                Value::List(
+                                    comparison
+                                        .entering
+                                        .iter()
+                                        .cloned()
+                                        .map(Value::String)
+                                        .collect(),
+                                ),
+                            );
+                            item.values.insert(
+                                "leaving".into(),
+                                Value::List(
+                                    comparison
+                                        .leaving
+                                        .iter()
+                                        .cloned()
+                                        .map(Value::String)
+                                        .collect(),
+                                ),
+                            );
+                            item.values.insert(
+                                "rank_movements".into(),
+                                Value::List(
+                                    comparison
+                                        .movements
+                                        .iter()
+                                        .map(|movement| {
+                                            Value::Object(BTreeMap::from([
+                                                (
+                                                    "id".into(),
+                                                    Value::String(movement.id.clone()),
+                                                ),
+                                                (
+                                                    "baseline_position".into(),
+                                                    movement
+                                                        .baseline_position
+                                                        .map(|v| Value::UInt64(v.into()))
+                                                        .unwrap_or(Value::Null),
+                                                ),
+                                                (
+                                                    "exact_position".into(),
+                                                    movement
+                                                        .rerun_position
+                                                        .map(|v| Value::UInt64(v.into()))
+                                                        .unwrap_or(Value::Null),
+                                                ),
+                                            ]))
+                                        })
+                                        .collect(),
+                                ),
+                            );
+                            findings.push(DiagnosticFinding { code: "exact_retrieval_comparison".into(), message: format!("Exact retrieval produced {} returned documents absent from the diagnostic baseline; overlap was {} of {} returned documents.", comparison.entering.len(), comparison.overlap_count, comparison.comparison_count), evidence_ids: vec![item.id.clone(), "retrieval".into()] });
+                        } else {
+                            item.status = DiagnosticStatus::TimedOut;
+                            execution.complete = false;
+                        }
+                        strip_document_bodies(&mut exact.result.root);
+                        strip_features(&mut exact.result.root);
+                        item.result = Some(exact.result);
+                    }
+                    Err(error) => {
+                        item.message = error.message;
+                        item.status = if error.code == crate::ErrorCode::DeadlineExceeded {
+                            DiagnosticStatus::TimedOut
+                        } else {
+                            DiagnosticStatus::Failed
                         };
-                        let comparison = compare_runs(
-                            &baseline,
-                            &exact_execution,
-                            &exact.result,
-                            request.offset(),
-                        );
-                        item.provenance = DiagnosticProvenance::Calculated;
-                        item.values.insert(
-                            "overlap_count".into(),
-                            Value::UInt64(comparison.overlap_count.into()),
-                        );
-                        item.values.insert(
-                            "comparison_count".into(),
-                            Value::UInt64(comparison.comparison_count.into()),
-                        );
-                        item.values.insert(
-                            "entering".into(),
-                            Value::List(
-                                comparison
-                                    .entering
-                                    .iter()
-                                    .cloned()
-                                    .map(Value::String)
-                                    .collect(),
-                            ),
-                        );
-                        item.values.insert(
-                            "leaving".into(),
-                            Value::List(
-                                comparison
-                                    .leaving
-                                    .iter()
-                                    .cloned()
-                                    .map(Value::String)
-                                    .collect(),
-                            ),
-                        );
-                        item.values.insert(
-                            "rank_movements".into(),
-                            Value::List(
-                                comparison
-                                    .movements
-                                    .iter()
-                                    .map(|movement| {
-                                        Value::Object(BTreeMap::from([
-                                            ("id".into(), Value::String(movement.id.clone())),
-                                            (
-                                                "baseline_position".into(),
-                                                movement
-                                                    .baseline_position
-                                                    .map(|v| Value::UInt64(v.into()))
-                                                    .unwrap_or(Value::Null),
-                                            ),
-                                            (
-                                                "exact_position".into(),
-                                                movement
-                                                    .rerun_position
-                                                    .map(|v| Value::UInt64(v.into()))
-                                                    .unwrap_or(Value::Null),
-                                            ),
-                                        ]))
-                                    })
-                                    .collect(),
-                            ),
-                        );
-                        findings.push(DiagnosticFinding { code: "exact_retrieval_comparison".into(), message: format!("Exact retrieval produced {} returned documents absent from the diagnostic baseline; overlap was {} of {} returned documents.", comparison.entering.len(), comparison.overlap_count, comparison.comparison_count), evidence_ids: vec![item.id.clone(), "retrieval".into()] });
-                    } else {
-                        item.status = DiagnosticStatus::TimedOut;
                         execution.complete = false;
                     }
-                    strip_document_bodies(&mut exact.result.root);
-                    strip_features(&mut exact.result.root);
-                    item.result = Some(exact.result);
-                }
-                Err(error) => {
-                    item.message = error.message;
-                    item.status = if error.code == crate::ErrorCode::DeadlineExceeded {
-                        DiagnosticStatus::TimedOut
-                    } else {
-                        DiagnosticStatus::Failed
-                    };
-                    execution.complete = false;
                 }
             }
-        } else {
-            item.status = DiagnosticStatus::UnavailableForQuery;
-            item.message = "Exact comparison requires an isolated canonical nearest-neighbor query within the exact-NN hit budget. Opaque YQL and arbitrary hybrid trees are not rewritten.".into();
+            Err(reason) => {
+                item.status = DiagnosticStatus::UnavailableForQuery;
+                item.message = reason;
+            }
         }
         evidence_items.push(item);
     }
