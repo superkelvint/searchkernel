@@ -1235,13 +1235,15 @@ pub fn execute(
                 item.canonical_request = Some(plan.request.clone());
 
                 match bounded_request(&plan.request, &input.limits, deadline).and_then(|variant| {
-                    backend.search_diagnostic(variant, &[], &input.limits)
+                    let variant_hash = request_hash(&variant);
+                    backend
+                        .search_diagnostic(variant, &[], &input.limits)
+                        .map(|exact| (exact, variant_hash))
                 }) {
-                    Ok(mut exact) => {
+                    Ok((mut exact, variant_hash)) => {
                         let mut exact_execution = execution.clone();
                         exact_execution.id = format!("{}/exact", execution.id);
-                        exact_execution.request_hash =
-                            request_hash(item.canonical_request.as_ref().unwrap_or(&request));
+                        exact_execution.request_hash = variant_hash;
                         exact_execution.complete = execution_complete(&exact.result);
                         item.execution_id = exact_execution.id.clone();
                         if execution.complete && exact_execution.complete {
