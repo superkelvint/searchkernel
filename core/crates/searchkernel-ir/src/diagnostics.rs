@@ -740,7 +740,7 @@ pub fn execute(
                     relation: TotalHitsRelation::Unknown,
                 }),
                 raw_engine: Vec::new(),
-                observed_sections: Vec::new(),
+                structured_evidence: Vec::new(),
             },
             true,
         ),
@@ -860,15 +860,27 @@ pub fn execute(
         ranking.status = DiagnosticStatus::Truncated;
         warnings.push("Ranking evidence exceeded the hit/tensor limit.".into());
     }
-    if let Some(unavailable) = acquired
-        .result
-        .metadata
-        .get("diagnostic_unavailable_features")
-    {
+    if let Some(issues) = acquired.result.metadata.get("diagnostic_feature_issues") {
+        let has_budget_truncation = match issues {
+            Value::List(items) => items.iter().any(|item| {
+                matches!(
+                    item,
+                    Value::Object(fields)
+                        if matches!(
+                            fields.get("status"),
+                            Some(Value::String(status)) if status == "truncated"
+                        )
+                )
+            }),
+            _ => false,
+        };
+        if has_budget_truncation {
+            ranking.status = DiagnosticStatus::Truncated;
+        }
         ranking
             .values
-            .insert("unavailable_features".into(), unavailable.clone());
-        warnings.push("Some configured ranking features could not be decoded within supported tensor types and diagnostic limits. Their values were omitted.".into());
+            .insert("feature_issues".into(), issues.clone());
+        warnings.push("Some ranking feature evidence was omitted. Per-feature status and code distinguish unsupported values, malformed data, and diagnostic-budget truncation.".into());
     }
     let mut timing = evidence("timing", DiagnosticSection::Timing, &execution,
         "Timing from this diagnostic rerun. Original timing remains in the original search response.");
@@ -1335,11 +1347,23 @@ pub fn execute(
     for item in &mut raw_engine {
         item.execution_id = execution.id.clone();
     }
+    for mut item in acquired.structured_evidence {
+        if !input.requested_evidence.contains(&item.section) {
+            continue;
+        }
+        item.execution_id = execution.id.clone();
+        item.id = format!("section-{:?}", item.section);
+        evidence_items.push(item);
+    }
     for section in &input.requested_evidence {
         if evidence_items.iter().any(|item| &item.section == section) {
             continue;
         }
-        let raw = raw_engine.iter().find(|item| &item.section == section);
+        let raw = raw_engine.iter().find(|item| {
+            &item.section == section
+                || (*section == DiagnosticSection::RawEngine
+                    && item.section == DiagnosticSection::Trace)
+        });
         let mut item = evidence(
             &format!("section-{section:?}"),
             *section,
@@ -1350,27 +1374,11 @@ pub fn execute(
                 "This engine integration does not provide authoritative evidence for this section."
             },
         );
-        item.status = raw.map(|item| item.status).unwrap_or_else(|| {
-            if acquired.observed_sections.contains(section) {
-                DiagnosticStatus::Available
-            } else {
-                DiagnosticStatus::Unsupported
-            }
-        });
-        if acquired.observed_sections.contains(section) {
-            item.message = "Observed in this engine execution. Inspect its versioned raw trace for the complete tree; raw keys are unstable.".into();
-            item.values
-                .insert("raw_evidence_section".into(), Value::String("Trace".into()));
-        }
-        if timed_out {
+        item.status = raw
+            .map(|item| item.status)
+            .unwrap_or(DiagnosticStatus::Unsupported);
+        if timed_out && raw.is_none() {
             item.status = DiagnosticStatus::TimedOut;
-        } else if raw.is_none()
-            && raw_engine
-                .iter()
-                .any(|item| item.status == DiagnosticStatus::Truncated)
-        {
-            item.status = DiagnosticStatus::Truncated;
-            item.message = "Raw diagnostic acquisition was truncated; this section's availability could not be established.".into();
         }
         evidence_items.push(item);
     }

@@ -37,6 +37,12 @@ pub(crate) fn read_generic_search_result(
     let diagnostics = if query_seconds == 0.0 && length == 0 && truncated == 0 {
         None
     } else {
+        let truncated_features = read_diagnostic_truncated_features(result.0.as_ptr())?;
+        if (truncated & 2 != 0) != !truncated_features.is_empty() {
+            return Err(Error::message(
+                "native diagnostic feature truncation metadata is inconsistent",
+            ));
+        }
         // The opaque result owns this bounded buffer. Copy before its Drop.
         if trace.is_null() && length != 0 {
             return Err(Error::message(
@@ -49,6 +55,7 @@ pub(crate) fn read_generic_search_result(
             unsafe { std::slice::from_raw_parts(trace, length as usize) }
         };
         Some(crate::search::SearchDiagnostics {
+            sections: read_diagnostic_sections(result.0.as_ptr())?,
             trace: match std::str::from_utf8(bytes) {
                 Ok(value) => value.to_owned(),
                 Err(error) if truncated & 1 != 0 => {
@@ -60,6 +67,7 @@ pub(crate) fn read_generic_search_result(
             },
             truncated: truncated & 1 != 0,
             features_truncated: truncated & 2 != 0,
+            truncated_features,
             matching_seconds,
             summary_seconds,
             query_seconds,
@@ -526,4 +534,104 @@ fn read_search_facet(
         groups.push(FacetGroup { key, count });
     }
     Ok(FacetResult { groups })
+}
+
+fn read_diagnostic_truncated_features(
+    result: *const sys::sk_generic_search_result,
+) -> Result<Vec<String>, Error> {
+    let count = unsafe { sys::sk_generic_search_result_diagnostic_truncated_feature_count(result) };
+    let mut names = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        let mut name = ptr::null();
+        let mut length = 0;
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_generic_search_result_diagnostic_truncated_feature_name(
+                    result,
+                    index,
+                    &mut name,
+                    &mut length,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            },
+            &error,
+        )?;
+        if length == 0 || length > 4096 || name.is_null() {
+            return Err(Error::message(
+                "native diagnostic truncated feature name is invalid",
+            ));
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(name.cast::<u8>(), length as usize) };
+        let name = String::from_utf8(bytes.to_vec())
+            .map_err(|_| Error::message("native diagnostic truncated feature name is not UTF-8"))?;
+        if names.iter().any(|existing| existing == &name) {
+            return Err(Error::message(
+                "native diagnostic truncated feature names contain duplicates",
+            ));
+        }
+        names.push(name);
+    }
+    Ok(names)
+}
+
+fn read_diagnostic_sections(
+    result: *const sys::sk_generic_search_result,
+) -> Result<Vec<crate::DiagnosticEvidence>, Error> {
+    use crate::{DiagnosticEvidence, DiagnosticSection as Section, DiagnosticStatus as Status};
+    let mut sections = Vec::with_capacity(5);
+    for (index, section) in [
+        Section::MatchingProfiler,
+        Section::FirstPhaseProfiler,
+        Section::SecondPhaseProfiler,
+        Section::IteratorTree,
+        Section::Blueprint,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut data = ptr::null();
+        let mut length = 0;
+        let mut state = 0;
+        let mut error = NativeError::new();
+        // Result owns immutable buffers; decode/copy before its Drop.
+        let status = unsafe {
+            sys::sk_generic_search_result_diagnostic_section(
+                result,
+                index as u32,
+                &mut state,
+                &mut data,
+                &mut length,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        if length > 65_536 || (length != 0 && data.is_null()) {
+            return Err(Error::message("invalid native diagnostic section buffer"));
+        }
+        let status = match state {
+            0 => Status::Available,
+            1 => Status::Unsupported,
+            2 => Status::UnavailableForQuery,
+            3 => Status::Truncated,
+            4 => Status::TimedOut,
+            5 => Status::Failed,
+            _ => return Err(Error::message("invalid native diagnostic section status")),
+        };
+        let projection = if length == 0 {
+            None
+        } else {
+            Some(crate::diagnostics::decode_projection(unsafe {
+                std::slice::from_raw_parts(data, length as usize)
+            })?)
+        };
+        sections.push(DiagnosticEvidence {
+            section,
+            status,
+            projection,
+        });
+    }
+    Ok(sections)
 }

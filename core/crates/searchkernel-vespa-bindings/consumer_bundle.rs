@@ -2231,7 +2231,7 @@ for symbol in "${required_symbols[@]}"; do
     fi
 done
 "########),
-    ("core/native/vespa/build-sdk.sh", br########"#!/bin/sh
+    ("core/native/vespa/build-sdk.sh", br########"#!/usr/bin/env bash
 set -eu
 
 # Do not let an application/runtime preload leak into the build tools. In
@@ -2492,7 +2492,13 @@ CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # These explicit final flags make that property independent of the harvested
 # test target's optimization/debug configuration.
 if [ "$BASE_ONLY" != 1 ]; then
+PINNED_VESPA_COMMIT=$($PYTHON_BIN -c 'import json,sys; print(json.load(open(sys.argv[1]))["vespa_commit"])' "$ROOT/core/native/vespa/manifest.json")
+if [[ ! "$PINNED_VESPA_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Invalid pinned Vespa commit in native manifest" >&2
+    exit 1
+fi
 $CXX $DEFINES $INCLUDES $CXX_FLAGS $EXTRA_CXX_FLAGS $FAILPOINT_DEFINES $COVERAGE_FLAGS \
+    "-DSK_PINNED_VESPA_COMMIT=\"$PINNED_VESPA_COMMIT\"" \
     -Wno-inline -std=gnu++23 -fPIC \
     $OPTIMIZATION_FLAGS -g \
     -fvisibility=hidden \
@@ -2894,7 +2900,7 @@ trap - EXIT
 echo "built SDK at $SDK_PACKAGE"
 "########),
     ("core/native/vespa/manifest.json", br########"{
-  "native_abi_version": 16,
+  "native_abi_version": 17,
   "vespa_commit": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
 }
 "########),
@@ -2908,6 +2914,8 @@ namespace {
 std::string encode_dense_tensor(const char *type_spec, const double *values,
                                 uint32_t value_count);
 std::vector<double> dense_tensor_cells(const vespalib::eval::Value &tensor);
+DiagnosticTensorState decode_diagnostic_tensor(
+    const uint8_t *data, uint32_t length, uint32_t cell_limit);
 OwnedValue make_dense_tensor_value(const char *type_spec, const double *values,
                                    uint32_t value_count);
 std::chrono::milliseconds remaining_search_timeout(
@@ -2972,6 +2980,7 @@ struct sk_local_grouping_result : LocalGroupingResultState {
 };
 struct sk_generic_search_request : sk_local_search_request {};
 struct sk_generic_grouping_request : sk_local_grouping_request {};
+struct sk_diagnostic_tensor : DiagnosticTensorState {};
 
 template <typename Function>
 void run_open_stage(const char *stage, Function &&function) {
@@ -5658,15 +5667,16 @@ extern "C" int32_t sk_generic_search_request_set_timeout(
 extern "C" int32_t sk_generic_search_request_set_diagnostics(
     sk_generic_search_request *request, uint32_t trace_level,
     uint32_t matching_depth, uint32_t first_phase_depth,
-    uint32_t second_phase_depth, uint32_t raw_bytes,
+    uint32_t second_phase_depth, uint32_t raw_bytes, uint32_t structure_depth,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
-    if (!request || trace_level > 9 || matching_depth > 16 ||
+    if (!request || structure_depth > 32 || trace_level > 9 || matching_depth > 16 ||
         first_phase_depth > 16 || second_phase_depth > 16 ||
         raw_bytes == 0 || raw_bytes > 262144) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "diagnostic controls exceed safe bounds");
     }
     request->diagnostic_trace_level = trace_level;
+    request->diagnostic_structure_depth = structure_depth;
     request->diagnostic_matching_depth = matching_depth;
     request->diagnostic_first_phase_depth = first_phase_depth;
     request->diagnostic_second_phase_depth = second_phase_depth;
@@ -5864,33 +5874,115 @@ extern "C" uint64_t sk_generic_search_result_total_hit_count(
 }
 
 extern "C" int32_t sk_diagnostic_tensor_decode(
-    const uint8_t *data, uint32_t length, char *type_spec,
-    uint32_t type_capacity, uint32_t *out_type_length, double *cells,
-    uint32_t cell_capacity, uint32_t *out_cell_count,
-    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
-    if (out_type_length) *out_type_length = 0;
-    if (out_cell_count) *out_cell_count = 0;
+    const uint8_t *data, uint32_t length, uint32_t cell_limit,
+    sk_diagnostic_tensor **out_tensor, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_tensor) *out_tensor = nullptr;
+    if (!data || !out_tensor || length == 0 || length > 262144 ||
+        cell_limit == 0 || cell_limit > 4096) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic tensor arguments exceed bounds");
+    }
     return invoke(error, error_capacity, [&] {
-        if (!data || !type_spec || !cells || !out_type_length || !out_cell_count ||
-            length == 0 || length > 262144 || cell_capacity == 0 || cell_capacity > 4096) {
-            throw std::invalid_argument("diagnostic tensor arguments exceed bounds");
-        }
-        vespalib::nbostream stream(reinterpret_cast<const char *>(data), length);
-        auto tensor = vespalib::eval::decode_value(stream, vespalib::eval::FastValueBuilderFactory::get());
-        if (tensor->type().count_mapped_dimensions() != 0 || tensor->type().count_indexed_dimensions() != 1) {
-            throw UnsupportedNativeError("diagnostic_tensor_shape_unsupported", "this integration normalizes only single-indexed dense ranking tensors");
-        }
-        if (tensor->cells().size > cell_capacity) {
-            throw TensorValidationError("diagnostic_tensor_truncated", "ranking tensor exceeds the diagnostic cell budget");
-        }
-        const auto type = tensor->type().to_spec();
-        if (type.size() > type_capacity) throw std::invalid_argument("tensor type exceeds output capacity");
-        const auto values = dense_tensor_cells(*tensor);
-        std::memcpy(type_spec, type.data(), type.size());
-        std::copy(values.begin(), values.end(), cells);
-        *out_type_length = static_cast<uint32_t>(type.size());
-        *out_cell_count = static_cast<uint32_t>(values.size());
+        auto tensor = std::make_unique<sk_diagnostic_tensor>();
+        static_cast<DiagnosticTensorState &>(*tensor) =
+            decode_diagnostic_tensor(data, length, cell_limit);
+        *out_tensor = tensor.release();
     });
+}
+
+extern "C" void sk_diagnostic_tensor_destroy(
+    sk_diagnostic_tensor *tensor) SK_NOEXCEPT {
+    destroy_noexcept(tensor);
+}
+
+extern "C" uint32_t sk_diagnostic_tensor_kind(
+    const sk_diagnostic_tensor *tensor) SK_NOEXCEPT {
+    return tensor ? tensor->kind : 0;
+}
+
+extern "C" int32_t sk_diagnostic_tensor_type_spec(
+    const sk_diagnostic_tensor *tensor, const char **out_type,
+    uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_type) *out_type = nullptr;
+    if (out_length) *out_length = 0;
+    if (!tensor || !out_type || !out_length) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic tensor type arguments are invalid");
+    }
+    *out_type = tensor->type_spec.data();
+    *out_length = static_cast<uint32_t>(tensor->type_spec.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" uint32_t sk_diagnostic_tensor_block_count(
+    const sk_diagnostic_tensor *tensor) SK_NOEXCEPT {
+    return tensor ? static_cast<uint32_t>(tensor->blocks.size()) : 0;
+}
+
+extern "C" uint32_t sk_diagnostic_tensor_block_address_count(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index) SK_NOEXCEPT {
+    if (!tensor || block_index >= tensor->blocks.size()) return 0;
+    return static_cast<uint32_t>(
+        tensor->blocks[block_index].address.size());
+}
+
+extern "C" int32_t sk_diagnostic_tensor_block_address(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index,
+    uint32_t address_index, const char **out_dimension,
+    uint32_t *out_dimension_length, const char **out_label,
+    uint32_t *out_label_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_dimension) *out_dimension = nullptr;
+    if (out_dimension_length) *out_dimension_length = 0;
+    if (out_label) *out_label = nullptr;
+    if (out_label_length) *out_label_length = 0;
+    if (!tensor || !out_dimension || !out_dimension_length || !out_label ||
+        !out_label_length || block_index >= tensor->blocks.size() ||
+        address_index >= tensor->blocks[block_index].address.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic tensor address arguments are invalid");
+    }
+    const auto &entry =
+        tensor->blocks[block_index].address[address_index];
+    *out_dimension = entry.first.data();
+    *out_dimension_length = static_cast<uint32_t>(entry.first.size());
+    *out_label = entry.second.data();
+    *out_label_length = static_cast<uint32_t>(entry.second.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" int32_t sk_diagnostic_tensor_block_values(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index,
+    const double **out_values, uint32_t *out_value_count,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_values) *out_values = nullptr;
+    if (out_value_count) *out_value_count = 0;
+    if (!tensor || !out_values || !out_value_count ||
+        block_index >= tensor->blocks.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic tensor value arguments are invalid");
+    }
+    const auto &values = tensor->blocks[block_index].values;
+    *out_values = values.data();
+    *out_value_count = static_cast<uint32_t>(values.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" int32_t sk_generic_search_result_diagnostic_section(
+    const sk_generic_search_result *result, uint32_t section,
+    uint32_t *out_status, const uint8_t **out_data, uint32_t *out_length,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!result || section >= 5 || !out_status || !out_data || !out_length) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "invalid diagnostic section arguments");
+    }
+    const auto& value = result->diagnostic_sections[section];
+    *out_status = value.status;
+    *out_data = reinterpret_cast<const uint8_t*>(value.payload.data());
+    *out_length = static_cast<uint32_t>(value.payload.size());
+    return SK_NATIVE_STATUS_OK;
 }
 
 extern "C" int32_t sk_generic_search_result_diagnostics(
@@ -5912,6 +6004,31 @@ extern "C" int32_t sk_generic_search_result_diagnostics(
     *out_query_seconds = result->diagnostic_query_seconds;
     return SK_NATIVE_STATUS_OK;
 }
+
+extern "C" uint32_t sk_generic_search_result_diagnostic_truncated_feature_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result
+        ? static_cast<uint32_t>(result->diagnostic_truncated_feature_names.size())
+        : 0;
+}
+
+extern "C" int32_t sk_generic_search_result_diagnostic_truncated_feature_name(
+    const sk_generic_search_result *result, uint32_t index,
+    const char **out_name, uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_name) *out_name = nullptr;
+    if (out_length) *out_length = 0;
+    if (!result || !out_name || !out_length ||
+        index >= result->diagnostic_truncated_feature_names.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "diagnostic truncated feature arguments are invalid");
+    }
+    const auto &name = result->diagnostic_truncated_feature_names[index];
+    *out_name = name.data();
+    *out_length = static_cast<uint32_t>(name.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
 extern "C" uint32_t sk_generic_search_result_hit_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {
     return sk_local_search_result_hit_count(static_cast<const sk_local_search_result *>(result));
@@ -6469,7 +6586,15 @@ extern "C" int32_t sk_query_add_in_strings(
                          "in query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        validate_query_field(*query, SK_QUERY_FIELD_STRING, field);
+        // InTerm supports membership in both scalar and multi-valued string
+        // attributes. Keep the scalar-string guard for other query operators.
+        validate_query_field(*query, SK_QUERY_FIELD_ATTRIBUTE, field);
+        const auto metadata = std::find_if(
+            query->fields.begin(), query->fields.end(),
+            [field](const auto &candidate) { return candidate.name == field; });
+        if (metadata->type != "string" && metadata->type != "array<string>") {
+            throw std::invalid_argument("in query requires a string attribute field");
+        }
         if (value_count == 0 || value_count > MAX_TEXT_TERMS || !value_lengths ||
             (!value_bytes && value_bytes_length != 0)) {
             throw std::invalid_argument("in query string values are invalid");
@@ -7797,6 +7922,88 @@ void append_text_terms(TextRequest &request, const uint8_t *term_bytes,
 #include "highlighting.h"
 #include <vespa/vespalib/data/output.h>
 
+// Pinned Vespa visits properties in hash-map order. Retain the first bounded
+// keys in lexical order without copying arbitrary (possibly tensor) values.
+class DiagnosticPropertyKeys final : public search::fef::IPropertiesVisitor {
+    size_t _limit;
+public:
+    std::set<std::string_view> keys;
+    explicit DiagnosticPropertyKeys(size_t limit) : _limit(limit) {}
+    void visitProperty(const search::fef::Property::Value &key,
+                       const search::fef::Property &) override {
+        keys.insert(key);
+        if (keys.size() > _limit) keys.erase(std::prev(keys.end()));
+    }
+};
+
+bool capture_final_matcher_request(const SearchRequest &request, uint32_t byte_limit) {
+    auto &snapshot = request.trace().getRoot().setObject("final_matcher_request");
+    snapshot.setString("format", "searchkernel.proton-request.v1");
+    snapshot.setString("vespa_commit", SK_PINNED_VESPA_COMMIT);
+    snapshot.setLong("native_abi_version", SK_NATIVE_ABI_VERSION);
+    snapshot.setString("rank_profile", request.ranking);
+    snapshot.setDouble("timeout_ms", std::chrono::duration<double, std::milli>(request.getTimeout()).count());
+    snapshot.setDouble("time_left_ms", std::chrono::duration<double, std::milli>(request.getTimeLeft()).count());
+    snapshot.setLong("offset", request.offset);
+    snapshot.setLong("maxhits", request.maxhits);
+    snapshot.setBool("dump_features", request.dumpFeatures);
+    snapshot.setLong("trace_level", request.trace().getLevel());
+    snapshot.setLong("matching_profile_depth", request.trace().match_profile_depth());
+    snapshot.setLong("first_phase_profile_depth", request.trace().first_phase_profile_depth());
+    snapshot.setLong("second_phase_profile_depth", request.trace().second_phase_profile_depth());
+    snapshot.setLong("grouping_bytes", request.groupSpec.size());
+    snapshot.setLong("location_bytes", request.location.size());
+    snapshot.setLong("session_id_bytes", request.sessionId.size());
+    bool truncated = false;
+    if (request.sortSpec.size() <= 256) snapshot.setString("sort", request.sortSpec);
+    else { snapshot.setString("sort", "[omitted]"); truncated = true; }
+
+    // Inspect the serialized tree actually attached to this request. Terms,
+    // predicate payloads and tensor contents never enter this representation.
+    auto &tree = snapshot.setArray("query_tree");
+    auto iterator = request.getSerializedQueryTree().makeIterator();
+    const size_t node_limit = std::min<size_t>(64, byte_limit / 128);
+    size_t nodes = 0;
+    while (nodes < node_limit && iterator->next()) {
+        auto &node = tree.addObject();
+        node.setLong("item_type", iterator->getType());
+        node.setLong("arity", iterator->getArity());
+        node.setLong("unique_id", iterator->getUniqueId());
+        node.setBool("no_rank", iterator->hasNoRankFlag());
+        node.setBool("no_position_data", iterator->hasNoPositionDataFlag());
+        node.setString("term", "[redacted]");
+        ++nodes;
+    }
+    if (iterator->next()) truncated = true;
+
+    auto &properties = snapshot.setObject("properties");
+    for (const auto &[name, values] : std::array<std::pair<std::string_view, const search::fef::Properties *>, 2>{{
+             {"rank", &request.propertiesMap.rankProperties()},
+             {"feature_overrides", &request.propertiesMap.featureOverrides()}}}) {
+        auto &collection = properties.setObject(name);
+        collection.setLong("key_count", values->numKeys());
+        collection.setLong("value_count", values->numValues());
+        DiagnosticPropertyKeys visitor(std::min<size_t>(32, byte_limit / 128));
+        values->visitProperties(visitor);
+        auto &entries = collection.setArray("entries");
+        for (auto key : visitor.keys) {
+            auto &entry = entries.addObject();
+            if (key.size() <= 128) entry.setString("name", key);
+            else { entry.setString("name", "[omitted]"); truncated = true; }
+            auto value = values->lookup(key);
+            entry.setLong("value_count", value.size());
+            // This adapter-owned scalar is safe; arbitrary user values,
+            // including scalar query features and binary tensors, are private.
+            if (key == "vespa.matching.numthreadspersearch" && value.size() == 1 && value.get() == "1") {
+                entry.setString("value", "1");
+            } else entry.setString("value", "[redacted]");
+        }
+        if (values->numKeys() > visitor.keys.size()) truncated = true;
+    }
+    snapshot.setBool("truncated", truncated);
+    return truncated;
+}
+
 struct DiagnosticOutputFull {};
 
 // Bound JSON encoding before allocation, not after creating a large temporary.
@@ -7817,13 +8024,40 @@ public:
     std::string payload() const { return {_buffer.data(), _used}; }
 };
 
+// JsonFormat traverses recursively. Check depth and work before handing it
+// engine-owned Slime; throwing also stops ObjectTraverser on very wide objects.
+struct DiagnosticStructureLimit {};
+void check_diagnostic_structure(const vespalib::slime::Inspector& value,
+                                uint32_t depth, uint32_t limit, size_t& remaining) {
+    if (depth > limit || remaining == 0) throw DiagnosticStructureLimit{};
+    --remaining;
+    if (sk_diagnostics::array(value)) {
+        for (size_t i = 0; i < value.entries(); ++i) check_diagnostic_structure(value[i], depth + 1, limit, remaining);
+    } else if (sk_diagnostics::object(value)) {
+        struct Fields : vespalib::slime::ObjectTraverser {
+            uint32_t depth;
+            uint32_t limit;
+            size_t& remaining;
+            Fields(uint32_t d, uint32_t l, size_t& r) : depth(d), limit(l), remaining(r) {}
+            void field(const vespalib::Memory&, const vespalib::slime::Inspector& child) override {
+                check_diagnostic_structure(child, depth + 1, limit, remaining);
+            }
+        } fields(depth, limit, remaining);
+        value.traverse(fields);
+    }
+}
+
 void capture_diagnostic_trace(const search::engine::Trace &trace,
-                              uint32_t limit, LocalSearchResultState &result) {
+                              uint32_t limit, uint32_t depth_limit, LocalSearchResultState &result) {
     if (!trace.hasTrace() || limit == 0) return;
     BoundedDiagnosticOutput output(limit);
     try {
+        size_t remaining = 4096;
+        check_diagnostic_structure(trace.getSlime().get(), 0, depth_limit, remaining);
         vespalib::slime::JsonFormat::encode(trace.getSlime(), output, true);
     } catch (const DiagnosticOutputFull &) {
+        result.diagnostic_truncated = true;
+    } catch (const DiagnosticStructureLimit &) {
         result.diagnostic_truncated = true;
     }
     result.diagnostic_trace = output.payload();
@@ -12041,6 +12275,9 @@ public:
         }
         request.setSerializedQueryTree(query.serialized_query_tree());
         failpoint("search_before_match");
+        // Capture after all lowering mutations. Ordinary searches skip it.
+        const bool request_truncated = options.diagnostic_raw_bytes != 0 &&
+            capture_final_matcher_request(request, options.diagnostic_raw_bytes);
         const auto match_start = std::chrono::steady_clock::now();
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
         const auto match_end = std::chrono::steady_clock::now();
@@ -12049,10 +12286,19 @@ public:
         write_native_trace(request.trace());
         LocalSearchResultState result;
         if (options.diagnostic_raw_bytes != 0) {
+            result.diagnostic_truncated = request_truncated;
             result.diagnostic_matching_seconds = std::chrono::duration<double>(match_end - match_start).count();
-            capture_diagnostic_trace(request.trace(), options.diagnostic_raw_bytes, result);
+            result.diagnostic_sections = sk_diagnostics::project(request.trace().getSlime().get(),
+                {options.diagnostic_matching_depth, options.diagnostic_first_phase_depth,
+                 options.diagnostic_second_phase_depth}, options.diagnostic_structure_depth);
+            capture_diagnostic_trace(request.trace(), options.diagnostic_raw_bytes, options.diagnostic_structure_depth, result);
         }
         copy_search_reply_metadata(*reply, result);
+        if (result.degradation_flags & SK_DEGRADATION_TIMEOUT) {
+            for (auto& section : result.diagnostic_sections) {
+                if (section.status == sk_diagnostics::UnavailableForQuery) section.status = sk_diagnostics::TimedOut;
+            }
+        }
         const auto &features = reply->match_features;
         if (features.values.size() != features.names.size() * reply->hits.size()) {
             throw std::runtime_error("native match-feature matrix shape mismatch");
@@ -12076,7 +12322,11 @@ public:
                 result.match_feature_names.push_back(features.names[column]);
                 feature_columns.push_back(column);
                 if (options.diagnostic_raw_bytes != 0) feature_bytes_remaining -= bytes;
-            } else { result.diagnostic_features_truncated = true; }
+            } else {
+                result.diagnostic_features_truncated = true;
+                result.diagnostic_truncated_feature_names.push_back(
+                    features.names[column]);
+            }
         }
         std::vector<size_t> live_hit_rows;
         live_hit_rows.reserve(reply->hits.size());
@@ -13843,6 +14093,207 @@ std::vector<double> dense_tensor_cells(const vespalib::eval::Value &tensor) {
     return output;
 }
 
+
+class DiagnosticTensorBuilderFactory final : public vespalib::eval::ValueBuilderFactory {
+    size_t _max_cells;
+
+    template <typename Cell>
+    static std::unique_ptr<vespalib::eval::ValueBuilderBase> delegate(
+        const vespalib::eval::ValueType &type, bool transient,
+        size_t num_mapped_dims, size_t subspace_size,
+        size_t expected_subspaces) {
+        const auto &factory = vespalib::eval::FastValueBuilderFactory::get();
+        if (transient) {
+            return factory.create_transient_value_builder<Cell>(
+                type, num_mapped_dims, subspace_size, expected_subspaces);
+        }
+        return factory.create_value_builder<Cell>(
+            type, num_mapped_dims, subspace_size, expected_subspaces);
+    }
+
+protected:
+    std::unique_ptr<vespalib::eval::ValueBuilderBase> create_value_builder_base(
+        const vespalib::eval::ValueType &type, bool transient,
+        size_t num_mapped_dims, size_t subspace_size,
+        size_t expected_subspaces) const override {
+        if (subspace_size != 0 &&
+            expected_subspaces > _max_cells / subspace_size) {
+            throw TensorValidationError(
+                "diagnostic_tensor_cell_budget_exceeded",
+                "ranking tensor exceeds the diagnostic cell budget");
+        }
+        switch (type.cell_type()) {
+        case vespalib::eval::CellType::DOUBLE:
+            return delegate<double>(type, transient, num_mapped_dims,
+                                    subspace_size, expected_subspaces);
+        case vespalib::eval::CellType::FLOAT:
+            return delegate<float>(type, transient, num_mapped_dims,
+                                   subspace_size, expected_subspaces);
+        case vespalib::eval::CellType::BFLOAT16:
+            return delegate<vespalib::BFloat16>(
+                type, transient, num_mapped_dims, subspace_size,
+                expected_subspaces);
+        case vespalib::eval::CellType::INT8:
+            return delegate<vespalib::eval::Int8Float>(
+                type, transient, num_mapped_dims, subspace_size,
+                expected_subspaces);
+        }
+        throw UnsupportedNativeError(
+            "diagnostic_tensor_cell_type_unsupported",
+            "ranking tensor cell type is not representable by Search Kernel");
+    }
+
+public:
+    explicit DiagnosticTensorBuilderFactory(size_t max_cells)
+        : _max_cells(max_cells) {}
+};
+
+template <typename Cell>
+void copy_diagnostic_tensor_cells(const vespalib::eval::TypedCells &cells,
+                                  std::vector<double> &output) {
+    for (const auto cell : cells.typify<Cell>()) {
+        const double value = static_cast<double>(cell);
+        if (!std::isfinite(value)) {
+            throw UnsupportedNativeError(
+                "diagnostic_tensor_non_finite_cell_unsupported",
+                "portable diagnostic tensors require finite cell values");
+        }
+        output.push_back(value);
+    }
+}
+
+std::vector<double> diagnostic_tensor_cells(
+    const vespalib::eval::Value &tensor) {
+    const auto cells = tensor.cells();
+    std::vector<double> output;
+    output.reserve(cells.size);
+    switch (cells.type) {
+    case vespalib::eval::CellType::DOUBLE:
+        copy_diagnostic_tensor_cells<double>(cells, output);
+        break;
+    case vespalib::eval::CellType::FLOAT:
+        copy_diagnostic_tensor_cells<float>(cells, output);
+        break;
+    case vespalib::eval::CellType::BFLOAT16:
+        copy_diagnostic_tensor_cells<vespalib::BFloat16>(cells, output);
+        break;
+    case vespalib::eval::CellType::INT8:
+        copy_diagnostic_tensor_cells<vespalib::eval::Int8Float>(cells, output);
+        break;
+    default:
+        throw UnsupportedNativeError(
+            "diagnostic_tensor_cell_type_unsupported",
+            "ranking tensor cell type is not representable by Search Kernel");
+    }
+    return output;
+}
+
+DiagnosticTensorState decode_diagnostic_tensor(
+    const uint8_t *data, uint32_t length, uint32_t cell_limit) {
+    DiagnosticTensorBuilderFactory factory(cell_limit);
+    std::unique_ptr<vespalib::eval::Value> tensor;
+    try {
+        vespalib::nbostream stream(reinterpret_cast<const char *>(data), length);
+        tensor = vespalib::eval::decode_value(stream, factory);
+        if (stream.size() != 0) {
+            throw TensorValidationError(
+                "diagnostic_tensor_malformed",
+                "ranking tensor payload contains trailing data");
+        }
+    } catch (const TensorValidationError &) {
+        throw;
+    } catch (const UnsupportedNativeError &) {
+        throw;
+    } catch (const vespalib::eval::DecodeValueException &) {
+        throw TensorValidationError(
+            "diagnostic_tensor_malformed",
+            "ranking tensor payload is malformed");
+    }
+    if (!tensor || tensor->type().is_error()) {
+        throw TensorValidationError(
+            "diagnostic_tensor_malformed",
+            "ranking tensor payload has no valid tensor type");
+    }
+
+    auto values = diagnostic_tensor_cells(*tensor);
+    if (values.size() > cell_limit) {
+        throw TensorValidationError(
+            "diagnostic_tensor_cell_budget_exceeded",
+            "ranking tensor exceeds the diagnostic cell budget");
+    }
+
+    DiagnosticTensorState result;
+    const auto &type = tensor->type();
+    result.type_spec = type.to_spec();
+    const size_t mapped = type.count_mapped_dimensions();
+    const size_t indexed = type.count_indexed_dimensions();
+    if (mapped == 0) {
+        result.kind = SK_DIAGNOSTIC_TENSOR_DENSE;
+        result.blocks.push_back({{}, std::move(values)});
+        return result;
+    }
+
+    result.kind = indexed == 0
+        ? SK_DIAGNOSTIC_TENSOR_SPARSE
+        : SK_DIAGNOSTIC_TENSOR_MIXED;
+    const size_t subspace_size = type.dense_subspace_size();
+    if (subspace_size == 0 || values.size() % subspace_size != 0) {
+        throw std::runtime_error(
+            "decoded diagnostic tensor has an inconsistent dense subspace");
+    }
+    const size_t expected_blocks = values.size() / subspace_size;
+    if (tensor->index().size() != expected_blocks) {
+        throw std::runtime_error(
+            "decoded diagnostic tensor index size does not match its cells");
+    }
+
+    std::vector<vespalib::string_id> labels(mapped);
+    std::vector<vespalib::string_id *> label_refs;
+    label_refs.reserve(mapped);
+    for (auto &label : labels) {
+        label_refs.push_back(&label);
+    }
+    auto view = tensor->index().create_view({});
+    view->lookup({});
+    size_t subspace_id = 0;
+    while (view->next_result(label_refs, subspace_id)) {
+        if (subspace_id >= expected_blocks) {
+            throw std::runtime_error(
+                "decoded diagnostic tensor returned an invalid subspace index");
+        }
+        DiagnosticTensorBlockState block;
+        block.address.reserve(mapped);
+        size_t label_index = 0;
+        for (const auto &dimension : type.dimensions()) {
+            if (dimension.is_mapped()) {
+                block.address.emplace_back(
+                    dimension.name,
+                    vespalib::SharedStringRepo::Handle::string_from_id(
+                        labels[label_index++]));
+            }
+        }
+        if (label_index != mapped) {
+            throw std::runtime_error(
+                "decoded diagnostic tensor address is incomplete");
+        }
+        const auto begin =
+            values.begin() + static_cast<std::ptrdiff_t>(subspace_id * subspace_size);
+        block.values.assign(
+            begin, begin + static_cast<std::ptrdiff_t>(subspace_size));
+        if (result.kind == SK_DIAGNOSTIC_TENSOR_SPARSE &&
+            block.values.size() != 1) {
+            throw std::runtime_error(
+                "decoded sparse diagnostic tensor has a dense subspace");
+        }
+        result.blocks.push_back(std::move(block));
+    }
+    if (result.blocks.size() != expected_blocks) {
+        throw std::runtime_error(
+            "decoded diagnostic tensor did not enumerate every subspace");
+    }
+    return result;
+}
+
 OwnedValue make_dense_tensor_value(const char *type_spec, const double *values,
                                    uint32_t value_count) {
     OwnedValue result;
@@ -13886,6 +14337,210 @@ void append_owned_value(Container &container, const char *field, OwnedValue valu
     if (*field == '\0') throw std::invalid_argument("attribute field must not be empty");
     container.emplace_back(field, std::move(value));
 }
+"########),
+    ("core/native/vespa/diagnostic_projection.h", br########"#pragma once
+
+#include <vespa/vespalib/data/slime/slime.h>
+#include <vespa/vespalib/data/slime/json_format.h>
+#include <array>
+#include <cmath>
+#include <string>
+#include <vector>
+
+namespace sk_diagnostics {
+// ABI 17, Search Kernel-owned schema. No borrowed Slime nodes escape projection.
+enum Status : uint32_t { Available, Unsupported, UnavailableForQuery, Truncated, TimedOut, Failed };
+struct Section { uint32_t status = UnavailableForQuery; std::string payload; };
+struct Node {
+    int32_t parent = -1;
+    uint32_t thread = 0;
+    std::string name;
+    int64_t count = -1;
+    double total = -1;
+    double self = -1;
+};
+using Sections = std::array<Section, 5>;
+using Inspector = vespalib::slime::Inspector;
+constexpr size_t max_nodes = 128;
+constexpr size_t max_name = 256;
+constexpr size_t max_bytes = 65536;
+constexpr size_t max_entries = 1024;
+
+inline bool object(const Inspector& value) { return value.type().getId() == vespalib::slime::OBJECT::ID; }
+inline bool array(const Inspector& value) { return value.type().getId() == vespalib::slime::ARRAY::ID; }
+inline bool text(const Inspector& value) { return value.type().getId() == vespalib::slime::STRING::ID; }
+inline bool number(const Inspector& value) {
+    auto id = value.type().getId();
+    return (id == vespalib::slime::DOUBLE::ID || id == vespalib::slime::LONG::ID) &&
+           std::isfinite(value.asDouble()) && value.asDouble() >= 0;
+}
+inline bool equal(const Inspector& value, std::string_view expected) {
+    auto memory = value.asString();
+    return text(value) && std::string_view(memory.data, memory.size) == expected;
+}
+
+struct Builder {
+    std::vector<Node> nodes;
+    bool truncated = false;
+    bool failed = false;
+    bool observed = false;
+    uint32_t depth_limit;
+    size_t examined = 0;
+    int32_t add(const Inspector& name, int32_t parent, uint32_t thread, uint32_t depth) {
+        if (!text(name)) { failed = true; return -1; }
+        if (depth > depth_limit || nodes.size() == max_nodes) { truncated = true; return -1; }
+        auto memory = name.asString();
+        if (memory.size > max_name) { truncated = true; return -1; }
+        nodes.push_back({parent, thread, std::string(memory.data, memory.size), -1, -1, -1});
+        return static_cast<int32_t>(nodes.size() - 1);
+    }
+    void profile_node(const Inspector& value, int32_t parent, uint32_t thread, uint32_t depth) {
+        if (++examined > max_entries) { truncated = true; return; }
+        if (!object(value) || value["count"].type().getId() != vespalib::slime::LONG::ID ||
+            value["count"].asLong() < 0 || !number(value["total_time_ms"]) ||
+            (value["self_time_ms"].valid() && !number(value["self_time_ms"]))) {
+            failed = true; return;
+        }
+        auto index = add(value["name"], parent, thread, depth);
+        if (index < 0) return;
+        nodes[index].count = value["count"].asLong();
+        nodes[index].total = value["total_time_ms"].asDouble();
+        // Preserve absence on leaves. Never derive self time from a pruned tree.
+        if (value["self_time_ms"].valid()) nodes[index].self = value["self_time_ms"].asDouble();
+        auto& children = value["children"];
+        if (!children.valid()) return;
+        if (!array(children) || !value["self_time_ms"].valid()) { failed = true; return; }
+        for (size_t i = 0; i < children.entries(); ++i) {
+            if (nodes.size() == max_nodes || examined >= max_entries) { truncated = true; break; }
+            profile_node(children[i], index, thread, depth + 1);
+        }
+    }
+    void profile(const Inspector& report, uint32_t thread) {
+        if (!equal(report["profiler"], "tree") || !number(report["total_time_ms"]) ||
+            report["depth"].type().getId() != vespalib::slime::LONG::ID || report["depth"].asLong() < 0) {
+            failed = true; return;
+        }
+        // A report with no roots is emitted even when a phase never executes.
+        auto& roots = report["roots"];
+        if ((roots.valid() && !array(roots)) ||
+            (roots.entries() == 0 && report["total_time_ms"].asDouble() != 0)) { failed = true; return; }
+        vespalib::Slime label;
+        label.setString("profile");
+        auto index = add(label.get(), -1, thread, 0);
+        if (index < 0) return;
+        nodes[index].total = report["total_time_ms"].asDouble();
+        observed |= roots.entries() > 0;
+        for (size_t i = 0; i < roots.entries(); ++i) {
+            if (nodes.size() == max_nodes || examined >= max_entries) { truncated = true; break; }
+            profile_node(roots[i], index, thread, 1);
+        }
+    }
+    // Object2Slime's exact children/std::vector/[N] and unary search edges.
+    // Other members (fields, estimates, term data) are not execution children.
+    void plan(const Inspector& value, int32_t parent, uint32_t thread, uint32_t depth) {
+        if (++examined > max_entries) { truncated = true; return; }
+        if (!object(value)) { failed = true; return; }
+        auto index = add(value["[type]"], parent, thread, depth);
+        if (index < 0) return;
+        observed = true;
+        auto& children = value["children"];
+        if (children.valid()) {
+            if (!object(children) || !equal(children["[type]"], "std::vector")) { failed = true; return; }
+            size_t count = children.fields() - 1;
+            for (size_t i = 0; i < count; ++i) {
+                if (nodes.size() == max_nodes || examined >= max_entries) { truncated = true; break; }
+                auto& child = children["[" + std::to_string(i) + "]"];
+                if (child.type().getId() == vespalib::slime::LONG::ID && child.asLong() >= 0 && child.asLong() <= 255 &&
+                    (equal(value["[type]"], "search::queryeval::SourceBlenderSearchStrict") ||
+                     equal(value["[type]"], "search::queryeval::SourceBlenderSearchNonStrict"))) {
+                    // SourceBlenderSearch visits source IDs in children, with the
+                    // corresponding iterator under its explicit Source N member.
+                    plan(value["Source " + std::to_string(child.asLong())], index, thread, depth + 1);
+                } else {
+                    if (!object(child)) { failed = true; break; }
+                    plan(child, index, thread, depth + 1);
+                }
+            }
+        }
+        if (value["search"].valid()) plan(value["search"], index, thread, depth + 1);
+    }
+    Section finish() const {
+        Section section;
+        section.status = failed ? Failed : truncated ? Truncated : observed ? Available : UnavailableForQuery;
+        vespalib::Slime output;
+        auto& root = output.setObject();
+        root.setString("engine", "Vespa");
+        root.setString("revision", SK_PINNED_VESPA_COMMIT);
+        root.setLong("native_abi", SK_NATIVE_ABI_VERSION);
+        auto& list = root.setArray("nodes");
+        // Failed projections provide provenance but never partially trusted evidence.
+        if (!failed) for (const auto& node : nodes) {
+            auto& entry = list.addObject();
+            entry.setLong("parent", node.parent);
+            entry.setLong("thread", node.thread);
+            entry.setString("name", node.name);
+            if (node.count >= 0) entry.setLong("count", node.count);
+            if (node.total >= 0) entry.setDouble("total_ms", node.total);
+            if (node.self >= 0) entry.setDouble("self_ms", node.self);
+        }
+        // Construction above is bounded: <=128 names of <=256 bytes, fixed fields.
+        section.payload = output.toString();
+        if (section.payload.size() > max_bytes) {
+            vespalib::Slime provenance;
+            auto& metadata = provenance.setObject();
+            metadata.setString("engine", "Vespa");
+            metadata.setString("revision", SK_PINNED_VESPA_COMMIT);
+            metadata.setLong("native_abi", SK_NATIVE_ABI_VERSION);
+            metadata.setArray("nodes");
+            section.payload = provenance.toString();
+            section.status = Truncated;
+        }
+        return section;
+    }
+};
+
+inline Sections project(const Inspector& root, const std::array<uint32_t, 3>& profile_depths,
+                        uint32_t structural_depth) {
+    std::array<Builder, 5> builders{{{{}, false, false, false, profile_depths[0]},
+                                   {{}, false, false, false, profile_depths[1]},
+                                   {{}, false, false, false, profile_depths[2]},
+                                   {{}, false, false, false, structural_depth},
+                                   {{}, false, false, false, structural_depth}}};
+    auto& traces = root["traces"];
+    if (!object(root) || (traces.valid() && !array(traces))) {
+        for (auto& b : builders) b.failed = true;
+    } else {
+        size_t visited = 0;
+        for (size_t i = 0; i < traces.entries(); ++i) {
+            if (++visited > max_entries) { for (auto& b : builders) b.truncated = true; break; }
+            auto& entry = traces[i];
+            if (!object(entry)) { for (auto& b : builders) b.failed = true; break; }
+            if (equal(entry["tag"], "query_execution_plan")) builders[4].plan(entry["optimized"], -1, 0, 0);
+            if (!equal(entry["tag"], "query_execution")) continue;
+            auto& threads = entry["threads"];
+            if (!array(threads)) { for (auto& b : builders) b.failed = true; continue; }
+            for (size_t t = 0; t < threads.entries(); ++t) {
+                if (++visited > max_entries) { for (auto& b : builders) b.truncated = true; break; }
+                auto& events = threads[t]["traces"];
+                if (!object(threads[t]) || !array(events)) { for (auto& b : builders) b.failed = true; continue; }
+                for (size_t j = 0; j < events.entries(); ++j) {
+                    if (++visited > max_entries) { for (auto& b : builders) b.truncated = true; break; }
+                    auto& event = events[j];
+                    if (!object(event)) { for (auto& b : builders) b.failed = true; continue; }
+                    constexpr std::array<std::string_view, 3> tags{"match_profiling", "first_phase_profiling", "second_phase_profiling"};
+                    for (size_t k = 0; k < tags.size(); ++k) {
+                        if (profile_depths[k] && equal(event["tag"], tags[k])) builders[k].profile(event, t);
+                    }
+                    if (equal(event["tag"], "iterator")) builders[3].plan(event["optimized"], -1, t, 0);
+                }
+            }
+        }
+    }
+    Sections result;
+    for (size_t i = 0; i < result.size(); ++i) result[i] = builders[i].finish();
+    return result;
+}
+} // namespace sk_diagnostics
 "########),
     ("core/native/vespa/file_descriptor.h", br########"#ifndef SEARCHKERNEL_FILE_DESCRIPTOR_H
 #define SEARCHKERNEL_FILE_DESCRIPTOR_H
@@ -13952,6 +14607,7 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
     Fragment fragment;
     bool highlighted = false;
     uint32_t highlight_start = 0;
+    bool continued_start = false;
     const auto flush_fragment = [&]() {
         if (!fragment.text.empty() || !fragment.matches.empty()) {
             fragments.push_back(std::move(fragment));
@@ -13959,6 +14615,24 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
         }
     };
     for (size_t index = 0; index < teaser.size();) {
+        if (continued_start) {
+            continued_start = false;
+            const auto terminator = teaser.find(annotation_terminator, index);
+            const auto anchor = teaser.find(annotation_anchor, index);
+            const auto separator = teaser.find(annotation_separator, index);
+            const auto boundary = teaser.find_first_of("\x1e\x1f", index);
+            // SummaryDesc can begin a continued excerpt inside an annotation.
+            // Preserve surface text before a remaining separator, and discard
+            // clipped metadata through the terminator before any delimiter.
+            if (terminator != std::string_view::npos && terminator < anchor &&
+                terminator < boundary) {
+                if (separator < terminator) {
+                    fragment.text.append(teaser.substr(index, separator - index));
+                }
+                index = terminator + annotation_terminator.size();
+                continue;
+            }
+        }
         if (teaser[index] == '\x1f') {
             if (!highlighted) {
                 highlighted = true;
@@ -13973,18 +14647,40 @@ inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
                 throw std::runtime_error("Vespa teaser continuation interrupts highlight markup");
             }
             flush_fragment();
+            continued_start = true;
             ++index;
         } else if (teaser.substr(index, annotation_anchor.size()) == annotation_anchor) {
             const auto separator = teaser.find(annotation_separator, index + annotation_anchor.size());
+            const auto continuation = teaser.find('\x1e', index + annotation_anchor.size());
             const auto terminator = separator == std::string_view::npos
                                         ? std::string_view::npos
                                         : teaser.find(annotation_terminator, separator + annotation_separator.size());
-            if (separator == std::string_view::npos || terminator == std::string_view::npos) {
+            // Pinned Juniper SummaryDesc::get_summary can end an excerpt in
+            // annotation metadata and append its continuation delimiter before
+            // the terminator. Preserve the complete surface form before the
+            // separator; discard only that clipped metadata. Without the
+            // backend continuation boundary a missing terminator is malformed.
+            const bool clipped_metadata = continuation != std::string_view::npos &&
+                                          (terminator == std::string_view::npos || continuation < terminator);
+            // A continued excerpt may also end before the annotation's
+            // separator. These backend-selected bytes are surface text;
+            // preserve them without manufacturing a highlight or completion.
+            if (continuation != std::string_view::npos &&
+                (separator == std::string_view::npos || continuation < separator)) {
+                if (highlighted) throw std::runtime_error("Vespa teaser contains malformed interlinear annotation");
+                fragment.text.append(teaser.substr(index + annotation_anchor.size(),
+                                                   continuation - index - annotation_anchor.size()));
+                index = continuation;
+                continue;
+            }
+            if (separator == std::string_view::npos ||
+                (clipped_metadata && highlighted) ||
+                (terminator == std::string_view::npos && !clipped_metadata)) {
                 throw std::runtime_error("Vespa teaser contains malformed interlinear annotation");
             }
             fragment.text.append(teaser.substr(index + annotation_anchor.size(),
                                                separator - index - annotation_anchor.size()));
-            index = terminator + annotation_terminator.size();
+            index = clipped_metadata ? continuation : terminator + annotation_terminator.size();
         } else {
             fragment.text.push_back(teaser[index++]);
         }
@@ -14145,6 +14841,7 @@ typedef struct sk_generic_grouping_request sk_generic_grouping_request;
 typedef struct sk_local_search_result sk_generic_search_result;
 typedef struct sk_local_grouping_result sk_generic_grouping_result;
 typedef struct sk_feature_value sk_feature_value;
+typedef struct sk_diagnostic_tensor sk_diagnostic_tensor;
 
 /* FeatureSet::Value is deliberately narrower than the general Search Kernel
  * value model: Vespa exposes either a scalar double or an opaque data payload.
@@ -14152,6 +14849,9 @@ typedef struct sk_feature_value sk_feature_value;
 #define SK_FEATURE_VALUE_KIND_INVALID 0U
 #define SK_FEATURE_VALUE_DOUBLE 1U
 #define SK_FEATURE_VALUE_DATA 2U
+#define SK_DIAGNOSTIC_TENSOR_DENSE 1U
+#define SK_DIAGNOSTIC_TENSOR_SPARSE 2U
+#define SK_DIAGNOSTIC_TENSOR_MIXED 3U
 typedef struct sk_grouping_plan sk_grouping_plan;
 typedef struct sk_grouping_level sk_grouping_level;
 typedef struct sk_grouping_expression sk_grouping_expression;
@@ -14175,7 +14875,7 @@ typedef struct sk_grouping_filter sk_grouping_filter;
 
 /* ABI revision 16. Diagnostics add setters/accessors around opaque handles;
    existing signatures, layouts and behavior remain compatible. */
-#define SK_NATIVE_ABI_VERSION 16U
+#define SK_NATIVE_ABI_VERSION 17U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -14746,7 +15446,7 @@ SK_API int32_t sk_generic_search_request_set_timeout(
 SK_API int32_t sk_generic_search_request_set_diagnostics(
     sk_generic_search_request *request, uint32_t trace_level,
     uint32_t matching_depth, uint32_t first_phase_depth,
-    uint32_t second_phase_depth, uint32_t raw_bytes,
+    uint32_t second_phase_depth, uint32_t raw_bytes, uint32_t structure_depth,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_sort(
     sk_generic_search_request *request, const char *field, uint32_t order,
@@ -14810,18 +15510,61 @@ SK_API uint32_t sk_generic_search_result_issue_count(
    them before releasing the opaque result. Truncated payloads are prefixes,
    not complete JSON; timings are measured seconds from this execution.
    out_truncated is a mask: 1=trace prefix, 2=omitted oversized DATA columns. */
-/* Caller-owned output buffers; independent calls retain no pointers. Decoding
-   is above the unchanged raw DOUBLE/DATA feature ABI, using Vespa's codec. */
+/* Diagnostic tensor decoding is above the unchanged raw DOUBLE/DATA feature
+   ABI. The opaque result owns its type, mapped labels and normalized f64 cells.
+   cell_limit is enforced by the decoder's value-builder factory before Vespa
+   materializes declared tensor cells. */
 SK_API int32_t sk_diagnostic_tensor_decode(
-    const uint8_t *data, uint32_t length, char *type_spec,
-    uint32_t type_capacity, uint32_t *out_type_length, double *cells,
-    uint32_t cell_capacity, uint32_t *out_cell_count,
+    const uint8_t *data, uint32_t length, uint32_t cell_limit,
+    sk_diagnostic_tensor **out_tensor, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT;
+SK_API void sk_diagnostic_tensor_destroy(
+    sk_diagnostic_tensor *tensor) SK_NOEXCEPT;
+SK_API uint32_t sk_diagnostic_tensor_kind(
+    const sk_diagnostic_tensor *tensor) SK_NOEXCEPT;
+SK_API int32_t sk_diagnostic_tensor_type_spec(
+    const sk_diagnostic_tensor *tensor, const char **out_type,
+    uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_diagnostic_tensor_block_count(
+    const sk_diagnostic_tensor *tensor) SK_NOEXCEPT;
+SK_API uint32_t sk_diagnostic_tensor_block_address_count(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index) SK_NOEXCEPT;
+SK_API int32_t sk_diagnostic_tensor_block_address(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index,
+    uint32_t address_index, const char **out_dimension,
+    uint32_t *out_dimension_length, const char **out_label,
+    uint32_t *out_label_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_diagnostic_tensor_block_values(
+    const sk_diagnostic_tensor *tensor, uint32_t block_index,
+    const double **out_values, uint32_t *out_value_count,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT;
+/* ABI 17 diagnostic projection v1. section: 0 matching, 1 first phase,
+ * 2 second phase, 3 iterator, 4 optimized blueprint. status: 0 Available,
+ * 1 Unsupported, 2 UnavailableForQuery, 3 Truncated, 4 TimedOut, 5 Failed.
+ * Result owns the <=65536-byte UTF-8 Search Kernel schema buffer. Borrow is
+ * valid until result destruction; concurrent immutable reads are allowed.
+ * Copy before freeing result. No Vespa layout or arbitrary Slime is exposed.
+ * Nodes are preorder records with parent index (-1 root), thread index, name,
+ * optional count/total_ms/self_ms. Report roots preserve engine elapsed totals.
+ * Absence of self_ms is preserved. Provenance: engine/revision/native_abi.
+ */
+SK_API int32_t sk_generic_search_result_diagnostic_section(
+    const sk_generic_search_result *result, uint32_t section,
+    uint32_t *out_status, const uint8_t **out_data, uint32_t *out_length,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_diagnostics(
     const sk_generic_search_result *result, const uint8_t **out_trace,
     uint32_t *out_length, uint32_t *out_truncated,
     double *out_matching_seconds, double *out_summary_seconds,
     double *out_query_seconds, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_diagnostic_truncated_feature_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_diagnostic_truncated_feature_name(
+    const sk_generic_search_result *result, uint32_t index,
+    const char **out_name, uint32_t *out_length, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_issue_message(
     const sk_generic_search_result *result, uint32_t index,
@@ -15234,8 +15977,11 @@ SK_API void sk_generic_grouping_result_destroy(sk_generic_grouping_result *resul
 #endif
 "########),
     ("core/native/vespa/searchkernel_vespa_internal.h", br########"#pragma once
+#include <set>
+#include <vespa/searchlib/query/query_stack_iterator.h>
 
 #include "searchkernel_vespa.h"
+#include "diagnostic_projection.h"
 #include <vespa/config-rank-profiles.h>
 #include <vespa/searchcore/proton/matching/matcher.h>
 #include <vespa/searchlib/fef/ranking_assets_repo.h>
@@ -15395,6 +16141,7 @@ SK_API void sk_generic_grouping_result_destroy(sk_generic_grouping_result *resul
 #include <vespa/eval/eval/tensor_spec.h>
 #include <vespa/eval/eval/typed_cells.h>
 #include <vespa/eval/eval/value_codec.h>
+#include <vespa/vespalib/util/shared_string_repo.h>
 #include <vespa/vespalib/util/shared_operation_throttler.h>
 
 #include <vespa/persistence/dummyimpl/dummy_bucket_executor.h>
@@ -15713,6 +16460,17 @@ struct OwnedValue {
     std::vector<std::vector<std::pair<std::string, OwnedValue>>> struct_elements;
 };
 
+struct DiagnosticTensorBlockState {
+    std::vector<std::pair<std::string, std::string>> address;
+    std::vector<double> values;
+};
+
+struct DiagnosticTensorState {
+    uint32_t kind = 0;
+    std::string type_spec;
+    std::vector<DiagnosticTensorBlockState> blocks;
+};
+
 struct DocumentFieldState {
     std::string name;
     OwnedValue value;
@@ -15790,6 +16548,7 @@ struct LocalSearchRequestState {
     uint32_t offset = 0;
     uint64_t timeout_millis = 60000;
     uint32_t diagnostic_trace_level = 0;
+    uint32_t diagnostic_structure_depth = 0;
     uint32_t diagnostic_matching_depth = 0;
     uint32_t diagnostic_first_phase_depth = 0;
     uint32_t diagnostic_second_phase_depth = 0;
@@ -15838,8 +16597,10 @@ struct LocalHitState {
 
 struct LocalSearchResultState {
     std::string diagnostic_trace;
+    sk_diagnostics::Sections diagnostic_sections;
     bool diagnostic_truncated = false;
     bool diagnostic_features_truncated = false;
+    std::vector<std::string> diagnostic_truncated_feature_names;
     double diagnostic_matching_seconds = 0.0;
     double diagnostic_summary_seconds = 0.0;
     double diagnostic_query_seconds = 0.0;
@@ -16241,6 +17002,7 @@ public:
         sk_local_search_result_destroy;
         sk_generic_search_request_create;
         sk_generic_search_request_set_timeout;
+        sk_generic_search_request_set_diagnostics;
         sk_generic_search_request_add_sort;
         sk_generic_search_request_set_sort_spec;
         sk_generic_search_request_add_summary_field;
@@ -16253,6 +17015,18 @@ public:
         sk_generic_search_request_add_grouping_plan;
         sk_generic_search_request_destroy;
         sk_engine_search_generic;
+        sk_generic_search_result_diagnostic_section;
+        sk_generic_search_result_diagnostics;
+        sk_generic_search_result_diagnostic_truncated_feature_count;
+        sk_generic_search_result_diagnostic_truncated_feature_name;
+        sk_diagnostic_tensor_decode;
+        sk_diagnostic_tensor_destroy;
+        sk_diagnostic_tensor_kind;
+        sk_diagnostic_tensor_type_spec;
+        sk_diagnostic_tensor_block_count;
+        sk_diagnostic_tensor_block_address_count;
+        sk_diagnostic_tensor_block_address;
+        sk_diagnostic_tensor_block_values;
         sk_generic_search_result_total_hit_count;
         sk_generic_search_result_hit_count;
         sk_generic_search_result_coverage_active;

@@ -50,14 +50,30 @@ class BuildSystemCiTest(unittest.TestCase):
             encoding="utf-8",
         )
         self.fake_cargo.chmod(0o755)
+        # This is an orchestration unit test. Mock only the owning verifier
+        # command; its actual upstream/native/browser acceptance has its lane.
+        self.fake_bash = self.root / "bash"
+        self.fake_bash.write_text(
+            "#!/bin/bash\n"
+            'if [[ "${1:-}" == "$CI_INSTANTSEARCH_VERIFIER" ]]; then\n'
+            '  printf "%s\\n" "instantsearch-compat" >> "$CI_FAKE_CARGO_LOG"\n'
+            '  if [[ "${CI_FAKE_INSTANTSEARCH_FAIL:-}" == 1 ]]; then exit 29; fi\n'
+            '  exit 0\n'
+            'fi\n'
+            'exec /bin/bash "$@"\n', encoding="utf-8",
+        )
+        self.fake_bash.chmod(0o755)
 
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_ci(self, *args, fail=""):
+    def run_ci(self, *args, fail="", lane_fail=False):
         environment = os.environ.copy()
         environment.update(
             {
+                "PATH": str(self.root) + os.pathsep + environment.get("PATH", ""),
+                "CI_INSTANTSEARCH_VERIFIER": str(ROOT / "tools" / "verify-instantsearch.sh"),
+                "CI_FAKE_INSTANTSEARCH_FAIL": "1" if lane_fail else "0",
                 "CARGO": str(self.fake_cargo),
                 "RUSTC": str(self.fake_cargo),
                 "RUSTFMT": str(self.fake_cargo),
@@ -89,9 +105,15 @@ class BuildSystemCiTest(unittest.TestCase):
                 "check --workspace --all-targets --no-default-features --locked",
                 "check -p searchkerneld --tests --features native --locked",
                 "clippy --workspace --all-targets --no-default-features --locked -- -D warnings",
+                "instantsearch-compat",
             ],
         )
         self.assertNotIn("not implemented", result.stderr)
+
+    def test_instantsearch_lane_failure_propagates(self):
+        result = self.run_ci(lane_fail=True)
+        self.assertEqual(result.returncode, 29, result.stderr)
+        self.assertEqual(self.log.read_text(encoding="utf-8").splitlines()[-1], "instantsearch-compat")
 
     def test_ci_failure_output_and_status_propagate(self):
         result = self.run_ci(fail="check")

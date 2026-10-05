@@ -1,8 +1,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 //! Safe Vespa-specific adapter for the private Search Kernel ABI.
 
+mod diagnostics;
 mod document;
 mod engine;
+pub use diagnostics::{
+    DiagnosticEvidence, DiagnosticNode, DiagnosticProjection, DiagnosticSection, DiagnosticStatus,
+};
 mod error;
 mod linguistics;
 mod native;

@@ -475,3 +475,133 @@ fn friendly_query_comes_from_canonical_operators_without_engine_syntax_guessing(
     };
     assert!(friendly_typed_query(&expression).contains("not exhaustive"));
 }
+
+struct StructuredBackend;
+impl Backend for StructuredBackend {
+    fn insert(&self, _: InsertRequestIr) -> Result<InsertResult> {
+        panic!("read only")
+    }
+    fn upsert(&self, _: UpsertRequestIr) -> Result<UpsertResult> {
+        panic!("read only")
+    }
+    fn patch(&self, _: PatchRequestIr) -> Result<PatchResult> {
+        panic!("read only")
+    }
+    fn delete(&self, _: DeleteRequestIr) -> Result<DeleteResult> {
+        panic!("read only")
+    }
+    fn get(&self, request: GetRequestIr) -> Result<GetResult> {
+        EvidenceBackend { timeout: false }.get(request)
+    }
+    fn analyze(&self, _: AnalyzeRequestIr) -> Result<AnalyzeResult> {
+        panic!("not requested")
+    }
+    fn search(&self, _: SearchRequestIr) -> Result<SearchResult> {
+        Ok(result(&["a"]))
+    }
+    fn search_diagnostic(
+        &self,
+        request: SearchRequestIr,
+        _: &[DiagnosticSection],
+        _: &DiagnosticLimits,
+    ) -> Result<DiagnosticSearchResult> {
+        let structured_evidence = [
+            (
+                DiagnosticSection::MatchingProfiler,
+                DiagnosticStatus::Available,
+            ),
+            (
+                DiagnosticSection::FirstPhaseProfiler,
+                DiagnosticStatus::Truncated,
+            ),
+            (
+                DiagnosticSection::SecondPhaseProfiler,
+                DiagnosticStatus::UnavailableForQuery,
+            ),
+            (DiagnosticSection::IteratorTree, DiagnosticStatus::Failed),
+            (DiagnosticSection::Blueprint, DiagnosticStatus::TimedOut),
+        ]
+        .into_iter()
+        .map(|(section, status)| {
+            let mut item = evidence(
+                "projected",
+                section,
+                &execution("native"),
+                "independent section",
+            );
+            item.status = status;
+            item.values
+                .insert("engine_revision".into(), Value::String("pinned".into()));
+            item
+        })
+        .collect();
+        Ok(DiagnosticSearchResult {
+            result: self.search(request)?,
+            structured_evidence,
+            raw_engine: vec![RawEngineDiagnostics {
+                engine: "engine".into(),
+                version: "pinned".into(),
+                execution_id: String::new(),
+                section: DiagnosticSection::Trace,
+                status: DiagnosticStatus::Truncated,
+                media_type: "text/plain".into(),
+                payload: "partial".into(),
+            }],
+        })
+    }
+}
+
+#[test]
+fn independent_section_statuses_survive_raw_truncation_and_execution_binding() {
+    let mut request = input();
+    request.intent = DiagnosticIntent::DeepEngine;
+    request.expected_document_id = None;
+    request.requested_evidence = vec![
+        DiagnosticSection::MatchingProfiler,
+        DiagnosticSection::FirstPhaseProfiler,
+        DiagnosticSection::SecondPhaseProfiler,
+        DiagnosticSection::IteratorTree,
+        DiagnosticSection::Blueprint,
+        DiagnosticSection::Trace,
+        DiagnosticSection::RawEngine,
+        DiagnosticSection::MatchedTerms,
+    ];
+    let output = execute(
+        &context(),
+        &StructuredBackend,
+        request,
+        None,
+        execution("rerun"),
+    )
+    .unwrap();
+    for (section, status) in [
+        (
+            DiagnosticSection::MatchingProfiler,
+            DiagnosticStatus::Available,
+        ),
+        (
+            DiagnosticSection::FirstPhaseProfiler,
+            DiagnosticStatus::Truncated,
+        ),
+        (
+            DiagnosticSection::SecondPhaseProfiler,
+            DiagnosticStatus::UnavailableForQuery,
+        ),
+        (DiagnosticSection::IteratorTree, DiagnosticStatus::Failed),
+        (DiagnosticSection::Blueprint, DiagnosticStatus::TimedOut),
+        (
+            DiagnosticSection::MatchedTerms,
+            DiagnosticStatus::Unsupported,
+        ),
+        (DiagnosticSection::Trace, DiagnosticStatus::Truncated),
+        (DiagnosticSection::RawEngine, DiagnosticStatus::Truncated),
+    ] {
+        let item = output
+            .evidence
+            .iter()
+            .find(|v| v.section == section)
+            .unwrap();
+        assert_eq!(item.status, status, "{section:?}");
+        assert_eq!(item.execution_id, "rerun");
+    }
+}

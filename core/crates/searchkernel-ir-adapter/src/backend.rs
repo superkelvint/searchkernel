@@ -206,6 +206,7 @@ impl VespaBackend {
                 )
             });
             m_request.diagnostics = Some(searchkernel_vespa_engine::SearchDiagnosticControls {
+                structure_depth: limits.trace_depth,
                 trace_level: if tracing {
                     let preset = if sections.iter().any(|section| {
                         matches!(
@@ -266,11 +267,12 @@ impl VespaBackend {
                 "native search returned an unexpected structured grouping count",
             ));
         }
-        let mut unavailable_features = std::collections::BTreeMap::new();
+        let mut feature_issues = Vec::new();
         let mut children = result
             .hits
             .into_iter()
             .map(|hit| {
+                let hit_id = hit.document_id.clone();
                 Ok(searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
                     id: hit.document_id,
                     score: Some(hit.score),
@@ -321,10 +323,11 @@ impl VespaBackend {
                                                 crate::tensor_to_ir(&tensor),
                                             ),
                                             Err(error) => {
-                                                unavailable_features.insert(
-                                                    name,
-                                                    searchkernel_ir::Value::String(
-                                                        error.to_string(),
+                                                feature_issues.push(
+                                                    diagnostic_tensor_feature_issue(
+                                                        &name,
+                                                        Some(&hit_id),
+                                                        &error,
                                                     ),
                                                 );
                                                 return None;
@@ -387,6 +390,17 @@ impl VespaBackend {
         let feature_payload_truncated = native_diagnostics
             .as_ref()
             .is_some_and(|value| value.features_truncated);
+        if let Some(value) = native_diagnostics.as_ref() {
+            for name in &value.truncated_features {
+                feature_issues.push(diagnostic_feature_issue(
+                    name,
+                    None,
+                    "truncated",
+                    "diagnostic_tensor_byte_budget_exceeded",
+                    "feature payload was omitted before decoding because the diagnostic raw-byte budget was exhausted",
+                ));
+            }
+        }
         let mut timing = native_diagnostics
             .as_ref()
             .map(|value| searchkernel_ir::SearchTiming {
@@ -396,61 +410,47 @@ impl VespaBackend {
                 metadata: Default::default(),
             });
         let mut raw_engine = Vec::new();
-        let mut observed_sections = Vec::new();
+        let mut structured_evidence = Vec::new();
         if let Some(value) = native_diagnostics {
-            if !value.trace.is_empty() || value.truncated {
-                if !value.truncated {
-                    if let Ok(tree) = serde_json::from_str::<serde_json::Value>(&value.trace) {
-                        for (section, key) in [
-                            (
-                                searchkernel_ir::DiagnosticSection::MatchingProfiler,
-                                "match_profiling",
-                            ),
-                            (
-                                searchkernel_ir::DiagnosticSection::FirstPhaseProfiler,
-                                "first_phase_profiling",
-                            ),
-                            (
-                                searchkernel_ir::DiagnosticSection::SecondPhaseProfiler,
-                                "second_phase_profiling",
-                            ),
-                            (searchkernel_ir::DiagnosticSection::IteratorTree, "iterator"),
-                        ] {
-                            if engine_tree_has_key(&tree, key) {
-                                observed_sections.push(section);
-                            }
-                            if let Some(time) = timing.as_mut() {
-                                let measurements = engine_profile_elapsed(&tree, key);
-                                if !measurements.is_empty() {
-                                    let name = match section {
-                                        searchkernel_ir::DiagnosticSection::MatchingProfiler => {
-                                            Some("matching_profile_elapsed_seconds_sum")
-                                        }
-                                        searchkernel_ir::DiagnosticSection::FirstPhaseProfiler => {
-                                            Some("first_phase_profile_elapsed_seconds_sum")
-                                        }
-                                        searchkernel_ir::DiagnosticSection::SecondPhaseProfiler => {
-                                            Some("second_phase_profile_elapsed_seconds_sum")
-                                        }
-                                        _ => None,
-                                    };
-                                    if let Some(name) = name {
-                                        time.metadata.insert(
-                                            name.into(),
-                                            searchkernel_ir::Value::Float64(
-                                                measurements.iter().sum::<f64>() / 1000.0,
-                                            ),
-                                        );
-                                    }
-                                }
-                            }
+            let provenance = value
+                .sections
+                .iter()
+                .find_map(|v| v.projection.as_ref())
+                .map(|v| (v.engine.clone(), v.revision.clone()));
+            for section in value.sections {
+                let evidence = portable_diagnostic_evidence(section);
+                if let Some(time) = timing.as_mut() {
+                    let key = match evidence.section {
+                        searchkernel_ir::DiagnosticSection::MatchingProfiler => {
+                            Some("matching_profile_elapsed_seconds_sum")
                         }
-                        observed_sections.push(searchkernel_ir::DiagnosticSection::RawEngine);
+                        searchkernel_ir::DiagnosticSection::FirstPhaseProfiler => {
+                            Some("first_phase_profile_elapsed_seconds_sum")
+                        }
+                        searchkernel_ir::DiagnosticSection::SecondPhaseProfiler => {
+                            Some("second_phase_profile_elapsed_seconds_sum")
+                        }
+                        _ => None,
+                    };
+                    if let Some(key) = key {
+                        // Sum report roots across threads, never ancestor + descendant totals.
+                        // This is aggregate profiled thread time, not query wall-clock latency.
+                        if let Some(searchkernel_ir::Value::Float64(total)) =
+                            evidence.values.get("thread_total_seconds_sum")
+                        {
+                            time.metadata
+                                .insert(key.into(), searchkernel_ir::Value::Float64(*total));
+                        }
                     }
                 }
+                structured_evidence.push(evidence);
+            }
+            if !value.trace.is_empty() || value.truncated {
+                let (engine, version) =
+                    provenance.ok_or_else(|| internal("native diagnostic provenance is absent"))?;
                 raw_engine.push(searchkernel_ir::RawEngineDiagnostics {
-                    engine: "Vespa".into(),
-                    version: "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e".into(),
+                    engine,
+                    version,
                     execution_id: String::new(),
                     section: searchkernel_ir::DiagnosticSection::Trace,
                     status: if value.truncated {
@@ -495,72 +495,149 @@ impl VespaBackend {
                             searchkernel_ir::Value::Bool(true),
                         );
                     }
-                    if !unavailable_features.is_empty() {
+                    if !feature_issues.is_empty() {
                         metadata.insert(
-                            "diagnostic_unavailable_features".into(),
-                            searchkernel_ir::Value::Object(unavailable_features),
+                            "diagnostic_feature_issues".into(),
+                            searchkernel_ir::Value::List(feature_issues),
                         );
                     }
                     metadata
                 },
             },
             raw_engine,
-            observed_sections,
+            structured_evidence,
         })
     }
 }
 
-// Pinned engine keys belong here, never in the portable finding evaluator or UI.
-fn engine_tree_has_key(value: &serde_json::Value, key: &str) -> bool {
-    match value {
-        serde_json::Value::Object(values) => {
-            values.get("tag").and_then(serde_json::Value::as_str) == Some(key)
-                || values.contains_key(key)
-                || values.values().any(|value| engine_tree_has_key(value, key))
-        }
-        serde_json::Value::Array(values) => {
-            values.iter().any(|value| engine_tree_has_key(value, key))
-        }
-        _ => false,
-    }
+fn diagnostic_feature_issue(
+    feature: &str,
+    hit_id: Option<&str>,
+    status: &str,
+    code: &str,
+    message: &str,
+) -> searchkernel_ir::Value {
+    searchkernel_ir::Value::Object(std::collections::BTreeMap::from([
+        (
+            "feature".into(),
+            searchkernel_ir::Value::String(feature.to_owned()),
+        ),
+        (
+            "hit_id".into(),
+            hit_id
+                .map(|value| searchkernel_ir::Value::String(value.to_owned()))
+                .unwrap_or(searchkernel_ir::Value::Null),
+        ),
+        (
+            "status".into(),
+            searchkernel_ir::Value::String(status.to_owned()),
+        ),
+        (
+            "code".into(),
+            searchkernel_ir::Value::String(code.to_owned()),
+        ),
+        (
+            "message".into(),
+            searchkernel_ir::Value::String(message.to_owned()),
+        ),
+    ]))
 }
 
-// ExecutionProfiler::report at the pinned revision reports a root elapsed
-// total in milliseconds. Sum roots across threads, never descendant totals.
-fn engine_profile_elapsed(value: &serde_json::Value, key: &str) -> Vec<f64> {
-    match value {
-        serde_json::Value::Object(values) => {
-            if values.get("tag").and_then(serde_json::Value::as_str) == Some(key) {
-                // Trace::createCursor records the profiler as a tagged trace
-                // object; it does not create a property named after the tag.
-                return values
-                    .get("total_time_ms")
-                    .and_then(serde_json::Value::as_f64)
-                    .filter(|value| value.is_finite() && *value >= 0.0)
-                    .into_iter()
-                    .collect();
-            }
-            values
-                .iter()
-                .flat_map(|(name, value)| {
-                    if name == key {
-                        value
-                            .get("total_time_ms")
-                            .and_then(serde_json::Value::as_f64)
-                            .filter(|value| value.is_finite() && *value >= 0.0)
-                            .into_iter()
-                            .collect()
-                    } else {
-                        engine_profile_elapsed(value, key)
+fn diagnostic_tensor_feature_issue(
+    feature: &str,
+    hit_id: Option<&str>,
+    error: &searchkernel_vespa_engine::Error,
+) -> searchkernel_ir::Value {
+    let status = if error.detail_code() == Some("diagnostic_tensor_cell_budget_exceeded")
+        || error.kind() == searchkernel_vespa_engine::ErrorKind::ResourceExhausted
+    {
+        "truncated"
+    } else if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
+        "unsupported"
+    } else {
+        "failed"
+    };
+    diagnostic_feature_issue(
+        feature,
+        hit_id,
+        status,
+        error
+            .detail_code()
+            .unwrap_or("diagnostic_tensor_decode_failed"),
+        &error.to_string(),
+    )
+}
+
+fn portable_diagnostic_evidence(
+    native: searchkernel_vespa_engine::DiagnosticEvidence,
+) -> searchkernel_ir::DiagnosticEvidence {
+    use searchkernel_ir::{DiagnosticSection as Section, DiagnosticStatus as Status, Value};
+    use searchkernel_vespa_engine::{
+        DiagnosticSection as NativeSection, DiagnosticStatus as NativeStatus,
+    };
+    let section = match native.section {
+        NativeSection::MatchingProfiler => Section::MatchingProfiler,
+        NativeSection::FirstPhaseProfiler => Section::FirstPhaseProfiler,
+        NativeSection::SecondPhaseProfiler => Section::SecondPhaseProfiler,
+        NativeSection::IteratorTree => Section::IteratorTree,
+        NativeSection::Blueprint => Section::Blueprint,
+    };
+    let status = match native.status {
+        NativeStatus::Available => Status::Available,
+        NativeStatus::Unsupported => Status::Unsupported,
+        NativeStatus::UnavailableForQuery => Status::UnavailableForQuery,
+        NativeStatus::Truncated => Status::Truncated,
+        NativeStatus::TimedOut => Status::TimedOut,
+        NativeStatus::Failed => Status::Failed,
+    };
+    let mut values = std::collections::BTreeMap::new();
+    if let Some(projection) = native.projection {
+        values.insert("engine".into(), Value::String(projection.engine));
+        values.insert("engine_revision".into(), Value::String(projection.revision));
+        values.insert(
+            "native_abi".into(),
+            Value::Int64(i64::from(projection.native_abi)),
+        );
+        let mut total = 0.0;
+        let mut measured = false;
+        let nodes = projection
+            .nodes
+            .into_iter()
+            .map(|node| {
+                if node.parent == -1 {
+                    if let Some(value) = node.total_ms {
+                        total += value / 1000.0;
+                        measured = true;
                     }
-                })
-                .collect()
+                }
+                let mut fields = std::collections::BTreeMap::from([
+                    ("parent".into(), Value::Int64(i64::from(node.parent))),
+                    ("thread".into(), Value::Int64(i64::from(node.thread))),
+                    ("name".into(), Value::String(node.name)),
+                ]);
+                if let Some(count) = node.count {
+                    fields.insert("invocations".into(), Value::Int64(count as i64));
+                }
+                if let Some(time) = node.total_ms {
+                    fields.insert("total_seconds".into(), Value::Float64(time / 1000.0));
+                }
+                if let Some(time) = node.self_ms {
+                    fields.insert("self_seconds".into(), Value::Float64(time / 1000.0));
+                }
+                Value::Object(fields)
+            })
+            .collect();
+        values.insert("nodes".into(), Value::List(nodes));
+        if measured {
+            values.insert("thread_total_seconds_sum".into(), Value::Float64(total));
         }
-        serde_json::Value::Array(values) => values
-            .iter()
-            .flat_map(|value| engine_profile_elapsed(value, key))
-            .collect(),
-        _ => Vec::new(),
+    }
+    searchkernel_ir::DiagnosticEvidence {
+        id: String::new(), section, status,
+        provenance: searchkernel_ir::DiagnosticProvenance::Engine,
+        execution_id: String::new(),
+        message: "Bounded engine structure; each root belongs to its recorded execution thread. Timing is engine-reported; missing self time remains absent.".into(),
+        values, canonical_request: None, result: None,
     }
 }
 
@@ -990,6 +1067,12 @@ impl Backend for VespaBackend {
                 "the current native Vespa adapter cannot execute delete test-and-set conditions",
             ));
         }
+        // Native mutation calls wait for their source state after feeding Vespa.
+        // A same-document delete must not remove that state during a put's wait.
+        let existence_mutation_lock = self.existence_mutation_lock(request.id().as_str())?;
+        let _existence_mutation_guard = existence_mutation_lock
+            .lock()
+            .map_err(|_| internal("document existence mutation lock is poisoned"))?;
         let deleted = self
             .engine
             .delete(request.id().as_str())
@@ -1065,18 +1148,60 @@ mod implicit_output_name_regression_tests {
     };
 
     #[test]
-    fn vespa_profiler_tags_and_root_totals_are_normalized_without_double_counting() {
-        let trace = serde_json::json!({ "traces": [{ "tag": "query_execution", "threads": [{ "traces": [{ "tag": "first_phase_profiling", "total_time_ms": 12.0, "children": [{ "total_time_ms": 7.0 }] }, { "tag": "second_phase_profiling", "total_time_ms": 3.0 }] }] }] });
-        assert!(engine_tree_has_key(&trace, "first_phase_profiling"));
-        assert_eq!(
-            engine_profile_elapsed(&trace, "first_phase_profiling"),
-            [12.0]
-        );
-        assert_eq!(
-            engine_profile_elapsed(&trace, "second_phase_profiling"),
-            [3.0]
-        );
-        assert!(!engine_tree_has_key(&trace, "match_profiling"));
+    fn native_projection_statuses_and_root_totals_are_preserved() {
+        use searchkernel_vespa_engine::{
+            DiagnosticEvidence, DiagnosticNode, DiagnosticProjection, DiagnosticSection,
+            DiagnosticStatus,
+        };
+        for status in [
+            DiagnosticStatus::Available,
+            DiagnosticStatus::Unsupported,
+            DiagnosticStatus::UnavailableForQuery,
+            DiagnosticStatus::Truncated,
+            DiagnosticStatus::TimedOut,
+            DiagnosticStatus::Failed,
+        ] {
+            let evidence = portable_diagnostic_evidence(DiagnosticEvidence {
+                section: DiagnosticSection::FirstPhaseProfiler,
+                status,
+                projection: Some(DiagnosticProjection {
+                    engine: "engine".into(),
+                    revision: "revision".into(),
+                    native_abi: 17,
+                    nodes: vec![
+                        DiagnosticNode {
+                            parent: -1,
+                            thread: 0,
+                            name: "profile".into(),
+                            count: None,
+                            total_ms: Some(12.0),
+                            self_ms: None,
+                        },
+                        DiagnosticNode {
+                            parent: 0,
+                            thread: 0,
+                            name: "child".into(),
+                            count: Some(3),
+                            total_ms: Some(7.0),
+                            self_ms: Some(5.0),
+                        },
+                        DiagnosticNode {
+                            parent: -1,
+                            thread: 1,
+                            name: "profile".into(),
+                            count: None,
+                            total_ms: Some(3.0),
+                            self_ms: None,
+                        },
+                    ],
+                }),
+            });
+            assert_eq!(format!("{:?}", evidence.status), format!("{:?}", status));
+            assert_eq!(
+                evidence.values["thread_total_seconds_sum"],
+                searchkernel_ir::Value::Float64(0.015)
+            );
+        }
     }
 
     #[test]

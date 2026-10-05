@@ -11,7 +11,7 @@ extern "C" {
 /* ABI v13 uses only opaque handles and fixed-width primitive arguments. */
 typedef struct sk_engine sk_engine;
 
-#define SK_NATIVE_ABI_VERSION 16U
+#define SK_NATIVE_ABI_VERSION 17U
 #define SK_NATIVE_STATUS_TYPE_ERROR 6
 
 /* Vespa FeatureSet::Value is DOUBLE or DATA. DATA is an opaque borrowed byte

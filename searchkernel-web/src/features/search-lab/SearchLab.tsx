@@ -26,9 +26,9 @@ export function SearchLab() {
   // A pending URL write is a transaction, not an independent form model. Rapid
   // edits compose against its latest value until the router commits it. POP
   // navigation always restores the URL/history entry as the authority.
-  const pendingWrite = useRef<{ state: ClientSearchRequest; signature: string; locationKey: string; includeInputs: boolean } | undefined>(undefined)
+  const pendingWrite = useRef<{ state: ClientSearchRequest; signature: string; includeInputs: boolean } | undefined>(undefined)
   const signature = JSON.stringify([key, privateInputs])
-  if (pendingWrite.current && (pendingWrite.current.signature === signature || (navigationType === 'POP' && pendingWrite.current.locationKey !== location.key))) pendingWrite.current = undefined
+  if (pendingWrite.current && (pendingWrite.current.signature === signature || navigationType === 'POP')) pendingWrite.current = undefined
 
   const [, renderPendingWrite] = useState(0)
   const state = pendingWrite.current?.state ?? urlState
@@ -80,7 +80,7 @@ export function SearchLab() {
     const next = withGeneration(encodeSearchParams(value, { includeInputs }))
     const history = !includeInputs && value.inputs !== undefined ? { searchLabInputs: value.inputs } : null
     if (next.toString() !== key || history?.searchLabInputs !== privateInputs) {
-      pendingWrite.current = { state: value, signature: JSON.stringify([next.toString(), history?.searchLabInputs]), locationKey: location.key, includeInputs }
+      pendingWrite.current = { state: value, signature: JSON.stringify([next.toString(), history?.searchLabInputs]), includeInputs }
       renderPendingWrite(value => value + 1)
       setParams(next, { state: history })
     }

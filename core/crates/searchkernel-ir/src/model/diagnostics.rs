@@ -210,9 +210,9 @@ pub struct QueryDiagnosticsResult {
 pub struct DiagnosticSearchResult {
     pub result: SearchResult,
     pub raw_engine: Vec<RawEngineDiagnostics>,
-    /// Sections actually observed by the engine adapter, backed by its raw
-    /// execution payload. Raw field names remain private to that adapter.
-    pub observed_sections: Vec<DiagnosticSection>,
+    /// Engine-owned structures normalized into portable evidence by the adapter.
+    /// Their statuses and bounds are independent of optional raw capture.
+    pub structured_evidence: Vec<DiagnosticEvidence>,
 }
 
 /// A bounded, server-held snapshot; clients cannot manufacture original evidence.

@@ -40,7 +40,7 @@ pub trait Backend: Send + Sync {
             .map(|result| crate::DiagnosticSearchResult {
                 result,
                 raw_engine: Vec::new(),
-                observed_sections: Vec::new(),
+                structured_evidence: Vec::new(),
             })
     }
     fn analyze(&self, request: AnalyzeRequestIr) -> Result<AnalyzeResult>;
