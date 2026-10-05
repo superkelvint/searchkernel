@@ -1,12 +1,12 @@
 import type { Capabilities } from '../api/searchkernel-client'
 
-export type Page = 'global-overview' | 'indexes' | 'index-overview' | 'documents' | 'search' | 'analyze' | 'inspect' | 'schema' | 'ranking' | 'summaries' | 'health' | 'diagnostics' | 'operations' | 'settings'
-export type Tab = 'Overview' | 'Data' | 'Search' | 'Configuration' | 'Operations'
+export type Page = 'global-overview' | 'indexes' | 'index-overview' | 'documents' | 'search' | 'analyze' | 'inspect' | 'schema' | 'ranking' | 'summaries' | 'health' | 'diagnostics' | 'operations' | 'settings' | 'integrations'
+export type Tab = 'Overview' | 'Data' | 'Search' | 'Configuration' | 'Operations' | 'Integrations'
 export type Nav = (page: Page, indexId?: string) => void
 export type NavigationItem = { label: string; page: Page; visible: boolean; enabled: boolean; reason?: string }
 export type NavigationModel = { global: NavigationItem[]; tabs: NavigationItem[]; sections: Record<Tab, NavigationItem[]> }
 
-const indexPages = new Set<Page>(['index-overview', 'documents', 'search', 'analyze', 'inspect', 'schema', 'ranking', 'summaries', 'health', 'diagnostics'])
+const indexPages = new Set<Page>(['index-overview', 'documents', 'search', 'analyze', 'inspect', 'schema', 'ranking', 'summaries', 'health', 'diagnostics', 'integrations'])
 
 export function isIndexPage(page: Page) { return indexPages.has(page) }
 
@@ -17,7 +17,7 @@ export function pagePath(page: Page, indexId?: string) {
   if (page === 'settings') return '/settings'
   if (!indexId) throw new Error(`An index id is required for ${page}.`)
   return {
-    'index-overview': `/indexes/${indexId}/overview`, documents: `/indexes/${indexId}/data/documents`, search: `/indexes/${indexId}/search/lab`,
+    integrations: `/indexes/${indexId}/integrations/instantsearch`, 'index-overview': `/indexes/${indexId}/overview`, documents: `/indexes/${indexId}/data/documents`, search: `/indexes/${indexId}/search/lab`,
     analyze: `/indexes/${indexId}/search/analyze`, inspect: `/indexes/${indexId}/search/inspect`, schema: `/indexes/${indexId}/configuration/schema/fields`,
     ranking: `/indexes/${indexId}/configuration/ranking`, summaries: `/indexes/${indexId}/configuration/summaries`, health: `/indexes/${indexId}/operations/health`, diagnostics: `/indexes/${indexId}/operations/diagnostics`,
   }[page as Exclude<Page, 'global-overview' | 'indexes' | 'operations' | 'settings'>]
@@ -26,6 +26,7 @@ export function pagePath(page: Page, indexId?: string) {
 const requirementFor: Partial<Record<Page, (capabilities: Capabilities) => boolean>> = {
   'global-overview': capabilities => capabilities.indexes.read,
   indexes: capabilities => capabilities.indexes.read,
+  integrations: capabilities => capabilities.indexes.read,
   'index-overview': capabilities => capabilities.indexes.read,
   documents: capabilities => capabilities.documents.read,
   search: capabilities => capabilities.search.basic,
@@ -43,6 +44,7 @@ const staticNavigation: { global: [string, Page][]; sections: Record<Tab, [strin
   global: [['Overview', 'global-overview'], ['Indexes', 'indexes'], ['Operations', 'operations'], ['Settings', 'settings']],
   sections: {
     Overview: [],
+    Integrations: [['InstantSearch.js', 'integrations']],
     Data: [['Documents', 'documents']],
     Search: [['Search Lab', 'search'], ['Analyze', 'analyze'], ['Query Inspector', 'inspect']],
     Configuration: [['Schema', 'schema'], ['Ranking', 'ranking'], ['Summaries', 'summaries']],
@@ -60,12 +62,12 @@ export function navigationFor(capabilities?: Capabilities): NavigationModel {
   const sections = Object.fromEntries(Object.entries(staticNavigation.sections).map(([tab, entries]) => [tab, entries.map(([label, page]) => item(label, page, capabilities))])) as Record<Tab, NavigationItem[]>
   return {
     global: staticNavigation.global.map(([label, page]) => item(label, page, capabilities)),
-    tabs: [item('Overview', 'index-overview', capabilities), ...(['Data', 'Search', 'Configuration', 'Operations'] as const).map(tab => ({ label: tab, page: ({ Data: 'documents', Search: 'search', Configuration: 'schema', Operations: 'health' }[tab]) as Page, visible: sections[tab].some(entry => entry.visible), enabled: sections[tab].some(entry => entry.enabled), reason: sections[tab].find(entry => entry.visible && !entry.enabled)?.reason ?? sections[tab].find(entry => !entry.visible)?.reason }))],
+    tabs: [item('Overview', 'index-overview', capabilities), ...(['Data', 'Search', 'Configuration', 'Operations', 'Integrations'] as const).map(tab => ({ label: tab, page: ({ Data: 'documents', Search: 'search', Configuration: 'schema', Operations: 'health', Integrations: 'integrations' }[tab]) as Page, visible: sections[tab].some(entry => entry.visible), enabled: sections[tab].some(entry => entry.enabled), reason: sections[tab].find(entry => entry.visible && !entry.enabled)?.reason ?? sections[tab].find(entry => !entry.visible)?.reason }))],
     sections,
   }
 }
 
 export const tabFor = (page: Page): Tab | null => {
-  const tabs: Partial<Record<Page, Tab>> = { 'index-overview': 'Overview', documents: 'Data', search: 'Search', analyze: 'Search', inspect: 'Search', schema: 'Configuration', ranking: 'Configuration', summaries: 'Configuration', health: 'Operations', diagnostics: 'Operations' }
+  const tabs: Partial<Record<Page, Tab>> = { integrations: 'Integrations', 'index-overview': 'Overview', documents: 'Data', search: 'Search', analyze: 'Search', inspect: 'Search', schema: 'Configuration', ranking: 'Configuration', summaries: 'Configuration', health: 'Operations', diagnostics: 'Operations' }
   return tabs[page] ?? null
 }

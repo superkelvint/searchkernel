@@ -272,6 +272,38 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
     expect(observed.search.hits[0].document.id).toBe('one')
     expect(observed.search.resolved).toBeUndefined()
 
+    // W6 uses the selected incarnation while consuming the landed canonical
+    // InstantSearch declaration/adapter instead of maintaining frontend semantics.
+    await page.getByRole('button', { name: 'Close document', exact: true }).click()
+    await page.getByRole('button', { name: 'Integrations', exact: true }).click()
+    await page.getByText('The selected generation responded', { exact: false }).waitFor()
+    expect(page.url()).toContain('/indexes/alpha/integrations/instantsearch')
+    await page.getByText('Authoritative compatibility', { exact: true }).waitFor()
+    await page.getByText(/is qualified for/).waitFor()
+    expect(await page.getByRole('button', { name: 'Run live adapter preview', exact: true }).isDisabled()).toBe(true)
+    for (const framework of ['Vanilla InstantSearch.js', 'React InstantSearch', 'Vue InstantSearch']) {
+      await page.getByRole('heading', { name: framework, exact: true }).waitFor()
+    }
+    const integrationUrl = page.url()
+    await stop(daemon)
+    await start()
+    await page.reload()
+    await page.getByRole('button', { name: 'Refresh inventory / select current incarnation', exact: true }).waitFor()
+    expect(page.url()).toBe(integrationUrl)
+    expect(await page.getByText('The selected generation responded', { exact: false }).count()).toBe(0)
+    await page.getByRole('button', { name: 'Refresh inventory / select current incarnation', exact: true }).click()
+    await page.getByRole('button', { name: 'alpha', exact: true }).click()
+    await page.getByRole('button', { name: 'Integrations', exact: true }).click()
+    await page.getByText('The selected generation responded', { exact: false }).waitFor()
+    const reopenedIntegrationUrl = page.url()
+    expect(reopenedIntegrationUrl).toContain('/indexes/alpha/integrations/instantsearch')
+    expect(reopenedIntegrationUrl).not.toBe(integrationUrl)
+    await page.addScriptTag({ type: 'module', content: `
+      import { createDaemonSearchKernelClient } from '/src/api/daemon-searchkernel-client.ts';
+      window.testAdapter = createDaemonSearchKernelClient(${JSON.stringify(webEndpoint)});
+      await window.testAdapter.getIndex('alpha');
+    ` })
+
     await Index.delete(endpoint, 'alpha')
     const replacement = await create('alpha')
     await replacement.upsert('one', { title: 'replacement incarnation', quantity: 99 })
@@ -281,6 +313,12 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('real browser
     })
     expect(stale).toMatchObject({ code: 'failed_precondition', retryable: false, origin: 'canonical' })
     expect(JSON.stringify(stale?.details)).toContain('stale_index_handle')
+    await page.getByRole('button', { name: 'Recheck index identity' }).click()
+    await page.getByText('Index validation failed. Integration launch is unavailable.', { exact: true }).waitFor()
+    expect(await page.getByText('The selected generation responded', { exact: false }).count()).toBe(0)
+    await page.reload()
+    await page.getByRole('button', { name: 'Refresh inventory / select current incarnation', exact: true }).waitFor()
+    expect(page.url()).toBe(reopenedIntegrationUrl)
     const sibling = await Index.open(endpoint, 'beta')
     handles.push(sibling)
     expect((await sibling.get('sibling'))?.title).toBe('orchid sibling')

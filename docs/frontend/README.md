@@ -52,3 +52,10 @@ tools/frontend-harness/frontend-accept F4
 ```
 
 Only that command may record `passed`.
+
+## W-series integration launch
+
+[W6 — Integration & Application Launch](W6.md) records the selected-index
+consumer workspace, canonical InstantSearch authority, live public-endpoint
+preview, and the remaining endpoint-management/durable-binding dependencies.
+W6 does not alter F-series frozen acceptance or own compatibility semantics.

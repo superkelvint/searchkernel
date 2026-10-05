@@ -101,3 +101,18 @@ uses a dedicated generation-bound SDK client so an apply response cannot upgrade
 a cached historical handle. Successful apply/reopen establishes the returned
 incarnation in the URL and clears only the prior incarnation's dependent views.
 Opening a client handle remains distinct from unloading the shared daemon engine.
+
+## InstantSearch integration (W6)
+
+The selected-index **Integrations → InstantSearch.js** workspace consumes the
+landed adapter and authoritative compatibility declaration directly from
+`integrations/instantsearch`. It shows exact pinned install commands and
+Vanilla/React/Vue examples. When supplied an already configured bounded public
+`.../search` URL and public alias, the live preview executes the real
+`createSearchKernelInstantSearchClient`; it never substitutes the trusted admin
+connection or Search Lab.
+
+Public endpoint discovery/create/update APIs have not landed, so manually
+supplied URL/alias values are session-only and are not represented as canonical
+binding state. Durable public binding across daemon restart also remains a
+backend responsibility. See [W6 status and ownership](../docs/frontend/W6.md).
