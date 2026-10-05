@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fromCanonicalJson, fromValue, IndexTargetT, type ValueT } from '@searchkernel/client'
+import { fromCanonicalJson, fromValue, IndexTargetT } from '@searchkernel/client'
 import { createFixtureSearchKernelClient } from '../../api/fixture-searchkernel-client'
 import { createUnavailableAdminClient } from '../../admin-client/unavailable-admin-client'
 import { ClientProvider } from '../../app/client-context'
@@ -37,6 +37,8 @@ describe('authoritative first-search progress', () => {
     expect(documentPresence({ ...empty, totalRelation: 'lower_bound' })).toBe('unknown')
     expect(documentPresence({ ...empty, coverage: { full: false } })).toBe('unknown')
     expect(documentPresence({ ...empty, coverage: { degraded: true } })).toBe('unknown')
+    expect(documentPresence({ ...empty, coverage: { degraded: { timeout: true } } })).toBe('unknown')
+    expect(documentPresence({ ...empty, coverage: { coveragePercent: 50 } })).toBe('unknown')
   })
   test('field declarations and capabilities gate possible next steps', () => {
     expect(hasTextFields({ fields: [{ type: 'string', searchable: true }] } as Index)).toBe(true)
@@ -78,9 +80,9 @@ describe('authoritative first-search progress', () => {
 test('first document entry preserves SDK scalar types and rejects lossy input', () => {
   const fields = [{ name: 'title', type: 'string' }, { name: 'count', type: 'int64' }, { name: 'price', type: 'float64' }, { name: 'active', type: 'bool' }] as Index['fields']
   const json = JSON.parse(firstDocumentFields(fields, { title: 'orchid', count: '9007199254740993', price: '1.25', active: 'false' }))
-  expect(fromValue(fromCanonicalJson('Value', json.count) as ValueT)).toBe(9007199254740993n)
-  expect(fromValue(fromCanonicalJson('Value', json.price) as ValueT)).toBe(1.25)
-  expect(fromValue(fromCanonicalJson('Value', json.active) as ValueT)).toBe(false)
+  expect(fromValue(fromCanonicalJson('Value', json.count) as Parameters<typeof fromValue>[0])).toBe(9007199254740993n)
+  expect(fromValue(fromCanonicalJson('Value', json.price) as Parameters<typeof fromValue>[0])).toBe(1.25)
+  expect(fromValue(fromCanonicalJson('Value', json.active) as Parameters<typeof fromValue>[0])).toBe(false)
   expect(() => firstDocumentFields(fields, { count: '1.5' })).toThrow('whole number')
   expect(() => firstDocumentFields(fields, { price: 'Infinity' })).toThrow('finite number')
   expect(() => firstDocumentFields(fields, { active: 'maybe' })).toThrow('true or false')

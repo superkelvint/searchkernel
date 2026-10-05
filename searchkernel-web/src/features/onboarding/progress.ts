@@ -5,7 +5,7 @@ export function documentPresence(result?: ClientSearchResponse): 'empty' | 'pres
   if (!result) return 'unknown'
   if (result.hits.length) return 'present'
   const coverage = result.coverage
-  const incomplete = coverage && typeof coverage === 'object' && !Array.isArray(coverage) && (coverage.full === false || coverage.degraded === true)
+  const incomplete = coverage && typeof coverage === 'object' && !Array.isArray(coverage) && (coverage.full === false || (typeof coverage.coveragePercent === 'number' && coverage.coveragePercent < 100) || coverage.degraded === true || (coverage.degraded && typeof coverage.degraded === 'object' && Object.values(coverage.degraded).some(flag => flag === true)))
   return !incomplete && String(result.matches) === '0' && result.totalRelation === 'exact' ? 'empty' : 'unknown'
 }
 export function hasTextFields(index: Index) {

@@ -64,6 +64,7 @@ export function DocumentEditor({ document, id = '', browse, open, guided = false
   const simple = state.operation === 'insert' || state.operation === 'upsert'
   return <section className="surface mt-4 min-w-0 space-y-3 p-4" aria-label="Document mutation editor">
     <h3 className="font-semibold">{basic ? "Add a document" : "Document mutation"}</h3>
+    {guided && !index.fields.every(simpleField) && <p>This collection includes structured fields. Use the advanced editor below to preserve their types; the request inspector shows exactly what will be saved.</p>}
     {basic && <p>Give this document a unique ID and add some text. Saving sends it to Search Kernel and checks it with fresh reads.</p>}
     <fieldset disabled={running || reconciling || !!unknownMutation} className="space-y-3">
       <div className="flex flex-wrap gap-3">
