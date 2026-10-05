@@ -156,6 +156,9 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     await page.unroute(`${webEndpoint}/**`)
     await page.getByRole('tab', { name: 'Inspect', exact: true }).click()
     await page.getByRole('button', { name: 'Inspect Vespa internals', exact: true }).click()
+    // Prior evidence remains visible while the explicit rerun is acquired.
+    // Wait for that acquisition before inspecting its engine payload.
+    await expect.poll(() => page.getByRole('button', { name: 'Inspect Vespa internals', exact: true }).isEnabled()).toBe(true)
     await page.getByText(/Vespa internals · Trace ·/).waitFor()
     await page.getByText(/Vespa internals · Trace ·/).click()
     await page.getByText('Raw engine payload', { exact: true }).click()
