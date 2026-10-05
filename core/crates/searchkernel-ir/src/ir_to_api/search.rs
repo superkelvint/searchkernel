@@ -91,6 +91,7 @@ pub(super) fn search_request_offset<'a>(
     api::SearchRequest::create(
         builder,
         &api::SearchRequestArgs {
+            diagnostic_source: request.diagnostic_source,
             query: Some(query),
             search_fields,
             filters: filter,
@@ -148,6 +149,7 @@ pub(super) fn resolved_request_offset<'a>(
     api::ResolvedSearchRequest::create(
         builder,
         &api::ResolvedSearchRequestArgs {
+            diagnostic_source: request.diagnostic_source,
             query: Some(query),
             search_fields: Some(search_fields),
             filters,

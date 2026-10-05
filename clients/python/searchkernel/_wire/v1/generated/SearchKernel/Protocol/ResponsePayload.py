@@ -23,6 +23,7 @@ class ResponsePayload(object):
     SearchKernel_Wire_ListIndexesResult = 15
     SearchKernel_Wire_PlanIndexChangeResult = 16
     SearchKernel_Wire_ApplyIndexChangeResult = 17
+    SearchKernel_Wire_QueryDiagnosticsResult = 18
 
 def ResponsePayloadCreator(unionType, table):
     from flatbuffers.table import Table
@@ -79,4 +80,7 @@ def ResponsePayloadCreator(unionType, table):
     if unionType == ResponsePayload.SearchKernel_Wire_ApplyIndexChangeResult:
         from searchkernel._wire.v1.generated import SearchKernel
         return SearchKernel.Wire.ApplyIndexChangeResult.ApplyIndexChangeResultT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == ResponsePayload.SearchKernel_Wire_QueryDiagnosticsResult:
+        from searchkernel._wire.v1.generated import SearchKernel
+        return SearchKernel.Wire.QueryDiagnosticsResult.QueryDiagnosticsResultT.InitFromBuf(table.Bytes, table.Pos)
     return None

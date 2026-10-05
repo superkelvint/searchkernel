@@ -57,6 +57,9 @@
     "ir": {
       "description": "Portable semantic IR tests"
     },
+    "protocol-generation": {
+      "description": "Canonical protocol regeneration with an exact-source generated patch export"
+    },
     "ir-adapter": {
       "description": "Vespa IR adapter lowering and real-engine regression tests"
     },

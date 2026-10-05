@@ -5,6 +5,18 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 struct SharedBackend(Arc<dyn Backend>);
 
 impl Backend for SharedBackend {
+    fn target_identity(&self) -> Option<(&str, &str)> {
+        self.0.target_identity()
+    }
+
+    fn search_diagnostic(
+        &self,
+        request: crate::SearchRequestIr,
+        sections: &[crate::DiagnosticSection],
+        limits: &crate::DiagnosticLimits,
+    ) -> crate::Result<crate::DiagnosticSearchResult> {
+        self.0.search_diagnostic(request, sections, limits)
+    }
     fn insert(&self, request: crate::InsertRequestIr) -> crate::Result<crate::InsertResult> {
         self.0.insert(request)
     }

@@ -666,9 +666,6 @@ universe() {
                     universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
                 fi
                 ;;
-            frontend.f8)
-            "$ROOT/tools/frontend-harness/frontend-accept" F8
-            ;;
         product.integration)
                 if ((m14_baseline_proved)); then
                     universe_dev_step "semantic verifier $target" verify "$target" --baseline-already-proved --skip-workspace-quality
@@ -725,6 +722,12 @@ test_target() {
     local requested=${1:-} target
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
+        protocol-generation)
+            regen_protocol
+            SK_NATIVE_BINDINGS_REGENERATE=1 bash "$ROOT/tools/check-native-bindings.sh"
+            "$PYTHON" "$ROOT/tools/generate-native-consumer-bundle.py"
+            "$PYTHON" "$ROOT/tools/export-protocol-generation.py"
+            ;;
         instantsearch-compat)
             bash "$ROOT/tools/verify-instantsearch.sh"
             ;;
@@ -771,6 +774,7 @@ test_target() {
             ;;
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
+            "$CARGO" test -p searchkernel-dispatch --all-targets
             ;;
         ir-adapter)
             "$CARGO" test -p searchkernel-ir-adapter --all-targets --all-features
@@ -846,6 +850,9 @@ verify_target() {
     set -- "$target" "$@"
 
     case "$target" in
+        frontend.f8)
+            "$ROOT/tools/frontend-harness/frontend-accept" F8
+            ;;
         product.integration)
             "$ROOT/reference/vespa/verify-through.sh" "$@"
             ;;
@@ -1585,6 +1592,7 @@ case "${1:-help}" in
     regen)
         case "${2:-}" in
             protocol) regen_protocol ;;
+            native-bindings) SK_NATIVE_BINDINGS_REGENERATE=1 bash "$ROOT/tools/check-native-bindings.sh" ;;
             result-fixtures) regen_result_fixtures ;;
             *)
                 echo 'usage: ./dev regen protocol|result-fixtures' >&2

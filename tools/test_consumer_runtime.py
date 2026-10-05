@@ -23,7 +23,7 @@ IDENTITY_MATERIAL = {
     "platform": "linux-x86_64-glibc",
     "native_target": "x86_64-unknown-linux-gnu",
     "build_environment": "host",
-    "native_abi_version": 16,
+    "native_abi_version": json.loads((ROOT / "reference/vespa/PINNED_VESPA.json").read_text())["native_abi_version"],
     "vespa_commit": "vespa",
 }
 IDENTITY = {
@@ -231,7 +231,7 @@ class Tests(unittest.TestCase):
                 m.ensure_runtime(descriptor, override=runtime), runtime.resolve()
             )
 
-            changed_material = {**IDENTITY_MATERIAL, "native_abi_version": 17}
+            changed_material = {**IDENTITY_MATERIAL, "native_abi_version": IDENTITY_MATERIAL["native_abi_version"] + 1}
             changed_identity = {
                 **changed_material,
                 "runtime_identity": m.derive_runtime_identity(changed_material),

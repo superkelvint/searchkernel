@@ -1,8 +1,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 //! Safe Vespa-specific adapter for the private Search Kernel ABI.
 
+mod diagnostics;
 mod document;
 mod engine;
+pub use diagnostics::{
+    DiagnosticEvidence, DiagnosticNode, DiagnosticProjection, DiagnosticSection, DiagnosticStatus,
+};
 mod error;
 mod linguistics;
 mod native;
@@ -19,7 +23,7 @@ pub use document::{
     FieldUpdate, FieldValue, IntoFieldValue, IntoScalarValue, PositionValue, PredicateValue,
     ScalarValue,
 };
-pub use engine::Engine;
+pub use engine::{decode_diagnostic_tensor, Engine};
 pub use error::{Error, ErrorKind, Result};
 pub use linguistics::{
     DocumentAnalysis, DocumentTerm, Language, Linguistics, LinguisticsOptions, QueryAnalysis,
@@ -38,8 +42,8 @@ pub use search::{
     GroupingExpression, GroupingFilter, GroupingLevel, GroupingLiteral, GroupingOrder,
     GroupingOrderBy, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue,
     HighlightFragment, HighlightResult, HighlightSpan, Hit, MatchFeatureValue, MissingPlacement,
-    QueryInput, SearchCoverage, SearchRequest, SearchResult, SortField, SortOrder, Source,
-    SummaryRequest, TotalHitsRelation,
+    QueryInput, SearchCoverage, SearchDiagnosticControls, SearchDiagnostics, SearchRequest,
+    SearchResult, SortField, SortOrder, Source, SummaryRequest, TotalHitsRelation,
 };
 pub use tensor::{TensorAddress, TensorBlock, TensorCell, TensorValue};
 

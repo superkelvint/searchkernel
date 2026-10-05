@@ -32,7 +32,7 @@ pub use query::{
     WeightedQueryItem,
 };
 #[cfg(feature = "remote")]
-pub use remote::{RemoteClient, RemoteOptions};
+pub use remote::{DiagnosticResponse, RemoteClient, RemoteOptions};
 pub use result::{
     Coverage, CoverageDegraded, FacetResult, FacetValue, FeatureSet, FeatureValue, GroupingResult,
     HighlightFragment, HighlightResult, HighlightSpan, Hit, NonFiniteFloat, ResultGroup, ResultHit,
@@ -51,6 +51,10 @@ pub use schema::{
 pub use search::{
     Facet, FacetSort, InspectedQuery, MissingPlacement, QueryInputValue, QueryModelType, Ranking,
     SearchBuilder, Sort, SortDirection, YqlBuilder,
+};
+pub use searchkernel_ir::{
+    DiagnosticIntent, DiagnosticLimits, DiagnosticSection,
+    QueryDiagnosticsRequestIr as QueryDiagnosticsRequest,
 };
 pub use tensor::Tensor;
 pub use update::{Update, UpdateBuilder};

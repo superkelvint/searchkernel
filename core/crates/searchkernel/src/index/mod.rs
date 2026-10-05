@@ -128,7 +128,10 @@ impl Index {
 }
 
 impl Index {
-    fn with_backend<T>(&self, callback: impl FnOnce(&dyn Backend) -> Result<T>) -> Result<T> {
+    pub(crate) fn with_backend<T>(
+        &self,
+        callback: impl FnOnce(&dyn Backend) -> Result<T>,
+    ) -> Result<T> {
         self.inner
             .session
             .execute(callback)
@@ -421,6 +424,33 @@ impl Index {
                     .language()
                     .map(|language| language.as_str().to_owned()),
                 timeout: normalized.timeout(),
+            })
+        })
+    }
+
+    /// Prepare diagnostics using the same resolver as ordinary Rust searches.
+    /// Advanced controls are canonical typed fields, never engine parameters.
+    pub fn prepare_diagnostics(
+        &self,
+        query: &SearchBuilder,
+        intent: searchkernel_ir::DiagnosticIntent,
+    ) -> Result<searchkernel_ir::QueryDiagnosticsRequestIr> {
+        self.with_backend(|_| {
+            let request = searchkernel_ir::resolve_search(
+                &self.inner.context,
+                search_to_resolver_input(query)?,
+            )
+            .map_err(Error::from_ir)?;
+            Ok(searchkernel_ir::QueryDiagnosticsRequestIr {
+                request,
+                intent,
+                requested_evidence: Vec::new(),
+                source_run_id: None,
+                selected_hits: Vec::new(),
+                expected_document_id: None,
+                experiment: None,
+                compare_exact: false,
+                limits: Default::default(),
             })
         })
     }

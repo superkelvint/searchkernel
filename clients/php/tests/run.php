@@ -1546,6 +1546,7 @@ $expectedOperations = [
     'analyze' => ['AnalyzeRequest', 'AnalyzeResult'],
     'describe' => ['DescribeRequest', 'DescribeResult'],
     'inspect_query' => ['InspectQueryRequest', 'InspectQueryResult'],
+    'query_diagnostics' => ['QueryDiagnosticsRequest', 'QueryDiagnosticsResult'],
     'create_index' => ['CreateIndexRequest', 'CreateIndexResult'],
     'open_index' => ['OpenIndexRequest', 'OpenIndexResult'],
     'delete_index' => ['DeleteIndexRequest', 'DeleteIndexResult'],
@@ -2071,5 +2072,19 @@ same(
     $nestedGroupBody[0]['operation_type'],
     'subgroup lowers through GroupingAllOperation',
 );
+
+$diagnosticTransport = new class implements Transport {
+    public array $requests = [];
+    public function execute(array $request): array {
+        $this->requests[] = $request;
+        return ['protocol_version' => 1, 'payload_type' => 'SearchKernel_Wire_QueryDiagnosticsResult', 'payload' => ['warnings' => ['partial engine evidence']]];
+    }
+};
+$diagnosticClient = new Client($diagnosticTransport, 'products');
+$diagnosticClient->bindGeneration('G1');
+$diagnosticResult = $diagnosticClient->queryDiagnostics(['intent' => 'ExplainHit', 'source_run_id' => 'original', 'request' => []]);
+same(['name' => 'products', 'generation' => 'G1'], $diagnosticTransport->requests[0]['target'], 'diagnostics bind the opened incarnation');
+same('SearchKernel_Wire_QueryDiagnosticsRequest', $diagnosticTransport->requests[0]['payload_type'], 'diagnostics use canonical operation');
+same(['partial engine evidence'], $diagnosticResult['warnings'], 'diagnostics preserve the decoded response');
 
 echo "PHP client semantic-spine tests PASS\n";

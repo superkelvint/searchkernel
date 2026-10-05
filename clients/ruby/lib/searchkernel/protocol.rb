@@ -19,6 +19,7 @@ module SearchKernel
       analyze: { request: "AnalyzeRequest", response: "AnalyzeResult" },
       describe: { request: "DescribeRequest", response: "DescribeResult" },
       inspect_query: { request: "InspectQueryRequest", response: "InspectQueryResult" },
+      query_diagnostics: { request: "QueryDiagnosticsRequest", response: "QueryDiagnosticsResult" },
       create_index: { request: "CreateIndexRequest", response: "CreateIndexResult" },
       open_index: { request: "OpenIndexRequest", response: "OpenIndexResult" },
       delete_index: { request: "DeleteIndexRequest", response: "DeleteIndexResult" },

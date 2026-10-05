@@ -35,6 +35,7 @@ impl<'a> ResolvedSearchRequest<'a> {
     pub const VT_PROPERTIES: ::flatbuffers::VOffsetT = 28;
     pub const VT_QUERY_PROFILE: ::flatbuffers::VOffsetT = 30;
     pub const VT_SEARCH_CHAIN: ::flatbuffers::VOffsetT = 32;
+    pub const VT_DIAGNOSTIC_SOURCE: ::flatbuffers::VOffsetT = 34;
 
     #[inline]
     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -92,6 +93,7 @@ impl<'a> ResolvedSearchRequest<'a> {
         if let Some(x) = args.query {
             builder.add_query(x);
         }
+        builder.add_diagnostic_source(args.diagnostic_source);
         builder.finish()
     }
 
@@ -283,6 +285,17 @@ impl<'a> ResolvedSearchRequest<'a> {
             )
         }
     }
+    #[inline]
+    pub fn diagnostic_source(&self) -> bool {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<bool>(ResolvedSearchRequest::VT_DIAGNOSTIC_SOURCE, Some(false))
+                .unwrap()
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for ResolvedSearchRequest<'_> {
@@ -343,6 +356,7 @@ impl ::flatbuffers::Verifiable for ResolvedSearchRequest<'_> {
                 Self::VT_SEARCH_CHAIN,
                 false,
             )?
+            .visit_field::<bool>("diagnostic_source", Self::VT_DIAGNOSTIC_SOURCE, false)?
             .finish();
         Ok(())
     }
@@ -387,6 +401,7 @@ pub struct ResolvedSearchRequestArgs<'a> {
     >,
     pub query_profile: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub search_chain: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub diagnostic_source: bool,
 }
 impl<'a> Default for ResolvedSearchRequestArgs<'a> {
     #[inline]
@@ -407,6 +422,7 @@ impl<'a> Default for ResolvedSearchRequestArgs<'a> {
             properties: None,
             query_profile: None,
             search_chain: None,
+            diagnostic_source: false,
         }
     }
 }
@@ -551,6 +567,14 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ResolvedSearchRequestBuilder<
         );
     }
     #[inline]
+    pub fn add_diagnostic_source(&mut self, diagnostic_source: bool) {
+        self.fbb_.push_slot::<bool>(
+            ResolvedSearchRequest::VT_DIAGNOSTIC_SOURCE,
+            diagnostic_source,
+            false,
+        );
+    }
+    #[inline]
     pub fn new(
         _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
     ) -> ResolvedSearchRequestBuilder<'a, 'b, A> {
@@ -585,6 +609,7 @@ impl ::core::fmt::Debug for ResolvedSearchRequest<'_> {
         ds.field("properties", &self.properties());
         ds.field("query_profile", &self.query_profile());
         ds.field("search_chain", &self.search_chain());
+        ds.field("diagnostic_source", &self.diagnostic_source());
         ds.finish()
     }
 }

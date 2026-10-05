@@ -180,6 +180,465 @@ impl VespaBackend {
         }
         Ok(lock)
     }
+    fn execute_search(
+        &self,
+        request: SearchRequestIr,
+        diagnostics: Option<(
+            &[searchkernel_ir::DiagnosticSection],
+            &searchkernel_ir::DiagnosticLimits,
+        )>,
+    ) -> Result<searchkernel_ir::DiagnosticSearchResult> {
+        let preflight = preflight_search_request(&request)?;
+        let groupings = preflight.groupings;
+        let mut m_request = preflight.request;
+        if let Some((sections, limits)) = diagnostics {
+            use searchkernel_ir::DiagnosticSection as Section;
+            let tracing = sections.iter().any(|section| {
+                matches!(
+                    section,
+                    Section::Trace
+                        | Section::MatchingProfiler
+                        | Section::FirstPhaseProfiler
+                        | Section::SecondPhaseProfiler
+                        | Section::Blueprint
+                        | Section::IteratorTree
+                        | Section::RawEngine
+                )
+            });
+            m_request.diagnostics = Some(searchkernel_vespa_engine::SearchDiagnosticControls {
+                structure_depth: limits.trace_depth,
+                trace_level: if tracing {
+                    let preset = if sections.iter().any(|section| {
+                        matches!(
+                            section,
+                            Section::Blueprint | Section::IteratorTree | Section::RawEngine
+                        )
+                    }) {
+                        7
+                    } else {
+                        3
+                    };
+                    preset.min(limits.trace_depth)
+                } else {
+                    0
+                },
+                matching_depth: if sections.contains(&Section::MatchingProfiler) {
+                    limits.profiler_depth
+                } else {
+                    0
+                },
+                first_phase_depth: if sections.contains(&Section::FirstPhaseProfiler) {
+                    limits.profiler_depth
+                } else {
+                    0
+                },
+                second_phase_depth: if sections.contains(&Section::SecondPhaseProfiler) {
+                    limits.profiler_depth
+                } else {
+                    0
+                },
+                raw_bytes: limits.raw_bytes,
+            });
+        }
+        let expected_facets = m_request.facets.len();
+        let native_plans = groupings
+            .iter()
+            .filter_map(|grouping| match grouping {
+                GroupingLowering::Facet(_) => None,
+                GroupingLowering::Native(native) => Some(native.plan.clone()),
+            })
+            .collect::<Vec<_>>();
+        let result = self
+            .engine
+            .search_with_grouping_plans(m_request, &native_plans)
+            .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
+        #[cfg(test)]
+        if let Some(probe) = &self.search_grouping_probe {
+            probe.after_primary.wait();
+            probe.continue_search.wait();
+        }
+        if result.facets.len() != expected_facets {
+            return Err(internal(
+                "native search returned an unexpected grouping count",
+            ));
+        }
+        if result.groupings.len() != native_plans.len() {
+            return Err(internal(
+                "native search returned an unexpected structured grouping count",
+            ));
+        }
+        let mut feature_issues = Vec::new();
+        let mut children = result
+            .hits
+            .into_iter()
+            .map(|hit| {
+                let hit_id = hit.document_id.clone();
+                Ok(searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                    id: hit.document_id,
+                    score: Some(hit.score),
+                    fields: hit
+                        .fields
+                        .into_iter()
+                        .map(|(name, value)| value_to_ir(&value).map(|value| (name, value)))
+                        .collect::<Result<std::collections::BTreeMap<_, _>>>()?,
+                    highlights: hit
+                        .highlights
+                        .into_iter()
+                        .map(|highlight| searchkernel_ir::HighlightResult {
+                            field: highlight.field,
+                            fragments: highlight
+                                .fragments
+                                .into_iter()
+                                .map(|fragment| searchkernel_ir::HighlightFragment {
+                                    text: fragment.text,
+                                    matches: fragment
+                                        .matches
+                                        .into_iter()
+                                        .map(|span| searchkernel_ir::HighlightSpan {
+                                            start_byte: span.start_byte,
+                                            end_byte: span.end_byte,
+                                        })
+                                        .collect(),
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                    source: None,
+                    types: Vec::new(),
+                    match_features: hit
+                        .match_features
+                        .into_iter()
+                        .filter_map(|(name, value)| {
+                            let value = match value {
+                                MatchFeatureValue::Double(value) => {
+                                    searchkernel_ir::Value::Float64(value)
+                                }
+                                MatchFeatureValue::Data(value) => {
+                                    if let Some((_, limits)) = diagnostics {
+                                        match searchkernel_vespa_engine::decode_diagnostic_tensor(
+                                            &value,
+                                            limits.tensor_cells,
+                                        ) {
+                                            Ok(tensor) => searchkernel_ir::Value::Tensor(
+                                                crate::tensor_to_ir(&tensor),
+                                            ),
+                                            Err(error) => {
+                                                feature_issues.push(
+                                                    diagnostic_tensor_feature_issue(
+                                                        &name,
+                                                        Some(&hit_id),
+                                                        &error,
+                                                    ),
+                                                );
+                                                return None;
+                                            }
+                                        }
+                                    } else {
+                                        searchkernel_ir::Value::Bytes(value)
+                                    }
+                                }
+                            };
+                            Some((name, value))
+                        })
+                        .collect(),
+                    summary_features: std::collections::BTreeMap::new(),
+                    rank_features: std::collections::BTreeMap::new(),
+                    sort_values: Vec::new(),
+                }))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut root_fields = std::collections::BTreeMap::new();
+        let mut native_facets = result.facets.into_iter();
+        let mut native_groupings = result.groupings.into_iter();
+        for grouping in groupings {
+            match grouping {
+                GroupingLowering::Facet(facet) => {
+                    let native = native_facets.next().ok_or_else(|| {
+                        internal("native search returned too few facet groupings")
+                    })?;
+                    children.push(facet_result_node(native, facet)?);
+                }
+                GroupingLowering::Native(native) => {
+                    let grouped = native_groupings.next().ok_or_else(|| {
+                        internal("native search returned too few structured groupings")
+                    })?;
+                    let grouping_node = grouping_result_node(grouped, &native.plan)?;
+                    if !native.plan.root_aggregations.is_empty() {
+                        let searchkernel_ir::ResultNode::Group(group) = grouping_node else {
+                            return Err(internal("native grouping root is not a result group"));
+                        };
+                        for (name, value) in group.fields {
+                            insert_unique_grouping_field(&mut root_fields, name, value)?;
+                        }
+                        children.extend(group.children);
+                    } else {
+                        children.push(grouping_node);
+                    }
+                }
+            }
+        }
+        if native_facets.next().is_some() {
+            return Err(internal("native search returned too many facet groupings"));
+        }
+        if native_groupings.next().is_some() {
+            return Err(internal(
+                "native search returned too many structured groupings",
+            ));
+        }
+        let errors = portable_errors_from_native_issues(&result.issues);
+        let native_diagnostics = result.diagnostics;
+        let feature_payload_truncated = native_diagnostics
+            .as_ref()
+            .is_some_and(|value| value.features_truncated);
+        if let Some(value) = native_diagnostics.as_ref() {
+            for name in &value.truncated_features {
+                feature_issues.push(diagnostic_feature_issue(
+                    name,
+                    None,
+                    "truncated",
+                    "diagnostic_tensor_byte_budget_exceeded",
+                    "feature payload was omitted before decoding because the diagnostic raw-byte budget was exhausted",
+                ));
+            }
+        }
+        let mut timing = native_diagnostics
+            .as_ref()
+            .map(|value| searchkernel_ir::SearchTiming {
+                query_time_seconds: Some(value.query_seconds),
+                search_time_seconds: Some(value.matching_seconds),
+                summary_fetch_time_seconds: Some(value.summary_seconds),
+                metadata: Default::default(),
+            });
+        let mut raw_engine = Vec::new();
+        let mut structured_evidence = Vec::new();
+        if let Some(value) = native_diagnostics {
+            let provenance = value
+                .sections
+                .iter()
+                .find_map(|v| v.projection.as_ref())
+                .map(|v| (v.engine.clone(), v.revision.clone()));
+            for section in value.sections {
+                let evidence = portable_diagnostic_evidence(section);
+                if let Some(time) = timing.as_mut() {
+                    let key = match evidence.section {
+                        searchkernel_ir::DiagnosticSection::MatchingProfiler => {
+                            Some("matching_profile_elapsed_seconds_sum")
+                        }
+                        searchkernel_ir::DiagnosticSection::FirstPhaseProfiler => {
+                            Some("first_phase_profile_elapsed_seconds_sum")
+                        }
+                        searchkernel_ir::DiagnosticSection::SecondPhaseProfiler => {
+                            Some("second_phase_profile_elapsed_seconds_sum")
+                        }
+                        _ => None,
+                    };
+                    if let Some(key) = key {
+                        // Sum report roots across threads, never ancestor + descendant totals.
+                        // This is aggregate profiled thread time, not query wall-clock latency.
+                        if let Some(searchkernel_ir::Value::Float64(total)) =
+                            evidence.values.get("thread_total_seconds_sum")
+                        {
+                            time.metadata
+                                .insert(key.into(), searchkernel_ir::Value::Float64(*total));
+                        }
+                    }
+                }
+                structured_evidence.push(evidence);
+            }
+            if !value.trace.is_empty() || value.truncated {
+                let (engine, version) =
+                    provenance.ok_or_else(|| internal("native diagnostic provenance is absent"))?;
+                raw_engine.push(searchkernel_ir::RawEngineDiagnostics {
+                    engine,
+                    version,
+                    execution_id: String::new(),
+                    section: searchkernel_ir::DiagnosticSection::Trace,
+                    status: if value.truncated {
+                        searchkernel_ir::DiagnosticStatus::Truncated
+                    } else {
+                        searchkernel_ir::DiagnosticStatus::Available
+                    },
+                    media_type: if value.truncated {
+                        "text/plain"
+                    } else {
+                        "application/json"
+                    }
+                    .into(),
+                    payload: value.trace,
+                });
+            }
+        }
+        Ok(searchkernel_ir::DiagnosticSearchResult {
+            result: SearchResult {
+                root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                    fields: root_fields,
+                    children,
+                    ..searchkernel_ir::ResultGroup::root(Vec::new())
+                }),
+                total_hits: searchkernel_ir::TotalHits {
+                    value: result.total_hits,
+                    relation: match result.total_hits_relation {
+                        VespaTotalHitsRelation::Exact => TotalHitsRelation::Exact,
+                        VespaTotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
+                        VespaTotalHitsRelation::Unknown => TotalHitsRelation::Unknown,
+                    },
+                },
+                coverage: Some(portable_coverage(result.coverage)),
+                timing,
+                errors,
+                trace: None,
+                metadata: {
+                    let mut metadata = std::collections::BTreeMap::new();
+                    if feature_payload_truncated {
+                        metadata.insert(
+                            "diagnostic_feature_truncated".into(),
+                            searchkernel_ir::Value::Bool(true),
+                        );
+                    }
+                    if !feature_issues.is_empty() {
+                        metadata.insert(
+                            "diagnostic_feature_issues".into(),
+                            searchkernel_ir::Value::List(feature_issues),
+                        );
+                    }
+                    metadata
+                },
+            },
+            raw_engine,
+            structured_evidence,
+        })
+    }
+}
+
+fn diagnostic_feature_issue(
+    feature: &str,
+    hit_id: Option<&str>,
+    status: &str,
+    code: &str,
+    message: &str,
+) -> searchkernel_ir::Value {
+    searchkernel_ir::Value::Object(std::collections::BTreeMap::from([
+        (
+            "feature".into(),
+            searchkernel_ir::Value::String(feature.to_owned()),
+        ),
+        (
+            "hit_id".into(),
+            hit_id
+                .map(|value| searchkernel_ir::Value::String(value.to_owned()))
+                .unwrap_or(searchkernel_ir::Value::Null),
+        ),
+        (
+            "status".into(),
+            searchkernel_ir::Value::String(status.to_owned()),
+        ),
+        (
+            "code".into(),
+            searchkernel_ir::Value::String(code.to_owned()),
+        ),
+        (
+            "message".into(),
+            searchkernel_ir::Value::String(message.to_owned()),
+        ),
+    ]))
+}
+
+fn diagnostic_tensor_feature_issue(
+    feature: &str,
+    hit_id: Option<&str>,
+    error: &searchkernel_vespa_engine::Error,
+) -> searchkernel_ir::Value {
+    let status = if error.detail_code() == Some("diagnostic_tensor_cell_budget_exceeded")
+        || error.kind() == searchkernel_vespa_engine::ErrorKind::ResourceExhausted
+    {
+        "truncated"
+    } else if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
+        "unsupported"
+    } else {
+        "failed"
+    };
+    diagnostic_feature_issue(
+        feature,
+        hit_id,
+        status,
+        error
+            .detail_code()
+            .unwrap_or("diagnostic_tensor_decode_failed"),
+        &error.to_string(),
+    )
+}
+
+fn portable_diagnostic_evidence(
+    native: searchkernel_vespa_engine::DiagnosticEvidence,
+) -> searchkernel_ir::DiagnosticEvidence {
+    use searchkernel_ir::{DiagnosticSection as Section, DiagnosticStatus as Status, Value};
+    use searchkernel_vespa_engine::{
+        DiagnosticSection as NativeSection, DiagnosticStatus as NativeStatus,
+    };
+    let section = match native.section {
+        NativeSection::MatchingProfiler => Section::MatchingProfiler,
+        NativeSection::FirstPhaseProfiler => Section::FirstPhaseProfiler,
+        NativeSection::SecondPhaseProfiler => Section::SecondPhaseProfiler,
+        NativeSection::IteratorTree => Section::IteratorTree,
+        NativeSection::Blueprint => Section::Blueprint,
+    };
+    let status = match native.status {
+        NativeStatus::Available => Status::Available,
+        NativeStatus::Unsupported => Status::Unsupported,
+        NativeStatus::UnavailableForQuery => Status::UnavailableForQuery,
+        NativeStatus::Truncated => Status::Truncated,
+        NativeStatus::TimedOut => Status::TimedOut,
+        NativeStatus::Failed => Status::Failed,
+    };
+    let mut values = std::collections::BTreeMap::new();
+    if let Some(projection) = native.projection {
+        values.insert("engine".into(), Value::String(projection.engine));
+        values.insert("engine_revision".into(), Value::String(projection.revision));
+        values.insert(
+            "native_abi".into(),
+            Value::Int64(i64::from(projection.native_abi)),
+        );
+        let mut total = 0.0;
+        let mut measured = false;
+        let nodes = projection
+            .nodes
+            .into_iter()
+            .map(|node| {
+                if node.parent == -1 {
+                    if let Some(value) = node.total_ms {
+                        total += value / 1000.0;
+                        measured = true;
+                    }
+                }
+                let mut fields = std::collections::BTreeMap::from([
+                    ("parent".into(), Value::Int64(i64::from(node.parent))),
+                    ("thread".into(), Value::Int64(i64::from(node.thread))),
+                    ("name".into(), Value::String(node.name)),
+                ]);
+                if let Some(count) = node.count {
+                    fields.insert("invocations".into(), Value::Int64(count as i64));
+                }
+                if let Some(time) = node.total_ms {
+                    fields.insert("total_seconds".into(), Value::Float64(time / 1000.0));
+                }
+                if let Some(time) = node.self_ms {
+                    fields.insert("self_seconds".into(), Value::Float64(time / 1000.0));
+                }
+                Value::Object(fields)
+            })
+            .collect();
+        values.insert("nodes".into(), Value::List(nodes));
+        if measured {
+            values.insert("thread_total_seconds_sum".into(), Value::Float64(total));
+        }
+    }
+    searchkernel_ir::DiagnosticEvidence {
+        id: String::new(), section, status,
+        provenance: searchkernel_ir::DiagnosticProvenance::Engine,
+        execution_id: String::new(),
+        message: "Bounded engine structure; each root belongs to its recorded execution thread. Timing is engine-reported; missing self time remains absent.".into(),
+        values, canonical_request: None, result: None,
+    }
 }
 
 fn facet_result_node(
@@ -642,152 +1101,17 @@ impl Backend for VespaBackend {
     }
 
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult> {
-        let preflight = preflight_search_request(&request)?;
-        let groupings = preflight.groupings;
-        let m_request = preflight.request;
-        let expected_facets = m_request.facets.len();
-        let native_plans = groupings
-            .iter()
-            .filter_map(|grouping| match grouping {
-                GroupingLowering::Facet(_) => None,
-                GroupingLowering::Native(native) => Some(native.plan.clone()),
-            })
-            .collect::<Vec<_>>();
-        let result = self
-            .engine
-            .search_with_grouping_plans(m_request, &native_plans)
-            .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
-        #[cfg(test)]
-        if let Some(probe) = &self.search_grouping_probe {
-            probe.after_primary.wait();
-            probe.continue_search.wait();
-        }
-        if result.facets.len() != expected_facets {
-            return Err(internal(
-                "native search returned an unexpected grouping count",
-            ));
-        }
-        if result.groupings.len() != native_plans.len() {
-            return Err(internal(
-                "native search returned an unexpected structured grouping count",
-            ));
-        }
-        let mut children = result
-            .hits
-            .into_iter()
-            .map(|hit| {
-                Ok(searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
-                    id: hit.document_id,
-                    score: Some(hit.score),
-                    fields: hit
-                        .fields
-                        .into_iter()
-                        .map(|(name, value)| value_to_ir(&value).map(|value| (name, value)))
-                        .collect::<Result<std::collections::BTreeMap<_, _>>>()?,
-                    highlights: hit
-                        .highlights
-                        .into_iter()
-                        .map(|highlight| searchkernel_ir::HighlightResult {
-                            field: highlight.field,
-                            fragments: highlight
-                                .fragments
-                                .into_iter()
-                                .map(|fragment| searchkernel_ir::HighlightFragment {
-                                    text: fragment.text,
-                                    matches: fragment
-                                        .matches
-                                        .into_iter()
-                                        .map(|span| searchkernel_ir::HighlightSpan {
-                                            start_byte: span.start_byte,
-                                            end_byte: span.end_byte,
-                                        })
-                                        .collect(),
-                                })
-                                .collect(),
-                        })
-                        .collect(),
-                    source: None,
-                    types: Vec::new(),
-                    match_features: hit
-                        .match_features
-                        .into_iter()
-                        .map(|(name, value)| {
-                            let value = match value {
-                                MatchFeatureValue::Double(value) => {
-                                    searchkernel_ir::Value::Float64(value)
-                                }
-                                MatchFeatureValue::Data(value) => {
-                                    searchkernel_ir::Value::Bytes(value)
-                                }
-                            };
-                            (name, value)
-                        })
-                        .collect(),
-                    summary_features: std::collections::BTreeMap::new(),
-                    rank_features: std::collections::BTreeMap::new(),
-                    sort_values: Vec::new(),
-                }))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let mut root_fields = std::collections::BTreeMap::new();
-        let mut native_facets = result.facets.into_iter();
-        let mut native_groupings = result.groupings.into_iter();
-        for grouping in groupings {
-            match grouping {
-                GroupingLowering::Facet(facet) => {
-                    let native = native_facets.next().ok_or_else(|| {
-                        internal("native search returned too few facet groupings")
-                    })?;
-                    children.push(facet_result_node(native, facet)?);
-                }
-                GroupingLowering::Native(native) => {
-                    let grouped = native_groupings.next().ok_or_else(|| {
-                        internal("native search returned too few structured groupings")
-                    })?;
-                    let grouping_node = grouping_result_node(grouped, &native.plan)?;
-                    if !native.plan.root_aggregations.is_empty() {
-                        let searchkernel_ir::ResultNode::Group(group) = grouping_node else {
-                            return Err(internal("native grouping root is not a result group"));
-                        };
-                        for (name, value) in group.fields {
-                            insert_unique_grouping_field(&mut root_fields, name, value)?;
-                        }
-                        children.extend(group.children);
-                    } else {
-                        children.push(grouping_node);
-                    }
-                }
-            }
-        }
-        if native_facets.next().is_some() {
-            return Err(internal("native search returned too many facet groupings"));
-        }
-        if native_groupings.next().is_some() {
-            return Err(internal(
-                "native search returned too many structured groupings",
-            ));
-        }
-        let errors = portable_errors_from_native_issues(&result.issues);
-        Ok(SearchResult {
-            root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
-                fields: root_fields,
-                children,
-                ..searchkernel_ir::ResultGroup::root(Vec::new())
-            }),
-            total_hits: searchkernel_ir::TotalHits {
-                value: result.total_hits,
-                relation: match result.total_hits_relation {
-                    VespaTotalHitsRelation::Exact => TotalHitsRelation::Exact,
-                    VespaTotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
-                    VespaTotalHitsRelation::Unknown => TotalHitsRelation::Unknown,
-                },
-            },
-            coverage: Some(portable_coverage(result.coverage)),
-            timing: None,
-            errors,
-            trace: None,
-            metadata: std::collections::BTreeMap::new(),
-        })
+        self.execute_search(request, None)
+            .map(|execution| execution.result)
+    }
+
+    fn search_diagnostic(
+        &self,
+        request: SearchRequestIr,
+        sections: &[searchkernel_ir::DiagnosticSection],
+        limits: &searchkernel_ir::DiagnosticLimits,
+    ) -> Result<searchkernel_ir::DiagnosticSearchResult> {
+        self.execute_search(request, Some((sections, limits)))
     }
 
     fn analyze(&self, request: AnalyzeRequestIr) -> Result<AnalyzeResult> {
@@ -822,6 +1146,63 @@ mod implicit_output_name_regression_tests {
         GroupingAggregationIr, GroupingAllIr, GroupingExpressionIr, GroupingOperationIr,
         GroupingOutputIr, GroupingRequestIr, RequestValueIr,
     };
+
+    #[test]
+    fn native_projection_statuses_and_root_totals_are_preserved() {
+        use searchkernel_vespa_engine::{
+            DiagnosticEvidence, DiagnosticNode, DiagnosticProjection, DiagnosticSection,
+            DiagnosticStatus,
+        };
+        for status in [
+            DiagnosticStatus::Available,
+            DiagnosticStatus::Unsupported,
+            DiagnosticStatus::UnavailableForQuery,
+            DiagnosticStatus::Truncated,
+            DiagnosticStatus::TimedOut,
+            DiagnosticStatus::Failed,
+        ] {
+            let evidence = portable_diagnostic_evidence(DiagnosticEvidence {
+                section: DiagnosticSection::FirstPhaseProfiler,
+                status,
+                projection: Some(DiagnosticProjection {
+                    engine: "engine".into(),
+                    revision: "revision".into(),
+                    native_abi: 17,
+                    nodes: vec![
+                        DiagnosticNode {
+                            parent: -1,
+                            thread: 0,
+                            name: "profile".into(),
+                            count: None,
+                            total_ms: Some(12.0),
+                            self_ms: None,
+                        },
+                        DiagnosticNode {
+                            parent: 0,
+                            thread: 0,
+                            name: "child".into(),
+                            count: Some(3),
+                            total_ms: Some(7.0),
+                            self_ms: Some(5.0),
+                        },
+                        DiagnosticNode {
+                            parent: -1,
+                            thread: 1,
+                            name: "profile".into(),
+                            count: None,
+                            total_ms: Some(3.0),
+                            self_ms: None,
+                        },
+                    ],
+                }),
+            });
+            assert_eq!(format!("{:?}", evidence.status), format!("{:?}", status));
+            assert_eq!(
+                evidence.values["thread_total_seconds_sum"],
+                searchkernel_ir::Value::Float64(0.015)
+            );
+        }
+    }
 
     #[test]
     fn implicit_root_output_name_survives_lowering_without_native_debug_drift() {

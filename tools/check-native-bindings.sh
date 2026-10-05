@@ -8,7 +8,8 @@ temporary=$(mktemp)
 trap 'rm -f "$temporary"' EXIT
 
 [[ -f "$source_header" ]] || { echo "native ABI source header is missing: $source_header" >&2; exit 1; }
-cargo run --locked --quiet --manifest-path "$root/tools/check-native-bindings/Cargo.toml" -- \
+cargo_bin=$(bash "$root/tools/resolve-rust.sh" cargo)
+"$cargo_bin" run --locked --quiet --manifest-path "$root/tools/check-native-bindings/Cargo.toml" -- \
     "$source_header" "$temporary"
 
 if [[ "${SK_NATIVE_BINDINGS_REGENERATE:-0}" == 1 ]]; then

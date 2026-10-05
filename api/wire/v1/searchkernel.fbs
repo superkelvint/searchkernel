@@ -611,6 +611,7 @@ table ConfigurationCapabilities {
 table ListIndexesResult {
   targets:[string];
   configuration:ConfigurationCapabilities;
+  query_diagnostics:bool = false;
 }
 
 // Configuration administration validates through the same IR/backend path as
@@ -1785,6 +1786,9 @@ table SearchRequest {
   // returns Unsupported.
   query_profile:string;
   search_chain:string;
+  // Opt-in bounded retention of execution identity/returned IDs for later
+  // diagnostics. Does not enable trace/profiling or change query execution.
+  diagnostic_source:bool = false;
 }
 
 // -----------------------------------------------------------------------------
@@ -2004,10 +2008,181 @@ table ResolvedSearchRequest {
   properties:[ValueEntry];
   query_profile:string;
   search_chain:string;
+  diagnostic_source:bool = false;
 }
 
 table InspectQueryResult {
   resolved_request:ResolvedSearchRequest;
+}
+
+// Diagnostics are explicit, read-only executions. Target and incarnation are
+// carried by the normal RequestEnvelope; no engine parameter map is accepted.
+enum DiagnosticIntent:ubyte {
+  Unspecified = 0,
+  ExplainHit,
+  ZeroResults,
+  MissingDocument,
+  RankingComparison,
+  Overmatching,
+  QueryInterpretation,
+  VectorRetrieval,
+  Performance,
+  DeepEngine,
+  Experiment
+}
+
+enum DiagnosticSection:ubyte {
+  Query = 0,
+  Retrieval,
+  Ranking,
+  Timing,
+  MatchedTerms,
+  Vectors,
+  Trace,
+  MatchingProfiler,
+  FirstPhaseProfiler,
+  SecondPhaseProfiler,
+  Blueprint,
+  IteratorTree,
+  RawEngine,
+  Counterfactual
+}
+
+enum DiagnosticStatus:ubyte {
+  Available = 0,
+  Unsupported,
+  TimedOut,
+  Truncated,
+  UnavailableForQuery,
+  Failed
+}
+
+enum DiagnosticProvenance:ubyte { Profile = 0, Engine, Calculated }
+enum DiagnosticExecutionKind:ubyte { Original = 0, DiagnosticRerun, Experiment, Counterfactual }
+enum DiagnosticObservation:ubyte { Unavailable = 0, ObservedYes, ObservedNo }
+
+table DiagnosticLimits {
+  timeout_ms:OptionalUInt64;
+  variant_count:OptionalUInt32;
+  feature_hit_count:OptionalUInt32;
+  tensor_cells:OptionalUInt32;
+  raw_bytes:OptionalUInt32;
+  trace_depth:OptionalUInt32;
+  profiler_depth:OptionalUInt32;
+  exact_nn_hits:OptionalUInt32;
+}
+
+table QueryDiagnosticsRequest {
+  request:SearchRequest;
+  intent:DiagnosticIntent = Unspecified;
+  requested_evidence:[DiagnosticSection];
+  // Opaque identity issued in SearchResult.metadata["searchkernel.source_run"].
+  // An expired/unavailable source is reported explicitly, never reconstructed
+  // from a client-supplied result and labelled as original engine evidence.
+  source_run_id:string;
+  selected_hits:[string];
+  expected_document_id:string;
+  experiment:SearchRequest;
+  compare_exact:bool = false;
+  limits:DiagnosticLimits;
+}
+
+table DiagnosticExecution {
+  id:string;
+  request_hash:string;
+  target:IndexTarget;
+  kind:DiagnosticExecutionKind = Original;
+  complete:bool = false;
+}
+
+table DiagnosticFinding {
+  code:string;
+  message:string;
+  evidence_ids:[string];
+}
+
+// Stable normalized evidence. Values use the canonical typed value model.
+// Engine-specific trees/blobs belong exclusively in RawEngineDiagnostics.
+table DiagnosticEvidence {
+  id:string;
+  section:DiagnosticSection = Query;
+  status:DiagnosticStatus = Available;
+  provenance:DiagnosticProvenance = Engine;
+  execution_id:string;
+  message:string;
+  values:[ValueEntry];
+  canonical_request:ResolvedSearchRequest;
+  result:SearchResult;
+}
+
+table DiagnosticSignal {
+  name:string;
+  value:Value;
+  // Descending ordinal and exact tie count within this returned set only.
+  position:OptionalUInt32;
+  ties:OptionalUInt32;
+  comparison_count:uint;
+  comparison_set:string;
+}
+
+table DiagnosticHit {
+  id:string;
+  execution_id:string;
+  returned_position:uint;
+  relevance:Relevance;
+  signals:[DiagnosticSignal];
+  evidence_ids:[string];
+}
+
+table DiagnosticDocumentStage {
+  name:string;
+  observation:DiagnosticObservation = Unavailable;
+  evidence_ids:[string];
+}
+
+table DiagnosticExpectedDocument {
+  id:string;
+  stages:[DiagnosticDocumentStage];
+}
+
+table DiagnosticRankMovement {
+  id:string;
+  baseline_position:OptionalUInt32;
+  rerun_position:OptionalUInt32;
+}
+
+table DiagnosticComparison {
+  baseline_execution_id:string;
+  rerun_execution_id:string;
+  results_changed:OptionalBool;
+  overlap_count:uint;
+  comparison_count:uint;
+  movements:[DiagnosticRankMovement];
+  entering:[string];
+  leaving:[string];
+}
+
+// Explicitly unstable, engine-specific evidence with pinned version provenance.
+table RawEngineDiagnostics {
+  engine:string;
+  version:string;
+  execution_id:string;
+  section:DiagnosticSection = RawEngine;
+  status:DiagnosticStatus = Available;
+  media_type:string;
+  payload:string;
+}
+
+table QueryDiagnosticsResult {
+  execution:DiagnosticExecution;
+  source_run:DiagnosticExecution;
+  findings:[DiagnosticFinding];
+  evidence:[DiagnosticEvidence];
+  hits:[DiagnosticHit];
+  expected_document:DiagnosticExpectedDocument;
+  comparison:DiagnosticComparison;
+  raw_engine:[RawEngineDiagnostics];
+  warnings:[string];
 }
 
 // -----------------------------------------------------------------------------
