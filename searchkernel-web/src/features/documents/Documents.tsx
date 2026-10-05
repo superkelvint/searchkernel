@@ -25,7 +25,7 @@ export function Documents() {
   const document = useQuery({ queryKey: ['document', index.id, index.generation, selected.id], queryFn: clientQuery(async signal => (await client.getDocument(index.target ?? index.id, selected.id!, { signal })) ?? null), ...clientQueryDefaults, enabled: selected.id !== undefined })
   const rows = search.data?.hits ?? []
   const update = (patch: Parameters<typeof updateSearchState>[1]) => setParams(() => { const next = encodeSearchParams(updateSearchState(state, patch)); if (index.generation) next.set('generation', index.generation); if (guided) next.set('journey', 'first-search'); return next })
-  const pageParams = (offset: number) => { const next = encodeSearchParams({ ...state, offset }); if (index.generation) next.set('generation', index.generation); if (guided) next.set('journey', 'first-search'); return next }
+  const pageParams = (offset: number | undefined) => { const next = encodeSearchParams({ ...state, offset }); if (index.generation) next.set('generation', index.generation); if (guided) next.set('journey', 'first-search'); return next }
   const open = (id: string) => { setCreating(false); navigate(`${documentPath(index.id, id)}?${params}`) }
   const close = () => navigate(`/indexes/${encodeURIComponent(index.id)}/data/documents?${params}`)
   const guided = params.get('journey') === 'first-search'
@@ -37,7 +37,7 @@ export function Documents() {
     <ErrorNotice error={restored.error ? new Error(restored.error) : prepared.error ?? selected.error ?? search.error}/>
     <section className="surface space-y-3 p-4">
       <label className="block">Search documents<input aria-label="Search documents" className="input" value={state.query} onChange={e => update({ query: e.target.value, mode: 'text' })} placeholder="Empty query browses the index"/></label>
-      <div className="flex flex-wrap items-end gap-3"><label>Rows per page<input aria-label="Document page size" className="input w-24" type="number" value={state.limit ?? ''} onChange={e => update({ limit: e.target.value === '' ? undefined : Number(e.target.value) })}/></label><button className="soft-button" onClick={() => navigate(`/indexes/${encodeURIComponent(index.id)}/search/lab?${pageParams(state.offset ?? 0)}`)}>Open in Search Lab</button><button className="soft-button" onClick={() => { void search.refetch() }}>Refresh documents</button></div>
+      <div className="flex flex-wrap items-end gap-3"><label>Rows per page<input aria-label="Document page size" className="input w-24" type="number" value={state.limit ?? ''} onChange={e => update({ limit: e.target.value === '' ? undefined : Number(e.target.value) })}/></label><button className="soft-button" onClick={() => navigate(`/indexes/${encodeURIComponent(index.id)}/search/lab?${pageParams(state.offset)}`)}>Open in Search Lab</button><button className="soft-button" onClick={() => { void search.refetch() }}>Refresh documents</button></div>
       {search.isFetching && <p role="status">Fetching documents…</p>}
       {search.data && <p>{search.data.matches} matching documents · {search.data.totalRelation} · offset {state.offset ?? 0}</p>}
       {!search.isFetching && search.data && !rows.length && <p>{String(search.data.matches) === '0' ? 'No matching documents. Create a document or change the search.' : 'No documents on this page.'}</p>}

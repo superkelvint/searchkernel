@@ -156,16 +156,10 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diag
     await page.unroute(`${webEndpoint}/**`)
     await page.getByRole('tab', { name: 'Inspect', exact: true }).click()
     await page.getByRole('button', { name: 'Inspect Vespa internals', exact: true }).click()
-    // Prior evidence remains visible while the explicit rerun is acquired.
-    // Wait for that acquisition before inspecting its engine payload.
-    await expect.poll(() => page.getByRole('button', { name: 'Inspect Vespa internals', exact: true }).isEnabled()).toBe(true)
     await page.getByText(/Vespa internals · Trace ·/).waitFor()
     await page.getByText(/Vespa internals · Trace ·/).click()
     await page.getByText('Raw engine payload', { exact: true }).click()
-    const rawInspector = page.getByLabel('Raw engine payload inspector', { exact: true })
-    const rawLength = (await rawInspector.innerText()).length
-    if (rawLength <= 10) console.error('Raw trace inspector state:', await rawInspector.evaluate(element => ({ textLength: element.textContent?.length, sample: element.textContent?.slice(0, 160), ancestors: Array.from((function* () { for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) yield ancestor })()).filter(ancestor => ancestor.tagName === 'DETAILS').map(ancestor => ({ summary: ancestor.querySelector('summary')?.textContent, open: ancestor.hasAttribute('open') })) })))
-    expect(rawLength).toBeGreaterThan(10)
+    expect((await page.getByLabel('Raw engine payload inspector', { exact: true }).innerText()).length).toBeGreaterThan(10)
 
     await page.getByRole('button', { name: 'Close evidence', exact: true }).click()
     await page.getByLabel('Ranking profile', { exact: true }).fill('signals')
