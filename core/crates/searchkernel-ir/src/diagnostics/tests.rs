@@ -132,10 +132,8 @@ fn comparison_uses_both_page_offsets_and_incomplete_runs_have_unknown_divergence
     );
 }
 
-#[test]
-fn exact_variants_are_bounded_backend_rewrites_and_opaque_queries_are_not_parsed() {
-    let mut request = request();
-    request.query = QueryIr::Typed(Box::new(QueryExprIr {
+fn nn_expression() -> QueryExprIr {
+    QueryExprIr {
         kind: QueryExprKindIr::NearestNeighbor {
             document_field: QueryFieldRefIr {
                 path: FieldName::parse("embedding").unwrap(),
@@ -147,17 +145,148 @@ fn exact_variants_are_bounded_backend_rewrites_and_opaque_queries_are_not_parsed
             ("approximate".into(), RequestValueIr::Bool(true)),
             ("targetNumHits".into(), RequestValueIr::Int64(10)),
         ]),
+    }
+}
+
+fn comparison_expression() -> QueryExprIr {
+    QueryExprIr {
+        kind: QueryExprKindIr::Comparison {
+            field: QueryFieldRefIr {
+                path: FieldName::parse("quantity").unwrap(),
+                element_index: None,
+            },
+            op: ComparisonOp::Gte,
+            value: RequestValueIr::Int64(1),
+        },
+        annotations: Default::default(),
+    }
+}
+
+#[test]
+fn exact_variants_clone_safe_typed_hybrids_and_change_only_the_selected_nn_flag() {
+    let mut request = request();
+    request.query = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::And(vec![nn_expression(), comparison_expression()]),
+        annotations: BTreeMap::from([("filter".into(), RequestValueIr::Bool(true))]),
     }));
     let original = request.clone();
-    let variant = exact_variant(&request, &DiagnosticLimits::default()).unwrap();
-    let QueryIr::Typed(expression) = variant.query() else {
+    let plan = exact_variant(&request, &DiagnosticLimits::default()).unwrap();
+    assert_eq!(plan.query_path, "query.and[0]");
+    assert_eq!(plan.document_field, "embedding");
+    assert_eq!(plan.query_tensor, "q");
+    assert_eq!(plan.target_hits, 10);
+    assert!(plan.previous_approximate);
+
+    let QueryIr::Typed(root) = plan.request.query() else {
         panic!("typed")
     };
+    let QueryExprKindIr::And(children) = &root.kind else {
+        panic!("and")
+    };
     assert_eq!(
-        expression.annotations["approximate"],
+        children[0].annotations["approximate"],
         RequestValueIr::Bool(false)
     );
+    assert_eq!(children[1], comparison_expression());
+    assert_eq!(
+        root.annotations["filter"],
+        RequestValueIr::Bool(true),
+        "parent annotations must be preserved"
+    );
+
+    // Reversing only the selected flag reconstructs the original request,
+    // proving that no sibling/request-level semantics were rewritten.
+    let mut restored = plan.request.clone();
+    let QueryIr::Typed(root) = &mut restored.query else {
+        panic!("typed")
+    };
+    let QueryExprKindIr::And(children) = &mut root.kind else {
+        panic!("and")
+    };
+    children[0]
+        .annotations
+        .insert("approximate".into(), RequestValueIr::Bool(true));
+    assert_eq!(restored, original);
     assert_eq!(request, original);
+}
+
+#[test]
+fn exact_variants_support_rank_matching_paths_but_refuse_ambiguous_opaque_and_non_monotonic_cases() {
+    let mut request = request();
+    request.query = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::Rank {
+            matching: Box::new(QueryExprIr {
+                kind: QueryExprKindIr::Or(vec![comparison_expression(), nn_expression()]),
+                annotations: Default::default(),
+            }),
+            ranking: vec![QueryExprIr {
+                kind: QueryExprKindIr::True,
+                annotations: BTreeMap::from([("rank-only".into(), RequestValueIr::Bool(true))]),
+            }],
+        },
+        annotations: Default::default(),
+    }));
+    let plan = exact_variant(&request, &DiagnosticLimits::default()).unwrap();
+    assert_eq!(plan.query_path, "query.rank.match.or[1]");
+    let QueryIr::Typed(root) = plan.request.query() else {
+        panic!("typed")
+    };
+    let QueryExprKindIr::Rank { ranking, .. } = &root.kind else {
+        panic!("rank")
+    };
+    assert_eq!(
+        ranking[0].annotations["rank-only"],
+        RequestValueIr::Bool(true),
+        "rank-only branches must remain untouched"
+    );
+
+    request.query = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::And(vec![nn_expression(), nn_expression()]),
+        annotations: Default::default(),
+    }));
+    assert!(exact_variant(&request, &DiagnosticLimits::default())
+        .unwrap_err()
+        .contains("ambiguous"));
+
+    request.query = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::And(vec![
+            nn_expression(),
+            QueryExprIr {
+                kind: QueryExprKindIr::UserInput {
+                    value: "orchid".into(),
+                    default_index: None,
+                    target_hits: 100,
+                },
+                annotations: Default::default(),
+            },
+        ]),
+        annotations: Default::default(),
+    }));
+    assert!(exact_variant(&request, &DiagnosticLimits::default())
+        .unwrap_err()
+        .contains("parser-driven"));
+
+    request.query = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::Not(Box::new(nn_expression())),
+        annotations: Default::default(),
+    }));
+    assert!(exact_variant(&request, &DiagnosticLimits::default())
+        .unwrap_err()
+        .contains("not proven"));
+
+    request.query = QueryIr::Yql {
+        source: "select * where nearestNeighbor(embedding,q)".into(),
+        parameters: Default::default(),
+    };
+    assert!(exact_variant(&request, &DiagnosticLimits::default())
+        .unwrap_err()
+        .contains("opaque YQL"));
+}
+
+#[test]
+fn exact_variants_enforce_hit_budget_and_require_an_approximate_source_nn() {
+    let mut request = request();
+    request.query = QueryIr::Typed(Box::new(nn_expression()));
     assert!(exact_variant(
         &request,
         &DiagnosticLimits {
@@ -165,12 +294,18 @@ fn exact_variants_are_bounded_backend_rewrites_and_opaque_queries_are_not_parsed
             ..Default::default()
         }
     )
-    .is_none());
-    request.query = QueryIr::Yql {
-        source: "select * where nearestNeighbor(embedding,q)".into(),
-        parameters: Default::default(),
+    .unwrap_err()
+    .contains("budget"));
+
+    let QueryIr::Typed(expression) = &mut request.query else {
+        panic!("typed")
     };
-    assert!(exact_variant(&request, &DiagnosticLimits::default()).is_none());
+    expression
+        .annotations
+        .insert("approximate".into(), RequestValueIr::Bool(false));
+    assert!(exact_variant(&request, &DiagnosticLimits::default())
+        .unwrap_err()
+        .contains("already exact"));
 }
 
 struct EvidenceBackend {
