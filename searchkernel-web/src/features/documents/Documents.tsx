@@ -29,7 +29,7 @@ export function Documents() {
   const open = (id: string) => { setCreating(false); navigate(`${documentPath(index.id, id)}?${params}`) }
   const close = () => navigate(`/indexes/${encodeURIComponent(index.id)}/data/documents?${params}`)
   const guided = params.get('journey') === 'first-search'
-  const writable = capabilities.capabilities?.documents.write === true
+  const writable = capabilities.capabilities?.documents.write === true && (!guided || capabilities.capabilities.search.basic === true)
   const editorKey = JSON.stringify([index.id, index.generation, selected.id])
   return <div className="min-w-0">
     <Heading title="Documents" description={guided ? `Add documents to ${index.id}, then search their text in Search Lab.` : `Backend document reads and mutations in ${index.id}.`}><CopyButton label="Copy document URL" text={location.href}/>{writable && <button className="primary-button ml-2" onClick={() => setCreating(value => !value)}>{guided ? "Add first document" : "Create document"}</button>}</Heading>
