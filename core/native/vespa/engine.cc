@@ -110,7 +110,28 @@ public:
         if (available() == 0) throw DiagnosticOutputFull{};
         _buffer[_used++] = value;
     }
+    void append(std::string_view value) {
+        if (value.size() > available()) throw DiagnosticOutputFull{};
+        memcpy(_buffer.data() + _used, value.data(), value.size());
+        _used += value.size();
+    }
 };
+
+void encode_diagnostic_scalar(const vespalib::slime::Inspector& value,
+                              BoundedDiagnosticOutput& output) {
+    // Bound escaping arithmetic/allocation before calling the upstream encoder.
+    if (value.asString().size > output.available() / 6 ||
+        value.asData().size > output.available() / 2) throw DiagnosticOutputFull{};
+    // Pinned JsonFormat reserves at least 8000 bytes even for one character.
+    // Give it a bounded scalar buffer, then charge actual bytes to the trace.
+    // This also avoids unwinding OutputWriter after a failed reserve with
+    // pending bytes: its destructor commits those bytes again.
+    const size_t capacity = std::max({size_t(8000), value.asString().size * 6 + 2,
+                                     value.asData().size * 2 + 5});
+    BoundedDiagnosticOutput scalar(capacity);
+    vespalib::slime::JsonFormat::encode(value, scalar, true);
+    output.append(scalar.payload());
+}
 
 // Traverse containers ourselves so depth/work limits retain the actual encoded
 // prefix instead of discarding the entire trace in an all-or-nothing preflight.
@@ -148,7 +169,7 @@ void encode_diagnostic_trace(const vespalib::slime::Inspector& value,
                 first = false;
                 vespalib::Slime key;
                 key.setString(name);
-                vespalib::slime::JsonFormat::encode(key, output, true);
+                encode_diagnostic_scalar(key.get(), output);
                 output.append(':');
                 encode_diagnostic_trace(child, depth + 1, limit, remaining, output);
             }
@@ -156,10 +177,7 @@ void encode_diagnostic_trace(const vespalib::slime::Inspector& value,
         value.traverse(fields);
         output.append('}');
     } else {
-        // Prevent overflow/large reservations in the upstream scalar encoder.
-        if (value.asString().size > output.available() / 6 ||
-            value.asData().size > output.available() / 2) throw DiagnosticOutputFull{};
-        vespalib::slime::JsonFormat::encode(value, output, true);
+        encode_diagnostic_scalar(value, output);
     }
 }
 
