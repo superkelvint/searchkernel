@@ -14,7 +14,7 @@ export function SearchLab() {
   const { capabilities } = useCapabilities()
   const [params, setParams] = useSearchParams()
   const location = useLocation()
-  const withGeneration = (next: URLSearchParams) => { if (index.generation) next.set('generation', index.generation); return next }
+  const withGeneration = (next: URLSearchParams) => { if (index.generation) next.set('generation', index.generation); if (params.get('journey') === 'first-search') next.set('journey', 'first-search'); return next }
   const key = params.toString()
   const restored = useMemo(() => decodeSearchParams(new URLSearchParams(key)), [key])
   // Query feature values stay in this history entry unless explicitly shared.
@@ -105,7 +105,8 @@ export function SearchLab() {
     : tab === 'Response' ? response?.canonicalResponse ?? 'No canonical response is available. Run a query against the daemon.'
     : tab === 'Executed request' ? executed?.canonical ?? 'No request executed yet.' : executionErrorJson ?? errorJson ?? 'No error.'
   return <div className="min-w-0">
-    <Heading title="Search Lab" description="Construct, execute, inspect and share canonical Search Kernel queries."><CopyButton text={window.location.href} label="Copy URL" /></Heading>
+    {params.get('journey') === 'first-search' && <section className="surface mb-4 space-y-2 p-4" aria-label="First search"><h2 className="font-semibold">Try your first search</h2><p>To find a document in this collection, enter a word from a searchable text field, then run the search. Advanced controls and request inspectors are available below.</p>{response && response.hits.length > 0 && <p role="status">Your search returned documents from Search Kernel. You can now explore other queries, add more data, or inspect the results.</p>}</section>}
+    <Heading title="Search Lab" description={params.get('journey') === 'first-search' ? "Search your documents, then explore the results." : "Construct, execute, inspect and share canonical Search Kernel queries."}><CopyButton text={window.location.href} label="Copy URL" /></Heading>
     {restored.error && <div role="alert" className="surface mb-4 p-4 text-red-800">{restored.error}<button className="soft-button ml-3" onClick={() => setParams(withGeneration(encodeSearchParams({ query: '' })))}>Reset URL state</button></div>}
     <form className="surface flex flex-wrap gap-3 p-4" onSubmit={event => { event.preventDefault(); run() }}>
       <label className="text-sm">Query mode<select aria-label="Query mode" className="input" value={state.mode ?? 'text'} onChange={e => update({ mode: e.target.value as 'text' | 'typed', typedQuery: state.typedQuery ?? typedTerm(termField, state.query) })}><option value="text">Text</option><option value="typed">Typed JSON</option></select></label>

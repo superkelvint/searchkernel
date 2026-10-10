@@ -1,3 +1,4 @@
+import { CollectionNextStep } from '../onboarding/FirstSearch'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
@@ -23,25 +24,28 @@ export function Documents() {
   const search = useQuery({ queryKey: ['document-browse', index.id, index.generation, prepared.value?.canonical], queryFn: clientQuery(signal => client.executeSearch(index.target ?? index.id, prepared.value!, { signal })), ...clientQueryDefaults, enabled: !!prepared.value && !restored.error })
   const document = useQuery({ queryKey: ['document', index.id, index.generation, selected.id], queryFn: clientQuery(async signal => (await client.getDocument(index.target ?? index.id, selected.id!, { signal })) ?? null), ...clientQueryDefaults, enabled: selected.id !== undefined })
   const rows = search.data?.hits ?? []
-  const update = (patch: Parameters<typeof updateSearchState>[1]) => setParams(() => { const next = encodeSearchParams(updateSearchState(state, patch)); if (index.generation) next.set('generation', index.generation); return next })
+  const update = (patch: Parameters<typeof updateSearchState>[1]) => setParams(() => { const next = encodeSearchParams(updateSearchState(state, patch)); if (index.generation) next.set('generation', index.generation); if (guided) next.set('journey', 'first-search'); return next })
+  const pageParams = (offset: number | undefined) => { const next = encodeSearchParams({ ...state, offset }); if (index.generation) next.set('generation', index.generation); if (guided) next.set('journey', 'first-search'); return next }
   const open = (id: string) => { setCreating(false); navigate(`${documentPath(index.id, id)}?${params}`) }
   const close = () => navigate(`/indexes/${encodeURIComponent(index.id)}/data/documents?${params}`)
-  const writable = capabilities.capabilities?.documents.write === true
+  const guided = params.get('journey') === 'first-search'
+  const writable = capabilities.capabilities?.documents.write === true && (!guided || capabilities.capabilities.search.basic === true)
   const editorKey = JSON.stringify([index.id, index.generation, selected.id])
   return <div className="min-w-0">
-    <Heading title="Documents" description={`Backend document reads and mutations in ${index.id}.`}><CopyButton label="Copy document URL" text={location.href}/>{writable && <button className="primary-button ml-2" onClick={() => setCreating(value => !value)}>Create document</button>}</Heading>
+    <Heading title="Documents" description={guided ? `Add documents to ${index.id}, then search their text in Search Lab.` : `Backend document reads and mutations in ${index.id}.`}><CopyButton label="Copy document URL" text={location.href}/>{writable && <button className="primary-button ml-2" onClick={() => setCreating(value => !value)}>{guided ? "Add first document" : "Create document"}</button>}</Heading>
+    <CollectionNextStep page="documents"/>
     <ErrorNotice error={restored.error ? new Error(restored.error) : prepared.error ?? selected.error ?? search.error}/>
     <section className="surface space-y-3 p-4">
       <label className="block">Search documents<input aria-label="Search documents" className="input" value={state.query} onChange={e => update({ query: e.target.value, mode: 'text' })} placeholder="Empty query browses the index"/></label>
-      <div className="flex flex-wrap items-end gap-3"><label>Rows per page<input aria-label="Document page size" className="input w-24" type="number" value={state.limit ?? ''} onChange={e => update({ limit: e.target.value === '' ? undefined : Number(e.target.value) })}/></label><button className="soft-button" onClick={() => navigate(`/indexes/${encodeURIComponent(index.id)}/search/lab?${encodeSearchParams(state)}`)}>Open in Search Lab</button><button className="soft-button" onClick={() => { void search.refetch() }}>Refresh documents</button></div>
+      <div className="flex flex-wrap items-end gap-3"><label>Rows per page<input aria-label="Document page size" className="input w-24" type="number" value={state.limit ?? ''} onChange={e => update({ limit: e.target.value === '' ? undefined : Number(e.target.value) })}/></label><button className="soft-button" onClick={() => navigate(`/indexes/${encodeURIComponent(index.id)}/search/lab?${pageParams(state.offset)}`)}>Open in Search Lab</button><button className="soft-button" onClick={() => { void search.refetch() }}>Refresh documents</button></div>
       {search.isFetching && <p role="status">Fetching documents…</p>}
       {search.data && <p>{search.data.matches} matching documents · {search.data.totalRelation} · offset {state.offset ?? 0}</p>}
       {!search.isFetching && search.data && !rows.length && <p>{String(search.data.matches) === '0' ? 'No matching documents. Create a document or change the search.' : 'No documents on this page.'}</p>}
       <div className="space-y-3">{rows.map(hit => <article key={hit.document.id} className="rounded border border-slate-200 p-3"><div className="flex flex-wrap justify-between gap-2"><code>{hit.document.id}</code><button className="soft-button" aria-label={`Open ${hit.document.id}`} onClick={() => open(hit.document.id)}>Open document</button></div><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(hit.document.fields, null, 2)}</pre></article>)}</div>
-      <div className="flex flex-wrap gap-2"><button className="soft-button" disabled={search.isFetching || search.isError || !state.limit || !state.offset} onClick={() => setParams(encodeSearchParams({ ...state, offset: Math.max(0, (state.offset ?? 0) - state.limit!) }))}>Previous documents</button><button className="soft-button" disabled={search.isFetching || search.isError || !canAdvancePage(state, search.data ?? null)} onClick={() => setParams(encodeSearchParams({ ...state, offset: (state.offset ?? 0) + state.limit! }))}>Next documents</button></div>
+      <div className="flex flex-wrap gap-2"><button className="soft-button" disabled={search.isFetching || search.isError || !state.limit || !state.offset} onClick={() => setParams(pageParams(Math.max(0, (state.offset ?? 0) - state.limit!)))}>Previous documents</button><button className="soft-button" disabled={search.isFetching || search.isError || !canAdvancePage(state, search.data ?? null)} onClick={() => setParams(pageParams((state.offset ?? 0) + state.limit!))}>Next documents</button></div>
       <CanonicalInspector label="Browse request" text={prepared.value?.canonical ?? 'Invalid request'}/>{search.data?.canonicalResponse && <CanonicalInspector label="Browse response" text={search.data.canonicalResponse}/>}
     </section>
-    {creating && writable && prepared.value && <DocumentEditor key={JSON.stringify([index.id, index.generation])} browse={prepared.value} open={open}/>}
+    {creating && writable && prepared.value && <DocumentEditor key={JSON.stringify([index.id, index.generation])} browse={prepared.value} open={open} guided={guided}/>}
     {(selected.id !== undefined || !!selected.error) && <Dialog open onClose={close} className="relative z-50">
       <DialogBackdrop className="fixed inset-0 bg-slate-950/25"/>
       <div className="fixed inset-0 overflow-y-auto"><DialogPanel className="ml-auto min-h-screen w-full max-w-3xl bg-white p-5 shadow-xl">
