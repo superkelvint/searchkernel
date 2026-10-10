@@ -105,28 +105,61 @@ public:
         return *this;
     }
     std::string payload() const { return {_buffer.data(), _used}; }
+    size_t available() const { return _buffer.size() - _used; }
+    void append(char value) {
+        if (available() == 0) throw DiagnosticOutputFull{};
+        _buffer[_used++] = value;
+    }
 };
 
-// JsonFormat traverses recursively. Check depth and work before handing it
-// engine-owned Slime; throwing also stops ObjectTraverser on very wide objects.
+// Traverse containers ourselves so depth/work limits retain the actual encoded
+// prefix instead of discarding the entire trace in an all-or-nothing preflight.
+// JsonFormat still owns scalar/string encoding. A truncated prefix is explicitly
+// text/plain at the adapter boundary, never advertised as complete JSON.
 struct DiagnosticStructureLimit {};
-void check_diagnostic_structure(const vespalib::slime::Inspector& value,
-                                uint32_t depth, uint32_t limit, size_t& remaining) {
+void encode_diagnostic_trace(const vespalib::slime::Inspector& value,
+                             uint32_t depth, uint32_t limit, size_t& remaining,
+                             BoundedDiagnosticOutput& output) {
     if (depth > limit || remaining == 0) throw DiagnosticStructureLimit{};
     --remaining;
     if (sk_diagnostics::array(value)) {
-        for (size_t i = 0; i < value.entries(); ++i) check_diagnostic_structure(value[i], depth + 1, limit, remaining);
+        output.append('[');
+        for (size_t i = 0; i < value.entries(); ++i) {
+            if (i != 0) output.append(',');
+            encode_diagnostic_trace(value[i], depth + 1, limit, remaining, output);
+        }
+        output.append(']');
     } else if (sk_diagnostics::object(value)) {
+        output.append('{');
         struct Fields : vespalib::slime::ObjectTraverser {
             uint32_t depth;
             uint32_t limit;
             size_t& remaining;
-            Fields(uint32_t d, uint32_t l, size_t& r) : depth(d), limit(l), remaining(r) {}
-            void field(const vespalib::Memory&, const vespalib::slime::Inspector& child) override {
-                check_diagnostic_structure(child, depth + 1, limit, remaining);
+            BoundedDiagnosticOutput& output;
+            bool first = true;
+            Fields(uint32_t d, uint32_t l, size_t& r, BoundedDiagnosticOutput& o)
+                : depth(d), limit(l), remaining(r), output(o) {}
+            void field(const vespalib::Memory& name, const vespalib::slime::Inspector& child) override {
+                if (remaining == 0) throw DiagnosticStructureLimit{};
+                // Bound the temporary key and JsonFormat's worst-case escaping
+                // reservation before copying any engine-owned bytes.
+                if (name.size > output.available() / 6) throw DiagnosticOutputFull{};
+                if (!first) output.append(',');
+                first = false;
+                vespalib::Slime key;
+                key.setString(name);
+                vespalib::slime::JsonFormat::encode(key, output, true);
+                output.append(':');
+                encode_diagnostic_trace(child, depth + 1, limit, remaining, output);
             }
-        } fields(depth, limit, remaining);
+        } fields(depth, limit, remaining, output);
         value.traverse(fields);
+        output.append('}');
+    } else {
+        // Prevent overflow/large reservations in the upstream scalar encoder.
+        if (value.asString().size > output.available() / 6 ||
+            value.asData().size > output.available() / 2) throw DiagnosticOutputFull{};
+        vespalib::slime::JsonFormat::encode(value, output, true);
     }
 }
 
@@ -136,8 +169,7 @@ void capture_diagnostic_trace(const search::engine::Trace &trace,
     BoundedDiagnosticOutput output(limit);
     try {
         size_t remaining = 4096;
-        check_diagnostic_structure(trace.getSlime().get(), 0, depth_limit, remaining);
-        vespalib::slime::JsonFormat::encode(trace.getSlime(), output, true);
+        encode_diagnostic_trace(trace.getSlime().get(), 0, depth_limit, remaining, output);
     } catch (const DiagnosticOutputFull &) {
         result.diagnostic_truncated = true;
     } catch (const DiagnosticStructureLimit &) {
