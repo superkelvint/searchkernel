@@ -2393,6 +2393,23 @@ fn final_matcher_request_diagnostics_are_lowered_private_and_bounded() {
         serde_json::from_str(&sorted.diagnostics.unwrap().trace).unwrap();
     assert_eq!(sorted_raw["final_matcher_request"]["sort"], "-qty");
 
+    // The browser uses bounded structural depth. A deep engine branch must not
+    // discard all raw evidence collected before reaching that limit.
+    let mut shallow = diagnostic.clone();
+    let controls = shallow.diagnostics.as_mut().unwrap();
+    controls.trace_level = 7;
+    controls.structure_depth = 1;
+    let shallow_result = engine.search(shallow).expect("depth-bounded diagnostics");
+    assert_eq!(shallow_result.hits, ordinary.hits);
+    let shallow_evidence = shallow_result.diagnostics.unwrap();
+    assert!(shallow_evidence.truncated);
+    assert!(
+        shallow_evidence.trace.len() > 10,
+        "structural truncation erased all raw evidence"
+    );
+    assert!(shallow_evidence.trace.len() <= 65_536);
+    assert!(shallow_evidence.trace.starts_with('{'));
+
     // Output limits and structural limits are independent and both explicit.
     // Raw bytes and semantic sections have independent acquisition budgets.
     let mut projected = diagnostic.clone();

@@ -15,6 +15,13 @@ diagnostic truncation. Ordinary searches skip capture. `./dev test native-crud`
 tests post-lowering values, privacy, bounds, deterministic property selection
 and unchanged ordinary-search results against real Vespa.
 
+Raw trace encoding retains the real encoded prefix when a structural depth,
+node-work or byte limit is reached. Truncated payloads are `text/plain`, may
+end inside a JSON value, and must not be treated as a complete engine response.
+Container traversal is bounded before descent; the pinned Vespa JSON encoder
+still owns scalar escaping/encoding. An oversized branch must not erase all
+earlier evidence.
+
 This directory is the Search Kernel-owned C/C++ adaptation layer around the
 pinned Vespa engine. It is where Vespa-specific headers, object lifetimes,
 configuration details, and native error translation belong.
