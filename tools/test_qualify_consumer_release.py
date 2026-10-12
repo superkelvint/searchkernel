@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class QualificationPolicyTests(unittest.TestCase):
-<<<<<<< HEAD
     def test_packaged_native_consumer_bundle_matches_current_sources(self):
         result = subprocess.run(
             [
@@ -26,8 +25,6 @@ class QualificationPolicyTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-=======
->>>>>>> origin/main
     def check_quickstart_documentation(self, document):
         read_text = Path.read_text
         documentation = ROOT / "docs" / "release-support.md"
