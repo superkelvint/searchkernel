@@ -273,7 +273,7 @@ class QualificationPolicyTests(unittest.TestCase):
         ):
             self.assertIn(canonical_path, gate)
         docs = (ROOT / "docs" / "release-support.md").read_text(encoding="utf-8")
-        self.assertIn("[release-quickstart.md](release-quickstart.md)", docs)
+        self.assertRegex(docs, r"\[[^\]\n]+\]\(release-quickstart\.md\)")
         self.assertNotIn("```", docs, "release support docs must not duplicate executable examples")
 
         renderer = ROOT / "tools" / "render-release-quickstarts.py"
