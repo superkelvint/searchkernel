@@ -96,6 +96,9 @@
     "client-real-e2e-parity": {
       "description": "Cross-client real-engine showcase parity"
     },
+    "consumer-release-policy": {
+      "description": "Consumer qualification policy and quickstart regressions; actual artifacts remain qualified by consumer-release"
+    },
     "consumer-release": {
       "description": "Publishable consumer artifacts and fresh-project package qualification"
     },

@@ -5,11 +5,39 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class QualificationPolicyTests(unittest.TestCase):
+    def check_quickstart_documentation(self, document):
+        read_text = Path.read_text
+        documentation = ROOT / "docs" / "release-support.md"
+
+        def read_with_document(path, *args, **kwargs):
+            if path == documentation:
+                return document
+            return read_text(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", read_with_document):
+            self.test_public_quickstarts_are_canonical_and_rendered()
+
+    def test_quickstart_link_accepts_descriptive_display_labels(self):
+        self.check_quickstart_documentation(
+            "Use [generated release quickstarts](release-quickstart.md).\n"
+        )
+
+    def test_quickstart_link_rejects_wrong_destination(self):
+        with self.assertRaises(AssertionError):
+            self.check_quickstart_documentation(
+                "Use [release-quickstart.md](unqualified-examples.md).\n"
+            )
+
+    def test_quickstart_link_rejects_missing_destination(self):
+        with self.assertRaises(AssertionError):
+            self.check_quickstart_documentation("No executable examples linked.\n")
+
     def test_gate_runs_in_consumer_container_without_producer_state(self):
         runner = (ROOT / ".github/ci/ci-image-runner.yml").read_text()
         marker = 'echo "==> Qualify packaged release in clean consumer"'
@@ -245,7 +273,7 @@ class QualificationPolicyTests(unittest.TestCase):
         ):
             self.assertIn(canonical_path, gate)
         docs = (ROOT / "docs" / "release-support.md").read_text(encoding="utf-8")
-        self.assertIn("[release-quickstart.md](release-quickstart.md)", docs)
+        self.assertRegex(docs, r"\[[^\]\n]+\]\(release-quickstart\.md\)")
         self.assertNotIn("```", docs, "release support docs must not duplicate executable examples")
 
         renderer = ROOT / "tools" / "render-release-quickstarts.py"

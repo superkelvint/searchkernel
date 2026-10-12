@@ -793,6 +793,9 @@ test_target() {
         client-real-e2e-parity)
             "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"
             ;;
+        consumer-release-policy)
+            "$PYTHON" "$ROOT/tools/test_qualify_consumer_release.py"
+            ;;
         consumer-release)
             local release_root release_output
             release_root=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-consumer-release.XXXXXX")
