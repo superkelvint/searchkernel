@@ -737,7 +737,7 @@ fn probe_native_sdk(
     let source = probe_dir.join("native_sdk_link_probe.cc");
     let object = probe_dir.join("native_sdk_link_probe.o");
     let executable = probe_dir.join("native_sdk_link_probe");
-    fs::write(&source, sdk_abi::PROBE_SOURCE)
+    fs::write(&source, sdk_abi::probe_source(expected_abi))
         .map_err(|error| format!("write native SDK compatibility probe: {error}"))?;
 
     let mut config = cc::Build::new();
@@ -750,7 +750,6 @@ fn probe_native_sdk(
     let mut compile = compiler.to_command();
     compile
         .arg("-std=c++17")
-        .arg(format!("-DSK_EXPECTED_ABI={expected_abi}"))
         .arg("-I")
         .arg(sdk.join("include"))
         .args(split_flags("CPPFLAGS"))

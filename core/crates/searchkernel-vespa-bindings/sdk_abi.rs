@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-pub const PROBE_SOURCE: &str = r#"#include <searchkernel_vespa.h>
+const PROBE_SOURCE: &str = r#"#include <searchkernel_vespa.h>
 #include <cstdio>
 static_assert(SK_NATIVE_ABI_VERSION == SK_EXPECTED_ABI,
               "native SDK header disagrees with Rust ABI");
@@ -16,6 +16,11 @@ int main() {
     return 0;
 }
 "#;
+
+pub fn probe_source(expected: u32) -> String {
+    // A literal cannot be redefined by a consumer's compiler -D flags.
+    PROBE_SOURCE.replace("SK_EXPECTED_ABI", &expected.to_string())
+}
 
 pub fn require_native_host(target: &str, host: &str) -> Result<(), String> {
     if target != host {

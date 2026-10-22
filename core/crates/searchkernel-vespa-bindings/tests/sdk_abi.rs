@@ -66,11 +66,10 @@ impl Fixture {
         )
         .unwrap();
         let source = self.0.join("probe.cc");
-        fs::write(&source, sdk_abi::PROBE_SOURCE).unwrap();
+        fs::write(&source, sdk_abi::probe_source(abi::EXPECTED_ABI)).unwrap();
         let probe = self.0.join("probe");
         let status = Command::new(compiler)
             .arg(&source)
-            .arg(format!("-DSK_EXPECTED_ABI={}", abi::EXPECTED_ABI))
             .arg("-I")
             .arg(self.0.join("include"))
             .arg("-L")
@@ -118,7 +117,6 @@ fn probe_header_must_agree_with_the_rust_authority() {
     let compiler = std::env::var_os("CXX").unwrap_or_else(|| "c++".into());
     let output = Command::new(compiler)
         .arg(fixture.0.join("probe.cc"))
-        .arg(format!("-DSK_EXPECTED_ABI={}", abi::EXPECTED_ABI))
         .arg("-I")
         .arg(fixture.0.join("include"))
         .arg("-c")
