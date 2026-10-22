@@ -733,7 +733,7 @@ fn grouping_result_value(
     pointer: *const sys::sk_grouping_result_value,
 ) -> Result<GroupingResultValue, Error> {
     let pointer = NonNull::new(pointer.cast_mut())
-        .ok_or_else(|| Error::invalid_result("native grouping returned a null result value"))?;
+        .ok_or_else(|| Error::corrupt("native grouping returned a null result value"))?;
     let value = pointer.as_ptr();
     match unsafe { sys::sk_grouping_result_value_kind(value) } {
         sys::SK_GROUPING_RESULT_VALUE_STRING => {
@@ -753,7 +753,7 @@ fn grouping_result_value(
                 &error,
             )?;
             if length != 0 && string.is_null() {
-                return Err(Error::invalid_result(
+                return Err(Error::corrupt(
                     "native grouping returned a null string value",
                 ));
             }
@@ -764,7 +764,7 @@ fn grouping_result_value(
             };
             Ok(GroupingResultValue::String(
                 String::from_utf8(bytes.to_vec())
-                    .map_err(|_| Error::invalid_result("native grouping returned invalid UTF-8"))?,
+                    .map_err(|_| Error::corrupt("native grouping returned invalid UTF-8"))?,
             ))
         }
         sys::SK_GROUPING_RESULT_VALUE_INTEGER => {
@@ -839,7 +839,7 @@ fn grouping_result_value(
             }
             Ok(GroupingResultValue::Quantiles(values))
         }
-        kind => Err(Error::invalid_result(format!(
+        kind => Err(Error::corrupt(format!(
             "native grouping returned unknown result-value kind {kind}"
         ))),
     }
@@ -847,7 +847,7 @@ fn grouping_result_value(
 
 fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<GroupingOutput, Error> {
     let pointer = NonNull::new(pointer.cast_mut())
-        .ok_or_else(|| Error::invalid_result("native grouping returned a null output"))?;
+        .ok_or_else(|| Error::corrupt("native grouping returned a null output"))?;
     let output = pointer.as_ptr();
     match unsafe { sys::sk_grouping_tree_output_kind(output) } {
         sys::SK_GROUPING_TREE_OUTPUT_VALUE => {
@@ -888,7 +888,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                 )?;
                 let id = unsafe { std::slice::from_raw_parts(id.cast::<u8>(), id_length as usize) };
                 let document_id = String::from_utf8(id.to_vec())
-                    .map_err(|_| Error::invalid_result("native grouping returned a non-UTF-8 hit ID"))?;
+                    .map_err(|_| Error::corrupt("native grouping returned a non-UTF-8 hit ID"))?;
                 let mut score = 0.0;
                 let mut error = NativeError::new();
                 check(
@@ -925,7 +925,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                         &error,
                     )?;
                     if name.is_null() {
-                        return Err(Error::invalid_result(
+                        return Err(Error::corrupt(
                             "native grouping returned a null summary field name",
                         ));
                     }
@@ -933,7 +933,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                         std::slice::from_raw_parts(name.cast::<u8>(), name_length as usize)
                     };
                     let name = String::from_utf8(name.to_vec()).map_err(|_| {
-                        Error::invalid_result("native grouping returned a non-UTF-8 summary field name")
+                        Error::corrupt("native grouping returned a non-UTF-8 summary field name")
                     })?;
                     let mut kind = 0;
                     let mut string = ptr::null();
@@ -963,7 +963,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                     let value = match kind {
                         sys::SK_VALUE_STRING => {
                             if string.is_null() {
-                                return Err(Error::invalid_result(
+                                return Err(Error::corrupt(
                                     "native grouping returned a null summary string",
                                 ));
                             }
@@ -975,7 +975,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                             };
                             FieldValue::Scalar(ScalarValue::String(
                                 String::from_utf8(value.to_vec()).map_err(|_| {
-                                    Error::invalid_result(
+                                    Error::corrupt(
                                         "native grouping returned a non-UTF-8 summary string",
                                     )
                                 })?,
@@ -987,7 +987,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                             FieldValue::Scalar(ScalarValue::Boolean(boolean != 0))
                         }
                         _ => {
-                            return Err(Error::invalid_result(
+                            return Err(Error::corrupt(
                                 "native grouping returned an unknown summary value kind",
                             ))
                         }
@@ -1004,7 +1004,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
             }
             Ok(GroupingOutput::HitList(hits))
         }
-        kind => Err(Error::invalid_result(format!(
+        kind => Err(Error::corrupt(format!(
             "native grouping returned unknown output kind {kind}"
         ))),
     }
@@ -1015,7 +1015,7 @@ pub(super) fn grouping_tree_node(
     include_key: bool,
 ) -> Result<GroupingResult, Error> {
     let node = NonNull::new(node.cast_mut())
-        .ok_or_else(|| Error::invalid_result("native grouping returned a null tree node"))?;
+        .ok_or_else(|| Error::corrupt("native grouping returned a null tree node"))?;
     let node = node.as_ptr();
     let key = if include_key {
         let mut value = ptr::null();

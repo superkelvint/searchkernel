@@ -22,7 +22,7 @@ pub enum ErrorKind {
 }
 
 impl Error {
-    /// Caller-side validation. Native output invariants use `invalid_result`.
+    /// Caller-side validation. Native output invariants use `corrupt`.
     pub(crate) fn message(message: impl Into<String>) -> Self {
         Self {
             kind: ErrorKind::InvalidArgument,
@@ -32,7 +32,7 @@ impl Error {
         }
     }
 
-    pub(crate) fn invalid_result(message: impl Into<String>) -> Self {
+    pub(crate) fn corrupt(message: impl Into<String>) -> Self {
         Self::native(2, Some("native_result_invalid".to_owned()), message)
     }
 
