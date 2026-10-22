@@ -148,7 +148,11 @@ fn resolve_flatbuffers_root() -> Result<PathBuf, String> {
             .join("searchkernel/toolchains/flatbuffers")
             .join(FLATBUFFERS_VERSION)
             .join(build_env);
-        if shared.join(".searchkernel-current").symlink_metadata().is_ok() {
+        if shared
+            .join(".searchkernel-current")
+            .symlink_metadata()
+            .is_ok()
+        {
             return require_root(shared, "clone-wide FlatBuffers toolchain");
         }
         if let Ok(root) = require_root(shared, "clone-wide FlatBuffers toolchain") {
