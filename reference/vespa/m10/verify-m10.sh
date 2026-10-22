@@ -40,7 +40,7 @@ require_native_driver "$CARGO_TARGET_DIR/debug/examples/searchkernel-m10-driver"
   sk_engine_search_generic \
   sk_generic_search_request_add_query_feature \
   sk_generic_search_request_add_rank_property \
-  sk_generic_search_result_match_feature_value
+  sk_generic_search_result_match_feature_value_ref
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do

@@ -815,6 +815,10 @@ test_target() {
         native-crud)
             "$CARGO" test -p searchkernel-vespa-engine --test native_crud
             ;;
+        native-driver-symbols)
+            bash "$ROOT/tools/test-native-driver-symbols.sh"
+            bash "$ROOT/reference/vespa/verifiers/test-routing.sh"
+            ;;
         python)
             run_python_tests
             ;;

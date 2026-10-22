@@ -342,7 +342,15 @@ require_native_driver() {
   fi
   local symbol
   for symbol in "$@"; do
-    nm -D "$binary" 2>/dev/null | grep "$symbol" >/dev/null ||
+    # Require a strong undefined reference, not a substring or an export from
+    # the driver itself. Read the whole stream to preserve pipefail without
+    # SIGPIPE, and strip only the ELF version suffix from the exact name.
+    nm -D --undefined-only --format=posix "$binary" 2>/dev/null |
+      awk -v required="$symbol" '
+        { name = $1; sub(/@.*/, "", name) }
+        name == required && $2 == "U" { found = 1 }
+        END { exit !found }
+      ' ||
       fail_verification "native driver does not reference required symbol: $symbol"
   done
 }

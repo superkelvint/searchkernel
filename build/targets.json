@@ -42,6 +42,9 @@
     }
   },
   "test": {
+    "native-driver-symbols": {
+      "description": "Exact undefined dynamic symbol requirements and canonical native verifier routing"
+    },
     "instantsearch-compat": {
       "description": "Pinned InstantSearch adapter, canonical public search, and real widgets in JSDOM against Vespa"
     },

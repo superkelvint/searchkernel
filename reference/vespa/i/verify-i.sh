@@ -38,7 +38,7 @@ cargo clippy --quiet -p searchkernel --features native --example searchkernel-i-
 cargo build --quiet -p searchkernel --features native --example searchkernel-i-driver
 DRIVER="$CARGO_TARGET_DIR/debug/examples/searchkernel-i-driver"
 require_native_driver "$DRIVER" \
-  sk_engine_open sk_engine_put sk_engine_update sk_engine_remove sk_engine_search
+  sk_engine_open sk_engine_put sk_engine_update sk_engine_remove sk_engine_search_generic
 
 for scenario in "$SCRIPT_DIR"/scenarios/*.json; do
   id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$scenario")"
