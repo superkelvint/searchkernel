@@ -5,7 +5,10 @@ mod build_support;
 
 #[test]
 fn reader_keeps_its_generation_after_atomic_pointer_change() {
-    let root = std::env::temp_dir().join(format!("searchkernel-flatbuffers-pin-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-flatbuffers-pin-{}",
+        std::process::id()
+    ));
     std::fs::create_dir_all(root.join("old")).unwrap();
     std::fs::create_dir_all(root.join("new")).unwrap();
     let prefix = root.join("prefix");
@@ -26,7 +29,10 @@ fn reader_keeps_its_generation_after_atomic_pointer_change() {
 
 #[test]
 fn dangling_publication_pointer_is_not_a_legacy_fallback() {
-    let root = std::env::temp_dir().join(format!("searchkernel-flatbuffers-dangling-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-flatbuffers-dangling-{}",
+        std::process::id()
+    ));
     std::fs::create_dir_all(&root).unwrap();
     std::os::unix::fs::symlink(root.join("missing"), root.join(".searchkernel-current")).unwrap();
     assert!(build_support::pin_flatbuffers_root(&root).is_err());

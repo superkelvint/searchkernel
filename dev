@@ -1035,6 +1035,7 @@ PY
     local generations="$(dirname -- "$prefix")/.$(basename -- "$prefix").generations"
     mkdir -p "$generations"
     candidate=$(mktemp -d "$generations/generation.XXXXXXXX")
+    candidate=$(cd -- "$candidate" && pwd -P)
 
     # Cargo links this static C++ library into a position-independent Rust
     # executable. AlmaLinux defaults to lib64, while the build script expects
