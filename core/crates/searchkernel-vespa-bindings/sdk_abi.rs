@@ -4,11 +4,13 @@ use std::process::Command;
 
 pub const PROBE_SOURCE: &str = r#"#include <searchkernel_vespa.h>
 #include <cstdio>
+static_assert(SK_NATIVE_ABI_VERSION == SK_EXPECTED_ABI,
+              "native SDK header disagrees with Rust ABI");
 int main() {
     const auto actual = sk_native_abi_version();
-    if (actual != SK_NATIVE_ABI_VERSION) {
+    if (actual != SK_EXPECTED_ABI) {
         std::fprintf(stderr, "native SDK ABI mismatch: library=%u header=%u\n",
-                     actual, SK_NATIVE_ABI_VERSION);
+                     actual, static_cast<unsigned>(SK_EXPECTED_ABI));
         return 1;
     }
     return 0;

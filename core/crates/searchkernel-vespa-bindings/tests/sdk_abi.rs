@@ -70,10 +70,14 @@ impl Fixture {
         let probe = self.0.join("probe");
         let status = Command::new(compiler)
             .arg(&source)
-            .arg("-I").arg(self.0.join("include"))
-            .arg("-L").arg(self.0.join("lib"))
+            .arg(format!("-DSK_EXPECTED_ABI={}", abi::EXPECTED_ABI))
+            .arg("-I")
+            .arg(self.0.join("include"))
+            .arg("-L")
+            .arg(self.0.join("lib"))
             .arg("-lsearchkernel_vespa")
-            .arg("-o").arg(&probe)
+            .arg("-o")
+            .arg(&probe)
             .status()
             .unwrap();
         assert!(status.success());
@@ -95,6 +99,35 @@ fn linked_library_must_report_the_header_abi() {
     assert!(error.contains("ABI mismatch"), "{error}");
     let correct = fixture.library(abi::EXPECTED_ABI);
     sdk_abi::execute_probe(&fixture.0, &correct).unwrap();
+}
+
+#[test]
+fn probe_header_must_agree_with_the_rust_authority() {
+    let fixture = Fixture::new();
+    fixture.library(abi::EXPECTED_ABI);
+    let header = fixture.0.join("include/searchkernel_vespa.h");
+    let original = fs::read_to_string(&header).unwrap();
+    fs::write(
+        header,
+        original.replace(
+            &format!("#define SK_NATIVE_ABI_VERSION {}U", abi::EXPECTED_ABI),
+            &format!("#define SK_NATIVE_ABI_VERSION {}U", abi::EXPECTED_ABI + 1),
+        ),
+    )
+    .unwrap();
+    let compiler = std::env::var_os("CXX").unwrap_or_else(|| "c++".into());
+    let output = Command::new(compiler)
+        .arg(fixture.0.join("probe.cc"))
+        .arg(format!("-DSK_EXPECTED_ABI={}", abi::EXPECTED_ABI))
+        .arg("-I")
+        .arg(fixture.0.join("include"))
+        .arg("-c")
+        .arg("-o")
+        .arg(fixture.0.join("mismatch.o"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("header disagrees with Rust ABI"));
 }
 
 #[test]

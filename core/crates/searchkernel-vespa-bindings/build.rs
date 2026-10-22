@@ -1,6 +1,6 @@
-mod consumer_bundle;
 #[path = "src/abi.rs"]
 mod abi;
+mod consumer_bundle;
 #[cfg(feature = "native")]
 mod sdk_abi;
 use std::env;
@@ -43,8 +43,7 @@ fn main() {
     #[cfg(feature = "native")]
     let host = env::var("HOST").expect("Cargo must provide HOST to native build scripts");
     #[cfg(feature = "native")]
-    sdk_abi::require_native_host(&target, &host)
-        .unwrap_or_else(|error| panic!("{error}"));
+    sdk_abi::require_native_host(&target, &host).unwrap_or_else(|error| panic!("{error}"));
     #[cfg(feature = "native")]
     let explicit_sdk = env::var_os("SK_NATIVE_SDK").map(PathBuf::from);
     #[cfg(feature = "native")]
@@ -751,6 +750,7 @@ fn probe_native_sdk(
     let mut compile = compiler.to_command();
     compile
         .arg("-std=c++17")
+        .arg(format!("-DSK_EXPECTED_ABI={expected_abi}"))
         .arg("-I")
         .arg(sdk.join("include"))
         .args(split_flags("CPPFLAGS"))
