@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 pub fn runtime_directory(identity: &str) -> Result<PathBuf, String> {
     if identity.len() != 72
         || !identity.starts_with("skrt-v1-")
-        || !identity[8..].bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        || !identity[8..]
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
         return Err("invalid immutable consumer runtime identity".into());
     }
@@ -12,7 +14,10 @@ pub fn runtime_directory(identity: &str) -> Result<PathBuf, String> {
 }
 
 pub fn adapter_soname(identity: &str) -> Result<String, String> {
-    Ok(format!("$ORIGIN/{}/libsearchkernel_vespa.so.2", runtime_directory(identity)?.display()))
+    Ok(format!(
+        "$ORIGIN/{}/libsearchkernel_vespa.so.2",
+        runtime_directory(identity)?.display()
+    ))
 }
 
 pub fn abi_probe_source(expected: u32) -> String {
@@ -33,7 +38,9 @@ pub fn verify_adapter_soname(path: &Path, identity: &str) -> Result<(), String> 
     let data = std::fs::read(path).map_err(|error| error.to_string())?;
     let actual = elf_soname(&data)?;
     if actual != adapter_soname(identity)? {
-        return Err("identity-mismatch: adapter SONAME does not bind the package runtime identity".into());
+        return Err(
+            "identity-mismatch: adapter SONAME does not bind the package runtime identity".into(),
+        );
     }
     Ok(())
 }
@@ -43,7 +50,8 @@ pub fn elf_soname(data: &[u8]) -> Result<&str, String> {
         let end = offset.checked_add(size).ok_or("ELF offset overflow")?;
         let start = usize::try_from(offset).map_err(|_| "ELF offset overflow")?;
         let end = usize::try_from(end).map_err(|_| "ELF offset overflow")?;
-        data.get(start..end).ok_or_else(|| "truncated runtime ELF".into())
+        data.get(start..end)
+            .ok_or_else(|| "truncated runtime ELF".into())
     }
     fn word(data: &[u8], offset: u64, size: u64) -> Result<u64, String> {
         let mut value = [0u8; 8];
@@ -56,7 +64,9 @@ pub fn elf_soname(data: &[u8]) -> Result<&str, String> {
     let phoff = word(data, 32, 8)?;
     let phsize = word(data, 54, 2)?;
     let phnum = word(data, 56, 2)?;
-    if phsize != 56 || phnum == 0 { return Err("invalid ELF program headers".into()); }
+    if phsize != 56 || phnum == 0 {
+        return Err("invalid ELF program headers".into());
+    }
     let headers = bytes(data, phoff, phsize * phnum)?;
     let mut loads = Vec::new();
     let mut dynamic = None;
@@ -65,16 +75,23 @@ pub fn elf_soname(data: &[u8]) -> Result<&str, String> {
         let offset = word(header, 8, 8)?;
         let address = word(header, 16, 8)?;
         let size = word(header, 32, 8)?;
-        if kind == 1 { loads.push((offset, address, size)); }
+        if kind == 1 {
+            loads.push((offset, address, size));
+        }
         if kind == 2 {
-            if dynamic.is_some() { return Err("multiple ELF dynamic segments".into()); }
+            if dynamic.is_some() {
+                return Err("multiple ELF dynamic segments".into());
+            }
             dynamic = Some(bytes(data, offset, size)?);
         }
     }
     let mut strtab = None;
     let mut strsize = None;
     let mut soname = None;
-    for entry in dynamic.ok_or("missing ELF dynamic segment")?.chunks_exact(16) {
+    for entry in dynamic
+        .ok_or("missing ELF dynamic segment")?
+        .chunks_exact(16)
+    {
         let tag = word(entry, 0, 8)?;
         let value = word(entry, 8, 8)?;
         match tag {
@@ -88,14 +105,23 @@ pub fn elf_soname(data: &[u8]) -> Result<&str, String> {
     let address = strtab.ok_or("missing ELF string table")?;
     let size = strsize.ok_or("missing ELF string table size")?;
     let index = soname.ok_or("missing ELF SONAME")?;
-    if index >= size { return Err("ELF SONAME outside string table".into()); }
+    if index >= size {
+        return Err("ELF SONAME outside string table".into());
+    }
     for (offset, base, length) in loads {
         if let Some(relative) = address.checked_sub(base) {
             if relative <= length && size <= length - relative {
-                let start = offset.checked_add(relative).and_then(|start| start.checked_add(index)).ok_or("ELF offset overflow")?;
+                let start = offset
+                    .checked_add(relative)
+                    .and_then(|start| start.checked_add(index))
+                    .ok_or("ELF offset overflow")?;
                 let name = bytes(data, start, size - index)?;
-                let end = name.iter().position(|byte| *byte == 0).ok_or("unterminated ELF SONAME")?;
-                return std::str::from_utf8(&name[..end]).map_err(|_| "invalid ELF SONAME encoding".into());
+                let end = name
+                    .iter()
+                    .position(|byte| *byte == 0)
+                    .ok_or("unterminated ELF SONAME")?;
+                return std::str::from_utf8(&name[..end])
+                    .map_err(|_| "invalid ELF SONAME encoding".into());
             }
         }
     }

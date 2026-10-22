@@ -63,8 +63,11 @@ fn main() {
         manifest_dir.join("../../../api/searchkernel.fbs")
     };
     println!("cargo:rerun-if-changed={}", schema.display());
-    fs::copy(schema, PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("searchkernel.fbs"))
-        .expect("stage canonical schema for the standard JSON bridge");
+    fs::copy(
+        schema,
+        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("searchkernel.fbs"),
+    )
+    .expect("stage canonical schema for the standard JSON bridge");
 
     let root = resolve_flatbuffers_root().unwrap_or_else(|error| {
         panic!(

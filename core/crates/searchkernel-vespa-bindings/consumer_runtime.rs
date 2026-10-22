@@ -2,8 +2,8 @@ use flate2::read::GzDecoder;
 use fs2::FileExt;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::env;
 use std::collections::BTreeMap;
+use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -145,7 +145,10 @@ fn validate_descriptor(value: &Value) -> Result<(), String> {
         .map_err(|error| resolution_error("origin-invalid", error))?;
     if !matches!(artifact.scheme(), "https" | "file")
         || (artifact.scheme() == "https" && artifact.host_str().is_none())
-        || artifact.path_segments().and_then(|mut segments| segments.next_back()) != Some(expected.as_str())
+        || artifact
+            .path_segments()
+            .and_then(|mut segments| segments.next_back())
+            != Some(expected.as_str())
     {
         return Err(resolution_error(
             "origin-invalid",
@@ -216,7 +219,10 @@ fn runtime_files(root: &Path, current: &Path, files: &mut Vec<PathBuf>) -> Resul
         {
             files.push(path);
         } else if !metadata.is_file() {
-            return Err(resolution_error("runtime-invalid", "runtime contains a special filesystem entry"));
+            return Err(resolution_error(
+                "runtime-invalid",
+                "runtime contains a special filesystem entry",
+            ));
         }
     }
     Ok(())
@@ -241,7 +247,8 @@ fn payload_digest(root: &Path) -> Result<String, String> {
         let relative = path
             .strip_prefix(root)
             .map_err(|error| resolution_error("runtime-invalid", error))?
-            .to_str().ok_or_else(|| resolution_error("runtime-invalid", "runtime paths must be UTF-8"))?
+            .to_str()
+            .ok_or_else(|| resolution_error("runtime-invalid", "runtime paths must be UTF-8"))?
             .replace(std::path::MAIN_SEPARATOR, "/");
         let actual =
             fs::canonicalize(&path).map_err(|error| resolution_error("runtime-invalid", error))?;
@@ -369,7 +376,10 @@ fn validate_runtime(root: &Path, descriptor: &Value) -> Result<PathBuf, String> 
         .ok_or_else(|| resolution_error("runtime-invalid", "manifest payload_sha256 is missing"))?;
     if let Some(pinned) = descriptor.get("payload_sha256").and_then(Value::as_str) {
         if pinned != expected {
-            return Err(resolution_error("digest-mismatch", "manifest differs from package-pinned payload digest"));
+            return Err(resolution_error(
+                "digest-mismatch",
+                "manifest differs from package-pinned payload digest",
+            ));
         }
     }
     if payload_digest(root)? != expected {
@@ -402,10 +412,13 @@ fn validate_archive(archive_path: &Path) -> Result<(), String> {
                 "archive path escapes runtime root",
             ));
         }
-        let path: PathBuf = path.components().filter_map(|component| match component {
-            Component::Normal(name) => Some(name),
-            _ => None,
-        }).collect();
+        let path: PathBuf = path
+            .components()
+            .filter_map(|component| match component {
+                Component::Normal(name) => Some(name),
+                _ => None,
+            })
+            .collect();
         let kind = entry.header().entry_type();
         if kind.is_hard_link() {
             return Err(resolution_error(
@@ -440,7 +453,10 @@ fn validate_archive(archive_path: &Path) -> Result<(), String> {
             None
         };
         if members.iter().any(|(previous, _, _)| previous == &path) {
-            return Err(resolution_error("artifact-invalid", "duplicate archive member"));
+            return Err(resolution_error(
+                "artifact-invalid",
+                "duplicate archive member",
+            ));
         }
         members.push((path, kind, link));
     }
@@ -450,7 +466,10 @@ fn validate_archive(archive_path: &Path) -> Result<(), String> {
         .map(|(path, _, _)| path.clone())
         .collect();
     for (path, _, _) in &members {
-        if links.iter().any(|link| path != link && path.starts_with(link)) {
+        if links
+            .iter()
+            .any(|link| path != link && path.starts_with(link))
+        {
             return Err(resolution_error(
                 "artifact-invalid",
                 "archive member traverses an archive link",
@@ -506,7 +525,8 @@ fn cache_root() -> PathBuf {
 
 fn resolved_artifact_url(descriptor: &Value) -> Result<Url, String> {
     let expected_name = expected_artifact_filename(descriptor)?;
-    if let Some(origin) = env::var_os("SEARCHKERNEL_RUNTIME_ORIGIN").filter(|path| !path.is_empty()) {
+    if let Some(origin) = env::var_os("SEARCHKERNEL_RUNTIME_ORIGIN").filter(|path| !path.is_empty())
+    {
         let origin = origin.to_string_lossy();
         let mut base =
             Url::parse(&origin).map_err(|error| resolution_error("origin-invalid", error))?;
@@ -577,20 +597,37 @@ pub fn load_descriptor(descriptor_path: &Path) -> Result<Value, String> {
 }
 
 pub fn ensure_runtime_for_build(
-    descriptor_path: &Path, target: &str, host: &str, abi: u32, version: &str,
+    descriptor_path: &Path,
+    target: &str,
+    host: &str,
+    abi: u32,
+    version: &str,
 ) -> Result<(PathBuf, String), String> {
     let descriptor = load_descriptor(descriptor_path)?;
     if target != host || string(&descriptor, "native_target")? != target {
-        return Err(resolution_error("platform-mismatch", "cross-compilation or unqualified Cargo target"));
+        return Err(resolution_error(
+            "platform-mismatch",
+            "cross-compilation or unqualified Cargo target",
+        ));
     }
     if descriptor.get("native_abi_version").and_then(Value::as_u64) != Some(u64::from(abi))
         || string(&descriptor, "searchkernel_version")? != version
     {
-        return Err(resolution_error("identity-mismatch", "runtime descriptor does not match this Cargo package ABI/version"));
+        return Err(resolution_error(
+            "identity-mismatch",
+            "runtime descriptor does not match this Cargo package ABI/version",
+        ));
     }
     let digest = string(&descriptor, "payload_sha256")?;
-    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
-        return Err(resolution_error("descriptor-invalid", "missing or invalid package-pinned payload digest"));
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(resolution_error(
+            "descriptor-invalid",
+            "missing or invalid package-pinned payload digest",
+        ));
     }
     let runtime = ensure_runtime(&descriptor)?;
     Ok((runtime, string(&descriptor, "runtime_identity")?.to_owned()))
@@ -628,9 +665,15 @@ pub fn ensure_runtime(descriptor: &Value) -> Result<PathBuf, String> {
         .map_err(|error| resolution_error("cache-io-failed", error))?;
     // The identity lock excludes other active installers for this object.
     // Recover temporary entries left behind by a terminated acquisition.
-    for entry in fs::read_dir(&staging_root).map_err(|error| resolution_error("cache-io-failed", error))? {
+    for entry in
+        fs::read_dir(&staging_root).map_err(|error| resolution_error("cache-io-failed", error))?
+    {
         let entry = entry.map_err(|error| resolution_error("cache-io-failed", error))?;
-        if entry.file_name().to_str().is_some_and(|name| name.starts_with(&format!("{identity}."))) {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(&format!("{identity}.")))
+        {
             remove_entry(&entry.path())?;
         }
     }
@@ -675,49 +718,81 @@ fn copy_libraries(source: &Path, destination: &Path) -> Result<(), String> {
         let item = item.map_err(|error| resolution_error("runtime-invalid", error))?;
         let path = item.path();
         let target = destination.join(item.file_name());
-        let metadata = fs::metadata(&path).map_err(|error| resolution_error("runtime-invalid", error))?;
+        let metadata =
+            fs::metadata(&path).map_err(|error| resolution_error("runtime-invalid", error))?;
         if metadata.is_file() {
             // Copy rather than hard-link: editing a deployed sidecar must never
             // mutate the shared, validated runtime cache object.
             fs::copy(path, target).map_err(|error| resolution_error("cache-io-failed", error))?;
-        } else if metadata.is_dir() && !item.file_type().map_err(|error| error.to_string())?.is_symlink() {
+        } else if metadata.is_dir()
+            && !item
+                .file_type()
+                .map_err(|error| error.to_string())?
+                .is_symlink()
+        {
             copy_libraries(&path, &target)?;
         } else {
-            return Err(resolution_error("runtime-invalid", "unsupported library entry"));
+            return Err(resolution_error(
+                "runtime-invalid",
+                "unsupported library entry",
+            ));
         }
     }
     Ok(())
 }
 
-pub fn stage_libraries(source: &Path, executable_dir: &Path, identity: &str) -> Result<PathBuf, String> {
+pub fn stage_libraries(
+    source: &Path,
+    executable_dir: &Path,
+    identity: &str,
+) -> Result<PathBuf, String> {
     let relative = super::consumer_layout::runtime_directory(identity)?;
     let final_path = executable_dir.join(relative);
-    let parent = final_path.parent().ok_or("missing runtime sidecar parent")?;
+    let parent = final_path
+        .parent()
+        .ok_or("missing runtime sidecar parent")?;
     fs::create_dir_all(parent).map_err(|error| resolution_error("cache-io-failed", error))?;
-    let lock = OpenOptions::new().create(true).truncate(false).read(true).write(true)
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
         .open(parent.join(format!("{identity}.lock")))
         .map_err(|error| resolution_error("cache-io-failed", error))?;
-    lock.lock_exclusive().map_err(|error| resolution_error("cache-io-failed", error))?;
+    lock.lock_exclusive()
+        .map_err(|error| resolution_error("cache-io-failed", error))?;
     let expected = payload_digest(source)?;
     if fs::symlink_metadata(&final_path).is_ok() {
-        if fs::symlink_metadata(&final_path).map_err(|error| error.to_string())?.file_type().is_symlink()
+        if fs::symlink_metadata(&final_path)
+            .map_err(|error| error.to_string())?
+            .file_type()
+            .is_symlink()
             || payload_digest(&final_path)? != expected
         {
-            return Err(resolution_error("digest-mismatch", "existing immutable Cargo sidecar differs; use a clean Cargo target directory"));
+            return Err(resolution_error(
+                "digest-mismatch",
+                "existing immutable Cargo sidecar differs; use a clean Cargo target directory",
+            ));
         }
         return Ok(final_path);
     }
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
     let stage = parent.join(format!(".{identity}.{}.{nonce}", std::process::id()));
     let result = (|| {
         copy_libraries(source, &stage)?;
         if payload_digest(&stage)? != expected {
-            return Err(resolution_error("digest-mismatch", "staged Cargo sidecar differs"));
+            return Err(resolution_error(
+                "digest-mismatch",
+                "staged Cargo sidecar differs",
+            ));
         }
-        fs::rename(&stage, &final_path).map_err(|error| resolution_error("cache-io-failed", error))?;
+        fs::rename(&stage, &final_path)
+            .map_err(|error| resolution_error("cache-io-failed", error))?;
         Ok(final_path)
     })();
     let _ = remove_entry(&stage);
     result
 }
-
