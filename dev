@@ -815,6 +815,9 @@ test_target() {
         native-crud)
             "$CARGO" test -p searchkernel-vespa-engine --test native_crud
             ;;
+        native-sdk-abi)
+            "$CARGO" test -p searchkernel-vespa-bindings --test sdk_abi --features native
+            ;;
         python)
             run_python_tests
             ;;
