@@ -70,7 +70,9 @@ pub fn verify_manifest(
 pub fn execute_probe(sdk: &Path, executable: &Path) -> Result<(), String> {
     // The adapter SONAME is $ORIGIN/.searchkernel-native/..., so an rpath
     // alone cannot make a freshly linked probe executable load it.
-    let origin = executable.parent().ok_or("native SDK probe has no parent")?;
+    let origin = executable
+        .parent()
+        .ok_or("native SDK probe has no parent")?;
     let runtime = origin.join(".searchkernel-native");
     fs::create_dir_all(&runtime).map_err(|error| format!("stage SDK ABI probe: {error}"))?;
     fs::copy(

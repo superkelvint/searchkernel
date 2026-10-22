@@ -139,7 +139,9 @@ fn main() {
 
     #[cfg(feature = "native")]
     {
-        if let Err(error) = probe_native_sdk(&sdk, base_sdk.as_deref(), &target, &host, expected_abi) {
+        if let Err(error) =
+            probe_native_sdk(&sdk, base_sdk.as_deref(), &target, &host, expected_abi)
+        {
             if base_sdk.is_some() {
                 panic!(
                     "Search Kernel Vespa adapter '{}' failed its link probe against runtime base:\n{error}",
@@ -656,8 +658,8 @@ fn verify_hardening_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
 
 #[cfg(feature = "native")]
 fn verify_native_provenance(manifest_dir: &Path, sdk: &Path, target: &str) -> Result<(), String> {
-    let work = PathBuf::from(env::var_os("OUT_DIR").ok_or("Cargo OUT_DIR is missing")?)
-        .join("sdk-probe");
+    let work =
+        PathBuf::from(env::var_os("OUT_DIR").ok_or("Cargo OUT_DIR is missing")?).join("sdk-probe");
     fs::create_dir_all(&work).map_err(|error| format!("create SDK ABI work directory: {error}"))?;
     let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
         .map(PathBuf::from)

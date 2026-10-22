@@ -53,7 +53,11 @@ impl Fixture {
         .unwrap();
         let compiler = std::env::var_os("CXX").unwrap_or_else(|| "c++".into());
         let status = Command::new(&compiler)
-            .args(["-shared", "-fPIC", "-Wl,-soname,$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2"])
+            .args([
+                "-shared",
+                "-fPIC",
+                "-Wl,-soname,$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2",
+            ])
             .arg(&implementation)
             .arg("-o")
             .arg(self.0.join("lib/libsearchkernel_vespa.so.2"))
@@ -131,12 +135,18 @@ fn probe_header_must_agree_with_the_rust_authority() {
 #[test]
 fn manifest_must_unambiguously_agree_with_rust() {
     let fixture = Fixture::new();
-    fixture.manifest(&format!("{{\"native_abi_version\":{}}}", abi::EXPECTED_ABI)).unwrap();
+    fixture
+        .manifest(&format!("{{\"native_abi_version\":{}}}", abi::EXPECTED_ABI))
+        .unwrap();
     for manifest in [
         "{}".to_owned(),
         "{\"native_abi_version\":true}".to_owned(),
         format!("{{\"native_abi_version\":{}}}", abi::EXPECTED_ABI + 1),
-        format!("{{\"native_abi_version\":{},\"native_abi_version\":{}}}", abi::EXPECTED_ABI, abi::EXPECTED_ABI),
+        format!(
+            "{{\"native_abi_version\":{},\"native_abi_version\":{}}}",
+            abi::EXPECTED_ABI,
+            abi::EXPECTED_ABI
+        ),
         format!("{{\"native_abi_version\":\"{}\"}}", abi::EXPECTED_ABI),
     ] {
         assert!(fixture.manifest(&manifest).is_err(), "{manifest}");
@@ -145,6 +155,9 @@ fn manifest_must_unambiguously_agree_with_rust() {
 
 #[test]
 fn cross_compilation_cannot_claim_runtime_validation() {
-    assert!(sdk_abi::require_native_host("aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu").is_err());
+    assert!(
+        sdk_abi::require_native_host("aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu")
+            .is_err()
+    );
     sdk_abi::require_native_host("x86_64-unknown-linux-gnu", "x86_64-unknown-linux-gnu").unwrap();
 }
