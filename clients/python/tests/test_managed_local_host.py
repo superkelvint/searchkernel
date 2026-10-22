@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -15,6 +16,58 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel import client as client_module  # noqa: E402
+
+
+class HostBinaryResolutionTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="searchkernel-host-resolution-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        source = self.root / "clients/python/searchkernel/client.py"
+        source.parent.mkdir(parents=True)
+        source.touch()
+        environment = patch.dict(os.environ, {}, clear=False)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("SEARCHKERNEL_LOCAL_HOST", None)
+        os.environ.pop("CARGO_TARGET_DIR", None)
+        location = patch.object(client_module, "__file__", str(source))
+        location.start()
+        self.addCleanup(location.stop)
+
+    def binary(self, relative, output):
+        binary = self.root / relative
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_text(f"#!{sys.executable}\nprint({output!r})\n", encoding="utf-8")
+        binary.chmod(0o755)
+        return binary
+
+    def test_default_launches_active_build_instead_of_stale_legacy_binary(self):
+        self.binary("target/debug/searchkerneld", "STALE")
+        expected = self.binary("target/host/debug/searchkerneld", "CURRENT")
+        self.assertEqual(client_module._host_binary(), expected)
+        result = subprocess.run(
+            [str(client_module._host_binary())], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(result.stdout.strip(), "CURRENT")
+
+    def test_absolute_and_relative_cargo_targets(self):
+        for target in ("target/isolated", str(self.root / "absolute-target")):
+            with self.subTest(target=target), patch.dict(os.environ, {"CARGO_TARGET_DIR": target}):
+                expected = self.binary(Path(target) / "debug/searchkerneld", target)
+                self.assertEqual(client_module._host_binary(), expected)
+
+    def test_missing_active_build_does_not_fall_back_to_stale_binary(self):
+        self.binary("target/debug/searchkerneld", "STALE")
+        with self.assertRaisesRegex(client_module.ClientError, "target/host/debug/searchkerneld"):
+            client_module._ManagedLocalHost(self.root / "data")
+
+    def test_explicit_then_packaged_binary_precede_repository_fallback(self):
+        packaged = self.binary("clients/python/searchkernel/bin/searchkerneld", "PACKAGED")
+        explicit = self.binary("explicit/searchkerneld", "EXPLICIT")
+        with patch.dict(os.environ, {"SEARCHKERNEL_LOCAL_HOST": str(explicit)}):
+            self.assertEqual(client_module._host_binary(), explicit)
+        self.assertEqual(client_module._host_binary(), packaged)
 
 
 class _Process:
