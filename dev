@@ -795,6 +795,18 @@ test_target() {
             ;;
         consumer-release-policy)
             "$PYTHON" "$ROOT/tools/test_qualify_consumer_release.py"
+            "$PYTHON" "$ROOT/tools/test_package_consumer_release.py"
+            "$PYTHON" "$ROOT/tools/test_cargo_distribution.py"
+            "$PYTHON" "$ROOT/tools/test_cargo_consumer_registry.py"
+            ;;
+        cargo-runtime)
+            "$CARGO" test -p searchkernel-vespa-bindings --no-default-features --test consumer_runtime
+            ;;
+        cargo-distribution-generation)
+            "$CARGO" update --workspace
+            "$CARGO" fmt --all
+            "$PYTHON" "$ROOT/tools/render-release-quickstarts.py"
+            git -C "$ROOT" diff --binary -- Cargo.lock docs/release-quickstart.md core/crates
             ;;
         consumer-release)
             local release_root release_output
@@ -806,9 +818,9 @@ test_target() {
             "$PYTHON" "$ROOT/tools/render-release-quickstarts.py" --check
             "$PYTHON" "$ROOT/tools/package-consumer-release.py" --output "$release_output"
             "$PYTHON" "$ROOT/tools/check-consumer-release.py" "$release_output"
-            mkdir -p "$release_root/qualification/native-base"
-            bash "$ROOT/tools/stage-native-base-qualification-artifact.sh" "$release_root/qualification/native-base"
+            mkdir -p "$release_root/qualification"
             cp "$ROOT/tools/qualify-consumer-release.py" "$release_root/qualification/"
+            cp "$ROOT/tools/cargo_consumer_registry.py" "$release_root/qualification/"
             cp -R "$ROOT/examples/release-quickstart" "$release_root/qualification/quickstarts"
             "$PYTHON" "$release_root/qualification/qualify-consumer-release.py" "$release_output"
             ;;

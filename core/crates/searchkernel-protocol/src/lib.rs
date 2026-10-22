@@ -6,6 +6,7 @@ pub(crate) mod generated {
 }
 
 /// Generic standard FlatBuffers JSON conversion at the protocol boundary.
+#[cfg(feature = "json")]
 pub mod json;
 
 /// Current version-neutral Search Kernel payload schema, selected by the V1 codec.

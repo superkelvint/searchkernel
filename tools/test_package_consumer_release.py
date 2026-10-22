@@ -160,7 +160,7 @@ class ConsumerReleaseTests(unittest.TestCase):
         self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", packager)
         self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", build_sdk)
         self.assertNotIn("SK_NATIVE_ADAPTER_RPATH", build_rs)
-        build = packager.index('"cargo",\n                    "build"')
+        build = packager.index('cargo_tool(),\n                    "build"')
         relocate = packager.index("make_runtime_adapter_relocatable(staged_adapter)")
         self.assertLess(build, relocate)
         self.assertNotIn("payload = adapter.read_bytes()", packager)
@@ -206,7 +206,9 @@ class ConsumerReleaseTests(unittest.TestCase):
             daemon = Path(raw) / "searchkerneld.real"
             original = b"$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2"
             daemon.write_bytes(b"prefix\0" + original + b"\0suffix")
-            MODULE.make_runtime_daemon_relocatable(daemon)
+            dynamic = f"(NEEDED) Shared library: [{original.decode()}]\n"
+            with mock.patch.object(MODULE.subprocess, "check_output", return_value=dynamic):
+                MODULE.make_runtime_daemon_relocatable(daemon)
             payload = daemon.read_bytes()
             self.assertIn(b"$ORIGIN/../lib/libsearchkernel_vespa.so.2\0", payload)
             self.assertNotIn(original, payload)
@@ -345,53 +347,13 @@ class ConsumerReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "developer-only"):
                 MODULE.assert_consumer_runtime_surface(stage)
 
-    def test_rust_bundle_is_self_contained_workspace(self) -> None:
-        with tempfile.TemporaryDirectory() as tempdir:
-            bundle = Path(tempdir) / "searchkernel-rust-test.tar.gz"
-            MODULE.build_rust_bundle(bundle)
-            with tarfile.open(bundle) as archive:
-                names = set(archive.getnames())
-                self.assertIn("LICENSE", names)
-                self.assertIn("core/crates/searchkernel/Cargo.toml", names)
-                self.assertIn("core/crates/searchkernel-rpc/Cargo.toml", names)
-                self.assertIn("searchkerneld/Cargo.toml", names)
-                self.assertIn(
-                    "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs", names
-                )
-                self.assertIn(
-                    "reference/client-real-e2e-parity/corpus.json", names
-                )
-                self.assertNotIn("tools/resolve-native-sdk.sh", names)
-
-    def test_release_verifier_builds_extracted_native_searchkernel(self) -> None:
+    def test_rust_consumer_verifier_checks_distributable_crates(self) -> None:
         verifier = RELEASE_VERIFIER.read_text(encoding="utf-8")
-        tree = ast.parse(verifier)
-        commands = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not node.args:
-                continue
-            func = node.func
-            if not (
-                isinstance(func, ast.Attribute)
-                and isinstance(func.value, ast.Name)
-                and func.value.id == "subprocess"
-                and func.attr == "run"
-                and isinstance(node.args[0], ast.List)
-            ):
-                continue
-            commands.append(
-                [element.value for element in node.args[0].elts if isinstance(element, ast.Constant)]
-            )
-        self.assertTrue(
-            any(
-                command[:5] == ["check", "-p", "searchkernel", "--features", "native"]
-                for command in commands
-            )
-        )
-        self.assertIn('"CARGO_TARGET_DIR"', verifier)
-        self.assertIn('"SK_NATIVE_CACHE_DIR"', verifier)
-        self.assertIn('"SEARCHKERNEL_BUILD_ENV"', verifier)
-
+        self.assertIn('out.glob("*.crate")', verifier)
+        self.assertIn('public["features"]["default"] == ["native"]', verifier)
+        self.assertIn('descriptor["artifact_sha256"]', verifier)
+        self.assertIn('"/runtime.json"', verifier.replace('{prefix}', ''))
+        self.assertNotIn('"SK_NATIVE_CACHE_DIR"', verifier)
 
 
 if __name__ == "__main__":

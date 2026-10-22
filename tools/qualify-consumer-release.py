@@ -14,6 +14,7 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path
+from cargo_consumer_registry import LocalCargoRegistry, crate_manifest
 
 DIST = Path(sys.argv[1]).resolve()
 MANIFEST = json.loads((DIST / "manifest.json").read_text(encoding="utf-8"))
@@ -35,10 +36,17 @@ QUALIFICATION_PROBES = {
 def clean_environment() -> dict[str, str]:
     environment = os.environ.copy()
     for key in list(environment):
-        if key.startswith(("SEARCHKERNEL_", "SK_NATIVE_", "VESPA_")) or key in {
+        if key.startswith(("SEARCHKERNEL_", "SK_NATIVE_", "VESPA_")) or key.startswith(("CARGO_REGISTRIES_", "CARGO_PROFILE_", "CARGO_TARGET_", "CARGO_BUILD_")) or key in {
             "BUNDLE_GEMFILE",
             "CARGO_MANIFEST_DIR",
             "CARGO_TARGET_DIR",
+            "CARGO_HOME",
+            "RUSTFLAGS",
+            "RUSTDOCFLAGS",
+            "RUSTC_WRAPPER",
+            "RUSTC_WORKSPACE_WRAPPER",
+            "CARGO_ENCODED_RUSTFLAGS",
+            "CARGO_REGISTRY_TOKEN",
             "GEM_HOME",
             "GEM_PATH",
             "GH_TOKEN",
@@ -98,38 +106,6 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def native_base_fixture() -> tuple[dict[str, object], Path]:
-    fixture_root = QUALIFICATION_ROOT / "native-base"
-    manifest_path = fixture_root / "manifest.json"
-    try:
-        metadata = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"qualification native-base metadata is unavailable: {exc}") from exc
-
-    artifact_name = metadata.get("artifact")
-    if not isinstance(artifact_name, str) or not artifact_name:
-        raise RuntimeError("qualification native-base metadata has no artifact")
-    archive = fixture_root / artifact_name
-    if not archive.is_file():
-        raise RuntimeError(f"qualification native-base artifact is missing: {archive}")
-
-    expected = metadata.get("sha256")
-    actual = sha256_file(archive)
-    if not isinstance(expected, str) or actual != expected:
-        raise RuntimeError("qualification native-base artifact checksum mismatch")
-
-    generation = metadata.get("artifact_generation")
-    build_env = metadata.get("build_environment")
-    target = metadata.get("native_target")
-    if not isinstance(generation, int) or generation < 1:
-        raise RuntimeError("qualification native-base generation is invalid")
-    if build_env not in {"host", "ci"}:
-        raise RuntimeError("qualification native-base build environment is invalid")
-    if not isinstance(target, str) or not target:
-        raise RuntimeError("qualification native-base target is invalid")
-    return metadata, archive
 
 
 def verify_manifest() -> None:
@@ -199,31 +175,73 @@ def run_ruby_quickstart(
     run("ruby", str(QUICKSTARTS / "ruby.rb"), cwd=root, env=env)
 
 
-def run_rust_quickstart(rust_root: Path, root: Path) -> dict[str, str]:
-    quickstart = rust_root / "release-quickstart"
-    shutil.copytree(QUICKSTARTS / "rust", quickstart)
-    native_base, native_base_archive = native_base_fixture()
+def run_rust_quickstart(root: Path) -> None:
+    crates = [DIST / item["file"] for item in MANIFEST["artifacts"] if item["file"].endswith(".crate")]
+    if not crates:
+        raise RuntimeError("release contains no distributable Cargo crates")
+    package_names = {crate_manifest(crate)["package"]["name"] for crate in crates}
+    if not {"searchkernel", "searchkernel-vespa-bindings"} <= package_names:
+        raise RuntimeError("release is missing its public Cargo/native binding artifacts")
+    project = root / "external-rust-consumer"
+    cargo_home = root / "external-cargo-home"
+    cargo_home.mkdir()
+    shutil.copytree(QUICKSTARTS / "rust", project)
     environment = {
-        "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
-        "SEARCHKERNEL_BUILD_ENV": str(native_base["build_environment"]),
-        "SK_NATIVE_TARGET": str(native_base["native_target"]),
-        "SK_NATIVE_BASE_ARTIFACT_URL": native_base_archive.as_uri(),
-        "SK_NATIVE_BASE_ARTIFACT_GENERATION": str(native_base["artifact_generation"]),
-        "SK_NATIVE_CACHE_DIR": str(root / "rust-native-cache"),
+        "CARGO_HOME": str(cargo_home),
+        "CARGO_TARGET_DIR": str(root / "external-cargo-target"),
+        "SEARCHKERNEL_RUNTIME_ORIGIN": DIST.as_uri(),
+        "SEARCHKERNEL_RUNTIME_CACHE": str(root / "rust-runtime-cache"),
     }
-    # Qualification consumes the exact native-base sidecar staged by this
-    # release run. It never publishes to, discovers from, or downloads from
-    # GitHub; the tag workflow owns publication separately.
-    run(
-        "cargo",
-        "run",
-        "--quiet",
-        "--manifest-path",
-        str(quickstart / "Cargo.toml"),
-        cwd=quickstart,
-        env=environment,
-    )
-    return environment
+    with LocalCargoRegistry(crates) as registry:
+        (cargo_home / "config.toml").write_text(
+            '[source.crates-io]\nreplace-with = "release-candidates"\n'
+            '[source.release-candidates]\n'
+            f'registry = "sparse+http://127.0.0.1:{registry.server.server_port}/"\n'
+        )
+        # Normal registry dependency; no path dependency, source checkout,
+        # explicit native feature, SDK or developer native-base override.
+        run("cargo", "add", "searchkernel", cwd=project, env=environment)
+        run("cargo", "build", "--locked", cwd=project, env=environment)
+        target = Path(environment["CARGO_TARGET_DIR"])
+        binary = target / "debug/searchkernel-release-quickstart"
+        dynamic = run("readelf", "-d", str(binary), cwd=root).stdout
+        identity = MANIFEST["runtime"]["runtime_identity"]
+        expected = f"$ORIGIN/.searchkernel-native/{identity}/libsearchkernel_vespa.so.2"
+        if f"[{expected}]" not in dynamic:
+            raise RuntimeError("Cargo executable does not bind the exact relative runtime identity")
+        for line in dynamic.splitlines():
+            if any(tag in line for tag in ("(NEEDED)", "(RPATH)", "(RUNPATH)")):
+                value = line.split("[", 1)[-1].split("]", 1)[0]
+                if any(part.startswith("/") for part in value.split(":")):
+                    raise RuntimeError(f"consumer ELF contains an absolute native dependency: {value}")
+        # Execute directly: cargo run would install its own dynamic loader path.
+        run(str(binary), cwd=root, env={"SEARCHKERNEL_QUICKSTART_PATH": str(root / "cargo-cold-index")})
+        relocated = root / "relocated-cargo-app"
+        relocated.mkdir()
+        shutil.copy2(binary, relocated / binary.name)
+        shutil.copytree(target / "debug/.searchkernel-native" / identity,
+                        relocated / ".searchkernel-native" / identity)
+        run(str(relocated / binary.name), cwd=root,
+            env={"SEARCHKERNEL_QUICKSTART_PATH": str(root / "cargo-relocated-index")})
+        # A new target directory forces native provisioning again. The same
+        # immutable cache must work with the artifact origin unreachable.
+        offline = {**environment, "CARGO_TARGET_DIR": str(root / "external-cargo-warm"),
+                   "SEARCHKERNEL_RUNTIME_ORIGIN": "file:///unavailable-searchkernel-runtime"}
+        run("cargo", "build", "--offline", "--locked", cwd=project, env=offline)
+        run(str(Path(offline["CARGO_TARGET_DIR"]) / "debug" / binary.name), cwd=root,
+            env={"SEARCHKERNEL_QUICKSTART_PATH": str(root / "cargo-warm-index")})
+        remote = root / "external-remote-consumer"
+        remote.mkdir()
+        remote_environment = {**environment, "CARGO_TARGET_DIR": str(root / "remote-cargo-target"),
+                              "SEARCHKERNEL_RUNTIME_CACHE": str(root / "unused-remote-runtime-cache"),
+                              "SEARCHKERNEL_RUNTIME_ORIGIN": "file:///unavailable-searchkernel-runtime"}
+        run("cargo", "init", "--bin", "--name", "remote_consumer", "--vcs", "none", cwd=remote, env=remote_environment)
+        run("cargo", "add", "searchkernel", "--no-default-features", "--features", "remote", cwd=remote, env=remote_environment)
+        (remote / "src/main.rs").write_text('fn main() { println!("{}", std::any::type_name::<searchkernel::Index>()); }\n')
+        run("cargo", "check", "--locked", cwd=remote, env=remote_environment)
+        if Path(remote_environment["SEARCHKERNEL_RUNTIME_CACHE"]).exists():
+            raise RuntimeError("remote-only Cargo opt-out provisioned a native runtime")
+        print("Rust distributable Cargo consumer: cold acquisition, native execution, relocation, warm offline build PASS")
 
 
 def python_managed_local(venv: Path, index: Path) -> None:
@@ -660,20 +678,7 @@ def main() -> None:
         context = {"daemon": None}
 
         def rust_embedded_probe() -> None:
-            rust = artifact("searchkernel-rust-", ".tar.gz")
-            rust_root = root / "rust"
-            rust_root.mkdir()
-            with tarfile.open(rust) as archive:
-                archive.extractall(rust_root, filter="data")
-            # Build exactly like a clean Rust consumer, but provision the
-            # native prerequisite from the qualification-only local sidecar.
-            # GitHub publication/discovery is intentionally outside this test.
-            native_environment = run_rust_quickstart(rust_root, root)
-            run(
-                "cargo", "run", "--quiet", "-p", "searchkernel", "--features", "native",
-                "--example", "try_searchkernel_client_api_e2e", cwd=rust_root,
-                env=native_environment,
-            )
+            run_rust_quickstart(root)
 
         def searchkerneld_runtime_probe() -> None:
             context["daemon"] = extract_daemon(root)

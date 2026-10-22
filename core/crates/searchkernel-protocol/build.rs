@@ -1,11 +1,14 @@
+#[cfg(feature = "json")]
 use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
+#[cfg(feature = "json")]
 const FLATBUFFERS_VERSION: &str = "25.12.19";
 
+#[cfg(feature = "json")]
 fn print_native_inputs() {
     println!("cargo:rerun-if-changed=native");
     println!("cargo:rerun-if-changed=bfbs/searchkernel_request.bfbs");
@@ -45,8 +48,23 @@ fn print_native_inputs() {
     }
 }
 
+#[cfg(not(feature = "json"))]
+fn main() {}
+
+#[cfg(feature = "json")]
 fn main() {
     print_native_inputs();
+
+    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let packaged = manifest_dir.join("schema/searchkernel.fbs");
+    let schema = if packaged.is_file() {
+        packaged
+    } else {
+        manifest_dir.join("../../../api/searchkernel.fbs")
+    };
+    println!("cargo:rerun-if-changed={}", schema.display());
+    fs::copy(schema, PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("searchkernel.fbs"))
+        .expect("stage canonical schema for the standard JSON bridge");
 
     let root = resolve_flatbuffers_root().unwrap_or_else(|error| {
         panic!(
@@ -114,6 +132,7 @@ fn main() {
     }
 }
 
+#[cfg(feature = "json")]
 fn resolve_flatbuffers_root() -> Result<PathBuf, String> {
     if let Some(explicit) = env::var_os("FLATBUFFERS_CPP_ROOT") {
         return require_root(PathBuf::from(explicit), "FLATBUFFERS_CPP_ROOT");
@@ -163,6 +182,7 @@ fn resolve_flatbuffers_root() -> Result<PathBuf, String> {
     ))
 }
 
+#[cfg(feature = "json")]
 fn git_common_dir(repository_root: &Path) -> Option<PathBuf> {
     let output = Command::new("git")
         .arg("-C")
@@ -187,6 +207,7 @@ fn git_common_dir(repository_root: &Path) -> Option<PathBuf> {
     fs::canonicalize(path).ok()
 }
 
+#[cfg(feature = "json")]
 fn require_root(root: PathBuf, source: &str) -> Result<PathBuf, String> {
     if root_is_usable(&root) {
         Ok(root)
@@ -198,6 +219,7 @@ fn require_root(root: PathBuf, source: &str) -> Result<PathBuf, String> {
     }
 }
 
+#[cfg(feature = "json")]
 fn root_is_usable(root: &Path) -> bool {
     let include = root.join("include/flatbuffers/base.h");
     let library = root.join("lib");
@@ -211,6 +233,7 @@ fn root_is_usable(root: &Path) -> bool {
         && verify_flatbuffers_version(&root.join("include")).is_ok()
 }
 
+#[cfg(feature = "json")]
 fn verify_flatbuffers_version(include: &Path) -> Result<(), String> {
     let header = fs::read_to_string(include.join("flatbuffers/base.h"))
         .map_err(|error| format!("read FlatBuffers version header: {error}"))?;

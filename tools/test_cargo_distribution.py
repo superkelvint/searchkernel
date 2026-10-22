@@ -16,6 +16,11 @@ SPEC.loader.exec_module(PACKAGER)
 
 
 class CargoDistributionTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(PACKAGER, "cargo_tool", return_value="cargo")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_package_failure_restores_checkout_and_never_publishes_descriptor(self):
         bindings = ROOT / "core/crates/searchkernel-vespa-bindings"
         original = (bindings / "consumer_bundle.rs").read_bytes()
@@ -31,16 +36,18 @@ class CargoDistributionTests(unittest.TestCase):
         descriptor = {"runtime_identity": "test-exact-identity", "artifact_sha256": "e" * 64}
 
         def cargo_package(command, **kwargs):
+            staged_bindings = kwargs["cwd"] / "core/crates/searchkernel-vespa-bindings"
             self.assertEqual(command[1], "package")
             self.assertIn("--workspace", command)
             self.assertIn("--locked", command)
-            self.assertEqual(json.loads((bindings / "runtime.json").read_text()), descriptor)
+            self.assertNotEqual(staged_bindings, bindings)
+            self.assertEqual(json.loads((staged_bindings / "runtime.json").read_text()), descriptor)
             # Release crates must not embed the development/native-base source bundle.
-            self.assertIn("= &[];", (bindings / "consumer_bundle.rs").read_text())
+            self.assertIn("= &[];", (staged_bindings / "consumer_bundle.rs").read_text())
             target = Path(command[command.index("--target-dir") + 1]) / "package"
             target.mkdir()
             with tarfile.open(target / "searchkernel-0.1.0.crate", "w:gz") as archive:
-                archive.add(bindings / "runtime.json", arcname="searchkernel-0.1.0/runtime.json")
+                archive.add(staged_bindings / "runtime.json", arcname="searchkernel-0.1.0/runtime.json")
 
         with tempfile.TemporaryDirectory() as raw:
             with mock.patch.object(PACKAGER.subprocess, "run", side_effect=cargo_package):
