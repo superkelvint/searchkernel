@@ -15,8 +15,11 @@ fn malformed_native_results_are_portable_internal_errors() {
     ));
     ConfigCompiler
         .compile_to(
-            &Schema::new("searchkernel")
-                .field(Field::new("value", FieldType::Integer).attribute().summary()),
+            &Schema::new("searchkernel").field(
+                Field::new("value", FieldType::Integer)
+                    .attribute()
+                    .summary(),
+            ),
             root.join("config"),
         )
         .unwrap();
