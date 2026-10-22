@@ -1,4 +1,4 @@
-#![cfg(all(feature = "native", feature = "hardening", searchkernel_hardening_sdk))]
+#![cfg(all(feature = "native", feature = "hardening"))]
 
 use searchkernel_vespa_engine::{
     hardening, ConfigCompiler, Document, Engine, ErrorKind, FacetRequest, Field, FieldType,
@@ -107,16 +107,6 @@ fn grouping_plan() -> GroupingPlan {
     )
 }
 
-fn expected_error_kind(fault: hardening::ResultFault) -> ErrorKind {
-    match fault {
-        hardening::ResultFault::DocumentAccessorError
-        | hardening::ResultFault::MatchFeatureValueError
-        | hardening::ResultFault::GroupAccessorError
-        | hardening::ResultFault::AggregationAccessorError => ErrorKind::Internal,
-        _ => ErrorKind::InvalidArgument,
-    }
-}
-
 fn assert_search_fault(engine: &Engine, fault: hardening::ResultFault) {
     let before = hardening::result_destroy_count(engine).expect("read result destroy count");
     hardening::set_result_fault(engine, fault).expect("set result fault");
@@ -126,7 +116,7 @@ fn assert_search_fault(engine: &Engine, fault: hardening::ResultFault) {
     };
     hardening::clear_result_fault(engine).expect("clear result fault");
     assert!(!error.to_string().is_empty());
-    assert_eq!(error.kind(), expected_error_kind(fault));
+    assert_eq!(error.kind(), ErrorKind::Internal, "{fault:?}: {error}");
     let after = hardening::result_destroy_count(engine).expect("read result destroy count");
     assert_eq!(
         after,
@@ -242,6 +232,7 @@ fn native_result_decoding_rejects_malformed_document_values() {
             .get("decode-1")
             .expect_err("malformed document result unexpectedly decoded");
         hardening::clear_result_fault(&engine).expect("clear document result fault");
+        assert_eq!(error.kind(), ErrorKind::Internal, "{fault:?}: {error}");
         assert!(!error.to_string().is_empty());
         assert!(engine.get("decode-1").expect("healthy get").is_some());
     }
@@ -333,6 +324,7 @@ fn native_grouping_tree_decoder_rejects_malformed_recursive_results_and_releases
             .group(&Query::True, &grouping_plan())
             .expect_err("malformed grouping tree unexpectedly decoded");
         hardening::clear_result_fault(&engine).expect("clear grouping tree fault");
+        assert_eq!(error.kind(), ErrorKind::Internal, "{fault:?}: {error}");
         assert!(!error.to_string().is_empty());
         let after = hardening::result_destroy_count(&engine).expect("read tree destroy count");
         assert_eq!(
@@ -490,4 +482,22 @@ fn native_search_keeps_docsums_associated_after_delete_during_docsum_request() {
     engine.close().expect("close docsums-association engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn caller_validation_remains_invalid_argument() {
+    let (engine, config, data) = fixture();
+    for error in [
+        engine.get("invalid\0id").unwrap_err(),
+        engine.put(Document::new("empty")).unwrap_err(),
+        engine
+            .put(Document::new("bad-field").field("invalid\0field", 1_i64))
+            .unwrap_err(),
+    ] {
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+        assert_eq!(error.detail_code(), None);
+    }
+    engine.close().unwrap();
+    fs::remove_dir_all(config).unwrap();
+    fs::remove_dir_all(data).unwrap();
 }

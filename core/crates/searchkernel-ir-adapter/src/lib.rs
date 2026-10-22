@@ -498,7 +498,12 @@ fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
             PortableError::invalid("backend_value_type", None::<String>, message)
         }
         searchkernel_vespa_engine::ErrorKind::Internal => {
-            PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
+            let mut portable = PortableError::new(searchkernel_ir::ErrorCode::Internal, message);
+            if let Some(detail) = error.detail_code() {
+                let detail_message = portable.message.clone();
+                portable = portable.with_detail(detail, None::<String>, detail_message);
+            }
+            portable
         }
         searchkernel_vespa_engine::ErrorKind::DeadlineExceeded => {
             PortableError::new(searchkernel_ir::ErrorCode::DeadlineExceeded, message)

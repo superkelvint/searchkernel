@@ -32,20 +32,20 @@ pub(crate) fn read_generic_search_result(
             .iter()
             .any(|value| !value.is_finite() || *value < 0.0)
     {
-        return Err(Error::message("native diagnostic metadata is invalid"));
+        return Err(Error::invalid_result("native diagnostic metadata is invalid"));
     }
     let diagnostics = if query_seconds == 0.0 && length == 0 && truncated == 0 {
         None
     } else {
         let truncated_features = read_diagnostic_truncated_features(result.0.as_ptr())?;
         if (truncated & 2 != 0) != !truncated_features.is_empty() {
-            return Err(Error::message(
+            return Err(Error::invalid_result(
                 "native diagnostic feature truncation metadata is inconsistent",
             ));
         }
         // The opaque result owns this bounded buffer. Copy before its Drop.
         if trace.is_null() && length != 0 {
-            return Err(Error::message(
+            return Err(Error::invalid_result(
                 "native diagnostic trace returned a null buffer",
             ));
         }
@@ -60,10 +60,10 @@ pub(crate) fn read_generic_search_result(
                 Ok(value) => value.to_owned(),
                 Err(error) if truncated & 1 != 0 => {
                     std::str::from_utf8(&bytes[..error.valid_up_to()])
-                        .map_err(|_| Error::message("invalid truncated trace"))?
+                        .map_err(|_| Error::invalid_result("invalid truncated trace"))?
                         .to_owned()
                 }
-                Err(_) => return Err(Error::message("native trace is not UTF-8")),
+                Err(_) => return Err(Error::invalid_result("native trace is not UTF-8")),
             },
             truncated: truncated & 1 != 0,
             features_truncated: truncated & 2 != 0,
@@ -105,7 +105,7 @@ pub(crate) fn read_generic_search_result(
         };
         check(status, &error)?;
         if message.is_null() && message_length != 0 {
-            return Err(Error::message(
+            return Err(Error::invalid_result(
                 "native search result issue returned null message",
             ));
         }
@@ -116,7 +116,7 @@ pub(crate) fn read_generic_search_result(
         };
         issues.push(
             String::from_utf8(bytes.to_vec())
-                .map_err(|_| Error::message("native search result issue is invalid UTF-8"))?,
+                .map_err(|_| Error::invalid_result("native search result issue is invalid UTF-8"))?,
         );
     }
     let match_feature_count =
@@ -138,13 +138,13 @@ pub(crate) fn read_generic_search_result(
         };
         check(status, &error)?;
         if name.is_null() {
-            return Err(Error::message("native match feature returned null name"));
+            return Err(Error::invalid_result("native match feature returned null name"));
         }
         let bytes = unsafe { std::slice::from_raw_parts(name.cast::<u8>(), name_length as usize) };
         let name = String::from_utf8(bytes.to_vec())
-            .map_err(|_| Error::message("native match feature returned invalid UTF-8 name"))?;
+            .map_err(|_| Error::invalid_result("native match feature returned invalid UTF-8 name"))?;
         if match_feature_names.iter().any(|previous| previous == &name) {
-            return Err(Error::message(
+            return Err(Error::invalid_result(
                 "native match features contain duplicate names",
             ));
         }
@@ -169,13 +169,13 @@ pub(crate) fn read_generic_search_result(
         };
         check(status, &error)?;
         if id.is_null() {
-            return Err(Error::message(
+            return Err(Error::invalid_result(
                 "native local result returned null document ID",
             ));
         }
         let id = unsafe { std::slice::from_raw_parts(id.cast::<u8>(), id_length as usize) };
         let document_id = String::from_utf8(id.to_vec())
-            .map_err(|_| Error::message("native result returned invalid UTF-8"))?;
+            .map_err(|_| Error::invalid_result("native result returned invalid UTF-8"))?;
         let summaries =
             unsafe { sys::sk_generic_search_result_summary_count(result.0.as_ptr(), index as u32) }
                 as usize;
@@ -197,12 +197,12 @@ pub(crate) fn read_generic_search_result(
             };
             check(status, &error)?;
             if name.is_null() {
-                return Err(Error::message("native summary returned null field name"));
+                return Err(Error::invalid_result("native summary returned null field name"));
             }
             let name_bytes =
                 unsafe { std::slice::from_raw_parts(name.cast::<u8>(), name_length as usize) };
             let name = String::from_utf8(name_bytes.to_vec())
-                .map_err(|_| Error::message("native summary returned invalid UTF-8 field name"))?;
+                .map_err(|_| Error::invalid_result("native summary returned invalid UTF-8 field name"))?;
             let mut kind = 0;
             let mut string = ptr::null();
             let mut string_length = 0;
@@ -229,20 +229,20 @@ pub(crate) fn read_generic_search_result(
             let value = match kind {
                 sys::SK_VALUE_STRING => {
                     if string.is_null() {
-                        return Err(Error::message("native summary returned null string"));
+                        return Err(Error::invalid_result("native summary returned null string"));
                     }
                     let bytes = unsafe {
                         std::slice::from_raw_parts(string.cast::<u8>(), string_length as usize)
                     };
                     Value::String(
                         String::from_utf8(bytes.to_vec())
-                            .map_err(|_| Error::message("native summary returned invalid UTF-8"))?,
+                            .map_err(|_| Error::invalid_result("native summary returned invalid UTF-8"))?,
                     )
                 }
                 sys::SK_VALUE_INTEGER => Value::Integer(integer),
                 sys::SK_VALUE_FLOAT => Value::Float(float),
                 sys::SK_VALUE_BOOLEAN => Value::Boolean(boolean != 0),
-                _ => return Err(Error::message("native summary returned unknown value kind")),
+                _ => return Err(Error::invalid_result("native summary returned unknown value kind")),
             };
             summary.insert(name, value);
         }
@@ -269,7 +269,7 @@ pub(crate) fn read_generic_search_result(
                 &error,
             )?;
             if field.is_null() && field_length != 0 {
-                return Err(Error::message("native highlight returned null field"));
+                return Err(Error::invalid_result("native highlight returned null field"));
             }
             let field_bytes = if field_length == 0 {
                 &[][..]
@@ -277,7 +277,7 @@ pub(crate) fn read_generic_search_result(
                 unsafe { std::slice::from_raw_parts(field.cast::<u8>(), field_length as usize) }
             };
             let field = String::from_utf8(field_bytes.to_vec())
-                .map_err(|_| Error::message("native highlight field is invalid UTF-8"))?;
+                .map_err(|_| Error::invalid_result("native highlight field is invalid UTF-8"))?;
             let fragment_count = unsafe {
                 sys::sk_generic_search_result_highlight_fragment_count(
                     result.0.as_ptr(),
@@ -306,7 +306,7 @@ pub(crate) fn read_generic_search_result(
                     &error,
                 )?;
                 if text.is_null() && text_length != 0 {
-                    return Err(Error::message(
+                    return Err(Error::invalid_result(
                         "native highlight returned null fragment text",
                     ));
                 }
@@ -316,7 +316,7 @@ pub(crate) fn read_generic_search_result(
                     unsafe { std::slice::from_raw_parts(text.cast::<u8>(), text_length as usize) }
                 };
                 let text = String::from_utf8(text_bytes.to_vec())
-                    .map_err(|_| Error::message("native highlight text is invalid UTF-8"))?;
+                    .map_err(|_| Error::invalid_result("native highlight text is invalid UTF-8"))?;
                 let match_count = unsafe {
                     sys::sk_generic_search_result_highlight_match_count(
                         result.0.as_ptr(),
@@ -347,7 +347,7 @@ pub(crate) fn read_generic_search_result(
                         &error,
                     )?;
                     if start_byte > end_byte || end_byte as usize > text.len() {
-                        return Err(Error::message("native highlight span is out of bounds"));
+                        return Err(Error::invalid_result("native highlight span is out of bounds"));
                     }
                     matches.push(HighlightSpan {
                         start_byte,
@@ -374,7 +374,7 @@ pub(crate) fn read_generic_search_result(
             };
             check(status, &error)?;
             if native_value.is_null() {
-                return Err(Error::message("native match feature returned null value"));
+                return Err(Error::invalid_result("native match feature returned null value"));
             }
             let value = match unsafe { sys::sk_feature_value_kind(native_value) } {
                 sys::SK_FEATURE_VALUE_DOUBLE => {
@@ -408,7 +408,7 @@ pub(crate) fn read_generic_search_result(
                         &error,
                     )?;
                     if size != 0 && data.is_null() {
-                        return Err(Error::message("native match feature returned null data"));
+                        return Err(Error::invalid_result("native match feature returned null data"));
                     }
                     let bytes = if size == 0 {
                         &[][..]
@@ -417,7 +417,7 @@ pub(crate) fn read_generic_search_result(
                     };
                     MatchFeatureValue::Data(bytes.to_vec())
                 }
-                _ => return Err(Error::message("native match feature returned unknown kind")),
+                _ => return Err(Error::invalid_result("native match feature returned unknown kind")),
             };
             match_features.insert(feature_name.clone(), value);
         }
@@ -513,20 +513,20 @@ fn read_search_facet(
         let key = match key_kind {
             sys::SK_VALUE_STRING => {
                 if key_string.is_null() {
-                    return Err(Error::message("native search returned null facet key"));
+                    return Err(Error::invalid_result("native search returned null facet key"));
                 }
                 let bytes = unsafe {
                     std::slice::from_raw_parts(key_string.cast::<u8>(), key_string_length as usize)
                 };
                 Value::String(
                     String::from_utf8(bytes.to_vec())
-                        .map_err(|_| Error::message("native search returned invalid facet key"))?,
+                        .map_err(|_| Error::invalid_result("native search returned invalid facet key"))?,
                 )
             }
             sys::SK_VALUE_INTEGER => Value::Integer(key_integer),
             sys::SK_VALUE_BOOLEAN => Value::Boolean(key_integer != 0),
             _ => {
-                return Err(Error::message(
+                return Err(Error::invalid_result(
                     "native search returned unsupported facet key kind",
                 ))
             }
@@ -559,15 +559,15 @@ fn read_diagnostic_truncated_features(
             &error,
         )?;
         if length == 0 || length > 4096 || name.is_null() {
-            return Err(Error::message(
+            return Err(Error::invalid_result(
                 "native diagnostic truncated feature name is invalid",
             ));
         }
         let bytes = unsafe { std::slice::from_raw_parts(name.cast::<u8>(), length as usize) };
         let name = String::from_utf8(bytes.to_vec())
-            .map_err(|_| Error::message("native diagnostic truncated feature name is not UTF-8"))?;
+            .map_err(|_| Error::invalid_result("native diagnostic truncated feature name is not UTF-8"))?;
         if names.iter().any(|existing| existing == &name) {
-            return Err(Error::message(
+            return Err(Error::invalid_result(
                 "native diagnostic truncated feature names contain duplicates",
             ));
         }
@@ -609,7 +609,7 @@ fn read_diagnostic_sections(
         };
         check(status, &error)?;
         if length > 65_536 || (length != 0 && data.is_null()) {
-            return Err(Error::message("invalid native diagnostic section buffer"));
+            return Err(Error::invalid_result("invalid native diagnostic section buffer"));
         }
         let status = match state {
             0 => Status::Available,
@@ -618,7 +618,7 @@ fn read_diagnostic_sections(
             3 => Status::Truncated,
             4 => Status::TimedOut,
             5 => Status::Failed,
-            _ => return Err(Error::message("invalid native diagnostic section status")),
+            _ => return Err(Error::invalid_result("invalid native diagnostic section status")),
         };
         let projection = if length == 0 {
             None

@@ -21,7 +21,9 @@ fn malformed_native_results_are_portable_internal_errors() {
         )
         .unwrap();
     let backend = VespaBackend::open(root.join("data"), root.join("config")).unwrap();
-    backend.upsert(UpsertRequestIr::new(test_document(7))).unwrap();
+    backend
+        .upsert(UpsertRequestIr::new(test_document(7)))
+        .unwrap();
     for fault in [
         ResultFault::NullDocumentFieldName,
         ResultFault::InvalidDocumentFieldName,
