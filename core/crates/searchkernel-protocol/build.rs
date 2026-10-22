@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+mod build_support;
 
 const FLATBUFFERS_VERSION: &str = "25.12.19";
 
@@ -147,8 +148,11 @@ fn resolve_flatbuffers_root() -> Result<PathBuf, String> {
             .join("searchkernel/toolchains/flatbuffers")
             .join(FLATBUFFERS_VERSION)
             .join(build_env);
-        if root_is_usable(&shared) {
-            return Ok(shared);
+        if shared.join(".searchkernel-current").symlink_metadata().is_ok() {
+            return require_root(shared, "clone-wide FlatBuffers toolchain");
+        }
+        if let Ok(root) = require_root(shared, "clone-wide FlatBuffers toolchain") {
+            return Ok(root);
         }
     }
 
@@ -188,6 +192,7 @@ fn git_common_dir(repository_root: &Path) -> Option<PathBuf> {
 }
 
 fn require_root(root: PathBuf, source: &str) -> Result<PathBuf, String> {
+    let root = build_support::pin_flatbuffers_root(&root)?;
     if root_is_usable(&root) {
         Ok(root)
     } else {

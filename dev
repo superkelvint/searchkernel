@@ -815,6 +815,11 @@ test_target() {
         native-crud)
             "$CARGO" test -p searchkernel-vespa-engine --test native_crud
             ;;
+        flatbuffers-publication)
+            "$PYTHON" "$ROOT/tools/test_flatbuffers_publication.py"
+            "$CARGO" test -p searchkernel-protocol --test flatbuffers_publication
+            bash "$ROOT/tools/test-flatbuffers-cpp-toolchain.sh"
+            ;;
         python)
             run_python_tests
             ;;
@@ -936,6 +941,7 @@ verify_target() {
 install_flatbuffers() (
     local prefix=${FLATBUFFERS_INSTALL_PREFIX:-${FLATBUFFERS_CPP_ROOT:-$(shared_flatbuffers_prefix)}}
     local workdir source_dir build_dir archive_url archive_path download_tool lockfile
+    local candidate= retain_candidate=0 installed
     local jobs=1
     local flatc header library actual_version actual_source_sha256
 
@@ -946,18 +952,26 @@ install_flatbuffers() (
         flock 9
     fi
 
-    flatc="$prefix/bin/flatc"
-    header="$prefix/include/flatbuffers/base.h"
-    library="$prefix/lib/libflatbuffers.a"
+    installed=$prefix
+    if [[ -e "$prefix/.searchkernel-current" || -L "$prefix/.searchkernel-current" ]]; then
+        [[ -L "$prefix/.searchkernel-current" ]] || {
+            echo "error: invalid FlatBuffers publication pointer under '$prefix'" >&2
+            return 1
+        }
+        installed=$(cd -- "$prefix/.searchkernel-current" && pwd -P)
+    fi
+    flatc="$installed/bin/flatc"
+    header="$installed/include/flatbuffers/base.h"
+    library="$installed/lib/libflatbuffers.a"
     if [[ -x "$flatc" && -f "$header" && -f "$library" ]] &&
-       bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$prefix" "$EXPECTED_FLATBUFFERS_VERSION" >/dev/null 2>&1; then
+       bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$installed" "$EXPECTED_FLATBUFFERS_VERSION" >/dev/null 2>&1; then
         echo "FlatBuffers $EXPECTED_FLATBUFFERS_VERSION already available and link-compatible under $prefix"
         echo "This install is shared by every worktree in this clone for build environment '${SEARCHKERNEL_BUILD_ENV:-host}'."
         return 0
     fi
 
     workdir=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-flatbuffers.XXXXXX")
-    trap 'rm -rf -- "$workdir"' EXIT
+    trap 'rm -rf -- "$workdir"; if [[ "$retain_candidate" == 0 && -n "$candidate" ]]; then rm -rf -- "$candidate"; fi' EXIT
 
     if command -v curl >/dev/null 2>&1; then
         download_tool=curl
@@ -1016,21 +1030,27 @@ PY
 
     tar --extract --gzip --strip-components=1 --file="$archive_path" --directory="$source_dir"
 
+    # Install at the permanent generation path: CMake/pkg-config metadata may
+    # record it. No reader sees this candidate until validation and publication.
+    local generations="$(dirname -- "$prefix")/.$(basename -- "$prefix").generations"
+    mkdir -p "$generations"
+    candidate=$(mktemp -d "$generations/generation.XXXXXXXX")
+
     # Cargo links this static C++ library into a position-independent Rust
     # executable. AlmaLinux defaults to lib64, while the build script expects
     # lib, so keep both properties explicit here.
     cmake -S "$source_dir" -B "$build_dir" \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX="$prefix" \
+        -DCMAKE_INSTALL_PREFIX="$candidate" \
         -DCMAKE_INSTALL_LIBDIR=lib \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         -DFLATBUFFERS_BUILD_TESTS=OFF
     cmake --build "$build_dir" --parallel "$jobs"
     cmake --install "$build_dir"
 
-    flatc="$prefix/bin/flatc"
-    header="$prefix/include/flatbuffers/base.h"
-    library="$prefix/lib/libflatbuffers.a"
+    flatc="$candidate/bin/flatc"
+    header="$candidate/include/flatbuffers/base.h"
+    library="$candidate/lib/libflatbuffers.a"
     [[ -x "$flatc" ]] || {
         echo "error: FlatBuffers compiler was not installed at '$flatc'" >&2
         return 1
@@ -1048,14 +1068,21 @@ PY
         echo "error: installed flatc reports '$actual_version'" >&2
         return 1
     }
-    if ! bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$prefix" "$EXPECTED_FLATBUFFERS_VERSION"; then
+    if ! bash "$ROOT/tools/check-flatbuffers-cpp.sh" "$candidate" "$EXPECTED_FLATBUFFERS_VERSION"; then
         echo "error: installed FlatBuffers C++ library is not compatible with this build environment" >&2
         return 1
     fi
 
+    # Retain a validated generation before publication starts, including if a
+    # signal arrives just after the atomic pointer replacement. Never delete a
+    # generation that a reader might already have pinned.
+    retain_candidate=1
+    "$PYTHON" "$ROOT/tools/publish-flatbuffers.py" \
+        --candidate "$candidate" --prefix "$prefix" --version "$EXPECTED_FLATBUFFERS_VERSION"
+
     echo "Installed FlatBuffers ${EXPECTED_FLATBUFFERS_VERSION} under $prefix"
     echo "This install is shared by every worktree in this clone for build environment '${SEARCHKERNEL_BUILD_ENV:-host}'."
-    echo "export FLATBUFFERS_CPP_ROOT=$prefix"
+    echo "export FLATBUFFERS_CPP_ROOT=$candidate"
     echo "export FLATC_PATH=$flatc"
 )
 
