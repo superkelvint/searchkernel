@@ -189,12 +189,14 @@ fn actual_elf_soname_is_required_and_malformed_headers_fail_safely() {
     // ABI implementation. Matching metadata/SONAME alone must not suffice.
     let probe_source = fixture.root.join("probe.c");
     let probe = fixture.root.join("probe");
-    fs::write(&probe_source, consumer_layout::abi_probe_source(17)).unwrap();
-    let mut compiler = cc::Build::new().cargo_metadata(false)
-        .target("x86_64-unknown-linux-gnu").host("x86_64-unknown-linux-gnu").opt_level(0)
-        .get_compiler().to_command();
-    assert!(compiler.arg(&probe_source).arg(&library).arg("-o").arg(&probe).status().unwrap().success());
-    assert_eq!(Command::new(&probe).env_remove("LD_LIBRARY_PATH").env_remove("LD_PRELOAD").status().unwrap().code(), Some(1));
+    for (abi, expected_status) in [(16, 0), (17, 1)] {
+        fs::write(&probe_source, consumer_layout::abi_probe_source(abi)).unwrap();
+        let mut compiler = cc::Build::new().cargo_metadata(false)
+            .target("x86_64-unknown-linux-gnu").host("x86_64-unknown-linux-gnu").opt_level(0)
+            .get_compiler().to_command();
+        assert!(compiler.arg(&probe_source).arg(&library).arg("-o").arg(&probe).status().unwrap().success());
+        assert_eq!(Command::new(&probe).env_remove("LD_LIBRARY_PATH").env_remove("LD_PRELOAD").status().unwrap().code(), Some(expected_status));
+    }
     let different = format!("skrt-v1-{}", "f".repeat(64));
     assert!(consumer_layout::verify_adapter_soname(&library, &different).unwrap_err().contains("identity-mismatch"));
     let data = fs::read(library).unwrap();
