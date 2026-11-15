@@ -25,7 +25,7 @@ use crate::search::{
     GroupingLiteral, GroupingOrder, GroupingPlan, MissingPlacement, QueryInput, SearchRequest,
     SearchResult, SortOrder, Source, SummaryRequest,
 };
-use crate::tensor::TensorValue;
+use crate::tensor::{TensorAddress, TensorBlock, TensorCell, TensorValue};
 use searchkernel_vespa_bindings as sys;
 use std::collections::BTreeMap;
 use std::fs;
@@ -33,6 +33,208 @@ use std::path::Path;
 use std::ptr::{self, NonNull};
 
 const EXPECTED_ABI: u32 = sys::EXPECTED_ABI;
+
+struct NativeDiagnosticTensor(NonNull<sys::sk_diagnostic_tensor>);
+
+impl Drop for NativeDiagnosticTensor {
+    fn drop(&mut self) {
+        unsafe { sys::sk_diagnostic_tensor_destroy(self.0.as_ptr()) };
+    }
+}
+
+fn diagnostic_tensor_text(
+    pointer: *const std::os::raw::c_char,
+    length: u32,
+    name: &str,
+) -> Result<String> {
+    if length > 262_144 || (length != 0 && pointer.is_null()) {
+        return Err(Error::message(format!(
+            "native diagnostic tensor returned invalid {name}"
+        )));
+    }
+    let bytes = if length == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(pointer.cast::<u8>(), length as usize) }
+    };
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| Error::message(format!("native diagnostic tensor {name} is not UTF-8")))
+}
+
+/// Bounded conversion above the unchanged raw feature DATA ABI. Vespa owns the
+/// binary codec; the opaque native projection preserves mapped labels and
+/// dense subspaces while enforcing the cell budget before materialization.
+pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorValue> {
+    if bytes.is_empty() || bytes.len() > 262_144 || max_cells == 0 || max_cells > 4096 {
+        return Err(Error::message(
+            "diagnostic tensor exceeds input/cell bounds",
+        ));
+    }
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_diagnostic_tensor_decode(
+                bytes.as_ptr(),
+                bytes.len() as u32,
+                max_cells,
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    let tensor = NativeDiagnosticTensor(require_ptr(pointer, "diagnostic tensor")?);
+
+    let mut type_pointer = ptr::null();
+    let mut type_length = 0;
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_diagnostic_tensor_type_spec(
+                tensor.0.as_ptr(),
+                &mut type_pointer,
+                &mut type_length,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    let type_spec = diagnostic_tensor_text(type_pointer, type_length, "type specification")?;
+    if type_spec.is_empty() {
+        return Err(Error::message(
+            "native diagnostic tensor returned an empty type specification",
+        ));
+    }
+
+    let block_count = unsafe { sys::sk_diagnostic_tensor_block_count(tensor.0.as_ptr()) };
+    if block_count > max_cells.max(1) {
+        return Err(Error::message(
+            "native diagnostic tensor returned too many blocks",
+        ));
+    }
+    let mut total_cells = 0_u32;
+    let mut blocks = Vec::with_capacity(block_count as usize);
+    for block_index in 0..block_count {
+        let address_count = unsafe {
+            sys::sk_diagnostic_tensor_block_address_count(tensor.0.as_ptr(), block_index)
+        };
+        if address_count > 4096 {
+            return Err(Error::message(
+                "native diagnostic tensor returned too many address dimensions",
+            ));
+        }
+        let mut address = Vec::with_capacity(address_count as usize);
+        for address_index in 0..address_count {
+            let mut dimension = ptr::null();
+            let mut dimension_length = 0;
+            let mut label = ptr::null();
+            let mut label_length = 0;
+            let mut error = NativeError::new();
+            check(
+                unsafe {
+                    sys::sk_diagnostic_tensor_block_address(
+                        tensor.0.as_ptr(),
+                        block_index,
+                        address_index,
+                        &mut dimension,
+                        &mut dimension_length,
+                        &mut label,
+                        &mut label_length,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                },
+                &error,
+            )?;
+            let dimension = diagnostic_tensor_text(dimension, dimension_length, "dimension name")?;
+            if dimension.is_empty() {
+                return Err(Error::message(
+                    "native diagnostic tensor returned an empty dimension name",
+                ));
+            }
+            address.push(TensorAddress::new(
+                dimension,
+                diagnostic_tensor_text(label, label_length, "dimension label")?,
+            ));
+        }
+
+        let mut values = ptr::null();
+        let mut value_count = 0;
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_diagnostic_tensor_block_values(
+                    tensor.0.as_ptr(),
+                    block_index,
+                    &mut values,
+                    &mut value_count,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            },
+            &error,
+        )?;
+        total_cells = total_cells
+            .checked_add(value_count)
+            .ok_or_else(|| Error::message("native diagnostic tensor cell count overflow"))?;
+        if total_cells > max_cells || (value_count != 0 && values.is_null()) {
+            return Err(Error::message(
+                "native diagnostic tensor returned cells outside the requested budget",
+            ));
+        }
+        let values = if value_count == 0 {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(values, value_count as usize) }.to_vec()
+        };
+        if values.iter().any(|value| !value.is_finite()) {
+            return Err(Error::message(
+                "native diagnostic tensor returned a non-finite portable cell",
+            ));
+        }
+        blocks.push((address, values));
+    }
+
+    match unsafe { sys::sk_diagnostic_tensor_kind(tensor.0.as_ptr()) } {
+        sys::SK_DIAGNOSTIC_TENSOR_DENSE => {
+            if blocks.len() != 1 || !blocks[0].0.is_empty() {
+                return Err(Error::message(
+                    "native dense diagnostic tensor has an invalid block layout",
+                ));
+            }
+            let (_, values) = blocks.into_iter().next().unwrap();
+            Ok(TensorValue::Dense { type_spec, values })
+        }
+        sys::SK_DIAGNOSTIC_TENSOR_SPARSE => {
+            let mut cells = Vec::with_capacity(blocks.len());
+            for (address, values) in blocks {
+                if values.len() != 1 {
+                    return Err(Error::message(
+                        "native sparse diagnostic tensor block is not scalar",
+                    ));
+                }
+                cells.push(TensorCell {
+                    address,
+                    value: values[0],
+                });
+            }
+            Ok(TensorValue::Sparse { type_spec, cells })
+        }
+        sys::SK_DIAGNOSTIC_TENSOR_MIXED => Ok(TensorValue::Mixed {
+            type_spec,
+            blocks: blocks
+                .into_iter()
+                .map(|(address, values)| TensorBlock { address, values })
+                .collect(),
+        }),
+        _ => Err(Error::message(
+            "native diagnostic tensor returned an unknown tensor kind",
+        )),
+    }
+}
 
 fn json_f64(value: &serde_json::Value, field: &str, context: &str) -> Result<f64, Error> {
     value
@@ -987,6 +1189,23 @@ impl Engine {
         check(status, &error)?;
         let native_request =
             NativeGenericSearchRequest(require_ptr(native_request, "generic search request")?);
+        if let Some(controls) = &request.diagnostics {
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_request_set_diagnostics(
+                    native_request.0.as_ptr(),
+                    controls.trace_level,
+                    controls.matching_depth,
+                    controls.first_phase_depth,
+                    controls.second_phase_depth,
+                    controls.raw_bytes,
+                    controls.structure_depth,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+        }
         if let Some(summary_class) = &request.summary_class {
             let summary_class = cstring(summary_class)?;
             let mut error = NativeError::new();

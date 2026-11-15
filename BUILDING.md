@@ -187,6 +187,19 @@ manually rebuild Vespa as an ad-hoc repair.
 
 ## Authority and failure handling
 
+### InstantSearch compatibility prerequisites
+
+`./dev test instantsearch-compat` is the canonical independent integration lane.
+It uses the exact dependency lock under `integrations/instantsearch` and runs the
+actual pinned InstantSearch.js widgets in Vitest's JSDOM environment. No browser
+binary or browser-specific operating-system packages are prerequisites.
+
+The lane runs pin, matrix, documentation, upstream-type, adapter, canonical
+binding, request-profile, and real-widget checks through the production adapter
+and public endpoint against the dispatcher/IR/Vespa backend. It is owned by PR
+CI and Universe. JavaScript dependencies remain ordinary package dependencies;
+changing them does not require publishing a browser-capable CI toolchain image.
+
 This file is the authoritative guide for building, compiling, toolchain setup,
 native SDK acquisition, standard Rust verification commands, and
 environment/build recovery.

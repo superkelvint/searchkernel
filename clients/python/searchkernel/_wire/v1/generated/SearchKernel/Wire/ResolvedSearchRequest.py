@@ -283,8 +283,15 @@ class ResolvedSearchRequest(object):
             return self._tab.String(o + self._tab.Pos)
         return None
 
+    # ResolvedSearchRequest
+    def DiagnosticSource(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(34))
+        if o != 0:
+            return bool(self._tab.Get(flatbuffers.number_types.BoolFlags, o + self._tab.Pos))
+        return False
+
 def ResolvedSearchRequestStart(builder: flatbuffers.Builder):
-    builder.StartObject(15)
+    builder.StartObject(16)
 
 def Start(builder: flatbuffers.Builder):
     ResolvedSearchRequestStart(builder)
@@ -415,6 +422,12 @@ def ResolvedSearchRequestAddSearchChain(builder: flatbuffers.Builder, searchChai
 def AddSearchChain(builder: flatbuffers.Builder, searchChain: int):
     ResolvedSearchRequestAddSearchChain(builder, searchChain)
 
+def ResolvedSearchRequestAddDiagnosticSource(builder: flatbuffers.Builder, diagnosticSource: bool):
+    builder.PrependBoolSlot(15, diagnosticSource, 0)
+
+def AddDiagnosticSource(builder: flatbuffers.Builder, diagnosticSource: bool):
+    ResolvedSearchRequestAddDiagnosticSource(builder, diagnosticSource)
+
 def ResolvedSearchRequestEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
@@ -457,6 +470,7 @@ class ResolvedSearchRequestT(object):
         properties = None,
         queryProfile = None,
         searchChain = None,
+        diagnosticSource = False,
     ):
         self.query = query  # type: Optional[SearchKernel.Wire.QuerySource.QuerySourceT]
         self.searchFields = searchFields  # type: Optional[List[SearchKernel.Wire.SearchField.SearchFieldT]]
@@ -473,6 +487,7 @@ class ResolvedSearchRequestT(object):
         self.properties = properties  # type: Optional[List[SearchKernel.Wire.ValueEntry.ValueEntryT]]
         self.queryProfile = queryProfile  # type: Optional[str]
         self.searchChain = searchChain  # type: Optional[str]
+        self.diagnosticSource = diagnosticSource  # type: bool
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -561,6 +576,7 @@ class ResolvedSearchRequestT(object):
         self.searchChain = resolvedSearchRequest.SearchChain()
         if self.searchChain is not None:
             self.searchChain = self.searchChain.decode('utf-8')
+        self.diagnosticSource = resolvedSearchRequest.DiagnosticSource()
 
     # ResolvedSearchRequestT
     def Pack(self, builder):
@@ -654,5 +670,6 @@ class ResolvedSearchRequestT(object):
             ResolvedSearchRequestAddQueryProfile(builder, queryProfile)
         if self.searchChain is not None:
             ResolvedSearchRequestAddSearchChain(builder, searchChain)
+        ResolvedSearchRequestAddDiagnosticSource(builder, self.diagnosticSource)
         resolvedSearchRequest = ResolvedSearchRequestEnd(builder)
         return resolvedSearchRequest

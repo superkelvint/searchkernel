@@ -32,9 +32,10 @@ pub fn search_request(value: &SearchRequestIr) -> Value {
         timeout,
         prefix_policy,
         typo_policy,
+        diagnostic_source,
     } = value;
 
-    json!({
+    let mut snapshot = json!({
         "query": query_json(query),
         "search_fields": search_fields.iter().map(search_field_json).collect::<Vec<_>>(),
         "filter": filter.as_ref().map(filter_json),
@@ -55,7 +56,11 @@ pub fn search_request(value: &SearchRequestIr) -> Value {
         "timeout": timeout_json(*timeout),
         "prefix_policy": prefix_policy_json(*prefix_policy),
         "typo_policy": typo_policy_json(*typo_policy),
-    })
+    });
+    if *diagnostic_source {
+        snapshot["diagnostic_source"] = json!(true);
+    }
+    snapshot
 }
 
 pub fn index_definition(value: &IndexDefinitionIr) -> Value {

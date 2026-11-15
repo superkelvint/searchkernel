@@ -1,6 +1,9 @@
 #pragma once
+#include <set>
+#include <vespa/searchlib/query/query_stack_iterator.h>
 
 #include "searchkernel_vespa.h"
+#include "diagnostic_projection.h"
 #include <vespa/config-rank-profiles.h>
 #include <vespa/searchcore/proton/matching/matcher.h>
 #include <vespa/searchlib/fef/ranking_assets_repo.h>
@@ -160,6 +163,7 @@
 #include <vespa/eval/eval/tensor_spec.h>
 #include <vespa/eval/eval/typed_cells.h>
 #include <vespa/eval/eval/value_codec.h>
+#include <vespa/vespalib/util/shared_string_repo.h>
 #include <vespa/vespalib/util/shared_operation_throttler.h>
 
 #include <vespa/persistence/dummyimpl/dummy_bucket_executor.h>
@@ -478,6 +482,17 @@ struct OwnedValue {
     std::vector<std::vector<std::pair<std::string, OwnedValue>>> struct_elements;
 };
 
+struct DiagnosticTensorBlockState {
+    std::vector<std::pair<std::string, std::string>> address;
+    std::vector<double> values;
+};
+
+struct DiagnosticTensorState {
+    uint32_t kind = 0;
+    std::string type_spec;
+    std::vector<DiagnosticTensorBlockState> blocks;
+};
+
 struct DocumentFieldState {
     std::string name;
     OwnedValue value;
@@ -554,6 +569,12 @@ struct LocalSearchRequestState {
     uint32_t limit = 10;
     uint32_t offset = 0;
     uint64_t timeout_millis = 60000;
+    uint32_t diagnostic_trace_level = 0;
+    uint32_t diagnostic_structure_depth = 0;
+    uint32_t diagnostic_matching_depth = 0;
+    uint32_t diagnostic_first_phase_depth = 0;
+    uint32_t diagnostic_second_phase_depth = 0;
+    uint32_t diagnostic_raw_bytes = 0;
     uint32_t summary_kind = SK_SUMMARY_NONE;
     struct Sort {
         std::string field;
@@ -597,6 +618,14 @@ struct LocalHitState {
 };
 
 struct LocalSearchResultState {
+    std::string diagnostic_trace;
+    sk_diagnostics::Sections diagnostic_sections;
+    bool diagnostic_truncated = false;
+    bool diagnostic_features_truncated = false;
+    std::vector<std::string> diagnostic_truncated_feature_names;
+    double diagnostic_matching_seconds = 0.0;
+    double diagnostic_summary_seconds = 0.0;
+    double diagnostic_query_seconds = 0.0;
     uint64_t total_hit_count = 0;
     uint64_t coverage_active = 0;
     uint64_t coverage_covered = 0;

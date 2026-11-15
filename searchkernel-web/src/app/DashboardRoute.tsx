@@ -48,7 +48,7 @@ export function DashboardRoute({page}:{page: PageName}) {
     <GlobalSidebar page={page} navigate={navigate} open={mobileNav} onClose={() => setMobileNav(false)} />
     <main className="min-h-screen lg:pl-64">
       <div className="lg:hidden flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4"><Brand/><MobileMenuButton open={() => setMobileNav(true)} /></div>
-      {workspace && <><IndexHeader current={workspace} index={index!} summary={summary ?? undefined} navigate={navigate} /><div className="px-8 py-2 text-xs">Target: <code>{index!.id}</code> · generation <code>{index!.generation ?? 'Unavailable'}</code> <button className="soft-button" onClick={() => { void refetch(); void registry.refetch() }}>Refresh selected incarnation</button></div></>}
+      {workspace && <><IndexHeader current={workspace} index={index!} summary={summary ?? undefined} navigate={navigate} /><details className="px-8 py-2 text-xs"><summary className="cursor-pointer">Index connection details</summary>Target: <code>{index!.id}</code> · generation <code>{index!.generation ?? 'Unavailable'}</code> <button className="soft-button" onClick={() => { void refetch(); void registry.refetch() }}>Refresh selected incarnation</button></details></>}
       <div className="mx-auto max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">
         {Boolean(error) && index && <QueryErrorBanner error={error} retry={() => { void refetch() }} />}
         {Boolean(summaryError) && <QueryErrorBanner error={summaryError} retry={() => { void refetchSummary() }} />}

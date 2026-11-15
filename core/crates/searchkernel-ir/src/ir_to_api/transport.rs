@@ -2,6 +2,22 @@ use super::*;
 use searchkernel_protocol::protocol::v1::{self as wire, PROTOCOL_VERSION};
 use std::collections::BTreeMap;
 
+pub fn encode_query_diagnostics_request_for_target_generation(
+    request: &ir::QueryDiagnosticsRequestIr,
+    target: &str,
+    generation: &str,
+) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let payload = super::diagnostics::query_diagnostics_request_offset(&mut builder, request);
+    finish_request(
+        &mut builder,
+        wire::RequestPayload::SearchKernel_Wire_QueryDiagnosticsRequest,
+        payload.as_union_value(),
+        Some(target),
+        Some(generation),
+    )
+}
+
 pub fn encode_list_indexes_request() -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let payload =

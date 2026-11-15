@@ -8,6 +8,205 @@ import { resolve } from 'node:path'
 import { createServer, createConnection } from 'node:net'
 import { Daemon, Index, Text, Integer, IndexDefinitionT } from '@searchkernel/client/node'
 
+test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('first-search journey uses real creation, write, read, search and returning-user paths', async () => {
+  const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-first-search-'))
+  const grpcPort = await port(), webPort = await port(), uiPort = await port()
+  const endpoint = `127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`, ui = `http://127.0.0.1:${uiPort}`
+  let daemon: ChildProcess | undefined, vite: ChildProcess | undefined, browser: Browser | undefined, index: Index | undefined
+  try {
+    daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'), ['--data-root', root, '--listen', endpoint, '--web-listen', `127.0.0.1:${webPort}`, '--web-origin', ui], { stdio: 'inherit' })
+    await reachable(webEndpoint, daemon)
+    vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort'], { env: { ...process.env, VITE_SEARCHKERNEL_ENDPOINT: webEndpoint }, stdio: 'inherit' })
+    await reachable(ui, vite)
+    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await page.goto(ui)
+    await page.getByRole('link', { name: 'Create searchable collection', exact: true }).waitFor()
+    await page.goto(`${ui}/indexes`)
+    await page.getByRole('link', { name: 'Create searchable collection', exact: true }).click()
+    await page.getByLabel('Collection name', { exact: true }).fill('first_collection')
+    await page.getByLabel('Field 1 name').fill('title')
+    await page.getByRole('button', { name: 'Check fields', exact: true }).click()
+    await page.getByRole('checkbox', { name: /Create the collection first_collection/ }).check()
+    await page.getByRole('button', { name: 'Create collection', exact: true }).click()
+    await page.waitForURL('**/data/documents?**')
+    const generation = new URL(page.url()).searchParams.get('generation')!
+    expect(generation).toBeTruthy()
+    await page.getByRole('button', { name: 'Add first document', exact: true }).click()
+    await page.getByLabel('Mutation document ID').fill('first-record')
+    await page.getByLabel('Document field title').fill('orchid first journey')
+    await page.getByRole('button', { name: 'Save document', exact: true }).click()
+    await page.getByRole('link', { name: 'Try your first search', exact: true }).waitFor()
+    index = await Index.open(endpoint, 'first_collection')
+    expect((await index.get('first-record'))?.title).toBe('orchid first journey')
+    await page.getByRole('link', { name: 'Try your first search', exact: true }).click()
+    expect(new URL(page.url()).searchParams.get('generation')).toBe(generation)
+    await page.getByLabel('Search this index').fill('orchid')
+    await page.locator('form').getByRole('button', { name: 'Search', exact: true }).click()
+    await page.getByRole('region', { name: 'Search results' }).getByText('first-record', { exact: true }).waitFor()
+    await page.getByText('Your search returned documents from Search Kernel.', { exact: false }).waitFor()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.reload()
+    await page.getByRole('region', { name: 'Search results' }).getByText('first-record', { exact: true }).waitFor()
+    await page.goto(`${ui}/indexes/first_collection/overview?generation=${generation}`)
+    await page.getByRole('button', { name: 'Search documents', exact: true }).waitFor()
+    expect(await page.getByRole('region', { name: 'Collection next step' }).count()).toBe(0)
+    await page.getByText('Index connection details', { exact: true }).click()
+    await page.getByRole('button', { name: 'Refresh selected incarnation' }).waitFor({ state: 'visible' })
+    await page.goto(`${ui}/indexes/new`)
+    await page.getByLabel('Index target', { exact: true }).waitFor()
+    await page.getByLabel('Schema name', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Validate draft', exact: true }).waitFor()
+  } finally {
+    await index?.close(); await browser?.close(); await stop(vite); await stop(daemon); await rm(root, { recursive: true, force: true })
+  }
+}, 180_000)
+
+test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W5 real diagnostics keep original results, investigate, compare, experiment and reject reincarnation', async () => {
+  const { RankProfile, TensorField, Tensor, SearchRequestBuilder, QueryDiagnosticsRequestT, DiagnosticIntent, DiagnosticSection, DiagnosticStatus, DiagnosticLimitsT, OptionalUInt32T, fromCanonicalJson, toCanonicalJson, parseTypedQuery, q } = await import('@searchkernel/client/node')
+  const root = await mkdtemp(resolve(tmpdir(), 'searchkernel-w5-e2e-'))
+  const grpcPort = await port(), webPort = await port(), uiPort = await port()
+  const endpoint = `127.0.0.1:${grpcPort}`, webEndpoint = `http://127.0.0.1:${webPort}`, ui = `http://127.0.0.1:${uiPort}`
+  let daemon: ChildProcess | undefined, vite: ChildProcess | undefined, browser: Browser | undefined, index: Index | undefined
+  async function start() {
+    daemon = spawn(resolve(process.env.CARGO_TARGET_DIR ?? '../target/host', 'debug/searchkerneld'), ['--data-root', root, '--listen', `127.0.0.1:${grpcPort}`, '--web-listen', `127.0.0.1:${webPort}`, '--web-origin', ui], { stdio: 'inherit' })
+    await reachable(webEndpoint, daemon)
+  }
+  const tensor = new TensorField('tensor(x[2])', { stored: true }).definition('embedding')
+  tensor.attribute = fromCanonicalJson('AttributeConfig', { enabled: { value: true }, distance_metric: 'Euclidean' }) as typeof tensor.attribute
+  tensor.index = fromCanonicalJson('IndexConfig', { enabled: { value: true }, hnsw: {} }) as typeof tensor.index
+  const definition = new IndexDefinitionT('debugger_schema', [new Text({ stored: true, searchable: true }).definition('title'), new Integer({ stored: true, attribute: true }).definition('quantity'), tensor])
+  definition.defaultSearchFields = fromCanonicalJson('SearchFieldSelection', { fields: [{ field: 'title' }] }) as typeof definition.defaultSearchFields
+  definition.rankProfiles = [
+    new RankProfile('plain').firstPhase('attribute(quantity)').definition(),
+    new RankProfile('signals').firstPhase('bm25(title) + query(boost)').secondPhase('attribute(quantity)').rerankCount(10).matchFeature('bm25(title)').matchFeature('attribute(quantity)').definition(),
+    new RankProfile('vector').firstPhase('closeness(field,embedding)').queryInput('q', 'tensor(x[2])').matchFeature('query(q)').matchFeature('distance(field,embedding)').definition(),
+  ]
+  try {
+    await start()
+    index = await Index.create(endpoint, 'debugger', definition)
+    for (const [id, title, quantity, vector] of [['a', 'orchid blue', 7, [1, 0]], ['b', 'orchid red', 11, [0.9, 0.1]], ['c', 'tulip white', 13, [0, 1]]] as const) {
+      await index.upsert(id, { title, quantity, embedding: Tensor.dense('tensor(x[2])', [...vector]) })
+    }
+    // Keep NN target hits well below the indexed corpus size; a three-document
+    // corpus cannot exercise meaningful approximate top-k acquisition.
+    for (let n = 0; n < 48; n++) await index.upsert(`vector-${n}`, { title: 'vector diagnostic corpus', quantity: 100 + n, embedding: Tensor.dense('tensor(x[2])', [2 + n, 0]) })
+    await index.close(); await stop(daemon); await start()
+    index = await Index.open(endpoint, 'debugger')
+    const canonical = new SearchRequestBuilder('orchid').ranking('signals').input('boost', 2).limit(10).build()
+    const rawSearch = await index.client.search(canonical)
+    // Ordinary SDK calls retain their established response shape, without trace.
+    expect(rawSearch.trace).toBeNull()
+    const diagnostic = new QueryDiagnosticsRequestT(canonical, DiagnosticIntent.ExplainHit, [DiagnosticSection.Ranking, DiagnosticSection.Counterfactual])
+    const explained = await index.queryDiagnostics(diagnostic)
+    expect(explained.execution?.kind).toBeDefined()
+    expect(explained.execution?.target?.generation).toBe(index.generation)
+    expect(explained.hits).toHaveLength(2)
+    expect(explained.hits[0]?.signals.find(value => value.name === 'bm25(title)')?.comparisonCount).toBe(2)
+    expect(explained.evidence.find(value => value.section === DiagnosticSection.Counterfactual)?.status).toBe(DiagnosticStatus.Unsupported)
+    const neighbor = parseTypedQuery({ source_type: 'TypedQuery', source: { query: {
+      expr_type: 'QueryNearestNeighbor', expr: { document_field: { path: 'embedding' }, query_tensor: 'q' },
+      annotations: [
+        { key: 'approximate', value: { kind_type: 'BoolValue', kind: { value: true } } },
+        { key: 'targetNumHits', value: { kind_type: 'Int64Value', kind: { value: '10' } } },
+      ],
+    } } })
+    const hybridVector = q.allOf(neighbor, q.range('quantity', 0, 1000))
+    const vectorRequest = new SearchRequestBuilder(hybridVector).ranking('vector').input('q', Tensor.dense('tensor(x[2])', [1, 0])).limit(2).build()
+    const vectorDiagnostic = new QueryDiagnosticsRequestT(vectorRequest, DiagnosticIntent.VectorRetrieval, [DiagnosticSection.Vectors])
+    vectorDiagnostic.compareExact = true
+    const vectors = await index.queryDiagnostics(vectorDiagnostic)
+    const exact = vectors.evidence.find(value => value.id === 'exact-comparison')
+    expect(exact?.status).toBe(DiagnosticStatus.Available)
+    const exactJson = JSON.stringify(toCanonicalJson(exact!))
+    expect(exactJson).toContain('overlap_count')
+    expect(exactJson).toContain('rank_movements')
+    expect(exactJson).toContain('changed_query_path')
+    expect(exactJson).toContain('query.and[0]')
+    expect(JSON.stringify(toCanonicalJson(vectors.hits[0]!.signals.find(value => value.name === 'query(q)')!))).toContain('tensor(x[2])')
+    const profileDiagnostic = new QueryDiagnosticsRequestT(canonical, DiagnosticIntent.Performance, [DiagnosticSection.MatchingProfiler, DiagnosticSection.FirstPhaseProfiler, DiagnosticSection.SecondPhaseProfiler])
+    const profiled = await index.queryDiagnostics(profileDiagnostic)
+    for (const section of profileDiagnostic.requestedEvidence) expect(profiled.evidence.find(item => item.section === section)?.status, JSON.stringify(toCanonicalJson(profiled))).toBe(DiagnosticStatus.Available)
+    expect(profiled.rawEngine[0]?.version).toBe('2300ef0412bdb76f227ae3b497c8ca5e73c5da4e')
+    const truncatedRequest = new QueryDiagnosticsRequestT(canonical, DiagnosticIntent.DeepEngine, [DiagnosticSection.Trace, DiagnosticSection.RawEngine])
+    truncatedRequest.limits = new DiagnosticLimitsT(); truncatedRequest.limits.rawBytes = new OptionalUInt32T(128)
+    const truncated = await index.queryDiagnostics(truncatedRequest)
+    expect(truncated.rawEngine[0]?.status).toBe(DiagnosticStatus.Truncated)
+    expect(truncated.rawEngine[0]?.payload.length).toBeLessThanOrEqual(128)
+
+    vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(uiPort)], { env: { ...process.env, VITE_SEARCHKERNEL_ENDPOINT: webEndpoint }, stdio: 'inherit' })
+    await reachable(ui, vite)
+    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+    const page = await browser.newPage(), errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`${ui}/indexes`)
+    await page.getByRole('button', { name: 'debugger', exact: true }).click()
+    await page.getByRole('button', { name: 'Search documents', exact: true }).click()
+    await page.getByLabel('Search this index').fill('orchid')
+    await page.getByText('Advanced controls', { exact: true }).click()
+    await page.getByLabel('Ranking profile', { exact: true }).fill('plain')
+    await page.locator('form').getByRole('button', { name: 'Search', exact: true }).click()
+    await page.getByText(/^2 matches/).waitFor()
+    await page.route(`${webEndpoint}/**`, async route => { if (route.request().method() === 'POST') await new Promise(done => setTimeout(done, 250)); await route.continue() })
+    await page.getByRole('button', { name: 'Why this result? b', exact: true }).click()
+    await page.getByText(/Collecting explain hit evidence/).waitFor()
+    expect(await page.locator('article').count()).toBe(2)
+    await page.getByRole('tabpanel', { name: 'Explain', exact: true }).getByText(/Named semantic explanation signals are not configured/).waitFor()
+    await page.getByText('Diagnostic rerun — not the original execution', { exact: true }).waitFor()
+    await page.unroute(`${webEndpoint}/**`)
+    await page.getByRole('tab', { name: 'Inspect', exact: true }).click()
+    await page.getByRole('button', { name: 'Inspect Vespa internals', exact: true }).click()
+    await page.getByText(/Vespa internals · Trace ·/).waitFor()
+    await page.getByText(/Vespa internals · Trace ·/).click()
+    await page.getByText('Raw engine payload', { exact: true }).click()
+    expect((await page.getByLabel('Raw engine payload inspector', { exact: true }).innerText()).length).toBeGreaterThan(10)
+
+    await page.getByRole('button', { name: 'Close evidence', exact: true }).click()
+    await page.getByLabel('Ranking profile', { exact: true }).fill('signals')
+    await page.getByLabel('Query inputs', { exact: true }).fill('{"boost":2}')
+    await page.locator('form').getByRole('button', { name: 'Search', exact: true }).click()
+    await page.locator('form').getByRole('button', { name: 'Search', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Compare with result above', exact: true }).click()
+    await page.getByText(/Compare A:/).waitFor()
+    await page.getByText('attribute(quantity)', { exact: true }).first().waitFor()
+    expect(await page.locator('article').count()).toBe(2)
+    await page.getByRole('tab', { name: 'Investigate', exact: true }).click()
+    await page.getByText('Query-local experiment', { exact: true }).click()
+    await page.getByLabel('Experimental ranking profile').fill('plain')
+    await page.getByRole('button', { name: 'Run experiment', exact: true }).click()
+    await page.getByText('Experimental rerun', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Close evidence', exact: true }).click()
+    await page.getByRole('button', { name: 'Add filter', exact: true }).click()
+    await page.getByLabel('Filter 1 field').selectOption('quantity')
+    await page.getByLabel('Filter 1 value').fill('999')
+    await page.locator('form').getByRole('button', { name: 'Search', exact: true }).click()
+    await page.getByText(/^0 matches/).waitFor()
+    await page.getByRole('button', { name: 'Find out why', exact: true }).click()
+    await page.getByRole('region', { name: 'Diagnostic findings', exact: true }).getByText(/is sufficient to produce results/).waitFor()
+    await page.getByRole('button', { name: 'A result I expected is missing.', exact: true }).click()
+    await page.getByLabel('Find expected document').fill('orchid blue')
+    await page.getByRole('button', { name: 'Find documents', exact: true }).click()
+    await page.getByRole('button', { name: /a ·/ }).click()
+    await page.getByRole('button', { name: 'Investigate expected document', exact: true }).click()
+    await page.getByRole('region', { name: 'Diagnostic findings', exact: true }).getByText(/is sufficient to return the expected document/).waitFor()
+    await page.getByText('Expected document stage evidence', { exact: true }).waitFor()
+    await Index.delete(endpoint, 'debugger')
+    const recreated = await Index.create(endpoint, 'debugger', definition)
+    try {
+      await recreated.upsert('replacement', { title: 'replacement-only', quantity: 99, embedding: Tensor.dense('tensor(x[2])', [0.5, 0.5]) })
+      await page.getByLabel('Find expected document').fill('replacement-only')
+      await page.getByRole('button', { name: 'Find documents', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'stale' }).waitFor()
+      expect(await page.getByRole('button', { name: /replacement ·/ }).count()).toBe(0)
+      await expect(index.queryDiagnostics(diagnostic)).rejects.toMatchObject({ code: 'failed_precondition' })
+      await page.getByRole('button', { name: 'I want to understand the query.', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'stale' }).waitFor()
+      expect(await page.locator('article').count()).toBe(0)
+    } finally { await recreated.close() }
+    expect(errors).toEqual([])
+  } finally { await browser?.close(); await stop(vite); await index?.close(); await stop(daemon); await rm(root, { recursive: true, force: true }) }
+}, 180_000)
+
 async function port() {
   const server = createServer()
   server.listen(0, '127.0.0.1')
@@ -416,6 +615,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W1 real Sear
     await page.getByLabel('Limit', { exact: true }).fill('1')
     await page.getByLabel('Ranking profile', { exact: true }).fill('boosted')
     await page.getByLabel('Query inputs', { exact: true }).fill('{"boost":2.5}')
+    await page.getByLabel('Include query inputs in shareable URL').check()
     await expect.poll(async () => JSON.parse(await page.getByLabel('Request inspector', { exact: true }).innerText())).toMatchObject({
       ranking: { profile: 'boosted' }, inputs: [{ name: 'boost' }],
       filters: { structured: [{}, {}] }, sort: [{ direction: 'Asc' }], limit: { value: 1 },
@@ -451,7 +651,7 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W1 real Sear
     await fresh.locator('article').filter({ hasText: 'orchid red' }).waitFor()
     expect(JSON.parse(await fresh.getByLabel('Request inspector').innerText())).toEqual(JSON.parse(await page.getByLabel('Request inspector').innerText()))
     await fresh.getByText('Advanced controls', { exact: true }).click()
-    expect(await fresh.getByLabel('Query inputs').inputValue()).toBe('{"boost":2.5}')
+    expect(await fresh.getByLabel('Query inputs', { exact: true }).inputValue()).toBe('{"boost":2.5}')
     expect(await fresh.getByLabel('Ranking profile').inputValue()).toBe('boosted')
     await fresh.reload()
     await fresh.locator('article').filter({ hasText: 'orchid red' }).waitFor()
@@ -475,9 +675,9 @@ test.skipIf(process.env.SEARCHKERNEL_FRONTEND_REAL_ENGINE !== '1')('W1 real Sear
     await page.getByLabel('Query mode').selectOption('text')
     await page.goBack()
     expect(page.url()).toBe(typedUrl)
-    expect(await page.getByLabel('Query mode').inputValue()).toBe('typed')
+    await expect.poll(() => page.getByLabel('Query mode').inputValue()).toBe('typed')
     await page.goForward()
-    expect(await page.getByLabel('Query mode').inputValue()).toBe('text')
+    await expect.poll(() => page.getByLabel('Query mode').inputValue()).toBe('text')
     await page.getByLabel('Search this index').fill('nomatch')
     await page.locator('form').getByRole('button', { name: 'Search', exact: true }).click()
     await page.getByText('No hits matched this query.', { exact: true }).waitFor()

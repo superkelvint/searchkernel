@@ -22,7 +22,7 @@ export function buildSearchRequest(request: ClientSearchRequest) {
 const prepared = new WeakMap<PreparedSearchRequest, ReturnType<typeof buildSearchRequest>>()
 export function prepareSearch(request: ClientSearchRequest): PreparedSearchRequest {
   let canonical: ReturnType<typeof buildSearchRequest>
-  try { canonical = buildSearchRequest(request) }
+  try { canonical = buildSearchRequest(request); canonical.diagnosticSource = true }
   catch (error) { throw new SearchKernelClientError(error instanceof Error ? error.message : 'Invalid request', { origin: 'client', code: 'invalid_request' }) }
   const result = Object.freeze({ request: freezeState(structuredClone(request)), canonical: JSON.stringify(toCanonicalJson(canonical), null, 2) })
   prepared.set(result, canonical)

@@ -1,4 +1,5 @@
 export { IndexTargetT } from './semantic.js';
+export { ValueEntryT } from './semantic.js';
 export { Client, Daemon, Index, SearchKernelError, type DocumentInput, type OperationResponseMap } from "./client/index.js";
 export {
   Tensor,
@@ -60,10 +61,14 @@ export { q, type TypedQuery } from "./ergonomic/query.js";
 export { Text, Keyword, Integer, Float, Boolean, TensorField, PositionField, ArrayOfStructField, RankProfile, type FieldOptions } from "./ergonomic/schema.js";
 export { AttributeConfigT, OptionalBoolT, IndexDefinitionT, RankPhaseDefinitionT, RankProfileDefinitionT } from "./semantic.js";
 export { FieldDefinitionT } from "./semantic.js";
+export { QueryDiagnosticsRequestT, QueryDiagnosticsResultT, DiagnosticIntent,
+  DiagnosticSection, DiagnosticStatus, DiagnosticProvenance, DiagnosticExecutionKind,
+  DiagnosticObservation, DiagnosticLimitsT, OptionalUInt32T, OptionalUInt64T } from "./semantic.js";
 export { DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT } from "./semantic.js";
 export { ProtocolError } from "./protocol/envelope.js";
 export type { ClientTransport } from "./client/index.js";
 
 export { toCanonicalJson, fromCanonicalJson, parseTypedQuery, jsonInput, queryEditorReference, type CanonicalJson } from "./client/json.js";
+export { diagnosticsCurl } from "./client/diagnostic-export.js";
 
 export type { OperationRequestMap } from "./protocol/envelope.js";

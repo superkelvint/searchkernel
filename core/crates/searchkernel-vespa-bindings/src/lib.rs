@@ -11,12 +11,19 @@ pub mod hardening;
 
 #[cfg(all(test, feature = "native-contract-tests"))]
 unsafe extern "C" {
+    fn searchkernel_diagnostic_projection_regression() -> i32;
     fn searchkernel_schema_identity_fd_reuse_regression() -> i32;
     fn searchkernel_transport_destructor_regression() -> i32;
 }
 
 #[cfg(all(test, feature = "native-contract-tests"))]
 mod native_regression_tests {
+    #[test]
+    fn pinned_diagnostic_projection_preserves_engine_shapes_and_fails_closed() {
+        let status = unsafe { super::searchkernel_diagnostic_projection_regression() };
+        assert_eq!(status, 0, "native diagnostic projection failure {status}");
+    }
+
     use super::{
         searchkernel_schema_identity_fd_reuse_regression,
         searchkernel_transport_destructor_regression,

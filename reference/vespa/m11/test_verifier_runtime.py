@@ -106,7 +106,7 @@ class M11VerifierRuntimeTests(unittest.TestCase):
             ).read_text()
             (common_dir / "verify-common.sh").write_text(common_source)
 
-            header = "#define SK_NATIVE_ABI_VERSION 16U\n"
+            header = "#define SK_NATIVE_ABI_VERSION 17U\n"
             source_header.write_text(header)
             (hardening_sdk / "include/searchkernel_vespa.h").write_text(header)
             (hardening_sdk / "manifest.json").write_text("{}\n")

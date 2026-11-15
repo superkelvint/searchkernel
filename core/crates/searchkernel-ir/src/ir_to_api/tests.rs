@@ -34,6 +34,7 @@ fn inspect_query_encoding_preserves_tensors_empty_objects_query_type_and_nested_
         })),
     );
     let request = ir::SearchRequestIr {
+        diagnostic_source: false,
         query: ir::QueryIr::MatchAll,
         search_fields: Vec::new(),
         filter: None,

@@ -87,8 +87,11 @@ pub const SK_DEGRADATION_ANN_TIMEOUT: u32 = 4;
 pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
 pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
 pub const SK_FEATURE_VALUE_DATA: u32 = 2;
+pub const SK_DIAGNOSTIC_TENSOR_DENSE: u32 = 1;
+pub const SK_DIAGNOSTIC_TENSOR_SPARSE: u32 = 2;
+pub const SK_DIAGNOSTIC_TENSOR_MIXED: u32 = 3;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 16;
+pub const SK_NATIVE_ABI_VERSION: u32 = 17;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -194,6 +197,11 @@ pub type sk_generic_grouping_result = sk_local_grouping_result;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_feature_value {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_diagnostic_tensor {
     _unused: [u8; 0],
 }
 #[repr(C)]
@@ -1538,6 +1546,19 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_generic_search_request_set_diagnostics(
+        request: *mut sk_generic_search_request,
+        trace_level: u32,
+        matching_depth: u32,
+        first_phase_depth: u32,
+        second_phase_depth: u32,
+        raw_bytes: u32,
+        structure_depth: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_request_add_sort(
         request: *mut sk_generic_search_request,
         field: *const ::std::os::raw::c_char,
@@ -1667,6 +1688,102 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_generic_search_result_issue_count(result: *const sk_generic_search_result) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_decode(
+        data: *const u8,
+        length: u32,
+        cell_limit: u32,
+        out_tensor: *mut *mut sk_diagnostic_tensor,
+        error: *mut u8,
+        error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_destroy(tensor: *mut sk_diagnostic_tensor);
+}
+unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_kind(tensor: *const sk_diagnostic_tensor) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_type_spec(
+        tensor: *const sk_diagnostic_tensor,
+        out_type: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        error: *mut u8,
+        error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_block_count(tensor: *const sk_diagnostic_tensor) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_block_address_count(
+        tensor: *const sk_diagnostic_tensor,
+        block_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_block_address(
+        tensor: *const sk_diagnostic_tensor,
+        block_index: u32,
+        address_index: u32,
+        out_dimension: *mut *const ::std::os::raw::c_char,
+        out_dimension_length: *mut u32,
+        out_label: *mut *const ::std::os::raw::c_char,
+        out_label_length: *mut u32,
+        error: *mut u8,
+        error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_diagnostic_tensor_block_values(
+        tensor: *const sk_diagnostic_tensor,
+        block_index: u32,
+        out_values: *mut *const f64,
+        out_value_count: *mut u32,
+        error: *mut u8,
+        error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_diagnostic_section(
+        result: *const sk_generic_search_result,
+        section: u32,
+        out_status: *mut u32,
+        out_data: *mut *const u8,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_diagnostics(
+        result: *const sk_generic_search_result,
+        out_trace: *mut *const u8,
+        out_length: *mut u32,
+        out_truncated: *mut u32,
+        out_matching_seconds: *mut f64,
+        out_summary_seconds: *mut f64,
+        out_query_seconds: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_diagnostic_truncated_feature_count(
+        result: *const sk_generic_search_result,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_diagnostic_truncated_feature_name(
+        result: *const sk_generic_search_result,
+        index: u32,
+        out_name: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_generic_search_result_issue_message(

@@ -1,3 +1,4 @@
+import { FirstSearchWelcome } from '../onboarding/FirstSearch'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -21,6 +22,7 @@ export function IndexManagement() {
   const names = new Set(inventory.data?.map(item => item.id) ?? [])
   status.data?.indexes.forEach(item => names.add(item.name))
   return <><Heading title="Search indexes" description="Durable discovery and authoritative daemon lifecycle state."><button className="soft-button" onClick={() => { void refresh() }}>Refresh inventory and health</button><button className="primary-button" disabled={!capabilities?.indexes.create} onClick={() => navigate('/indexes/new')}>Create index</button></Heading>
+    {inventory.isSuccess && names.size === 0 && <FirstSearchWelcome/>}
     <section className="surface mb-5 p-5"><h2 className="font-semibold">Daemon health</h2><ErrorNotice error={status.error}/>{status.data && !status.error ? <><p>{status.data.ready ? 'Ready' : 'Not ready'} · version {status.data.version} · native runtime {status.data.native_runtime} · lifecycle {status.data.lifecycle}</p><p className="text-xs">Fetched {new Date(status.dataUpdatedAt).toLocaleString()}</p><CanonicalInspector label="Runtime diagnostics" text={JSON.stringify(status.data, null, 2)}/><p>Unavailable: {status.data.unavailable.join(', ')}</p></> : <p>{client.daemonStatus ? status.error ? 'Daemon unavailable' : 'Fetching health…' : 'Production diagnostics require daemon mode.'}</p>}</section>
     <ErrorNotice error={inventory.error}/>
     <section className="surface p-5"><h2 className="font-semibold">Index inventory</h2>{inventory.isPending && <p>Discovering indexes…</p>}{!inventory.isPending && !inventory.error && names.size === 0 && <p>No persisted indexes.</p>}

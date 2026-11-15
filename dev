@@ -432,6 +432,8 @@ ci_gate() {
 
     echo "== cargo clippy =="
     "$CARGO" clippy --workspace --all-targets --no-default-features --locked -- -D warnings
+    echo "== pinned InstantSearch compatibility =="
+    test_target instantsearch-compat
 }
 
 bookkeeping_command() {
@@ -601,6 +603,7 @@ universe() {
     universe_dev_step 'fast repository checks' check-fast
     universe_step 'Vespa binding checks' bash "$ROOT/tools/check-vespa-bindings.sh"
     universe_dev_step 'protocol/generated-artifact checks' check-protocol
+    universe_dev_step 'pinned InstantSearch compatibility' test instantsearch-compat
     universe_dev_step 'all-features Clippy' lint --profile rust-clippy-all-features
 
     universe_step 'Rust tests (all targets/features, including ignored)'         "$CARGO" test --workspace --all-targets --all-features -- --include-ignored
@@ -663,9 +666,6 @@ universe() {
                     universe_dev_step "semantic verifier $target" verify "$target" --skip-workspace-quality
                 fi
                 ;;
-            frontend.f8)
-            "$ROOT/tools/frontend-harness/frontend-accept" F8
-            ;;
         product.integration)
                 if ((m14_baseline_proved)); then
                     universe_dev_step "semantic verifier $target" verify "$target" --baseline-already-proved --skip-workspace-quality
@@ -722,6 +722,15 @@ test_target() {
     local requested=${1:-} target
     target=$("$PYTHON" "$ROOT/tools/dev-targets.py" resolve test "$requested") || return $?
     case "$target" in
+        protocol-generation)
+            regen_protocol
+            SK_NATIVE_BINDINGS_REGENERATE=1 bash "$ROOT/tools/check-native-bindings.sh"
+            "$PYTHON" "$ROOT/tools/generate-native-consumer-bundle.py"
+            "$PYTHON" "$ROOT/tools/export-protocol-generation.py"
+            ;;
+        instantsearch-compat)
+            bash "$ROOT/tools/verify-instantsearch.sh"
+            ;;
         frontend|frontend-real-engine)
             "$NPM" ci --prefix "$ROOT/clients/typescript"
             "$NPM" run build --prefix "$ROOT/clients/typescript"
@@ -765,6 +774,14 @@ test_target() {
             ;;
         ir)
             "$CARGO" test -p searchkernel-ir --all-targets --all-features
+            "$CARGO" test -p searchkernel-dispatch --all-targets
+            ;;
+        ir-adapter)
+            "$CARGO" test -p searchkernel-ir-adapter --all-targets --all-features
+            ;;
+        native-consumer-generation)
+            "$PYTHON" "$ROOT/tools/generate-native-consumer-bundle.py"
+            git -C "$ROOT" diff --binary -- core/crates/searchkernel-vespa-bindings/consumer_bundle.rs
             ;;
         rust-api)
             "$CARGO" test -p searchkernel --all-targets --no-default-features --features remote,internal-api
@@ -775,6 +792,9 @@ test_target() {
             ;;
         client-real-e2e-parity)
             "$PYTHON" "$ROOT/tools/check-client-real-e2e-parity.py"
+            ;;
+        consumer-release-policy)
+            "$PYTHON" "$ROOT/tools/test_qualify_consumer_release.py"
             ;;
         consumer-release)
             local release_root release_output
@@ -833,6 +853,9 @@ verify_target() {
     set -- "$target" "$@"
 
     case "$target" in
+        frontend.f8)
+            "$ROOT/tools/frontend-harness/frontend-accept" F8
+            ;;
         product.integration)
             "$ROOT/reference/vespa/verify-through.sh" "$@"
             ;;
@@ -1572,6 +1595,7 @@ case "${1:-help}" in
     regen)
         case "${2:-}" in
             protocol) regen_protocol ;;
+            native-bindings) SK_NATIVE_BINDINGS_REGENERATE=1 bash "$ROOT/tools/check-native-bindings.sh" ;;
             result-fixtures) regen_result_fixtures ;;
             *)
                 echo 'usage: ./dev regen protocol|result-fixtures' >&2
