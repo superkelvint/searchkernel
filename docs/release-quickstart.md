@@ -138,7 +138,7 @@ target = ENV.fetch("SEARCHKERNEL_TARGET", "quickstart")
 fields = {
   "title" => SearchKernel::Text.new(stored: true, searchable: true),
   "kind" => SearchKernel::Keyword.new(stored: true, filterable: true),
-  "score" => SearchKernel::Integer.new(stored: true, sortable: true)
+  "score" => SearchKernel::IntegerField.new(stored: true, sortable: true)
 }
 documents = [
   {"_id" => "quickstart-a", "title" => "quickstart alpha", "kind" => "guide", "score" => 2},
@@ -205,7 +205,7 @@ fn matching_ids(index: &Index) -> Result<Vec<String>, Box<dyn std::error::Error>
         .execute::<Value>()?
         .hits
         .into_iter()
-        .map(|hit| hit.id)
+        .map(|hit| hit.id.to_string())
         .collect())
 }
 
