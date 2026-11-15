@@ -241,11 +241,12 @@ class QualificationPolicyTests(unittest.TestCase):
             'QUICKSTARTS / "python.py"',
             'QUICKSTARTS / "typescript.mjs"',
             'QUICKSTARTS / "ruby.rb"',
-            'QUICKSTARTS / "rust"',
         ):
             self.assertIn(canonical_path, gate)
+        self.assertIn('quickstart / "Cargo.toml"', gate)
+        self.assertIn('"examples/release-quickstart/rust"', (ROOT / "tools/package-consumer-release.py").read_text(encoding="utf-8"))
         docs = (ROOT / "docs" / "release-support.md").read_text(encoding="utf-8")
-        self.assertIn("[release-quickstart.md](release-quickstart.md)", docs)
+        self.assertIn("[generated release quickstarts](release-quickstart.md)", docs)
         self.assertNotIn("```", docs, "release support docs must not duplicate executable examples")
 
         renderer = ROOT / "tools" / "render-release-quickstarts.py"

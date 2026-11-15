@@ -14,6 +14,41 @@ Search Kernel is currently a **0.1.x beta**. Consumer installation uses released
 - See the [release notes](docs/release-notes.md) and [consumer troubleshooting](docs/getting-started.md#troubleshooting).
 - Use [BUILDING.md](BUILDING.md) for source builds and contribution setup.
 
+### Rust embedded quickstart (Linux x86-64 glibc)
+
+After the public consumer release is published, install Rust, Python 3, a C/C++
+compiler, CMake, Git, and curl. The native Vespa base is downloaded automatically
+from the public release; no GitHub login or private token is required.
+
+```bash
+tag=v0.1.0
+base="https://github.com/superkelvint/searchkernel/releases/download/$tag"
+curl -fL "$base/manifest.json" -o manifest.json
+python3 - "$base" <<'PY'
+import hashlib, json, pathlib, sys, urllib.request
+manifest = json.loads(pathlib.Path("manifest.json").read_text())
+matches = [a for a in manifest["artifacts"] if a["file"].startswith("searchkernel-rust-")]
+if len(matches) != 1:
+    raise SystemExit("expected one Rust source bundle in release manifest")
+artifact = matches[0]
+with urllib.request.urlopen(sys.argv[1] + "/" + artifact["file"]) as response:
+    data = response.read()
+if hashlib.sha256(data).hexdigest() != artifact["sha256"]:
+    raise SystemExit("Rust source bundle checksum mismatch")
+pathlib.Path(artifact["file"]).write_bytes(data)
+print(artifact["file"])
+PY
+mkdir searchkernel-release
+tar -xzf searchkernel-rust-*.tar.gz -C searchkernel-release
+cd searchkernel-release
+cargo run --manifest-path release-quickstart/Cargo.toml
+```
+
+Success prints `Rust release quickstart PASS` after searching, closing, and
+reopening a real Vespa-backed index. The first build downloads a large native
+base. This public path is ready for anonymous use only after the repository and
+its release assets are published.
+
 The qualified platform is Linux x86-64 with glibc. Supported release modes are Rust embedded, `searchkerneld`, Python managed-local/connect, TypeScript/Node connect, and Ruby connect. Browser gRPC-Web, PHP, Ruby managed-local, Go, macOS, Windows, and Linux aarch64 are deferred.
 
 ## Why

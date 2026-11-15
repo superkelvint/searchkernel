@@ -163,6 +163,7 @@ RUST_BUNDLE_PATHS = [
     "searchkerneld",
     "api",
     "reference/client-real-e2e-parity/corpus.json",
+    "examples/release-quickstart/rust",
 ]
 
 
@@ -174,7 +175,15 @@ def build_rust_bundle(rust_bundle: Path) -> None:
         )
     with tarfile.open(rust_bundle, "w:gz") as archive:
         for relative in RUST_BUNDLE_PATHS:
-            archive.add(ROOT / relative, arcname=relative)
+            destination = (
+                "release-quickstart"
+                if relative == "examples/release-quickstart/rust"
+                else relative
+            )
+            archive.add(
+                ROOT / relative,
+                arcname=destination,
+            )
 
 
 def build_release_daemon(target: Path) -> tuple[Path, Path]:
