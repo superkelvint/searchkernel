@@ -1,163 +1,151 @@
 # Search Kernel
 
-Search Kernel is a Rust interface to Vespa's native search engine, packaged so it can be embedded directly in an application instead of run as a separate service.
+**Powerful search. Without operating a search cluster.**
 
-Vespa's C++ engine does the actual work: storage, indexing, ranking, query execution. Search Kernel does not reimplement any of it. It gives that engine a normal Rust API plus first-party Python, TypeScript, PHP, and Ruby clients through `searchkerneld`. Release qualification is deliberately narrower than implementation presence; see the release support matrix.
+Search Kernel brings [Vespa](https://vespa.ai/)'s native C++ search engine to local applications: an **in-process Rust library** and a **local daemon with Python, TypeScript/Node.js, and Ruby clients**. Build full-text search, filtering, sorting, ranking, and persistent indexes without deploying Vespa's distributed services or Java application stack.
 
-## Start here
+The engine is Vespa's; Search Kernel does not reimplement storage, indexing, matching, or ranking. It supplies the application-facing APIs, native lifecycle, configuration, packaging, and shared semantics needed to use that engine as a local component.
 
-Search Kernel is currently a **0.1.x beta**. Consumer installation uses released artifacts; contributor setup is separate.
+**0.1.x experimental beta · Linux x86-64 (glibc) only.** See [supported release modes](docs/release-support.md) and [known limitations](LIMITATIONS.md) before adopting it. Release artifacts and some native-runtime downloads may require access to private release infrastructure today; making this source repository public alone would not make every installation path publicly usable.
 
-- [Install the released packages and runtime](docs/getting-started.md#installation-and-runtime-ownership).
-- Check the [release support and stability contract](docs/release-support.md) before deployment.
-- Follow the [canonical executable release quickstarts](docs/release-quickstart.md).
-- See the [release notes](docs/release-notes.md) and [consumer troubleshooting](docs/getting-started.md#troubleshooting).
-- Use [BUILDING.md](BUILDING.md) for source builds and contribution setup.
+[Quickstart](#try-it-in-python) · [How it works](#how-it-works) · [Installation](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Release support](docs/release-support.md)
 
-The qualified platform is Linux x86-64 with glibc. Supported release modes are Rust embedded, `searchkerneld`, Python managed-local/connect, TypeScript/Node connect, and Ruby connect. Browser gRPC-Web, PHP, Ruby managed-local, Go, macOS, Windows, and Linux aarch64 are deferred.
+## What it gives you
 
-## Why
+- **Full-text search and relevance ranking.** Use Vespa's native text indexing, matching, and supported ranking capabilities instead of building a separate search implementation.
+- **Structured queries on application data.** Combine text retrieval with typed filters, sorting, facets, and grouping where supported.
+- **Mutable, persistent indexes.** Insert, update, delete, close, and reopen search data rather than rebuilding a static index for every change.
+- **A local deployment model.** Embed directly in Rust; use Python's managed-local daemon mode, or connect Python, TypeScript/Node.js, and Ruby to a separately run daemon.
+- **Room to grow into advanced retrieval.** Supported native execution paths include selected vector, geo, tensor, and more expressive query features. Availability differs by API and client; see the [capability ledger](docs/CAPABILITIES.md) and [limitations](LIMITATIONS.md).
 
-Running a search cluster to get full-text search, filtering, and ranking is a lot of infrastructure for most applications. Most applications don't need a cluster. They need an index that lives next to their data and behaves like any other embedded store.
+Search Kernel is intended for applications that want more than basic keyword matching, but do **not** need an independently operated distributed search cluster. Examples include local search over application records, document collections, and single-node retrieval workloads where ranking and structured queries matter.
 
-Vespa already solves the hard problems here — ranking, tensors, vector search, index fusion, durability — at a level of maturity that would take years to reproduce. Search Kernel doesn't try. It makes that engine usable as a library.
+## Try it in Python
 
-If you are new to the codebase, start with the [codebase reading guide](docs/reading-the-codebase.md).
-Agents should check the [current status](docs/status.md) before using the roadmap.
-For cross-layer feature availability, use the [capability ledger](docs/CAPABILITIES.md).
-For W5 forced-score limits and the pinned engine investigation, see
-[forced-document ranking](docs/forced-document-ranking.md).
+The example below uses the qualified **Python managed-local** mode: the Python client manages a local daemon and persists the index at a local path. It requires the supported Linux platform and the matching 0.1.x release artifacts; follow the [installation guide](docs/getting-started.md) first. Use a fresh `./search-python` directory.
 
-## What it is
+This is the same create → insert → search/filter/sort → close → reopen scenario as the [canonical executable release quickstart](docs/release-quickstart.md#python-managed-local), abbreviated for the README.
 
-- **Embedded.** The engine runs in your process. An index is a directory, not a service.
-- **Mutable.** Put, update, and delete are normal operations, not workarounds.
-- **Durable.** Indexes survive restarts and recover on reopen.
-- **Rust-first, one semantic core.** The Rust API is the primary in-process interface. Python, TypeScript, PHP, and Ruby are daemon clients that converge on the same canonical FlatBuffers → IR → Vespa semantics; client ergonomics do not define independent behavior.
-- **A thin wrapper.** Whatever Vespa can do, Search Kernel can expose. Whatever Vespa doesn't do, Search Kernel doesn't invent. See [architecture.md](docs/architecture.md) for the reasoning behind that rule and where the boundary sits.
+~~~python
+from pathlib import Path
+from searchkernel import Index, Integer, Keyword, Text
 
-## What it is not
+path = Path("./search-python")
+documents = [
+    {"_id": "quickstart-a", "title": "quickstart alpha", "kind": "guide", "score": 2},
+    {"_id": "quickstart-b", "title": "quickstart beta", "kind": "guide", "score": 1},
+    {"_id": "quickstart-c", "title": "quickstart other", "kind": "other", "score": 0},
+]
 
-Search Kernel is not a distributed search engine and isn't going to become one. No replication, no clustering, no distributed query execution. If you need those, use Vespa directly, or another distributed search system — that's a better fit than asking a single-node wrapper to grow into one.
+with Index.create(
+    path,
+    fields={
+        "title": Text(stored=True, searchable=True),
+        "kind": Keyword(stored=True, filterable=True),
+        "score": Integer(stored=True, sortable=True),
+    },
+) as index:
+    for document in documents:
+        index.insert(document)
+    results = (
+        index.search("quickstart")
+        .filter("kind = 'guide'")
+        .sort("score", "asc")
+        .execute()
+    )
+    assert [hit.id for hit in results.hits] == ["quickstart-b", "quickstart-a"]
 
-It also doesn't have its own ranking language, storage engine, or schema migration model. Those are Vespa's, and Search Kernel exposes them rather than replacing them.
+with Index.open(path) as index:
+    assert index.get("quickstart-b")["score"] == 1
 
-## Installing
+print("Search and reopen: PASS")
+~~~
 
-Use the versioned consumer artifacts described in the [installation guide](docs/getting-started.md), and select the matching files and checksums from the release manifest. Do not build from a repository checkout for normal application use.
+Expected output when the assertions pass:
 
-See the [release support matrix](docs/release-support.md) before deploying or packaging Search Kernel.
+~~~text
+Search and reopen: PASS
+~~~
 
-### Development prerequisites
+For the full checked examples—including the additional search-after-reopen assertion—see [Rust embedded, Python, TypeScript/Node, and Ruby quickstarts](docs/release-quickstart.md). **Release qualification is narrower than implementation presence**; the examples do not imply every represented Vespa feature is available in every language.
 
-Building and testing the workspace uses the official FlatBuffers C++ release
-`25.12.19` for the schema-aware JSON boundary and the matching `flatc`
-executable for generated language bindings and BFBS checks. Cargo builds both
-from the pinned vendored source in a native-sensitive target directory and
-checks that the produced parser library can compile and link before accepting
-it.
+## Why Search Kernel?
 
-The normal host target directory is `target/host`. The supported project
-container uses `target/devcontainer`, and CI uses `target/ci`; these directories
-must not be shared because they contain compiler- and libc-specific native
-artifacts. The Vespa SDK is likewise published below each environment's target
-directory (`native-sdk/linux-x86_64`), rather than in one repository-global
-directory. `CARGO_TARGET_DIR` remains available for explicit isolated builds;
-`SK_NATIVE_SDK` can override the SDK location when building a deliberately
-separate native configuration.
+Adding serious search can mean deploying a separate service, even when an application needs only one local index. Vespa already has a sophisticated native engine for indexing, matching, and ranking. Search Kernel makes that engine accessible as an embedded or local-daemon component, while deliberately leaving distributed clustering to Vespa itself.
 
-`FLATC_PATH` is still accepted by the standalone schema-generation scripts,
-but the Cargo protocol build always uses the matching vendored FlatBuffers
-toolchain so headers, `libflatbuffers.a`, and `flatc` cannot be mixed from
-different installations.
+The goal is to make advanced search **easier to adopt in a single-node application**, not to claim the smallest binary, the lowest memory footprint, or superior query latency. Those properties need workload-specific measurements.
 
-The native-build regression verifiers are
-`bash tools/test-native-environment-fingerprint.sh` and
-`bash tools/test-native-build-hardening.sh`.
-It uses a temporary target directory to verify warm reuse, flag-driven targeted
-invalidation, preservation of an unrelated Rust artifact, and one-shot recovery
-after a deliberately corrupted FlatBuffers archive. The ABI workflow does not
-restore a native target cache; if a CI cache is added, its key must include the
-runner/image, Rust toolchain, target, C/C++ tool identities, libc, FlatBuffers
-source checksum, and native configuration.
+### Choosing the right tool
 
-### Development command surface
+| Your requirement | Consider | Why |
+| --- | --- | --- |
+| Search alongside existing SQLite data with a compact dependency | [SQLite FTS5](https://www.sqlite.org/fts5.html) | A straightforward fit when SQLite's full-text facilities meet your needs |
+| A Rust-native search library focused on building and querying a text index | [Tantivy](https://github.com/quickwit-oss/tantivy) | A good fit when you want its Rust index model rather than Vespa's engine |
+| A local single-node component with supported Vespa search and ranking functionality | **Search Kernel** | Trades a heavier native runtime for access to the embedded Vespa engine |
+| Distributed search, replication, or horizontal scaling | [Vespa](https://vespa.ai/) | Search Kernel intentionally does not implement the distributed platform |
 
-Repository checks and generators are available through one root command:
+These are architectural fit guidelines, **not** benchmark rankings or claims of feature parity.
 
-```text
-sudo ./dev install flatbuffers
-./dev check
-./dev check-fast
-./dev test ir
-./dev test rust-api
-./dev test python
-./dev regen protocol
-./dev verify milestone.m14
-./dev verify product.integration
-./dev worktree create my-task
-./dev doctor
-```
+### Deliberate limits
 
-`core/native/vespa/build-sdk.sh` builds the Vespa adapter SDK with the
-environment-specific target directory and records the compiler, target, libc,
-C++ runtime, Vespa source/configuration, native source, and relevant native
-flags that produced it. Native Rust bindings compare that record and link a
-small ABI probe before accepting the SDK. Rebuild the SDK in the selected
-environment automatically when the record does not match; if the pinned Vespa
-build inputs are unavailable, Cargo reports that prerequisite failure instead
-of allowing a mysterious downstream linker failure.
+Search Kernel is not a distributed search system. It does not implement replication, clustering, distributed query execution, a new storage engine, or a new ranking language. It exposes an intentionally bounded subset of Vespa capabilities, and unsupported operations should fail explicitly rather than being silently approximated. See [limitations](LIMITATIONS.md).
 
-`./dev install flatbuffers` builds the pinned FlatBuffers C++ release with the
-position-independent static library and the `lib` layout used by standalone
-schema tooling and doctor checks. The Cargo protocol build uses its own pinned
-vendored copy and does not consume this installation. The default install
-prefix is `/usr/local`. For a non-root installation, set
-`FLATBUFFERS_INSTALL_PREFIX`; the command prints the `FLATBUFFERS_CPP_ROOT`
-and `FLATC_PATH` exports needed by those standalone tools.
+## How it works
 
-`./dev doctor` is the first command to run when setup is uncertain. It reports
-the Cargo, FlatBuffers, generated protocol, native SDK/ABI, pinned Vespa,
-Python, and `searchkerneld` prerequisites individually. Run `./dev --help` for
-the complete command list. Native target isolation, SDK provenance validation,
-and automatic targeted recovery are documented in
-[`BUILDING.md`](BUILDING.md) and
-[`docs/native-build-provenance.md`](docs/native-build-provenance.md).
+The direct Rust API reaches Vespa **in-process**, without converting a normal Rust request to gRPC. Non-Rust clients use the local daemon: Python and TypeScript/Node.js use FlatBuffers over gRPC; Ruby uses the supported schema-derived JSON/HTTP edge. Both transport forms meet at the same canonical dispatcher and semantic layer.
 
-FlatBuffers is the sole portable data contract. Non-Rust RPC carries canonical
-FlatBuffer bytes over generated gRPC. Standard FlatBuffers JSON is the only
-supported JSON representation; it is parsed to FlatBuffers before dispatch and
-printed from FlatBuffers for responses. Language SDKs use flatc-generated
-models and do not maintain parallel full-schema DTOs or handwritten codecs.
+~~~mermaid
+flowchart TD
+    Rust["Rust application<br/>in-process API"] --> IR["Search Kernel IR<br/>shared validation and semantics"]
+    Python["Python / TypeScript<br/>local gRPC clients"] --> RPC["FlatBuffers over gRPC"]
+    Ruby["Ruby<br/>HTTP client"] --> HTTP["Schema-derived FlatBuffers JSON / HTTP"]
+    RPC --> Daemon["searchkerneld<br/>canonical dispatcher"]
+    HTTP --> Daemon
+    Daemon --> IR
+    IR --> Adapter["Vespa backend adapter<br/>Rust / C++ boundary"]
+    Adapter --> Engine["Vespa C++ engine<br/>indexing · persistence · matching · ranking"]
+~~~
 
-## Language bindings
+The separation is intentional: the [FlatBuffers contract](api/README.md) represents portable requests, the [owned IR](core/crates/searchkernel-ir/README.md) defines validated meaning, and the [Vespa adapter](core/crates/searchkernel-vespa-engine/README.md) implements that meaning on the pinned engine. Transports must not invent their own query defaults or validation.
 
-Release support is deliberately narrower than implementation inventory. For the 0.1.x beta, Python (managed-local/connect), TypeScript/Node.js (connect), and Ruby (connect-to-daemon) are supported non-Rust SDK modes on the qualified Linux x86-64 glibc platform. Ruby managed-local, PHP, browser gRPC-Web, Go, and other language/runtime surfaces are deferred even where implementation exists. See the [release support matrix](docs/release-support.md).
+[Architecture and design boundaries](docs/architecture.md) · [Guided code walkthrough](docs/reading-the-codebase.md)
 
-## Repository layout
+## Engineering decisions behind the product
 
-```text
-api/               normative Portable API schemas
-core/              embeddable Rust crates and native SDK
-clients/           non-Rust language clients
-searchkerneld/     daemon and HTTP transport host
-searchkernel-web/  administration dashboard
-tools/             generators and build tooling
-reference/         frozen contracts and verifiers
-```
+The interesting systems work is not another text matcher; Vespa owns that. The hard part is adapting an existing native search runtime into a developer-facing local component without introducing incompatible semantics or unsafe lifecycle behavior.
 
-## Status
+**1. Native lifecycle and ownership.** A search engine owns files, threads, and native resources whose lifetimes cannot be treated like ordinary application values. Search Kernel keeps Vespa C++ types behind an adapter, gives Rust explicit ownership/lifecycle responsibilities, and verifies real engine operations including persistence and reopen. See the [native adapter](core/native/vespa/README.md), [Rust native boundary](core/crates/searchkernel-vespa-engine/README.md), and [codebase walkthrough](docs/reading-the-codebase.md).
 
-See [docs/status.md](docs/status.md) for the current implementation inventory
-and verification entry points. The project remains under active development;
-the roadmap is intended sequencing, not a status report.
+**2. One meaning for every client.** Independent SDKs are vulnerable to subtly different filtering, validation, defaults, or errors. Search Kernel uses one portable contract and a shared semantic IR; the Rust embedded path and daemon paths converge on that meaning without requiring identical transport mechanics. See [architecture](docs/architecture.md), [semantic resolution](core/crates/searchkernel-ir/README.md), and the [client capability evidence](docs/CLIENT_CAPABILITIES.md).
 
-The API will change before it stabilizes.
+**3. Tests that can contradict the implementation.** A wrapper can pass unit tests while exercising mocks, a bypass, or different behavior from Vespa. The verification approach uses frozen contracts, upstream behavior as an oracle where applicable, negative cases, and real-engine paths. See the [verification harness](reference/vespa/), [real-engine query tests](core/crates/searchkernel-ir-adapter/src/tests/query_real_engine.rs), and [canonical quickstarts](docs/release-quickstart.md). A documented test strategy is not a claim that every pending release gate is green.
 
-## License
+### Development and review approach
 
-Apache License 2.0, matching Vespa's license.
+Implementation work may be delegated to coding agents, but the [repository workflow](docs/agent-workflow.md) requires bounded tasks, explicit contracts, review, and exact-revision verification. Agent completion claims alone do not establish correctness or release readiness. The architecture, code, and tests remain open for independent review.
 
-## Contributing
+## Installation and release scope
 
-*(contributing guidelines, or a pointer to them)*
+**Current qualified release platform: Linux x86-64 with glibc.** The supported 0.1.x beta modes are:
+
+| Client or runtime | Qualified mode |
+| --- | --- |
+| Rust | Direct, embedded native engine |
+| `searchkerneld` | Standalone local daemon |
+| Python | Managed-local daemon or connect to an existing daemon |
+| TypeScript / Node.js | Connect to an existing daemon over gRPC |
+| Ruby | Connect to an existing daemon over HTTP |
+
+Browser gRPC-Web, PHP, Ruby managed-local distribution, Go, macOS, Windows, and Linux ARM64 are **not** qualified release modes, even if source code or partial functionality exists. Public API compatibility is not yet stable. Check the [release support contract](docs/release-support.md), [known limitations](LIMITATIONS.md), and [release notes](docs/release-notes.md).
+
+**To use the beta:** start with [installation and runtime ownership](docs/getting-started.md), select matching artifacts from a release manifest, and follow the [generated executable quickstarts](docs/release-quickstart.md). Current Rust native runtime acquisition may require private release access; see the installation guide rather than assuming a public package registry installation works.
+
+## Building, exploring, and contributing
+
+Application developers should use the release artifacts, not build Vespa from source. Contributors can start with [BUILDING.md](BUILDING.md), including `./dev doctor`, `./dev check-fast`, and the supported native build/toolchain setup. Low-level FlatBuffers versioning, native cache/provenance, regeneration, and CI details live there rather than in this landing page.
+
+For orientation, use [How to read Search Kernel](docs/reading-the-codebase.md); for task submission, branch/PR flow, and verification handoffs, use the [contributor/agent workflow](docs/agent-workflow.md). The [roadmap](docs/roadmap.md) describes intended direction, not what has already been verified; current implementation and support details live in [status](docs/status.md) and the [capability ledger](docs/CAPABILITIES.md).
+
+## License and attribution
+
+Search Kernel is licensed under [Apache License 2.0](LICENSE). It integrates [Vespa](https://vespa.ai/)'s C++ search engine, which remains responsible for the core storage, indexing, query execution, and ranking technology. Search Kernel's wrappers, interoperability layers, and integration tests should not be confused with a replacement search engine.
