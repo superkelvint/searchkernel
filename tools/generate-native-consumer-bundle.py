@@ -12,7 +12,7 @@ files = [
 ]
 files += [f"core/native/vespa/{name}" for name in [
     "abi.cc","document.cc","engine.cc","errors.cc","grouping.cc","hardening.cc","query.cc","search.cc","tensor.cc","update.cc",
-    "file_descriptor.h","highlighting.h","searchkernel_vespa.h","searchkernel_vespa_internal.h","searchkernel_vespa_test.h","transport_owner.h",
+    "diagnostic_projection.h","file_descriptor.h","highlighting.h","searchkernel_vespa.h","searchkernel_vespa_internal.h","searchkernel_vespa_test.h","transport_owner.h",
     "searchkernel_vespa.map","searchkernel_vespa_test.map",
 ]]
 files += [str(p.relative_to(ROOT)) for p in sorted((ROOT/"core/native/vespa/embedded_crud_cfg").iterdir()) if p.is_file()]

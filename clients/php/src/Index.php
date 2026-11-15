@@ -242,6 +242,12 @@ final class Index
         return $resolved;
     }
 
+    /** Execute canonical read-only diagnostics against this opened index. */
+    public function queryDiagnostics(array $request): array
+    {
+        return $this->client->queryDiagnostics($request);
+    }
+
     /** @internal
      *  @param array<string,mixed> $request
      */

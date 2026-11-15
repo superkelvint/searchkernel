@@ -11,6 +11,11 @@ use crate::model::{
 /// execute them, but it must not choose Search Kernel defaults or reinterpret
 /// wire representation details.
 pub trait Backend: Send + Sync {
+    /// Public client identity for an already opened remote target. Embedded
+    /// backends have no daemon generation and therefore return None.
+    fn target_identity(&self) -> Option<(&str, &str)> {
+        None
+    }
     fn insert(&self, request: InsertRequestIr) -> Result<InsertResult>;
     fn upsert(&self, request: UpsertRequestIr) -> Result<UpsertResult>;
     fn patch(&self, request: PatchRequestIr) -> Result<PatchResult>;
@@ -24,6 +29,20 @@ pub trait Backend: Send + Sync {
     fn delete(&self, request: DeleteRequestIr) -> Result<DeleteResult>;
     fn get(&self, request: GetRequestIr) -> Result<GetResult>;
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult>;
+    /// Explicit engine evidence acquisition. Ordinary searches never opt in.
+    fn search_diagnostic(
+        &self,
+        request: SearchRequestIr,
+        _sections: &[crate::DiagnosticSection],
+        _limits: &crate::DiagnosticLimits,
+    ) -> Result<crate::DiagnosticSearchResult> {
+        self.search(request)
+            .map(|result| crate::DiagnosticSearchResult {
+                result,
+                raw_engine: Vec::new(),
+                structured_evidence: Vec::new(),
+            })
+    }
     fn analyze(&self, request: AnalyzeRequestIr) -> Result<AnalyzeResult>;
 
     /// Gracefully release backend-owned resources.

@@ -30,9 +30,9 @@ export function decodeSearchParams(params: URLSearchParams): { state: ClientSear
   } catch (error) { return { state: { query: '' }, error: `Cannot restore Search Lab URL: ${error instanceof Error ? error.message : 'Malformed state'}` } }
 }
 
-export function encodeSearchParams(state: ClientSearchRequest): URLSearchParams {
+export function encodeSearchParams(state: ClientSearchRequest, options: { includeInputs?: boolean } = {}): URLSearchParams {
   const ordered: Record<string, unknown> = {}
-  for (const key of keys as (keyof ClientSearchRequest)[]) if (state[key] !== undefined) ordered[key] = state[key]
+  for (const key of keys as (keyof ClientSearchRequest)[]) if (state[key] !== undefined && (key !== 'inputs' || options.includeInputs !== false)) ordered[key] = state[key]
   return new URLSearchParams({ s: JSON.stringify({ v: 1, state: ordered }) })
 }
 export function updateSearchState(state: ClientSearchRequest, patch: Partial<ClientSearchRequest>): ClientSearchRequest {

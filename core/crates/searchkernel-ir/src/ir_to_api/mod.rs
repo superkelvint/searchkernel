@@ -4,7 +4,9 @@ use crate::error::{ErrorCode, PortableError};
 use crate::model as ir;
 use searchkernel_protocol::wire::v1 as api;
 
+mod diagnostics;
 mod error;
+pub use diagnostics::query_diagnostics_result_offset;
 mod filter;
 mod grouping;
 mod query;
@@ -54,7 +56,8 @@ pub use transport::{
     encode_insert_request, encode_insert_request_for_target,
     encode_insert_request_for_target_generation, encode_list_indexes_request,
     encode_open_index_request, encode_patch_request, encode_patch_request_for_target,
-    encode_patch_request_for_target_generation, encode_search_request,
+    encode_patch_request_for_target_generation,
+    encode_query_diagnostics_request_for_target_generation, encode_search_request,
     encode_search_request_for_target, encode_search_request_for_target_generation,
     encode_update_request, encode_update_request_for_target,
     encode_update_request_for_target_generation, encode_upsert_request,

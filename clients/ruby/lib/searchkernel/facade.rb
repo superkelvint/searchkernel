@@ -697,6 +697,10 @@ module SearchKernel
       resolved
     end
 
+    def query_diagnostics(request)
+      @client.query_diagnostics(request)
+    end
+
     def close
       return if @closed
 

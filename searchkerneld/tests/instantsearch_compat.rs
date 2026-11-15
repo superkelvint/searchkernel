@@ -10,23 +10,51 @@ use searchkernel_protocol::{
     wire::v1 as api,
 };
 use searchkernel_testkit::RecordingBackend;
-use searchkerneld::search_endpoint_test_support::{
-    SearchEndpointBindError, SearchEndpointConfig, SearchEndpointPolicy, SearchEndpointRouteError,
-    SearchEndpointRouter,
-};
+use searchkerneld::search_endpoints::{PublicSearchConfig, PublicSearchError, PublicSearchRequest};
 
-fn policy() -> SearchEndpointPolicy {
-    SearchEndpointPolicy::new(512, 3, 128, 100, 10_000)
+fn config() -> searchkerneld::search_endpoints::SearchEndpointRouter {
+    serde_json::from_str::<PublicSearchConfig>(
+        r#"{
+          "behindRateLimitedProxy": true,
+          "endpoints": {
+            "docs": {
+              "target": "docs",
+              "generation": "0123456789abcdef0123456789abcdef",
+              "fields": ["title"],
+              "filterFields": {},
+              "facets": [],
+              "highlights": ["title"]
+            }
+          }
+        }"#,
+    )
+    .expect("valid production Search Endpoint config")
+    .compile()
+    .unwrap()
 }
 
-fn docs_router() -> SearchEndpointRouter {
-    SearchEndpointRouter::new([SearchEndpointConfig::new("docs", "docs", policy())])
-        .expect("valid docs endpoint")
+fn request(query: &str, limit: u32, offset: u32) -> PublicSearchRequest {
+    serde_json::from_value(serde_json::json!({
+        "endpoint": "docs",
+        "query": query,
+        "limit": limit,
+        "offset": offset,
+        "facets": [],
+        "facetLimit": 100,
+        "filters": [],
+        "highlights": ["title"],
+        "snippets": []
+    }))
+    .expect("valid production public request")
 }
 
 fn decode_search(bytes: &[u8]) -> api::SearchRequest<'_> {
     let envelope = wire::root_as_request_envelope(bytes).expect("valid canonical request envelope");
     assert_eq!(envelope.protocol_version(), PROTOCOL_VERSION);
+    assert_eq!(
+        envelope.target().and_then(|target| target.name()),
+        Some("docs")
+    );
     assert_eq!(
         envelope.payload_type(),
         wire::RequestPayload::SearchKernel_Wire_SearchRequest
@@ -91,257 +119,49 @@ fn context() -> Arc<IndexContext> {
 }
 
 #[test]
-fn instantsearch_core_vocabulary_binds_to_canonical_search_request() {
-    let bytes = docs_router()
-        .bind_get(
-            "/search/docs",
-            Some("query=search+kernel&hitsPerPage=20&page=2"),
-        )
-        .expect("bind InstantSearch request");
+fn production_instantsearch_contract_binds_to_canonical_search_request() {
+    let config = config();
+    let bytes = config
+        .bind_post(&request("search kernel", 20, 40))
+        .expect("production binder accepts translated InstantSearch request");
 
     let search = decode_search(&bytes);
     assert_eq!(text_query(search), "search kernel");
     let search = decode_search(&bytes);
-    assert_eq!(search.limit().expect("hitsPerPage").value(), 20);
-    assert_eq!(search.offset().expect("page-derived offset").value(), 40);
+    assert_eq!(search.limit().expect("limit").value(), 20);
+    assert_eq!(search.offset().expect("offset").value(), 40);
 }
 
 #[test]
-fn instantsearch_profile_is_canonical_equivalent_to_general_endpoint_aliases() {
-    let instantsearch = docs_router()
-        .bind_get(
-            "/search/docs",
-            Some("query=search+kernel&hitsPerPage=20&page=2"),
-        )
-        .expect("InstantSearch request");
-    let general = docs_router()
-        .bind_get("/search/docs", Some("q=search+kernel&limit=20&offset=40"))
-        .expect("general endpoint aliases");
-
-    assert_eq!(
-        instantsearch, general,
-        "InstantSearch vocabulary must be exposure syntax only, not a second semantic path"
-    );
-}
-
-#[test]
-fn instantsearch_policy_bounds_apply_after_page_lowering_without_clamping() {
-    let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
-        "docs",
-        "docs",
-        SearchEndpointPolicy::new(512, 3, 128, 10, 20).with_default_limit(10),
-    )])
-    .expect("router");
-
-    assert_eq!(
-        router
-            .bind_get("/search/docs", Some("query=docs&hitsPerPage=11&page=0"),)
-            .expect_err("hitsPerPage above endpoint maximum"),
-        SearchEndpointRouteError::Bind(SearchEndpointBindError::LimitTooLarge {
-            value: 11,
-            max: 10,
-        })
-    );
-    assert_eq!(
-        router
-            .bind_get("/search/docs", Some("query=docs&hitsPerPage=10&page=3"),)
-            .expect_err("derived offset above endpoint maximum"),
-        SearchEndpointRouteError::Bind(SearchEndpointBindError::OffsetTooLarge {
-            value: 30,
-            max: 20,
-        })
-    );
-}
-
-#[test]
-fn instantsearch_initial_empty_query_is_canonical_browse() {
-    for raw in [
-        "query=&hitsPerPage=20&page=0",
-        "query=+++&hitsPerPage=20&page=0",
-        "hitsPerPage=20&page=0",
-    ] {
-        let bytes = docs_router()
-            .bind_get("/search/docs", Some(raw))
-            .expect("initial InstantSearch browse");
+fn production_browse_is_canonical_match_all() {
+    for query in ["", "   "] {
+        let bytes = config()
+            .bind_post(&request(query, 20, 0))
+            .expect("browse request");
         let search = decode_search(&bytes);
-        let query = search.query().expect("query source");
-        assert_eq!(query.source_type(), api::QuerySourceKind::MatchAllQuery);
-        assert_eq!(search.limit().expect("hitsPerPage").value(), 20);
-        assert_eq!(search.offset().expect("page zero").value(), 0);
-    }
-}
-
-#[test]
-fn instantsearch_page_is_zero_based_and_maps_to_checked_offset() {
-    for (page, hits_per_page, expected_offset) in [
-        (0u32, 20u32, 0u32),
-        (1, 20, 20),
-        (2, 20, 40),
-        (7, 13, 91),
-        (100, 100, 10_000),
-    ] {
-        let raw = format!("query=docs&hitsPerPage={hits_per_page}&page={page}");
-        let bytes = docs_router()
-            .bind_get("/search/docs", Some(&raw))
-            .unwrap_or_else(|error| panic!("page case {page}/{hits_per_page}: {error}"));
-        let search = decode_search(&bytes);
-        assert_eq!(search.limit().expect("hitsPerPage").value(), hits_per_page);
         assert_eq!(
-            search.offset().expect("page-derived offset").value(),
-            expected_offset
+            search.query().expect("query").source_type(),
+            api::QuerySourceKind::MatchAllQuery
         );
     }
 }
 
 #[test]
-fn instantsearch_page_can_use_an_explicit_endpoint_default_hits_per_page() {
-    let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
-        "docs",
-        "docs",
-        SearchEndpointPolicy::new(512, 2, 128, 100, 10_000).with_default_limit(25),
-    )])
-    .expect("router");
-
-    let bytes = router
-        .bind_get("/search/docs", Some("query=docs&page=3"))
-        .expect("page uses endpoint default");
-    let search = decode_search(&bytes);
-    assert_eq!(search.limit().expect("default hits per page").value(), 25);
-    assert_eq!(search.offset().expect("page-derived offset").value(), 75);
-}
-
-#[test]
-fn instantsearch_nonzero_page_without_hits_per_page_fails_closed() {
-    assert_eq!(
-        docs_router()
-            .bind_get("/search/docs", Some("query=docs&page=1"))
-            .expect_err("page needs a page size"),
-        SearchEndpointRouteError::PageRequiresHitsPerPage
-    );
-
-    let zero = docs_router()
-        .bind_get("/search/docs", Some("query=docs&page=0"))
-        .expect("page zero is representable without a page size");
-    let search = decode_search(&zero);
-    assert!(search.limit().is_none());
-    assert_eq!(search.offset().expect("explicit page zero").value(), 0);
-}
-
-#[test]
-fn instantsearch_pagination_overflow_fails_before_canonical_request_construction() {
-    let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
-        "docs",
-        "docs",
-        SearchEndpointPolicy::new(512, 3, 128, u32::MAX, u32::MAX),
-    )])
-    .expect("router");
-
-    assert_eq!(
-        router
-            .bind_get(
-                "/search/docs",
-                Some("query=docs&hitsPerPage=2&page=4294967295"),
-            )
-            .expect_err("page multiplication must be checked"),
-        SearchEndpointRouteError::PaginationOverflow
-    );
-}
-
-#[test]
-fn instantsearch_and_general_aliases_cannot_be_mixed_ambiguously() {
-    assert_eq!(
-        docs_router()
-            .bind_get("/search/docs", Some("query=one&q=two"))
-            .expect_err("two query aliases"),
-        SearchEndpointRouteError::DuplicateParameter("query")
-    );
-    assert_eq!(
-        docs_router()
-            .bind_get("/search/docs", Some("query=docs&hitsPerPage=20&limit=10"),)
-            .expect_err("two page-size aliases"),
-        SearchEndpointRouteError::DuplicateParameter("hitsPerPage")
-    );
-    assert_eq!(
-        docs_router()
-            .bind_get(
-                "/search/docs",
-                Some("query=docs&hitsPerPage=20&page=1&offset=20"),
-            )
-            .expect_err("page and offset conflict"),
-        SearchEndpointRouteError::TooManyParameters { actual: 4, max: 3 }
-    );
-
-    let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
-        "docs",
-        "docs",
-        SearchEndpointPolicy::new(512, 4, 128, 100, 10_000),
-    )])
-    .expect("router allowing four parameters");
-    assert_eq!(
-        router
-            .bind_get(
-                "/search/docs",
-                Some("query=docs&hitsPerPage=20&page=1&offset=20"),
-            )
-            .expect_err("page and offset conflict"),
-        SearchEndpointRouteError::ConflictingPaginationControls
-    );
-}
-
-#[test]
-fn instantsearch_parameter_names_are_case_sensitive_and_encoded_names_do_not_alias() {
-    for raw in [
-        "Query=docs",
-        "hitsperpage=20",
-        "HitsPerPage=20",
-        "Page=1",
-        "%71uery=docs",
-        "hitsPer%50age=20",
-        "pa%67e=1",
-    ] {
-        assert_eq!(
-            docs_router()
-                .bind_get("/search/docs", Some(raw))
-                .expect_err("non-literal InstantSearch parameter name"),
-            SearchEndpointRouteError::UnknownParameter,
-            "raw query {raw:?}"
-        );
-    }
-}
-
-#[test]
-fn instantsearch_query_text_preserves_unicode_plus_percent_ampersand_and_equals() {
-    let bytes = docs_router()
-        .bind_get(
-            "/search/docs",
-            Some(
-                "query=caf%C3%A9%20%2B%20%25%20%26%20%3D%20%E4%B8%AD%20%F0%9F%99%82&hitsPerPage=5&page=0",
-            ),
-        )
-        .expect("encoded InstantSearch query");
-
-    assert_eq!(text_query(decode_search(&bytes)), "café + % & = 中 🙂");
-}
-
-#[test]
-fn instantsearch_core_request_converges_on_dispatcher_and_search_ir() {
+fn production_binder_converges_on_dispatcher_and_search_ir() {
     let backend = Arc::new(RecordingBackend::new());
     let dispatcher = Dispatcher::from_backend(context(), backend.clone());
-    let bytes = docs_router()
-        .bind_get(
-            "/search/docs",
-            Some("query=canonical+instantsearch&hitsPerPage=7&page=2"),
-        )
-        .expect("bind InstantSearch request");
+    let bytes = config()
+        .bind_post(&request("canonical instantsearch", 7, 14))
+        .expect("production request binds");
 
     dispatcher
         .dispatch(&bytes)
-        .expect("canonical dispatcher accepts InstantSearch-derived request");
+        .expect("canonical dispatcher accepts production public request");
 
     let calls = backend.take_calls();
     assert_eq!(calls.len(), 1);
     let OperationIr::Search(search) = &calls[0] else {
-        panic!("InstantSearch-derived request must lower to Search IR");
+        panic!("production Search Endpoint request must lower to Search IR");
     };
     assert_eq!(
         search.query(),
@@ -352,7 +172,43 @@ fn instantsearch_core_request_converges_on_dispatcher_and_search_ir() {
 }
 
 #[test]
-fn instantsearch_generated_pagination_matrix_is_deterministic_and_overflow_checked() {
+fn hostile_inputs_fail_at_the_production_binder_before_dispatch() {
+    let config = config();
+
+    let mut oversized = request("docs", 101, 0);
+    assert_eq!(
+        config.bind_post(&oversized).expect_err("limit bound"),
+        PublicSearchError::InvalidRequest
+    );
+
+    oversized.limit = 10;
+    oversized.offset = 10_001;
+    assert_eq!(
+        config.bind_post(&oversized).expect_err("offset bound"),
+        PublicSearchError::InvalidRequest
+    );
+
+    let mut unknown_projection = request("docs", 10, 0);
+    unknown_projection.fields = Some(vec!["private".into()]);
+    assert_eq!(
+        config
+            .bind_post(&unknown_projection)
+            .expect_err("unexposed field must fail closed"),
+        PublicSearchError::Unsupported
+    );
+
+    let mut oversized_query = request(&"x".repeat(4097), 10, 0);
+    oversized_query.offset = 0;
+    assert_eq!(
+        config
+            .bind_post(&oversized_query)
+            .expect_err("query bytes are bounded"),
+        PublicSearchError::InvalidRequest
+    );
+}
+
+#[test]
+fn production_binding_is_deterministic_across_generated_bounded_requests() {
     fn next(state: &mut u64) -> u64 {
         let mut value = *state;
         value ^= value << 13;
@@ -362,45 +218,64 @@ fn instantsearch_generated_pagination_matrix_is_deterministic_and_overflow_check
         value
     }
 
-    let router = SearchEndpointRouter::new([SearchEndpointConfig::new(
-        "docs",
-        "docs",
-        SearchEndpointPolicy::new(512, 3, 128, u32::MAX, u32::MAX),
-    )])
-    .expect("router");
-    let mut state = 0x1A57_A17C_4690_u64;
-
+    let config = config();
+    let mut state = 0x1046_A17C_5EED_u64;
     for case in 0..2_048 {
-        let page = next(&mut state) as u32;
-        let hits_per_page = next(&mut state) as u32;
-        let raw = format!("query=matrix&hitsPerPage={hits_per_page}&page={page}");
+        let limit = (next(&mut state) % 101) as u32;
+        let offset = (next(&mut state) % 10_001) as u32;
+        let query = format!("case-{case}-{}", next(&mut state));
+        let request = request(&query, limit, offset);
+        let first = config
+            .bind_post(&request)
+            .expect("bounded generated request");
+        let second = config
+            .bind_post(&request)
+            .expect("same request binds again");
+        assert_eq!(first, second, "case {case} must bind deterministically");
+    }
+}
 
-        let first = router.bind_get("/search/docs", Some(&raw));
-        let second = router.bind_get("/search/docs", Some(&raw));
-        assert_eq!(first, second, "case {case} must be deterministic");
-
-        match page.checked_mul(hits_per_page) {
-            Some(expected_offset) => {
-                let bytes = first.unwrap_or_else(|error| {
-                    panic!("case {case} unexpectedly rejected {page} * {hits_per_page}: {error}")
-                });
-                let search = decode_search(&bytes);
-                assert_eq!(
-                    search.limit().expect("hitsPerPage").value(),
-                    hits_per_page,
-                    "case {case}"
-                );
-                assert_eq!(
-                    search.offset().expect("derived offset").value(),
-                    expected_offset,
-                    "case {case}"
-                );
-            }
-            None => assert_eq!(
-                first.expect_err("overflow must fail"),
-                SearchEndpointRouteError::PaginationOverflow,
-                "case {case}"
-            ),
-        }
+#[test]
+fn get_and_post_share_query_bounds_generation_and_canonical_ir() {
+    let config = config();
+    for (text, encoded) in [
+        ("hello world", "hello+world"),
+        ("café", "caf%C3%A9"),
+        ("", ""),
+        ("   ", "+++"),
+    ] {
+        let post = config.bind_post(&request(text, 7, 14)).unwrap();
+        let get = config
+            .bind_get(
+                "/search/docs",
+                Some(&format!("q={encoded}&limit=7&offset=14")),
+            )
+            .unwrap();
+        assert_eq!(get, post, "same canonical envelope for {text:?}");
+        let envelope = wire::root_as_request_envelope(&get).unwrap();
+        assert_eq!(
+            envelope.target().unwrap().generation(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        let backend = Arc::new(RecordingBackend::new());
+        let dispatcher = Dispatcher::from_backend(context(), backend.clone());
+        dispatcher.dispatch(&get).unwrap();
+        dispatcher.dispatch(&post).unwrap();
+        let calls = backend.take_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0], calls[1]);
+    }
+    for (text, encoded) in [
+        ("\0", "%00"),
+        ("\t\n", "%09%0A"),
+        ("line1\nline2", "line1%0Aline2"),
+    ] {
+        assert!(config
+            .bind_get("/search/docs", Some(&format!("q={encoded}")))
+            .is_err());
+        assert_eq!(
+            config.bind_post(&request(text, 7, 0)).unwrap_err(),
+            PublicSearchError::InvalidRequest
+        );
     }
 }

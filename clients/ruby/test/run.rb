@@ -208,6 +208,7 @@ expected_operations = {
   analyze: %w[AnalyzeRequest AnalyzeResult],
   describe: %w[DescribeRequest DescribeResult],
   inspect_query: %w[InspectQueryRequest InspectQueryResult],
+  query_diagnostics: %w[QueryDiagnosticsRequest QueryDiagnosticsResult],
   create_index: %w[CreateIndexRequest CreateIndexResult],
   open_index: %w[OpenIndexRequest OpenIndexResult],
   delete_index: %w[DeleteIndexRequest DeleteIndexResult],
@@ -966,6 +967,19 @@ with_http_server(status: 503, body: "bad\r\ninjected\x00\xff".b, content_type: "
   assert(!error.message.include?("\n"), "transport error diagnostic must not contain injected newlines")
   assert(error.message.valid_encoding?, "transport error diagnostic must remain valid UTF-8")
 end
+
+diagnostic_requests = []
+diagnostic_transport = Object.new
+diagnostic_transport.define_singleton_method(:execute) do |request|
+  diagnostic_requests << request
+  { "protocol_version" => 1, "payload_type" => "SearchKernel_Wire_QueryDiagnosticsResult", "payload" => { "warnings" => ["partial engine evidence"] } }
+end
+diagnostic_client = SearchKernel::Client.new(diagnostic_transport, target: "products")
+diagnostic_client.bind_generation("G1")
+diagnostic_result = diagnostic_client.query_diagnostics({ "intent" => "ExplainHit", "source_run_id" => "original", "request" => {} })
+TestSupport.same({ "name" => "products", "generation" => "G1" }, diagnostic_requests[0].fetch("target"), "diagnostics bind the opened incarnation")
+TestSupport.same("SearchKernel_Wire_QueryDiagnosticsRequest", diagnostic_requests[0].fetch("payload_type"), "diagnostics use canonical operation")
+TestSupport.same(["partial engine evidence"], diagnostic_result.fetch("warnings"), "diagnostics preserve response sections")
 
 puts "Ruby protocol/transport tests PASS"
 

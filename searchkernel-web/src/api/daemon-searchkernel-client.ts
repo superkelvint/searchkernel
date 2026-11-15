@@ -1,5 +1,7 @@
 import { prepareDocumentMutation, preparedDocumentRequest } from './document-request'
 import { prepareSearch, preparedRequest } from './search-request'
+import { prepareDiagnostics, preparedDiagnosticRequest, diagnosticCurl } from './diagnostic-request'
+import { diagnosticResponse } from './diagnostic-response'
 import {
   Client, IndexTargetT, GrpcWebTransport, Daemon, Index as RemoteIndex, SearchKernelError, TransportError, ProtocolError,
   SearchResults, ResultDecodeError, ValueDecodeError, fromValue, toCanonicalJson, DataTypeKind, PrimitiveDataTypeKind, PrimitiveDataTypeT,
@@ -58,7 +60,7 @@ const capabilities: Capabilities = {
   indexes: { read: true, create: true, delete: true },
   documents: { read: true, write: true, bulk: false },
   search: { basic: true, sort: true, facets: false, grouping: false },
-  analysis: { text: false }, query: { inspect: false },
+  analysis: { text: false }, query: { inspect: false, diagnostics: true },
   schema: { read: true, write: false, changePlan: true },
   ranking: { profiles: true, features: false, write: true },
   summaries: { read: true, write: false }, metrics: { query: false, storage: false },
@@ -140,6 +142,16 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
   return {
     daemonStatus: status,
     createIndex(name, definition) { return call(async () => retained(name, await RemoteIndex.create(endpoint, name, definition, transport?.()))) },
+    prepareDiagnostics,
+    diagnosticsCurl: diagnosticCurl,
+    executeDiagnostics(prepared, options) { return call(async () => {
+      const index = await opened(prepared.target, options)
+      if (index.generation !== String(prepared.target.generation)) throw new SearchKernelClientError(
+        'The index is no longer the same incarnation. Refresh/reselect it explicitly before collecting evidence.',
+        { code: 'stale_index_handle', origin: 'client', retryable: false })
+      const raw = await index.client.queryDiagnostics(preparedDiagnosticRequest(prepared), options)
+      return diagnosticResponse(raw, dashboardValue)
+    }) },
     planIndexChange(target, definition, options) { return call(async () => {
       // Configuration owns a separate client: ApplyIndexChange updates its
       // binding, and must never mutate a cached historical incarnation handle.
@@ -180,6 +192,7 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
       const discovery = await daemon.client.listIndexes()
       const configuration = discovery.configuration
       return { ...capabilities,
+        query: { ...capabilities.query, diagnostics: discovery.queryDiagnostics },
         indexes: { ...capabilities.indexes, create: configuration?.createIndex ?? false },
         schema: { ...capabilities.schema, write: configuration?.fieldMutation ?? false, changePlan: configuration?.changePlan ?? false },
         ranking: { ...capabilities.ranking, write: configuration?.rankProfilesWrite ?? false },
@@ -223,6 +236,8 @@ export function createDaemonSearchKernelClient(endpoint: string, transport?: () 
       const raw = await index.client.search(preparedRequest(prepared), options)
       const result = new SearchResults(raw)
       return {
+        sourceRunId: raw.metadata.find(entry => entry.key === 'searchkernel.source_run')?.value
+          ? String(fromValue(raw.metadata.find(entry => entry.key === 'searchkernel.source_run')!.value!)) : undefined,
         canonicalResponse: JSON.stringify(toCanonicalJson(raw), null, 2), totalRelation: result.totalHitsRelation,
         request, matches: result.totalHits.toString(),
         timingMs: result.timing?.queryTimeSeconds == null ? undefined : `${result.timing.queryTimeSeconds * 1000} ms`,

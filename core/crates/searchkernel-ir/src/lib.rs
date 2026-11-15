@@ -17,6 +17,7 @@ mod filter_parameter_expansion;
 
 mod api_to_ir;
 pub mod backend;
+pub mod diagnostics;
 pub mod error;
 pub mod filter_expression;
 mod ir_to_api;

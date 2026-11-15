@@ -70,6 +70,7 @@ pub fn resolve_search(context: &IndexContext, input: SearchInput) -> Result<Sear
         timeout,
         prefix_policy: PrefixPolicy::Disabled,
         typo_policy: TypoPolicy::Disabled,
+        diagnostic_source: false,
     })
 }
 

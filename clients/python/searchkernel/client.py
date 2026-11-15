@@ -962,6 +962,10 @@ class Client:
     def inspect_query(self, request: Any) -> Any:
         return self.execute("inspect_query", InspectQueryRequestT(request=request))
 
+    def query_diagnostics(self, request: Any) -> Any:
+        """Execute canonical, read-only diagnostics using the bound generation."""
+        return self.execute("query_diagnostics", request)
+
     def create_index(self, definition: IndexDefinitionT) -> Any:
         envelope = self._execute_envelope(
             "create_index", CreateIndexRequestT(definition=definition)
@@ -1217,6 +1221,9 @@ class Index:
 
     def inspect_query(self, request: Any) -> Any:
         return self.client.inspect_query(request)
+
+    def query_diagnostics(self, request: Any) -> Any:
+        return self.client.query_diagnostics(request)
 
     def close(self) -> None:
         self.client.close()

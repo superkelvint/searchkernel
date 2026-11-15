@@ -103,6 +103,7 @@ final class Client
     public function describe(): array { return $this->execute('describe', []); }
     /** @param array<string,mixed> $payload @return array<string,mixed> */
     public function inspectQuery(array $payload): array { return $this->execute('inspect_query', $payload); }
+    public function queryDiagnostics(array $payload): array { return $this->execute('query_diagnostics', $payload); }
     /** @param array<string,mixed> $payload @return array<string,mixed> */
     public function createIndex(array $payload): array { return $this->execute('create_index', $payload); }
     /** @return array<string,mixed> */

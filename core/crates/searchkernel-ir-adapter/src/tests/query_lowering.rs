@@ -1,6 +1,164 @@
 use super::*;
 
 #[test]
+fn filter_and_typed_membership_share_unsupported_value_and_sentinel_errors() {
+    for (scalar, typed) in [
+        (ScalarValueIr::Bool(true), RequestValueIr::Bool(true)),
+        (ScalarValueIr::Float64(1.5), RequestValueIr::Float64(1.5)),
+        (
+            ScalarValueIr::Int64(i64::MIN),
+            RequestValueIr::Int64(i64::MIN),
+        ),
+    ] {
+        let filter_error = lower_filter(&FilterIr::In {
+            field: field("member"),
+            values: vec![scalar],
+        })
+        .unwrap_err();
+        let typed_error = lower_query(
+            &typed_expression(QueryExprKindIr::In {
+                field: typed_field("member"),
+                values: vec![typed],
+            }),
+            &[],
+        )
+        .unwrap_err();
+        assert_eq!(filter_error, typed_error);
+        assert_eq!(filter_error.code, ErrorCode::Unsupported);
+        assert_eq!(filter_error.details[0].code, "m_lowering");
+    }
+}
+
+#[test]
+fn membership_validation_remains_at_the_canonical_boundary() {
+    let definition = IndexDefinitionIr::new(
+        None,
+        vec![
+            FieldIr::new(
+                field("qty"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                None,
+                FieldCapabilities::new(false, false, true, false, false),
+            ),
+            FieldIr::new(
+                field("price"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+                None,
+                FieldCapabilities::new(false, false, true, false, false),
+            ),
+            FieldIr::new(
+                field("active"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+                None,
+                FieldCapabilities::new(false, false, true, false, false),
+            ),
+        ],
+        Vec::new(),
+    )
+    .unwrap();
+    let context = IndexContext::from_definition_ir(definition);
+    for (name, values, detail) in [
+        ("qty", Vec::new(), "empty_in"),
+        (
+            "qty",
+            vec![ScalarValueIr::Int64(1), ScalarValueIr::String("two".into())],
+            "type_mismatch",
+        ),
+        ("price", vec![ScalarValueIr::Float64(1.0)], "invalid_filter"),
+        ("active", vec![ScalarValueIr::Bool(true)], "invalid_filter"),
+    ] {
+        let request = SearchRequestIr::new(
+            QueryIr::MatchAll,
+            Vec::new(),
+            Some(FilterIr::In {
+                field: field(name),
+                values,
+            }),
+            Vec::new(),
+            10,
+            0,
+            ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        );
+        let bytes = searchkernel_ir::wire::v1::search_request_ir_to_api(&request);
+        let decoded = searchkernel_ir::__flatbuffers::root::<
+            searchkernel_ir::wire::v1::schema::SearchRequest,
+        >(&bytes)
+        .unwrap();
+        let error = searchkernel_ir::wire::v1::search_to_ir(&context, decoded).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidArgument);
+        assert_eq!(error.details[0].code, detail);
+        assert!(error.details[0].path.is_some());
+    }
+}
+
+#[test]
+fn filter_membership_preserves_the_same_native_in_node_as_typed_queries() {
+    use searchkernel_vespa_engine::InQueryValue;
+
+    for (kind, source, values, typed_values, native_values) in [
+        (
+            PrimitiveDataTypeIr::String,
+            "member IN ('Acme', 'TrailCo')",
+            vec![
+                ScalarValueIr::String("Acme".into()),
+                ScalarValueIr::String("TrailCo".into()),
+            ],
+            vec![
+                RequestValueIr::String("Acme".into()),
+                RequestValueIr::String("TrailCo".into()),
+            ],
+            vec![
+                InQueryValue::String("Acme".into()),
+                InQueryValue::String("TrailCo".into()),
+            ],
+        ),
+        (
+            PrimitiveDataTypeIr::Int64,
+            "member IN (10, 20)",
+            vec![ScalarValueIr::Int64(10), ScalarValueIr::Int64(20)],
+            vec![RequestValueIr::Int64(10), RequestValueIr::Int64(20)],
+            vec![InQueryValue::Integer(10), InQueryValue::Integer(20)],
+        ),
+    ] {
+        let mut member = FieldIr::new(
+            field("member"),
+            DataTypeIr::Primitive(kind),
+            None,
+            FieldCapabilities::new(false, false, true, false, false),
+        );
+        if kind == PrimitiveDataTypeIr::String {
+            member.set_matching_config(Some(MatchingConfigIr {
+                mode: MatchingModeIr::Exact,
+                options: BTreeMap::new(),
+            }));
+        }
+        let definition = IndexDefinitionIr::new(None, vec![member], Vec::new()).unwrap();
+        let structured = FilterIr::In {
+            field: field("member"),
+            values,
+        };
+        let textual =
+            bind_filter_expression(source, &definition, &FilterParameters::new()).unwrap();
+        assert_eq!(textual, structured);
+        let expected = Query::In {
+            field: "member".into(),
+            values: native_values,
+        };
+        let typed = typed_expression(QueryExprKindIr::In {
+            field: typed_field("member"),
+            values: typed_values,
+        });
+        assert_eq!(lower_query(&typed, &[]).unwrap(), expected);
+        assert_eq!(lower_filter(&structured).unwrap(), expected);
+        assert_eq!(lower_filter(&textual).unwrap(), expected);
+    }
+}
+
+#[test]
 fn typed_query_a_lowers_to_existing_native_query_nodes() {
     let title = typed_field("title");
     let term = typed_expression(QueryExprKindIr::Contains {

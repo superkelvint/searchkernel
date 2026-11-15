@@ -150,6 +150,31 @@ pub struct SearchResult {
     pub groupings: Vec<GroupingResult>,
     pub coverage: SearchCoverage,
     pub issues: Vec<String>,
+    pub diagnostics: Option<SearchDiagnostics>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchDiagnostics {
+    pub sections: Vec<crate::DiagnosticEvidence>,
+    pub trace: String,
+    pub truncated: bool,
+    pub features_truncated: bool,
+    /// Feature columns omitted before decode because the diagnostic raw-byte
+    /// budget was exhausted.
+    pub truncated_features: Vec<String>,
+    pub matching_seconds: f64,
+    pub summary_seconds: f64,
+    pub query_seconds: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchDiagnosticControls {
+    pub structure_depth: u32,
+    pub trace_level: u32,
+    pub matching_depth: u32,
+    pub first_phase_depth: u32,
+    pub second_phase_depth: u32,
+    pub raw_bytes: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -195,6 +220,7 @@ pub struct SearchRequest {
     pub language: LinguisticsOptions,
     pub facets: Vec<FacetRequest>,
     pub timeout: Duration,
+    pub diagnostics: Option<SearchDiagnosticControls>,
 }
 
 impl SearchRequest {
@@ -216,6 +242,7 @@ impl SearchRequest {
             language: LinguisticsOptions::default(),
             facets: Vec::new(),
             timeout: Duration::from_secs(60),
+            diagnostics: None,
         }
     }
 

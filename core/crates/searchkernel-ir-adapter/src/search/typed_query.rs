@@ -7,14 +7,14 @@ mod predicate;
 mod text;
 mod weighted;
 
-use super::filter::lower_attribute_value;
+use super::filter::{lower_attribute_value, lower_in_value};
 use crate::unsupported;
 use searchkernel_ir::{
     PortableError, QueryExprIr, QueryExprKindIr, QueryFieldRefIr, QueryIr, QueryRangeBoundIr,
     RequestValueIr, Result, ScalarValueIr,
 };
 use searchkernel_vespa_engine::{
-    InQueryValue, Query, QueryAlternative, SearchRequest, Value as VespaValue, WandOptions,
+    Query, QueryAlternative, SearchRequest, Value as VespaValue, WandOptions,
 };
 
 use annotations::annotation_u32_list;
@@ -200,17 +200,7 @@ fn lower_typed_query(
                 .iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    let value = lower_attribute_value(&typed_scalar(
-                        value,
-                        &format!("{path}.in.values[{index}]"),
-                    )?)?;
-                    match value {
-                        VespaValue::String(value) => Ok(InQueryValue::String(value)),
-                        VespaValue::Integer(value) => Ok(InQueryValue::Integer(value)),
-                        _ => Err(unsupported(
-                            "in query supports only string and integer values",
-                        )),
-                    }
+                    lower_in_value(&typed_scalar(value, &format!("{path}.in.values[{index}]"))?)
                 })
                 .collect::<Result<Vec<_>>>()?;
             Ok(Query::In {

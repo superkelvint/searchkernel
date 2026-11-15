@@ -3,6 +3,198 @@
 // boundary while responsibilities stay physically searchable by subsystem.
 
 #include "highlighting.h"
+#include <vespa/vespalib/data/output.h>
+
+// Pinned Vespa visits properties in hash-map order. Retain the first bounded
+// keys in lexical order without copying arbitrary (possibly tensor) values.
+class DiagnosticPropertyKeys final : public search::fef::IPropertiesVisitor {
+    size_t _limit;
+public:
+    std::set<std::string_view> keys;
+    explicit DiagnosticPropertyKeys(size_t limit) : _limit(limit) {}
+    void visitProperty(const search::fef::Property::Value &key,
+                       const search::fef::Property &) override {
+        keys.insert(key);
+        if (keys.size() > _limit) keys.erase(std::prev(keys.end()));
+    }
+};
+
+bool capture_final_matcher_request(const SearchRequest &request, uint32_t byte_limit) {
+    auto &snapshot = request.trace().getRoot().setObject("final_matcher_request");
+    snapshot.setString("format", "searchkernel.proton-request.v1");
+    snapshot.setString("vespa_commit", SK_PINNED_VESPA_COMMIT);
+    snapshot.setLong("native_abi_version", SK_NATIVE_ABI_VERSION);
+    snapshot.setString("rank_profile", request.ranking);
+    snapshot.setDouble("timeout_ms", std::chrono::duration<double, std::milli>(request.getTimeout()).count());
+    snapshot.setDouble("time_left_ms", std::chrono::duration<double, std::milli>(request.getTimeLeft()).count());
+    snapshot.setLong("offset", request.offset);
+    snapshot.setLong("maxhits", request.maxhits);
+    snapshot.setBool("dump_features", request.dumpFeatures);
+    snapshot.setLong("trace_level", request.trace().getLevel());
+    snapshot.setLong("matching_profile_depth", request.trace().match_profile_depth());
+    snapshot.setLong("first_phase_profile_depth", request.trace().first_phase_profile_depth());
+    snapshot.setLong("second_phase_profile_depth", request.trace().second_phase_profile_depth());
+    snapshot.setLong("grouping_bytes", request.groupSpec.size());
+    snapshot.setLong("location_bytes", request.location.size());
+    snapshot.setLong("session_id_bytes", request.sessionId.size());
+    bool truncated = false;
+    if (request.sortSpec.size() <= 256) snapshot.setString("sort", request.sortSpec);
+    else { snapshot.setString("sort", "[omitted]"); truncated = true; }
+
+    // Inspect the serialized tree actually attached to this request. Terms,
+    // predicate payloads and tensor contents never enter this representation.
+    auto &tree = snapshot.setArray("query_tree");
+    auto iterator = request.getSerializedQueryTree().makeIterator();
+    const size_t node_limit = std::min<size_t>(64, byte_limit / 128);
+    size_t nodes = 0;
+    while (nodes < node_limit && iterator->next()) {
+        auto &node = tree.addObject();
+        node.setLong("item_type", iterator->getType());
+        node.setLong("arity", iterator->getArity());
+        node.setLong("unique_id", iterator->getUniqueId());
+        node.setBool("no_rank", iterator->hasNoRankFlag());
+        node.setBool("no_position_data", iterator->hasNoPositionDataFlag());
+        node.setString("term", "[redacted]");
+        ++nodes;
+    }
+    if (iterator->next()) truncated = true;
+
+    auto &properties = snapshot.setObject("properties");
+    for (const auto &[name, values] : std::array<std::pair<std::string_view, const search::fef::Properties *>, 2>{{
+             {"rank", &request.propertiesMap.rankProperties()},
+             {"feature_overrides", &request.propertiesMap.featureOverrides()}}}) {
+        auto &collection = properties.setObject(name);
+        collection.setLong("key_count", values->numKeys());
+        collection.setLong("value_count", values->numValues());
+        DiagnosticPropertyKeys visitor(std::min<size_t>(32, byte_limit / 128));
+        values->visitProperties(visitor);
+        auto &entries = collection.setArray("entries");
+        for (auto key : visitor.keys) {
+            auto &entry = entries.addObject();
+            if (key.size() <= 128) entry.setString("name", key);
+            else { entry.setString("name", "[omitted]"); truncated = true; }
+            auto value = values->lookup(key);
+            entry.setLong("value_count", value.size());
+            // This adapter-owned scalar is safe; arbitrary user values,
+            // including scalar query features and binary tensors, are private.
+            if (key == "vespa.matching.numthreadspersearch" && value.size() == 1 && value.get() == "1") {
+                entry.setString("value", "1");
+            } else entry.setString("value", "[redacted]");
+        }
+        if (values->numKeys() > visitor.keys.size()) truncated = true;
+    }
+    snapshot.setBool("truncated", truncated);
+    return truncated;
+}
+
+struct DiagnosticOutputFull {};
+
+// Bound JSON encoding before allocation, not after creating a large temporary.
+class BoundedDiagnosticOutput final : public vespalib::Output {
+    std::string _buffer;
+    size_t _used = 0;
+public:
+    explicit BoundedDiagnosticOutput(size_t limit) : _buffer(limit, '\0') {}
+    vespalib::WritableMemory reserve(size_t bytes) override {
+        if (bytes > _buffer.size() - _used) throw DiagnosticOutputFull{};
+        return {_buffer.data() + _used, _buffer.size() - _used};
+    }
+    vespalib::Output &commit(size_t bytes) override {
+        if (bytes > _buffer.size() - _used) throw DiagnosticOutputFull{};
+        _used += bytes;
+        return *this;
+    }
+    std::string payload() const { return {_buffer.data(), _used}; }
+    size_t available() const { return _buffer.size() - _used; }
+    void append(char value) {
+        if (available() == 0) throw DiagnosticOutputFull{};
+        _buffer[_used++] = value;
+    }
+    void append(std::string_view value) {
+        if (value.size() > available()) throw DiagnosticOutputFull{};
+        memcpy(_buffer.data() + _used, value.data(), value.size());
+        _used += value.size();
+    }
+};
+
+void encode_diagnostic_scalar(const vespalib::slime::Inspector& value,
+                              BoundedDiagnosticOutput& output) {
+    // Bound escaping arithmetic/allocation before calling the upstream encoder.
+    if (value.asString().size > output.available() / 6 ||
+        value.asData().size > output.available() / 2) throw DiagnosticOutputFull{};
+    // Pinned JsonFormat reserves at least 8000 bytes even for one character.
+    // Give it a bounded scalar buffer, then charge actual bytes to the trace.
+    // This also avoids unwinding OutputWriter after a failed reserve with
+    // pending bytes: its destructor commits those bytes again.
+    const size_t capacity = std::max({size_t(8000), value.asString().size * 6 + 2,
+                                     value.asData().size * 2 + 5});
+    BoundedDiagnosticOutput scalar(capacity);
+    vespalib::slime::JsonFormat::encode(value, scalar, true);
+    output.append(scalar.payload());
+}
+
+// Traverse containers ourselves so depth/work limits retain the actual encoded
+// prefix instead of discarding the entire trace in an all-or-nothing preflight.
+// JsonFormat still owns scalar/string encoding. A truncated prefix is explicitly
+// text/plain at the adapter boundary, never advertised as complete JSON.
+struct DiagnosticStructureLimit {};
+void encode_diagnostic_trace(const vespalib::slime::Inspector& value,
+                             uint32_t depth, uint32_t limit, size_t& remaining,
+                             BoundedDiagnosticOutput& output) {
+    if (depth > limit || remaining == 0) throw DiagnosticStructureLimit{};
+    --remaining;
+    if (sk_diagnostics::array(value)) {
+        output.append('[');
+        for (size_t i = 0; i < value.entries(); ++i) {
+            if (i != 0) output.append(',');
+            encode_diagnostic_trace(value[i], depth + 1, limit, remaining, output);
+        }
+        output.append(']');
+    } else if (sk_diagnostics::object(value)) {
+        output.append('{');
+        struct Fields : vespalib::slime::ObjectTraverser {
+            uint32_t depth;
+            uint32_t limit;
+            size_t& remaining;
+            BoundedDiagnosticOutput& output;
+            bool first = true;
+            Fields(uint32_t d, uint32_t l, size_t& r, BoundedDiagnosticOutput& o)
+                : depth(d), limit(l), remaining(r), output(o) {}
+            void field(const vespalib::Memory& name, const vespalib::slime::Inspector& child) override {
+                if (remaining == 0) throw DiagnosticStructureLimit{};
+                // Bound the temporary key and JsonFormat's worst-case escaping
+                // reservation before copying any engine-owned bytes.
+                if (name.size > output.available() / 6) throw DiagnosticOutputFull{};
+                if (!first) output.append(',');
+                first = false;
+                vespalib::Slime key;
+                key.setString(name);
+                encode_diagnostic_scalar(key.get(), output);
+                output.append(':');
+                encode_diagnostic_trace(child, depth + 1, limit, remaining, output);
+            }
+        } fields(depth, limit, remaining, output);
+        value.traverse(fields);
+        output.append('}');
+    } else {
+        encode_diagnostic_scalar(value, output);
+    }
+}
+
+void capture_diagnostic_trace(const search::engine::Trace &trace,
+                              uint32_t limit, uint32_t depth_limit, LocalSearchResultState &result) {
+    if (!trace.hasTrace() || limit == 0) return;
+    BoundedDiagnosticOutput output(limit);
+    try {
+        size_t remaining = 4096;
+        encode_diagnostic_trace(trace.getSlime().get(), 0, depth_limit, remaining, output);
+    } catch (const DiagnosticOutputFull &) {
+        result.diagnostic_truncated = true;
+    } catch (const DiagnosticStructureLimit &) {
+        result.diagnostic_truncated = true;
+    }
+    result.diagnostic_trace = output.payload();
+}
 
 
 constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
@@ -4153,6 +4345,12 @@ public:
         // M14 uses it to capture Vespa's own blueprint and query statistics;
         // normal callers never request or receive native execution traces.
         if (const auto level = native_trace_level()) request.trace().setLevel(*level);
+        if (options.diagnostic_raw_bytes != 0) {
+            request.trace().setLevel(options.diagnostic_trace_level);
+            request.trace().match_profile_depth(static_cast<int32_t>(options.diagnostic_matching_depth));
+            request.trace().first_phase_profile_depth(static_cast<int32_t>(options.diagnostic_first_phase_depth));
+            request.trace().second_phase_profile_depth(static_cast<int32_t>(options.diagnostic_second_phase_depth));
+        }
         auto &rank_properties = request.propertiesMap.lookupCreate(search::MapNames::RANK);
         for (const auto &[name, value] : options.query_features) {
             std::ostringstream encoded;
@@ -4210,17 +4408,59 @@ public:
         }
         request.setSerializedQueryTree(query.serialized_query_tree());
         failpoint("search_before_match");
+        // Capture after all lowering mutations. Ordinary searches skip it.
+        const bool request_truncated = options.diagnostic_raw_bytes != 0 &&
+            capture_final_matcher_request(request, options.diagnostic_raw_bytes);
+        const auto match_start = std::chrono::steady_clock::now();
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
+        const auto match_end = std::chrono::steady_clock::now();
         failpoint("search_after_match");
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
         write_native_trace(request.trace());
         LocalSearchResultState result;
+        if (options.diagnostic_raw_bytes != 0) {
+            result.diagnostic_truncated = request_truncated;
+            result.diagnostic_matching_seconds = std::chrono::duration<double>(match_end - match_start).count();
+            result.diagnostic_sections = sk_diagnostics::project(request.trace().getSlime().get(),
+                {options.diagnostic_matching_depth, options.diagnostic_first_phase_depth,
+                 options.diagnostic_second_phase_depth}, options.diagnostic_structure_depth);
+            capture_diagnostic_trace(request.trace(), options.diagnostic_raw_bytes, options.diagnostic_structure_depth, result);
+        }
         copy_search_reply_metadata(*reply, result);
+        if (result.degradation_flags & SK_DEGRADATION_TIMEOUT) {
+            for (auto& section : result.diagnostic_sections) {
+                if (section.status == sk_diagnostics::UnavailableForQuery) section.status = sk_diagnostics::TimedOut;
+            }
+        }
         const auto &features = reply->match_features;
         if (features.values.size() != features.names.size() * reply->hits.size()) {
             throw std::runtime_error("native match-feature matrix shape mismatch");
         }
-        result.match_feature_names = features.names;
+        std::vector<size_t> feature_columns;
+        size_t feature_bytes_remaining = options.diagnostic_raw_bytes;
+        for (size_t column = 0; column < features.names.size(); ++column) {
+            size_t bytes = 0;
+            bool fits = true;
+            if (options.diagnostic_raw_bytes != 0) {
+                for (size_t row = 0; row < reply->hits.size(); ++row) {
+                    const auto &value = features.values[row * features.names.size() + column];
+                    if (value.is_data()) {
+                        const auto data = value.as_data();
+                        if (data.size > feature_bytes_remaining - bytes) { fits = false; break; }
+                        bytes += data.size;
+                    }
+                }
+            }
+            if (fits) {
+                result.match_feature_names.push_back(features.names[column]);
+                feature_columns.push_back(column);
+                if (options.diagnostic_raw_bytes != 0) feature_bytes_remaining -= bytes;
+            } else {
+                result.diagnostic_features_truncated = true;
+                result.diagnostic_truncated_feature_names.push_back(
+                    features.names[column]);
+            }
+        }
         std::vector<size_t> live_hit_rows;
         live_hit_rows.reserve(reply->hits.size());
         result.hits.reserve(reply->hits.size());
@@ -4239,8 +4479,8 @@ public:
         // never use the original reply row as the result accessor row.
         result.match_feature_values.reserve(result.match_feature_names.size() * live_hit_rows.size());
         for (const size_t row : live_hit_rows) {
-            for (size_t feature = 0; feature < result.match_feature_names.size(); ++feature) {
-                const auto &value = features.values[row * result.match_feature_names.size() + feature];
+            for (const size_t feature : feature_columns) {
+                const auto &value = features.values[row * features.names.size() + feature];
                 result.match_feature_values.push_back({value});
             }
         }
@@ -4281,7 +4521,11 @@ public:
             if (!docsum_fields.empty()) {
                 docsum_request.setFields(docsum_fields);
             }
+            const auto summary_start = std::chrono::steady_clock::now();
             auto docsum = _db->getDocsums(docsum_request);
+            if (options.diagnostic_raw_bytes != 0) {
+                result.diagnostic_summary_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - summary_start).count();
+            }
             if (!docsum || !docsum->hasResult()) throw std::runtime_error("Vespa docsum returned no result");
             const auto &root = docsum->root();
             for (size_t index = 0; index < result.hits.size(); ++index) {
@@ -4344,6 +4588,9 @@ public:
                 if (tree->root) resolve_grouping_node(*tree->root);
                 result.grouping_trees.push_back(std::move(tree));
             }
+        }
+        if (options.diagnostic_raw_bytes != 0) {
+            result.diagnostic_query_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - search_start).count();
         }
         return result;
     }

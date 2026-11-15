@@ -20,7 +20,8 @@ union ResponsePayload {
   SearchKernel.Wire.DeleteIndexResult,
   SearchKernel.Wire.ListIndexesResult,
   SearchKernel.Wire.PlanIndexChangeResult,
-  SearchKernel.Wire.ApplyIndexChangeResult
+  SearchKernel.Wire.ApplyIndexChangeResult,
+  SearchKernel.Wire.QueryDiagnosticsResult
 }
 
 table ResponseEnvelope {

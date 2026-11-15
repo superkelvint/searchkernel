@@ -42,6 +42,9 @@
     }
   },
   "test": {
+    "instantsearch-compat": {
+      "description": "Pinned InstantSearch adapter, canonical public search, and real widgets in JSDOM against Vespa"
+    },
     "native-base-artifact": {
       "description": "Clean-room native-base production, archive install, adapter link, and runtime load"
     },
@@ -53,6 +56,15 @@
     },
     "ir": {
       "description": "Portable semantic IR tests"
+    },
+    "protocol-generation": {
+      "description": "Canonical protocol regeneration with an exact-source generated patch export"
+    },
+    "ir-adapter": {
+      "description": "Vespa IR adapter lowering and real-engine regression tests"
+    },
+    "native-consumer-generation": {
+      "description": "Regenerate and export the packaged native source bundle"
     },
     "rust-api": {
       "description": "Public Rust API tests",
@@ -83,6 +95,9 @@
     },
     "client-real-e2e-parity": {
       "description": "Cross-client real-engine showcase parity"
+    },
+    "consumer-release-policy": {
+      "description": "Consumer qualification policy and quickstart regressions; actual artifacts remain qualified by consumer-release"
     },
     "consumer-release": {
       "description": "Publishable consumer artifacts and fresh-project package qualification"
@@ -908,7 +923,7 @@
         "docs/architecture.md"
       ],
       "architecture": "docs/architecture.md#non-rust-client-apis",
-      "test": [],
+      "test": ["test:instantsearch-compat"],
       "verify": [
         "verify:product.integration"
       ],
