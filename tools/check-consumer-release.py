@@ -110,6 +110,8 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
             "core/crates/searchkernel-rpc/Cargo.toml",
             "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs",
             "searchkerneld/Cargo.toml",
+            "release-quickstart/Cargo.toml",
+            "release-quickstart/src/main.rs",
         }
         missing = sorted(required - names)
         assert not missing, f"Rust consumer bundle missing required entries: {missing}"

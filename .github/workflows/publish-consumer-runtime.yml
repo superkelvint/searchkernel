@@ -58,6 +58,10 @@ jobs:
           mkdir -p -- "${SEARCHKERNEL_CONSUMER_RELEASE_EXPORT}"
           ./dev test consumer-release
 
+      - name: Validate complete release asset set
+        shell: bash
+        run: python3 tools/check-release-asset-set.py "${{ runner.temp }}/consumer-release"
+
       - name: Validate exact candidate identity
         id: candidate
         shell: bash
@@ -158,13 +162,19 @@ jobs:
       contents: write
 
     steps:
+      - name: Check out release verifier
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
       - name: Retrieve qualified candidate
         uses: actions/download-artifact@v8
         with:
           name: consumer-release-candidate-${{ github.sha }}
           path: candidate
 
-      - name: Revalidate transferred runtime bytes
+      - name: Revalidate transferred release assets
         shell: bash
         env:
           EXPECTED_RUNTIME_FILE: ${{ needs.qualify.outputs.runtime_file }}
@@ -172,6 +182,7 @@ jobs:
           EXPECTED_RUNTIME_IDENTITY: ${{ needs.qualify.outputs.runtime_identity }}
         run: |
           set -euo pipefail
+          python3 tools/check-release-asset-set.py candidate
           python3 - <<'PY'
           import hashlib
           import json
@@ -197,13 +208,16 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RUNTIME_FILE: ${{ needs.qualify.outputs.runtime_file }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           repo="${GITHUB_REPOSITORY}"
-          runtime="candidate/${RUNTIME_FILE}"
           manifest="candidate/manifest.json"
+          mapfile -t assets < <(python3 tools/check-release-asset-set.py candidate --names)
+          sources=()
+          for asset in "${assets[@]}"; do
+            sources+=("candidate/$asset")
+          done
 
           verify_or_upload() {
             local source=$1
@@ -225,13 +239,15 @@ jobs:
           }
 
           if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-            verify_or_upload "$runtime"
+            for source in "${sources[@]}"; do
+              verify_or_upload "$source"
+            done
             verify_or_upload "$manifest"
           else
             args=(release create "$tag" --repo "$repo" --verify-tag --title "$tag" --generate-notes)
             if [[ "$tag" == *-* ]]; then
               args+=(--prerelease)
             fi
-            args+=("$runtime" "$manifest")
+            args+=("${sources[@]}" "$manifest")
             gh "${args[@]}"
           fi

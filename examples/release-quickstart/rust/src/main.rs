@@ -9,7 +9,7 @@ fn matching_ids(index: &Index) -> Result<Vec<String>, Box<dyn std::error::Error>
         .execute::<Value>()?
         .hits
         .into_iter()
-        .map(|hit| hit.id)
+        .map(|hit| hit.id.to_string())
         .collect())
 }
 

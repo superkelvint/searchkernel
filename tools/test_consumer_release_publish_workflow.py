@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import json
 import pathlib
+import hashlib
+import subprocess
+import sys
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -13,6 +17,23 @@ TARGETS = ROOT / "build" / "targets.json"
 
 
 class ConsumerReleasePublishWorkflowTests(unittest.TestCase):
+    def test_asset_set_rejects_missing_or_changed_rust_bundle(self):
+        checker = ROOT / "tools/check-release-asset-set.py"
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            files = {"searchkernel-rust-0.1.0.tar.gz": b"rust", "searchkernel-runtime-test.tar.gz": b"runtime"}
+            entries = []
+            for name, data in files.items():
+                (root / name).write_bytes(data)
+                entries.append({"file": name, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
+            (root / "manifest.json").write_text(json.dumps({"artifacts": entries, "runtime": {"file": "searchkernel-runtime-test.tar.gz"}}))
+            command = [sys.executable, str(checker), str(root)]
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            (root / "searchkernel-rust-0.1.0.tar.gz").write_bytes(b"changed")
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            (root / "searchkernel-rust-0.1.0.tar.gz").unlink()
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
     @classmethod
     def setUpClass(cls):
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -57,6 +78,10 @@ class ConsumerReleasePublishWorkflowTests(unittest.TestCase):
 
     def test_publication_revalidates_identity_and_exact_bytes(self):
         text = self.workflow
+        self.assertEqual(text.count("check-release-asset-set.py"), 3)
+        self.assertIn('mapfile -t assets < <(python3 tools/check-release-asset-set.py candidate --names)', text)
+        self.assertIn('for source in "${sources[@]}"; do', text)
+        self.assertIn('args+=("${sources[@]}" "$manifest")', text)
         for fragment in (
             'manifest.get("commit"',
             'manifest.get("version")',

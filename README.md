@@ -8,7 +8,7 @@ Vespa's C++ engine does the actual work: storage, indexing, ranking, query execu
 
 Running a search cluster to get full-text search, filtering, and ranking is a lot of infrastructure for most applications. Most applications don't need a cluster. They need an index that lives next to their data and behaves like any other embedded store.
 
-Vespa was originally developed at Yahoo and is used for production search and retrieval at companies including Spotify and Perplexity. It's a mature, large-scale search platform, not a standalone library designed to be embedded in applications. 
+Vespa was originally developed at Yahoo and is used for production search and retrieval at companies including Spotify and Perplexity. It's a mature, large-scale search platform, not a standalone library designed to be embedded in applications.
 
 Vespa already solves the hard problems here: ranking, tensors, vector search, index fusion, durability. It solves them at a level of maturity that would take years to reproduce. Search Kernel doesn't try, it makes that battle-tested maturity usable as a library.
 
@@ -38,9 +38,44 @@ Search Kernel is currently a **0.1.x beta**. Consumer installation uses released
 - See the [release notes](docs/release-notes.md) and [consumer troubleshooting](docs/getting-started.md#troubleshooting).
 - Use [BUILDING.md](BUILDING.md) for source builds and contribution setup.
 
-The qualified platform is **Linux x86-64 with glibc**. Supported release modes are Rust embedded, `searchkerneld`, Python managed-local/connect, TypeScript/Node connect, and Ruby connect. Browser gRPC-Web, PHP, Ruby managed-local, Go, macOS, Windows, and Linux aarch64 are deferred.
+## Rust embedded quickstart (Linux x86-64 glibc)
 
-## Quickstart
+After the public consumer release is published, install Rust, Python 3, a C/C++
+compiler, CMake, Git, and curl. The native Vespa base is downloaded automatically
+from the public release; no GitHub login or private token is required.
+
+```bash
+tag=v0.1.0
+base="https://github.com/superkelvint/searchkernel/releases/download/$tag"
+curl -fL "$base/manifest.json" -o manifest.json
+python3 - "$base" <<'PY'
+import hashlib, json, pathlib, sys, urllib.request
+manifest = json.loads(pathlib.Path("manifest.json").read_text())
+matches = [a for a in manifest["artifacts"] if a["file"].startswith("searchkernel-rust-")]
+if len(matches) != 1:
+    raise SystemExit("expected one Rust source bundle in release manifest")
+artifact = matches[0]
+with urllib.request.urlopen(sys.argv[1] + "/" + artifact["file"]) as response:
+    data = response.read()
+if hashlib.sha256(data).hexdigest() != artifact["sha256"]:
+    raise SystemExit("Rust source bundle checksum mismatch")
+pathlib.Path(artifact["file"]).write_bytes(data)
+print(artifact["file"])
+PY
+mkdir searchkernel-release
+tar -xzf searchkernel-rust-*.tar.gz -C searchkernel-release
+cd searchkernel-release
+cargo run --manifest-path release-quickstart/Cargo.toml
+```
+
+Success prints `Rust release quickstart PASS` after searching, closing, and
+reopening a real Vespa-backed index. The first build downloads a large native
+base. This public path is ready for anonymous use once the consumer release
+assets are published.
+
+The qualified platform is **Linux x86-64 with glibc**. Supported release modes are Rust embedded, `searchkerneld`, Python managed-local/connect, TypeScript/Node connect, and Ruby (connect-to-daemon). Browser gRPC-Web, PHP, Ruby managed-local, Go, macOS, Windows, and Linux aarch64 are deferred.
+
+## Python quickstart
 
 This Python example creates an index, inserts three documents, searches with a filter and sort, then closes and reopens the index. Python's managed-local mode starts and manages a local daemon. Use a fresh `./search-python` directory and install the matching beta release first.
 

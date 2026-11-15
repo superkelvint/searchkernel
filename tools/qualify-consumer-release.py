@@ -201,7 +201,8 @@ def run_ruby_quickstart(
 
 def run_rust_quickstart(rust_root: Path, root: Path) -> dict[str, str]:
     quickstart = rust_root / "release-quickstart"
-    shutil.copytree(QUICKSTARTS / "rust", quickstart)
+    if not (quickstart / "Cargo.toml").is_file():
+        raise RuntimeError("Rust release bundle lacks the executable quickstart")
     native_base, native_base_archive = native_base_fixture()
     environment = {
         "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
