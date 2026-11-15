@@ -99,69 +99,31 @@ def verify_daemon_tree(root: Path, expected_runtime: dict[str, object]) -> None:
 with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
     temp = Path(raw)
 
-    rust = next(out.glob("searchkernel-rust-*.tar.gz"))
-    rust_root = temp / "rust"
-    rust_root.mkdir()
-    with tarfile.open(rust) as archive:
-        names = set(archive.getnames())
-        required = {
-            "LICENSE",
-            "core/crates/searchkernel/Cargo.toml",
-            "core/crates/searchkernel-rpc/Cargo.toml",
-            "core/crates/searchkernel-vespa-bindings/consumer_bundle.rs",
-            "searchkerneld/Cargo.toml",
-        }
-        missing = sorted(required - names)
-        assert not missing, f"Rust consumer bundle missing required entries: {missing}"
-        assert "tools/resolve-native-sdk.sh" not in names
-        archive.extractall(rust_root)
-
-    cargo = subprocess.check_output(
-        ["bash", str(ROOT / "tools" / "resolve-rust.sh"), "cargo"],
-        text=True,
-    ).strip()
-    environment = clean_runtime_env()
-    environment["CARGO_TARGET_DIR"] = str(temp / "cargo-target")
-    # In the CI producer, validate the released Rust bundle against the
-    # immutable native-base cache already provisioned for packaging. This
-    # validation runs before the pristine consumer container; the qualification
-    # runner itself never receives this cache.
-    native_cache = Path("/opt/searchkernel/native-sdk-cache")
-    if (
-        native_cache.is_dir()
-        and Path("/opt/searchkernel/native-validation-pass").is_file()
-    ):
-        environment["SK_NATIVE_CACHE_DIR"] = str(native_cache)
-        environment["SEARCHKERNEL_BUILD_ENV"] = "ci"
-    subprocess.run(
-        [
-            cargo,
-            "metadata",
-            "--no-deps",
-            "--format-version",
-            "1",
-            "--manifest-path",
-            str(rust_root / "Cargo.toml"),
-        ],
-        check=True,
-        env=environment,
-        stdout=subprocess.DEVNULL,
-    )
-    subprocess.run(
-        [
-            cargo,
-            "check",
-            "-p",
-            "searchkernel",
-            "--features",
-            "native",
-            "--manifest-path",
-            str(rust_root / "Cargo.toml"),
-        ],
-        cwd=rust_root,
-        check=True,
-        env=environment,
-    )
+    # Validate the actual registry artifacts; execution belongs to the fresh
+    # consumer container, rather than a path/workspace build in the producer.
+    from cargo_consumer_registry import crate_manifest
+    crates = sorted(out.glob("*.crate"))
+    assert crates, "release contains no Cargo distributables"
+    by_name = {crate_manifest(crate)["package"]["name"]: crate for crate in crates}
+    assert {"searchkernel", "searchkernel-vespa-bindings"} <= by_name.keys()
+    public = crate_manifest(by_name["searchkernel"])
+    assert public["features"]["default"] == ["native"], "plain cargo add must select native"
+    for crate in crates:
+        package = crate_manifest(crate)
+        for section in ("dependencies", "build-dependencies", "dev-dependencies"):
+            for dependency in package.get(section, {}).values():
+                if isinstance(dependency, dict):
+                    assert "path" not in dependency, f"repository dependency in {crate.name}"
+    bindings = by_name["searchkernel-vespa-bindings"]
+    with tarfile.open(bindings) as archive:
+        prefix = bindings.name.removesuffix(".crate")
+        descriptor = json.load(archive.extractfile(f"{prefix}/runtime.json"))
+        for key in ("runtime_identity", "native_abi_version", "vespa_commit", "payload_sha256"):
+            assert descriptor[key] == manifest["runtime"][key], f"Cargo runtime mismatch: {key}"
+        runtime_file = out / manifest["runtime"]["file"]
+        assert descriptor["artifact_sha256"] == hashlib.sha256(runtime_file.read_bytes()).hexdigest()
+        assert archive.extractfile(f"{prefix}/consumer_bundle.rs").read().endswith(b"= &[];\n")
+        assert not any("/tools/" in name or "/core/native/" in name for name in archive.getnames())
 
     daemon = next(out.glob("searchkernel-runtime-*.tar.gz"))
     daemon_root = temp / "daemon"

@@ -14,10 +14,11 @@ autotests = false
 test = []
 
 [dependencies]
-searchkernel-protocol = { path = "../searchkernel-protocol" }
-searchkernel-filter = { path = "../searchkernel-filter" }
+searchkernel-protocol = { version = "=0.1.0", path = "../searchkernel-protocol", default-features = false }
+searchkernel-filter = { version = "=0.1.0", path = "../searchkernel-filter" }
 flatbuffers = "=25.12.19"
 serde_json = "1"
 
 [dev-dependencies]
+searchkernel-protocol = { version = "=0.1.0", path = "../searchkernel-protocol", features = ["json"] }
 serde = { version = "1", features = ["derive"] }

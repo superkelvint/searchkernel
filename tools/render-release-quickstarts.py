@@ -28,8 +28,9 @@ def render() -> str:
         "index paths. TypeScript/Node creates and reopens `SEARCHKERNEL_TARGET` over the daemon "
         "gRPC listener (default `127.0.0.1:50051`); Ruby creates and reopens the same logical "
         "target shape over the HTTP listener (default `http://127.0.0.1:50052`).\n\n",
-        "Rust embedded builds provision the pinned native runtime from the release service; "
-        "use an authenticated GitHub CLI session or set `GH_TOKEN` when downloading from a private repository.\n\n",
+        "Rust embedded builds acquire the exact qualified consumer runtime on the first Cargo build. "
+        "Plain `cargo add searchkernel` enables embedded search; no SDK, Vespa installation or loader environment is required. "
+        "Remote-only callers can explicitly disable default features and enable `remote`.\n\n",
     ]
     for title, (language, path) in SOURCES.items():
         source = path.read_text(encoding="utf-8").rstrip() + "\n"

@@ -83,7 +83,7 @@ class QualificationPolicyTests(unittest.TestCase):
             runner,
         )
         self.assertIn(
-            "bash tools/stage-native-base-qualification-artifact.sh /artifacts/consumer-release-tools/native-base",
+            "cp tools/cargo_consumer_registry.py /artifacts/consumer-release-tools/",
             runner,
         )
         self.assertIn(
@@ -117,22 +117,28 @@ class QualificationPolicyTests(unittest.TestCase):
             self.assertIn(variable, gate)
         self.assertNotIn('"--no-index"', gate)
         rust_runner = gate.split("def run_rust_quickstart", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn("native_base_fixture()", rust_runner)
-        self.assertIn('"SK_NATIVE_BASE_ARTIFACT_URL"', rust_runner)
-        self.assertIn("native_base_archive.as_uri()", rust_runner)
-        self.assertIn('"SK_NATIVE_CACHE_DIR"', rust_runner)
+        self.assertIn("LocalCargoRegistry(crates)", rust_runner)
+        self.assertIn('"cargo", "add", "searchkernel"', rust_runner)
+        self.assertIn('"CARGO_HOME"', rust_runner)
+        self.assertIn("DIST.as_uri()", rust_runner)
+        self.assertIn('"SEARCHKERNEL_RUNTIME_CACHE"', rust_runner)
+        self.assertNotIn("SK_NATIVE_", rust_runner)
+        self.assertNotIn('"--features", "native"', rust_runner)
+        self.assertIn('"--no-default-features", "--features", "remote"', rust_runner)
         self.assertNotIn("GH_TOKEN", rust_runner)
         self.assertNotIn("GITHUB_TOKEN", rust_runner)
-        self.assertIn('"SEARCHKERNEL_BUILD_ENV"', rust_runner)
+        self.assertIn('"--offline"', rust_runner)
+        self.assertIn('run(str(binary)', rust_runner)
 
-    def test_all_rust_consumer_probes_reuse_local_native_base_sidecar(self):
+    def test_rust_consumer_probe_uses_registry_artifacts(self):
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
         rust_probe = gate.split("def rust_embedded_probe", 1)[1].split("\n        def ", 1)[0]
         self.assertIn(
-            "native_environment = run_rust_quickstart(rust_root, root)",
+            "run_rust_quickstart(root)",
             rust_probe,
         )
-        self.assertIn("env=native_environment", rust_probe)
+        self.assertNotIn("rust_root", rust_probe)
+        self.assertNotIn("SK_NATIVE_", rust_probe)
         self.assertNotIn("GH_TOKEN", rust_probe)
         self.assertNotIn("GITHUB_TOKEN", rust_probe)
 
@@ -204,15 +210,12 @@ class QualificationPolicyTests(unittest.TestCase):
             for node in ast.walk(main)
         ), "registry entries must resolve through the runtime probe dispatch map")
 
-    def test_consumer_release_stages_native_base_sidecar_locally(self):
+    def test_consumer_release_uses_no_developer_native_base_sidecar(self):
         dev = (ROOT / "dev").read_text()
-        self.assertIn(
-            'stage-native-base-qualification-artifact.sh" "$release_root/qualification/native-base"',
-            dev,
-        )
+        self.assertIn('cp "$ROOT/tools/cargo_consumer_registry.py"', dev)
         gate = (ROOT / "tools/qualify-consumer-release.py").read_text()
-        self.assertIn('QUALIFICATION_ROOT / "native-base"', gate)
-        self.assertIn("native_base_archive.as_uri()", gate)
+        self.assertNotIn('QUALIFICATION_ROOT / "native-base"', gate)
+        self.assertNotIn("native_base_archive", gate)
 
     def test_local_native_base_sidecar_does_not_require_release_metadata(self):
         helper = (ROOT / "tools/stage-native-base-qualification-artifact.sh").read_text()

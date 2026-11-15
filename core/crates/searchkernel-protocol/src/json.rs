@@ -145,7 +145,7 @@ pub fn schema_json_to_flatbuffer(schema: &[u8], json: &[u8]) -> Result<Vec<u8>, 
 }
 
 const INDEX_DEFINITION_SCHEMA: &str = concat!(
-    include_str!("../../../../api/searchkernel.fbs"),
+    include_str!(concat!(env!("OUT_DIR"), "/searchkernel.fbs")),
     "\nroot_type IndexDefinition;\n"
 );
 

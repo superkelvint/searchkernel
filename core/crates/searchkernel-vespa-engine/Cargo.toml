@@ -12,7 +12,7 @@ build = "build.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-searchkernel-vespa-bindings = { path = "../searchkernel-vespa-bindings", default-features = false }
+searchkernel-vespa-bindings = { version = "=0.1.0", path = "../searchkernel-vespa-bindings", default-features = false }
 # Vespa uses the pinned JDK Character.getType(); the live Java oracle is the
 # compatibility authority if this independently pinned table ever diverges.
 unicode-general-category = "=1.1.0"

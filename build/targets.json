@@ -102,6 +102,12 @@
     "consumer-release": {
       "description": "Publishable consumer artifacts and fresh-project package qualification"
     },
+    "cargo-runtime": {
+      "description": "Rust consumer-runtime identity/cache/archive/sidecar conformance without a native SDK"
+    },
+    "cargo-distribution-generation": {
+      "description": "Regenerate Cargo distribution lockfile, Rust formatting and public quickstart documentation"
+    },
     "frontend": {
       "description": "Dashboard build and adapter unit tests"
     },

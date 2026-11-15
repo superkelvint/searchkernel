@@ -1,4 +1,11 @@
 mod consumer_bundle;
+#[cfg(feature = "native")]
+mod consumer_layout;
+#[cfg(feature = "native")]
+mod consumer_runtime;
+#[cfg(feature = "native")]
+#[path = "src/abi.rs"]
+mod packaged_abi;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -32,6 +39,13 @@ fn main() {
     }
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    #[cfg(feature = "native")]
+    if manifest_dir.join("runtime.json").exists() {
+        configure_packaged_consumer_runtime(&manifest_dir).unwrap_or_else(|error| {
+            panic!("Search Kernel packaged native runtime provisioning failed: {error}")
+        });
+        return;
+    }
     let support_root = support_root(&manifest_dir);
     env::set_var("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT", &support_root);
     #[cfg(feature = "native")]
@@ -198,6 +212,7 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=searchkernel_vespa");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SDK");
+    println!("cargo:rerun-if-env-changed=SEARCHKERNEL_RUNTIME_BUILD_ID");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ABI_HEADER");
     println!("cargo:rerun-if-changed={}", source_header.display());
     // The diagnostic request snapshot embeds provenance from this manifest.
@@ -425,6 +440,95 @@ fn resolve_shared_native_sdk(
 }
 
 #[cfg(feature = "native")]
+fn configure_packaged_consumer_runtime(manifest_dir: &Path) -> Result<(), String> {
+    for option in [
+        "SK_NATIVE_SDK",
+        "SK_NATIVE_ABI_HEADER",
+        "CARGO_FEATURE_HARDENING",
+        "CARGO_FEATURE_NATIVE_CONTRACT_TESTS",
+    ] {
+        if env::var_os(option).is_some() {
+            return Err(format!("{option} cannot override the immutable packaged runtime; use a source checkout for maintainer builds"));
+        }
+    }
+    let target = env::var("TARGET").map_err(|error| error.to_string())?;
+    let host = env::var("HOST").map_err(|error| error.to_string())?;
+    let descriptor = manifest_dir.join("runtime.json");
+    let (runtime, identity) = consumer_runtime::ensure_runtime_for_build(
+        &descriptor,
+        &target,
+        &host,
+        packaged_abi::EXPECTED_ABI,
+        env!("CARGO_PKG_VERSION"),
+    )?;
+    consumer_layout::verify_adapter_soname(
+        &runtime.join("lib/libsearchkernel_vespa.so.2"),
+        &identity,
+    )?;
+    let out = PathBuf::from(env::var_os("OUT_DIR").ok_or("Cargo did not provide OUT_DIR")?);
+    let profile = out
+        .ancestors()
+        .nth(3)
+        .ok_or("unexpected Cargo OUT_DIR layout")?;
+    // Dependency link-args do not propagate to an external application's final
+    // link. The producer's identity-qualified $ORIGIN SONAME provides the loader
+    // contract, with immutable sidecars for each normal Cargo executable layout.
+    for directory in [
+        profile.to_path_buf(),
+        profile.join("deps"),
+        profile.join("examples"),
+        out.clone(),
+    ] {
+        consumer_runtime::stage_libraries(&runtime.join("lib"), &directory, &identity)?;
+    }
+    // Link the exact versioned file in its validated closure. Copying just the
+    // adapter into another linker directory would break $ORIGIN resolution of
+    // its private dependencies during the downstream application's final link.
+    let link = runtime.join("lib");
+    let source = out.join("consumer-abi-probe.c");
+    fs::write(
+        &source,
+        consumer_layout::abi_probe_source(packaged_abi::EXPECTED_ABI),
+    )
+    .map_err(|error| error.to_string())?;
+    let probe = out.join("consumer-abi-probe");
+    let mut command = cc::Build::new()
+        .cargo_metadata(false)
+        .get_compiler()
+        .to_command();
+    command
+        .arg(&source)
+        .arg("-L")
+        .arg(&link)
+        .arg("-l:libsearchkernel_vespa.so.2")
+        .arg(format!("-Wl,-rpath-link,{}", runtime.join("lib").display()))
+        .arg("-o")
+        .arg(&probe);
+    run_probe_command(&mut command, "link packaged runtime ABI probe")?;
+    let mut execute = Command::new(&probe);
+    execute
+        .env_remove("LD_LIBRARY_PATH")
+        .env_remove("LD_PRELOAD")
+        .env_remove("LD_AUDIT");
+    run_probe_command(&mut execute, "execute packaged runtime ABI probe")?;
+    println!("cargo:rustc-link-search=native={}", link.display());
+    println!("cargo:rustc-link-lib=dylib:+verbatim=libsearchkernel_vespa.so.2");
+    println!("cargo:rerun-if-changed={}", descriptor.display());
+    println!("cargo:rerun-if-changed=consumer_runtime.rs");
+    println!("cargo:rerun-if-changed=consumer_layout.rs");
+    for option in [
+        "SK_NATIVE_SDK",
+        "SK_NATIVE_ABI_HEADER",
+        "SEARCHKERNEL_RUNTIME_DIR",
+        "SEARCHKERNEL_RUNTIME_CACHE",
+        "SEARCHKERNEL_RUNTIME_ORIGIN",
+    ] {
+        println!("cargo:rerun-if-env-changed={option}");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "native")]
 fn build_local_adapter(
     manifest_dir: &Path,
     base_sdk: &Path,
@@ -437,8 +541,14 @@ fn build_local_adapter(
     let out_dir = PathBuf::from(
         env::var_os("OUT_DIR").ok_or_else(|| "Cargo did not provide OUT_DIR".to_owned())?,
     );
-    let adapter = out_dir.join("native-adapter");
-    let build = out_dir.join("native-adapter-build");
+    let runtime_directory = consumer_layout::producer_directory()?;
+    let mut adapter = out_dir.join("native-adapter");
+    let mut build = out_dir.join("native-adapter-build");
+    if env::var_os("SEARCHKERNEL_RUNTIME_BUILD_ID").is_some() {
+        let variant = runtime_directory.file_name().unwrap();
+        adapter = adapter.join(variant);
+        build = build.join(variant);
+    }
 
     let vespa_root = resolve_shared_native_sdk(manifest_dir, target, "vespa-root")?;
     let output = Command::new("bash")
@@ -454,7 +564,10 @@ fn build_local_adapter(
         // The resulting DT_NEEDED entry is self-resolving for downstream consumers.
         .env(
             "SK_NATIVE_ADAPTER_SONAME",
-            "$ORIGIN/.searchkernel-native/libsearchkernel_vespa.so.2",
+            format!(
+                "$ORIGIN/{}/libsearchkernel_vespa.so.2",
+                runtime_directory.display()
+            ),
         )
         .env("SK_NATIVE_BASE_SDK", base_sdk)
         .env(
@@ -504,7 +617,7 @@ fn stage_adapter_for_cargo_outputs(out_dir: &Path, adapter: &Path) -> Result<(),
         profile_dir.join("deps"),
         profile_dir.join("examples"),
     ] {
-        let runtime_dir = executable_dir.join(".searchkernel-native");
+        let runtime_dir = executable_dir.join(consumer_layout::producer_directory()?);
         fs::create_dir_all(&runtime_dir).map_err(|error| {
             format!(
                 "create native runtime directory '{}': {error}",
