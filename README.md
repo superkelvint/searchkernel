@@ -1,6 +1,6 @@
 # Search Kernel
 
-Search Kernel is a Rust interface to Vespa's native search engine, packaged so it can be embedded directly in an application instead of run as a separate distributed service.
+Search Kernel is a Rust interface to Vespa's native C++ search engine, packaged so it can be embedded directly in an application instead of run as a separate distributed service.
 
 Vespa's C++ engine does the actual work: storage, indexing, ranking, query execution. Search Kernel does not reimplement any of it. It gives that engine a normal Rust API plus first-party Python, TypeScript, PHP, and Ruby clients through `searchkerneld`. Release qualification is deliberately narrower than implementation presence; see the [release support matrix](docs/release-support.md).
 
@@ -39,8 +39,6 @@ Search Kernel is currently a **0.1.x beta**. Consumer installation uses released
 - Use [BUILDING.md](BUILDING.md) for source builds and contribution setup.
 
 The qualified platform is **Linux x86-64 with glibc**. Supported release modes are Rust embedded, `searchkerneld`, Python managed-local/connect, TypeScript/Node connect, and Ruby connect. Browser gRPC-Web, PHP, Ruby managed-local, Go, macOS, Windows, and Linux aarch64 are deferred.
-
-Some release artifacts, including the native runtime, may still require access to private release infrastructure. Public source access alone does not guarantee a working consumer installation.
 
 ## Quickstart
 
