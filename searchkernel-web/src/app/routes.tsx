@@ -3,10 +3,10 @@ import { BrowserRouter, Navigate, Route, Routes, useParams, useLocation } from '
 import { DashboardRoute } from './DashboardRoute'
 import { About, NotFound, UnavailableFeature } from './fallback-pages'
 
-function IndexDefault({section}:{section?: 'data'|'search'|'configuration'|'operations'}) {
+function IndexDefault({section}:{section?: 'data'|'search'|'configuration'|'operations'|'integrations'}) {
   const { indexId } = useParams()
   const { search } = useLocation()
-  const suffix = section === 'data' ? 'data/documents' : section === 'search' ? 'search/lab' : section === 'configuration' ? 'configuration/schema/fields' : section === 'operations' ? 'operations/health' : 'overview'
+  const suffix = section === 'integrations' ? 'integrations/instantsearch' : section === 'data' ? 'data/documents' : section === 'search' ? 'search/lab' : section === 'configuration' ? 'configuration/schema/fields' : section === 'operations' ? 'operations/health' : 'overview'
   return <Navigate replace to={`/indexes/${indexId}/${suffix}${search}`}/>
 }
 
@@ -20,6 +20,8 @@ export function AppRoutes() { return <Routes>
   <Route path="/indexes/:indexId/search" element={<IndexDefault section="search"/>}/>
   <Route path="/indexes/:indexId/configuration" element={<IndexDefault section="configuration"/>}/>
   <Route path="/indexes/:indexId/operations" element={<IndexDefault section="operations"/>}/>
+  <Route path="/indexes/:indexId/integrations" element={<IndexDefault section="integrations"/>}/>
+  <Route path="/indexes/:indexId/integrations/instantsearch" element={<DashboardRoute page="integrations"/>}/>
   <Route path="/indexes/:indexId/overview" element={<DashboardRoute page="index-overview"/>}/>
   <Route path="/indexes/:indexId/data/documents" element={<DashboardRoute page="documents"/>}/>
   <Route path="/indexes/:indexId/data/documents/by-id/:documentToken" element={<DashboardRoute page="documents"/>}/>
