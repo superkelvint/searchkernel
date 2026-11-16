@@ -551,6 +551,17 @@ separate because the installed C++ static library is ABI-sensitive. The resolver
 also reuses a matching `flatc` already built in the same environment before
 falling back to `/usr/local`.
 
+New installs build at a private permanent generation path beside that prefix,
+then validate the complete compiler/headers/archive before atomically publishing
+`.searchkernel-current` inside the prefix. Shell and Cargo readers resolve that
+pointer once and use the resulting immutable path throughout compilation and
+linking. Existing legacy files and older generations remain unchanged for
+in-flight readers. Failed candidates are never selected. Retained generations
+must not be removed while readers may still use them.
+
+`./dev test flatbuffers-publication` exercises failed installation isolation,
+publication with an in-flight reader, reader pinning, and the C++ toolchain probe.
+
 Run `./dev install flatbuffers` once per clone/version/build-environment when
 no matching toolchain exists. Concurrent installs are serialized and a healthy
 existing install is reused without rebuilding. Reuse requires an actual C++

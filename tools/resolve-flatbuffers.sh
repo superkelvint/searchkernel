@@ -19,6 +19,24 @@ is_expected_flatc() {
         [[ "$("$candidate" --version 2>/dev/null || true)" == "flatc version $expected" ]]
 }
 
+pin_prefix() {
+    local prefix=$1
+    if [[ -e "$prefix/.searchkernel-current" || -L "$prefix/.searchkernel-current" ]]; then
+        [[ -L "$prefix/.searchkernel-current" ]] || {
+            echo "error: invalid FlatBuffers publication pointer under '$prefix'" >&2
+            return 1
+        }
+        (cd -- "$prefix/.searchkernel-current" && pwd -P)
+    else
+        (cd -- "$prefix" && pwd -P)
+    fi
+}
+
+cpp_prefix=
+if [[ -n "${FLATBUFFERS_CPP_ROOT:-}" ]]; then
+    cpp_prefix=$(pin_prefix "$FLATBUFFERS_CPP_ROOT")
+fi
+
 resolve_flatc() {
     local common build_env shared candidate
 
@@ -31,9 +49,9 @@ resolve_flatc() {
         return 1
     fi
 
-    if [[ -n "${FLATBUFFERS_CPP_ROOT:-}" ]] &&
-       is_expected_flatc "$FLATBUFFERS_CPP_ROOT/bin/flatc"; then
-        printf '%s\n' "$FLATBUFFERS_CPP_ROOT/bin/flatc"
+    if [[ -n "$cpp_prefix" ]] &&
+       is_expected_flatc "$cpp_prefix/bin/flatc"; then
+        printf '%s\n' "$cpp_prefix/bin/flatc"
         return 0
     fi
 
@@ -43,7 +61,11 @@ resolve_flatc() {
     fi
     common=$(cd -- "$common" && pwd)
     build_env=${SEARCHKERNEL_BUILD_ENV:-host}
-    shared="$common/searchkernel/toolchains/flatbuffers/$expected/$build_env/bin/flatc"
+    shared="$common/searchkernel/toolchains/flatbuffers/$expected/$build_env"
+    if [[ -d "$shared" ]]; then
+        shared=$(pin_prefix "$shared") || return $?
+    fi
+    shared="$shared/bin/flatc"
     if is_expected_flatc "$shared"; then
         printf '%s\n' "$shared"
         return 0
@@ -75,9 +97,9 @@ if [[ "$mode" == flatc ]]; then
 fi
 
 if [[ -n "${FLATBUFFERS_CPP_ROOT:-}" ]]; then
-    prefix=$FLATBUFFERS_CPP_ROOT
+    prefix=$cpp_prefix
 else
-    prefix=$(cd -- "$(dirname -- "$flatc")/.." && pwd)
+    prefix=$(cd -- "$(dirname -- "$flatc")/.." && pwd -P)
 fi
 
 [[ -f "$prefix/include/flatbuffers/base.h" &&

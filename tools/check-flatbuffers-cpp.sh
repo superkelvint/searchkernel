@@ -3,12 +3,21 @@ set -euo pipefail
 
 prefix=${1:-}
 expected_version=${2:-25.12.19}
-flatc=${3:-"$prefix/bin/flatc"}
+flatc=${3:-}
 
 if [[ -z "$prefix" ]]; then
     echo "usage: $0 <flatbuffers-prefix> [expected-version] [flatc-path]" >&2
     exit 2
 fi
+
+if [[ -e "$prefix/.searchkernel-current" || -L "$prefix/.searchkernel-current" ]]; then
+    [[ -L "$prefix/.searchkernel-current" ]] || {
+        echo "invalid FlatBuffers publication pointer under '$prefix'" >&2
+        exit 1
+    }
+    prefix=$(cd -- "$prefix/.searchkernel-current" && pwd -P)
+fi
+flatc=${flatc:-"$prefix/bin/flatc"}
 
 header="$prefix/include/flatbuffers/base.h"
 idl_header="$prefix/include/flatbuffers/idl.h"
