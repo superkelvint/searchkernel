@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel import Client, ClientError, GrpcTransport, Index, q  # noqa: E402
-from searchkernel.client import value  # noqa: E402
+from searchkernel.client import _repository_host_binary, value  # noqa: E402
 from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.AnalyzeFieldTarget import AnalyzeFieldTargetT  # noqa: E402
 from searchkernel._wire.v1.generated.SearchKernel.Wire.AnalyzeRequest import AnalyzeRequestT  # noqa: E402
@@ -51,7 +51,7 @@ from searchkernel._wire.v1.generated.SearchKernel.Wire.ValueEntry import ValueEn
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DAEMON = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target" / "host"))) / "debug" / "searchkerneld"
+DAEMON = _repository_host_binary()
 SDK_LIB = ROOT / "core" / "native" / "sdk" / "linux-x86_64" / "lib"
 VESPA_DEPS_LIB = ROOT / "vespa-deps" / "lib64"
 

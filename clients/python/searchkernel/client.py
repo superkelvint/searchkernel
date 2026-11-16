@@ -651,6 +651,16 @@ def _migrate_legacy_managed_path(path: Path, data_root: Path, target: str) -> No
     _write_managed_marker(path, target)
 
 
+def _repository_host_binary() -> Path:
+    root = Path(__file__).resolve().parents[3]
+    target = Path(os.environ.get("CARGO_TARGET_DIR") or root / "target" / "host")
+    # Repository Cargo commands run at this root. Resolve relative overrides
+    # there, independently of the application's current working directory.
+    if not target.is_absolute():
+        target = root / target
+    return target / "debug" / "searchkerneld"
+
+
 def _host_binary() -> Path:
     configured = os.environ.get("SEARCHKERNEL_LOCAL_HOST")
     if configured:
@@ -658,7 +668,7 @@ def _host_binary() -> Path:
     package_binary = Path(__file__).resolve().parent / "bin" / "searchkerneld"
     if package_binary.is_file():
         return package_binary
-    return Path(__file__).resolve().parents[3] / "target" / "debug" / "searchkerneld"
+    return _repository_host_binary()
 
 
 def _signal_managed_process(process: subprocess.Popen[bytes], signum: int) -> None:
