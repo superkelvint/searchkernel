@@ -22,7 +22,7 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-require_native_driver "$BIN" sk_engine_put sk_engine_update sk_engine_remove sk_engine_search
+require_native_driver "$BIN" sk_engine_put sk_engine_update sk_engine_remove sk_engine_search_generic
 
 rm -rf "$TARGET/data"
 cargo run --quiet -p searchkernel-vespa-engine --example searchkernel-m2-driver -- \
