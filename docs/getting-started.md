@@ -24,7 +24,7 @@ The complete Python wheel filename is release-specific. Select it from the relea
 
 ### Rust embedded
 
-The Rust artifact is a source bundle containing the workspace, Rust crates, and an executable `release-quickstart/` project. Follow the [README's copyable release download and run commands](../README.md#rust-embedded-quickstart-linux-x86-64-glibc). Its build provisions the pinned native runtime from the release service. Anonymous download works after the repository and its release assets are public; while private, access still requires an authenticated GitHub CLI session or `GH_TOKEN`. The workspace uses edition 2021 and does not declare an explicit `rust-version`.
+The Rust artifact is a source bundle containing the workspace, Rust crates, an executable `release-quickstart/` project, and the pinned FlatBuffers installer used by that project. Follow the [README's copyable release download and run commands](../README.md#rust-embedded-quickstart-linux-x86-64-glibc). The installer builds FlatBuffers C++ 25.12.19 from its public source archive into the extracted bundle, and the Rust build provisions the pinned native runtime from the public release. Neither requires private credentials. The workspace uses edition 2021 and does not declare an explicit `rust-version`.
 
 Rust embedded runs in the application process. The application owns its engine handles and persistent index paths; closing and reopening the same path demonstrates persistence in the quickstart.
 

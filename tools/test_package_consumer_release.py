@@ -21,6 +21,30 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ConsumerReleaseTests(unittest.TestCase):
+    def test_rust_bundle_installs_flatbuffers_from_a_clean_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            bundle = root / "rust.tar.gz"
+            MODULE.build_rust_bundle(bundle)
+            consumer = root / "consumer"
+            consumer.mkdir()
+            with tarfile.open(bundle) as archive:
+                archive.extractall(consumer, filter="data")
+            prefix = root / "flatbuffers"
+            environment = os.environ.copy()
+            environment.pop("FLATBUFFERS_CPP_ROOT", None)
+            environment.pop("FLATC_PATH", None)
+            environment["FLATBUFFERS_INSTALL_PREFIX"] = str(prefix)
+            result = subprocess.run(
+                ["bash", str(consumer / "dev"), "install", "flatbuffers"],
+                cwd=consumer,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue((prefix / "lib/libflatbuffers.a").is_file())
+
     def test_packager_requires_canonical_image_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             missing_marker = Path(tempdir) / "native-validation-pass"

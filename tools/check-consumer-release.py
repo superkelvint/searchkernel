@@ -112,6 +112,11 @@ with tempfile.TemporaryDirectory(prefix="searchkernel-release-check.") as raw:
             "searchkerneld/Cargo.toml",
             "release-quickstart/Cargo.toml",
             "release-quickstart/src/main.rs",
+            "dev",
+            "tools/resolve-python.sh",
+            "tools/resolve-rust.sh",
+            "tools/resolve-node.sh",
+            "tools/check-flatbuffers-cpp.sh",
         }
         missing = sorted(required - names)
         assert not missing, f"Rust consumer bundle missing required entries: {missing}"

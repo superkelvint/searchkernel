@@ -203,6 +203,12 @@ def run_rust_quickstart(rust_root: Path, root: Path) -> dict[str, str]:
     quickstart = rust_root / "release-quickstart"
     if not (quickstart / "Cargo.toml").is_file():
         raise RuntimeError("Rust release bundle lacks the executable quickstart")
+    flatbuffers_prefix = root / "flatbuffers"
+    run(
+        "bash", str(rust_root / "dev"), "install", "flatbuffers",
+        cwd=rust_root,
+        env={"FLATBUFFERS_INSTALL_PREFIX": str(flatbuffers_prefix)},
+    )
     native_base, native_base_archive = native_base_fixture()
     environment = {
         "SEARCHKERNEL_QUICKSTART_PATH": str(root / "quickstart-rust-index"),
@@ -211,6 +217,7 @@ def run_rust_quickstart(rust_root: Path, root: Path) -> dict[str, str]:
         "SK_NATIVE_BASE_ARTIFACT_URL": native_base_archive.as_uri(),
         "SK_NATIVE_BASE_ARTIFACT_GENERATION": str(native_base["artifact_generation"]),
         "SK_NATIVE_CACHE_DIR": str(root / "rust-native-cache"),
+        "FLATBUFFERS_CPP_ROOT": str(flatbuffers_prefix),
     }
     # Qualification consumes the exact native-base sidecar staged by this
     # release run. It never publishes to, discovers from, or downloads from
