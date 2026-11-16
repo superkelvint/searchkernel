@@ -45,7 +45,7 @@ compiler, CMake, Git, and curl. The native Vespa base is downloaded automaticall
 from the public release; no GitHub login or private token is required.
 
 ```bash
-tag=v0.1.0
+tag=v0.1.0-beta.1
 base="https://github.com/superkelvint/searchkernel/releases/download/$tag"
 curl -fL "$base/manifest.json" -o manifest.json
 python3 - "$base" <<'PY'
@@ -65,13 +65,15 @@ PY
 mkdir searchkernel-release
 tar -xzf searchkernel-rust-*.tar.gz -C searchkernel-release
 cd searchkernel-release
+FLATBUFFERS_INSTALL_PREFIX="$PWD/.flatbuffers" ./dev install flatbuffers
+export FLATBUFFERS_CPP_ROOT="$PWD/.flatbuffers"
 cargo run --manifest-path release-quickstart/Cargo.toml
 ```
 
 Success prints `Rust release quickstart PASS` after searching, closing, and
-reopening a real Vespa-backed index. The first build downloads a large native
-base. This public path is ready for anonymous use once the consumer release
-assets are published.
+reopening a real Vespa-backed index. The first run builds the pinned FlatBuffers
+C++ prerequisite from its public source archive and downloads a large native
+Vespa base. Neither download requires a GitHub login.
 
 The qualified platform is **Linux x86-64 with glibc**. Supported release modes are Rust embedded, `searchkerneld`, Python managed-local/connect, TypeScript/Node connect, and Ruby (connect-to-daemon). Browser gRPC-Web, PHP, Ruby managed-local, Go, macOS, Windows, and Linux aarch64 are deferred.
 

@@ -164,6 +164,11 @@ RUST_BUNDLE_PATHS = [
     "api",
     "reference/client-real-e2e-parity/corpus.json",
     "examples/release-quickstart/rust",
+    "dev",
+    "tools/resolve-python.sh",
+    "tools/resolve-rust.sh",
+    "tools/resolve-node.sh",
+    "tools/check-flatbuffers-cpp.sh",
 ]
 
 
