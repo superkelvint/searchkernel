@@ -46,5 +46,5 @@ impl Drop for NativeAttributeUpdate {
 
 pub(crate) fn require_ptr<T>(pointer: *mut T, name: &str) -> Result<NonNull<T>, Error> {
     NonNull::new(pointer)
-        .ok_or_else(|| Error::message(format!("native operation returned a null {name}")))
+        .ok_or_else(|| Error::corrupt(format!("native operation returned a null {name}")))
 }

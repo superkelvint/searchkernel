@@ -196,7 +196,7 @@ pub(super) fn validate_native_slice_pointer<T>(
     name: &str,
 ) -> Result<(), Error> {
     if length != 0 && pointer.is_null() {
-        return Err(Error::message(format!(
+        return Err(Error::corrupt(format!(
             "native operation returned a null {name}"
         )));
     }

@@ -48,7 +48,7 @@ fn diagnostic_tensor_text(
     name: &str,
 ) -> Result<String> {
     if length > 262_144 || (length != 0 && pointer.is_null()) {
-        return Err(Error::message(format!(
+        return Err(Error::corrupt(format!(
             "native diagnostic tensor returned invalid {name}"
         )));
     }
@@ -58,7 +58,7 @@ fn diagnostic_tensor_text(
         unsafe { std::slice::from_raw_parts(pointer.cast::<u8>(), length as usize) }
     };
     String::from_utf8(bytes.to_vec())
-        .map_err(|_| Error::message(format!("native diagnostic tensor {name} is not UTF-8")))
+        .map_err(|_| Error::corrupt(format!("native diagnostic tensor {name} is not UTF-8")))
 }
 
 /// Bounded conversion above the unchanged raw feature DATA ABI. Vespa owns the
@@ -104,14 +104,14 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
     )?;
     let type_spec = diagnostic_tensor_text(type_pointer, type_length, "type specification")?;
     if type_spec.is_empty() {
-        return Err(Error::message(
+        return Err(Error::corrupt(
             "native diagnostic tensor returned an empty type specification",
         ));
     }
 
     let block_count = unsafe { sys::sk_diagnostic_tensor_block_count(tensor.0.as_ptr()) };
     if block_count > max_cells.max(1) {
-        return Err(Error::message(
+        return Err(Error::corrupt(
             "native diagnostic tensor returned too many blocks",
         ));
     }
@@ -122,7 +122,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
             sys::sk_diagnostic_tensor_block_address_count(tensor.0.as_ptr(), block_index)
         };
         if address_count > 4096 {
-            return Err(Error::message(
+            return Err(Error::corrupt(
                 "native diagnostic tensor returned too many address dimensions",
             ));
         }
@@ -151,7 +151,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
             )?;
             let dimension = diagnostic_tensor_text(dimension, dimension_length, "dimension name")?;
             if dimension.is_empty() {
-                return Err(Error::message(
+                return Err(Error::corrupt(
                     "native diagnostic tensor returned an empty dimension name",
                 ));
             }
@@ -179,9 +179,9 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
         )?;
         total_cells = total_cells
             .checked_add(value_count)
-            .ok_or_else(|| Error::message("native diagnostic tensor cell count overflow"))?;
+            .ok_or_else(|| Error::corrupt("native diagnostic tensor cell count overflow"))?;
         if total_cells > max_cells || (value_count != 0 && values.is_null()) {
-            return Err(Error::message(
+            return Err(Error::corrupt(
                 "native diagnostic tensor returned cells outside the requested budget",
             ));
         }
@@ -191,7 +191,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
             unsafe { std::slice::from_raw_parts(values, value_count as usize) }.to_vec()
         };
         if values.iter().any(|value| !value.is_finite()) {
-            return Err(Error::message(
+            return Err(Error::corrupt(
                 "native diagnostic tensor returned a non-finite portable cell",
             ));
         }
@@ -201,7 +201,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
     match unsafe { sys::sk_diagnostic_tensor_kind(tensor.0.as_ptr()) } {
         sys::SK_DIAGNOSTIC_TENSOR_DENSE => {
             if blocks.len() != 1 || !blocks[0].0.is_empty() {
-                return Err(Error::message(
+                return Err(Error::corrupt(
                     "native dense diagnostic tensor has an invalid block layout",
                 ));
             }
@@ -212,7 +212,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
             let mut cells = Vec::with_capacity(blocks.len());
             for (address, values) in blocks {
                 if values.len() != 1 {
-                    return Err(Error::message(
+                    return Err(Error::corrupt(
                         "native sparse diagnostic tensor block is not scalar",
                     ));
                 }
@@ -230,7 +230,7 @@ pub fn decode_diagnostic_tensor(bytes: &[u8], max_cells: u32) -> Result<TensorVa
                 .map(|(address, values)| TensorBlock { address, values })
                 .collect(),
         }),
-        _ => Err(Error::message(
+        _ => Err(Error::corrupt(
             "native diagnostic tensor returned an unknown tensor kind",
         )),
     }
@@ -240,57 +240,57 @@ fn json_f64(value: &serde_json::Value, field: &str, context: &str) -> Result<f64
     value
         .get(field)
         .and_then(serde_json::Value::as_f64)
-        .ok_or_else(|| Error::message(format!("{context} is missing numeric field '{field}'")))
+        .ok_or_else(|| Error::corrupt(format!("{context} is missing numeric field '{field}'")))
 }
 
 fn decode_struct_array(value: &str) -> Result<Vec<BTreeMap<String, ScalarValue>>, Error> {
     let value: serde_json::Value = serde_json::from_str(value).map_err(|error| {
-        Error::message(format!(
+        Error::corrupt(format!(
             "native document struct array is invalid JSON: {error}"
         ))
     })?;
     let elements = value
         .as_array()
-        .ok_or_else(|| Error::message("native document struct array is not a JSON array"))?;
+        .ok_or_else(|| Error::corrupt("native document struct array is not a JSON array"))?;
     let mut decoded = Vec::with_capacity(elements.len());
     for element in elements {
         let fields = element.as_object().ok_or_else(|| {
-            Error::message("native document struct array element is not a JSON object")
+            Error::corrupt("native document struct array element is not a JSON object")
         })?;
         let mut decoded_fields = BTreeMap::new();
         for (name, encoded) in fields {
             let encoded = encoded.as_object().ok_or_else(|| {
-                Error::message(format!("native struct field '{name}' is not an object"))
+                Error::corrupt(format!("native struct field '{name}' is not an object"))
             })?;
             let kind = encoded
                 .get("type")
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| {
-                    Error::message(format!("native struct field '{name}' has no type"))
+                    Error::corrupt(format!("native struct field '{name}' has no type"))
                 })?;
             let value = encoded.get("value").ok_or_else(|| {
-                Error::message(format!("native struct field '{name}' has no value"))
+                Error::corrupt(format!("native struct field '{name}' has no value"))
             })?;
             let scalar = match kind {
                 "string" => ScalarValue::String(
                     value
                         .as_str()
                         .ok_or_else(|| {
-                            Error::message(format!("native struct field '{name}' is not a string"))
+                            Error::corrupt(format!("native struct field '{name}' is not a string"))
                         })?
                         .to_owned(),
                 ),
                 "integer" => ScalarValue::Integer(value.as_i64().ok_or_else(|| {
-                    Error::message(format!("native struct field '{name}' is not an integer"))
+                    Error::corrupt(format!("native struct field '{name}' is not an integer"))
                 })?),
                 "float" => ScalarValue::Float(value.as_f64().ok_or_else(|| {
-                    Error::message(format!("native struct field '{name}' is not a float"))
+                    Error::corrupt(format!("native struct field '{name}' is not a float"))
                 })?),
                 "boolean" => ScalarValue::Boolean(value.as_bool().ok_or_else(|| {
-                    Error::message(format!("native struct field '{name}' is not a boolean"))
+                    Error::corrupt(format!("native struct field '{name}' is not a boolean"))
                 })?),
                 _ => {
-                    return Err(Error::message(format!(
+                    return Err(Error::corrupt(format!(
                         "native struct field '{name}' has unknown type '{kind}'"
                     )))
                 }
@@ -311,7 +311,7 @@ fn document_value_payload_name(kind: u32) -> Result<Option<&'static str>, Error>
         sys::SK_VALUE_POSITION => Some("document position value"),
         sys::SK_VALUE_PREDICATE => Some("document predicate value"),
         _ => {
-            return Err(Error::message(
+            return Err(Error::corrupt(
                 "native document returned an unknown value kind",
             ))
         }
@@ -328,7 +328,7 @@ fn decode_non_tensor_document_value(
     match kind {
         sys::SK_VALUE_STRING => {
             let value = std::str::from_utf8(payload)
-                .map_err(|_| Error::message("native document string value is invalid UTF-8"))?;
+                .map_err(|_| Error::corrupt("native document string value is invalid UTF-8"))?;
             Ok(FieldValue::Scalar(ScalarValue::String(value.to_owned())))
         }
         sys::SK_VALUE_INTEGER => Ok(FieldValue::Scalar(ScalarValue::Integer(integer))),
@@ -336,10 +336,10 @@ fn decode_non_tensor_document_value(
         sys::SK_VALUE_BOOLEAN => Ok(FieldValue::Scalar(ScalarValue::Boolean(boolean))),
         sys::SK_VALUE_STRING_ARRAY => {
             let value = std::str::from_utf8(payload).map_err(|_| {
-                Error::message("native document string array value is invalid UTF-8")
+                Error::corrupt("native document string array value is invalid UTF-8")
             })?;
             let values: Vec<String> = serde_json::from_str(value).map_err(|error| {
-                Error::message(format!(
+                Error::corrupt(format!(
                     "native document string array is invalid JSON: {error}"
                 ))
             })?;
@@ -347,7 +347,7 @@ fn decode_non_tensor_document_value(
         }
         sys::SK_VALUE_STRUCT_ARRAY => {
             let value = std::str::from_utf8(payload).map_err(|_| {
-                Error::message("native document struct array value is invalid UTF-8")
+                Error::corrupt("native document struct array value is invalid UTF-8")
             })?;
             Ok(FieldValue::Array(ArrayValue::Structs(decode_struct_array(
                 value,
@@ -355,7 +355,7 @@ fn decode_non_tensor_document_value(
         }
         sys::SK_VALUE_POSITION => {
             let value: serde_json::Value = serde_json::from_slice(payload).map_err(|error| {
-                Error::message(format!("native document position is invalid JSON: {error}"))
+                Error::corrupt(format!("native document position is invalid JSON: {error}"))
             })?;
             let latitude = json_f64(&value, "latitude", "document position")?;
             let longitude = json_f64(&value, "longitude", "document position")?;
@@ -365,9 +365,9 @@ fn decode_non_tensor_document_value(
         }
         sys::SK_VALUE_PREDICATE => {
             let value = std::str::from_utf8(payload)
-                .map_err(|_| Error::message("native document predicate value is invalid UTF-8"))?;
+                .map_err(|_| Error::corrupt("native document predicate value is invalid UTF-8"))?;
             let parsed = serde_json::from_str::<serde_json::Value>(value).map_err(|error| {
-                Error::message(format!(
+                Error::corrupt(format!(
                     "native document predicate is invalid JSON: {error}"
                 ))
             })?;
@@ -384,18 +384,18 @@ fn decode_non_tensor_document_value(
                 let key = parsed
                     .get("key")
                     .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| Error::message("native predicate feature key is missing"))?;
+                    .ok_or_else(|| Error::corrupt("native predicate feature key is missing"))?;
                 let features = parsed
                     .get("feature_set")
                     .and_then(serde_json::Value::as_array)
-                    .ok_or_else(|| Error::message("native predicate feature set is missing"))?
+                    .ok_or_else(|| Error::corrupt("native predicate feature set is missing"))?
                     .iter()
                     .map(|feature| {
                         feature
                             .as_str()
                             .map(|feature| (key.to_owned(), feature.to_owned()))
                             .ok_or_else(|| {
-                                Error::message("native predicate feature is not a string")
+                                Error::corrupt("native predicate feature is not a string")
                             })
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;
@@ -406,7 +406,7 @@ fn decode_non_tensor_document_value(
                 )))
             }
         }
-        _ => Err(Error::message(
+        _ => Err(Error::corrupt(
             "native document returned an unknown value kind",
         )),
     }
@@ -804,7 +804,7 @@ impl Engine {
     pub fn open(data_dir: impl AsRef<Path>, config_dir: impl AsRef<Path>) -> Result<Self, Error> {
         let actual_abi = unsafe { sys::sk_native_abi_version() };
         if actual_abi != EXPECTED_ABI {
-            return Err(Error::message(format!(
+            return Err(Error::corrupt(format!(
                 "unsupported native ABI version {actual_abi}; expected {EXPECTED_ABI}"
             )));
         }
@@ -1097,7 +1097,7 @@ impl Engine {
             check(status, &error)?;
             let name = native_bytes(&native, name, name_length, "document field name")?;
             let name = std::str::from_utf8(name)
-                .map_err(|_| Error::message("native document field name is invalid UTF-8"))?;
+                .map_err(|_| Error::corrupt("native document field name is invalid UTF-8"))?;
             let value = if kind == sys::SK_VALUE_TENSOR {
                 let mut type_spec = ptr::null();
                 let mut type_spec_length = 0;
@@ -1124,11 +1124,11 @@ impl Engine {
                     "document tensor type spec",
                 )?;
                 let type_spec = std::str::from_utf8(type_spec).map_err(|_| {
-                    Error::message("native document tensor type spec is invalid UTF-8")
+                    Error::corrupt("native document tensor type spec is invalid UTF-8")
                 })?;
                 let cells = native_f64s(&native, cells, cell_count, "document tensor cells")?;
                 if cells.iter().any(|value| !value.is_finite()) {
-                    return Err(Error::message(
+                    return Err(Error::corrupt(
                         "native document tensor contains a non-finite cell",
                     ));
                 }

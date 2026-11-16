@@ -9,6 +9,8 @@ use searchkernel_vespa_engine::{
 mod support;
 use support::*;
 mod coverage;
+#[cfg(feature = "hardening")]
+mod errors;
 mod grouping;
 mod mutation;
 mod query_lowering;
