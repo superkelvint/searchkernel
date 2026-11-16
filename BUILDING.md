@@ -768,6 +768,15 @@ remains an independent final check that the resolved SDK is consumable.
 
 ## Task worktrees and native prerequisites
 
+Native SDK builds validate agreement between the Rust ABI constant, selected
+header, SDK manifest, and the ABI value returned by the linked library. The
+build runs a private executable probe and stages its adapter using the same
+`$ORIGIN` layout as consumer binaries. Target/host cross-compilation is currently
+rejected explicitly because it cannot establish this runtime ABI check.
+
+`./dev test native-sdk-abi` exercises a library whose symbols link but whose ABI
+value is wrong, manifest contradictions, and a consistent positive fixture.
+
 `./dev worktree create <task-name>` creates a temporary worktree at
 `/tmp/<repository>-<task-name>` on `agent/<task-name>` from the current
 `HEAD`; it does not copy uncommitted changes.

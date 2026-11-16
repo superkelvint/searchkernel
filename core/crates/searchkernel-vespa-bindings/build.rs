@@ -1,4 +1,8 @@
+#[path = "src/abi.rs"]
+mod abi;
 mod consumer_bundle;
+#[cfg(feature = "native")]
+mod sdk_abi;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -38,6 +42,8 @@ fn main() {
     let target = env::var("TARGET").expect("Cargo must provide TARGET to native build scripts");
     #[cfg(feature = "native")]
     let host = env::var("HOST").expect("Cargo must provide HOST to native build scripts");
+    #[cfg(feature = "native")]
+    sdk_abi::require_native_host(&target, &host).unwrap_or_else(|error| panic!("{error}"));
     #[cfg(feature = "native")]
     let explicit_sdk = env::var_os("SK_NATIVE_SDK").map(PathBuf::from);
     #[cfg(feature = "native")]
@@ -117,14 +123,7 @@ fn main() {
         }
     }
 
-    let rust_abi =
-        fs::read_to_string(manifest_dir.join("src/abi.rs")).expect("read Rust native ABI version");
-    let expected_abi = rust_abi
-        .lines()
-        .find_map(|line| line.strip_prefix("pub const EXPECTED_ABI: u32 = "))
-        .and_then(|value| value.strip_suffix(';'))
-        .and_then(|value| value.parse::<u32>().ok())
-        .expect("Rust ABI source must define EXPECTED_ABI");
+    let expected_abi = abi::EXPECTED_ABI;
     let header_text = fs::read_to_string(&header).expect("read native ABI header");
     let abi_version = header_text
         .lines()
@@ -140,7 +139,9 @@ fn main() {
 
     #[cfg(feature = "native")]
     {
-        if let Err(error) = probe_native_sdk(&sdk, base_sdk.as_deref(), &target, &host) {
+        if let Err(error) =
+            probe_native_sdk(&sdk, base_sdk.as_deref(), &target, &host, expected_abi)
+        {
             if base_sdk.is_some() {
                 panic!(
                     "Search Kernel Vespa adapter '{}' failed its link probe against runtime base:\n{error}",
@@ -160,7 +161,7 @@ fn main() {
                     )
                 },
             );
-            probe_native_sdk(&sdk, None, &target, &host).unwrap_or_else(|retry_error| {
+            probe_native_sdk(&sdk, None, &target, &host, expected_abi).unwrap_or_else(|retry_error| {
                 panic!(
                     "explicit native Vespa SDK link probe failed after one automatic rebuild:\n{error}\n{retry_error}"
                 )
@@ -304,6 +305,8 @@ fn main() {
         println!("cargo:rerun-if-env-changed=HOST_{base}");
     }
     println!("cargo:rerun-if-changed=src/abi.rs");
+    println!("cargo:rerun-if-changed=sdk_abi.rs");
+    println!("cargo:rerun-if-changed=sdk_manifest_abi.py");
     println!("cargo:rerun-if-changed=src/bindings.rs");
     #[cfg(feature = "native")]
     if let Some(base) = base_sdk.as_deref() {
@@ -655,6 +658,13 @@ fn verify_hardening_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
 
 #[cfg(feature = "native")]
 fn verify_native_provenance(manifest_dir: &Path, sdk: &Path, target: &str) -> Result<(), String> {
+    let work =
+        PathBuf::from(env::var_os("OUT_DIR").ok_or("Cargo OUT_DIR is missing")?).join("sdk-probe");
+    fs::create_dir_all(&work).map_err(|error| format!("create SDK ABI work directory: {error}"))?;
+    let root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../.."));
+    sdk_abi::verify_manifest(sdk, &work, &root, abi::EXPECTED_ABI)?;
     let fingerprint_path = sdk.join("native-build-fingerprint-v2.txt");
     let recorded = fs::read_to_string(&fingerprint_path).map_err(|error| {
         format!(
@@ -715,19 +725,22 @@ fn probe_native_sdk(
     base_sdk: Option<&Path>,
     target: &str,
     host: &str,
+    expected_abi: u32,
 ) -> Result<(), String> {
+    sdk_abi::require_native_host(target, host)?;
     let probe_dir =
         PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set")).join("sdk-probe");
     fs::create_dir_all(&probe_dir)
         .map_err(|error| format!("create native SDK compatibility probe directory: {error}"))?;
+    let support_root = env::var_os("SEARCHKERNEL_PACKAGED_SUPPORT_ROOT")
+        .map(PathBuf::from)
+        .ok_or("packaged native support root is not configured")?;
+    sdk_abi::verify_manifest(sdk, &probe_dir, &support_root, expected_abi)?;
     let source = probe_dir.join("native_sdk_link_probe.cc");
     let object = probe_dir.join("native_sdk_link_probe.o");
     let executable = probe_dir.join("native_sdk_link_probe");
-    fs::write(
-        &source,
-        "#include <searchkernel_vespa.h>\nint main() { return static_cast<int>(sk_native_abi_version()); }\n",
-    )
-    .map_err(|error| format!("write native SDK compatibility probe: {error}"))?;
+    fs::write(&source, sdk_abi::probe_source(expected_abi))
+        .map_err(|error| format!("write native SDK compatibility probe: {error}"))?;
 
     let mut config = cc::Build::new();
     config
@@ -779,7 +792,8 @@ fn probe_native_sdk(
         link.arg(format!("-l{standard_library}"));
     }
     link.arg("-o").arg(&executable);
-    run_probe_command(&mut link, "link native SDK compatibility probe")
+    run_probe_command(&mut link, "link native SDK compatibility probe")?;
+    sdk_abi::execute_probe(sdk, &executable)
 }
 
 #[cfg(feature = "native")]
