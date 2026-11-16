@@ -75,6 +75,75 @@ reopening a real Vespa-backed index. The first run builds the pinned FlatBuffers
 C++ prerequisite from its public source archive and downloads a large native
 Vespa base. Neither download requires a GitHub login.
 
+The Rust program behind that command creates a persistent index, inserts three
+documents, searches with a filter and sort, then closes and reopens the index:
+
+```rust
+use searchkernel::{Field, Index, IndexDefinition, Sort};
+use serde_json::{json, Value};
+
+fn matching_ids(index: &Index) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    Ok(index
+        .search("quickstart")
+        .filter("kind = 'guide'")
+        .sort(Sort::asc("score"))
+        .execute::<Value>()?
+        .hits
+        .into_iter()
+        .map(|hit| hit.id.to_string())
+        .collect())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let path =
+        std::env::var("SEARCHKERNEL_QUICKSTART_PATH").unwrap_or_else(|_| "./search-rust".into());
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true).searchable(true))
+        .field(Field::keyword("kind").stored(true).filterable(true))
+        .field(Field::int64("score").stored(true).sortable(true));
+    let documents = [
+        (
+            "quickstart-a",
+            json!({"title":"quickstart alpha","kind":"guide","score":2}),
+        ),
+        (
+            "quickstart-b",
+            json!({"title":"quickstart beta","kind":"guide","score":1}),
+        ),
+        (
+            "quickstart-c",
+            json!({"title":"quickstart other","kind":"other","score":0}),
+        ),
+    ];
+
+    let index = Index::create(&path, definition)?;
+    for (id, document) in documents {
+        index.insert(id, &document)?;
+    }
+    assert_eq!(
+        matching_ids(&index)?,
+        vec!["quickstart-b".to_owned(), "quickstart-a".to_owned()]
+    );
+    index.close()?;
+
+    let reopened = Index::open(&path)?;
+    assert_eq!(
+        reopened
+            .get::<Value>("quickstart-b")?
+            .and_then(|document| document.get("score").cloned()),
+        Some(json!(1))
+    );
+    assert_eq!(
+        matching_ids(&reopened)?,
+        vec!["quickstart-b".to_owned(), "quickstart-a".to_owned()]
+    );
+    reopened.close()?;
+
+    println!("Rust release quickstart PASS");
+    Ok(())
+}
+```
+
 The qualified platform is **Linux x86-64 with glibc**. Supported release modes are Rust embedded, `searchkerneld`, Python managed-local/connect, TypeScript/Node connect, and Ruby (connect-to-daemon). Browser gRPC-Web, PHP, Ruby managed-local, Go, macOS, Windows, and Linux aarch64 are deferred.
 
 ## Python quickstart
